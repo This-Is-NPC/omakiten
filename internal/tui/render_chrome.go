@@ -252,6 +252,18 @@ func (m Model) footerTokens() []footerToken {
 			{key: "pgup/pgdn", label: m.t("tui.footer.scroll")},
 			{key: "esc", label: m.t("tui.footer.cancel")},
 		}
+	case m.mode == modePlanGoal:
+		// The plan goal editor is a full-panel multi-line textarea: Enter
+		// inserts a newline so markdown lists/paragraphs land naturally,
+		// and ctrl+s is the actual save key (input.go). Advertise that
+		// instead of the generic "enter save" so the footer never sends
+		// the user to a bare-Enter save that does not exist here.
+		return []footerToken{
+			{key: "ctrl+s", label: m.t("tui.footer.save"), primary: true},
+			{key: "alt+enter/shift+enter", label: m.t("tui.footer.newline")},
+			{key: "esc", label: m.t("tui.footer.cancel")},
+			{key: "ctrl+c", label: m.t("tui.footer.quit")},
+		}
 	case m.mode != modeNormal:
 		return []footerToken{
 			{key: "enter", label: m.t("tui.footer.save"), primary: true},
@@ -259,11 +271,14 @@ func (m Model) footerTokens() []footerToken {
 			{key: "ctrl+c", label: m.t("tui.footer.quit")},
 		}
 	case m.commentScreenOpen && m.commentScreenEditing:
+		// Help (`?`) is intentionally unreachable while editing — the key
+		// is a literal character typed into the textarea, and the global
+		// `?` handler is gated on `!m.commentScreenEditing` (model.go).
+		// Do not advertise it here, or the footer would point at a no-op.
 		return []footerToken{
 			{key: "ctrl+s", label: m.t("tui.footer.save"), primary: true},
 			{key: "alt+enter", label: m.t("tui.footer.newline")},
 			{key: "esc", label: m.t("tui.footer.cancel")},
-			m.helpToken(),
 		}
 	case m.descriptionScreenOpen:
 		return []footerToken{
@@ -293,36 +308,34 @@ func (m Model) footerTokens() []footerToken {
 			m.helpToken(),
 		}
 	case m.commentScreenOpen:
-		deleteLabel := m.t("tui.footer.arm_delete")
-		if m.commentDeletePendingID != 0 {
-			deleteLabel = m.t("tui.footer.confirm_delete")
+		tokens := []footerToken{}
+		// Project/universal comment detail opened from the project overview is
+		// read-only, so edit/delete are no-ops there — advertise them only when
+		// the detail is task-owned and the keys actually fire.
+		if !m.commentScreenFromProject {
+			deleteLabel := m.t("tui.footer.arm_delete")
+			if m.commentDeletePendingID != 0 {
+				deleteLabel = m.t("tui.footer.confirm_delete")
+			}
+			tokens = append(tokens,
+				footerToken{key: "e", label: m.t("tui.footer.edit"), primary: true},
+				footerToken{key: "d", label: deleteLabel, primary: m.commentDeletePendingID != 0},
+			)
 		}
-		return []footerToken{
-			{key: "e", label: m.t("tui.footer.edit"), primary: true},
-			{key: "d", label: deleteLabel, primary: m.commentDeletePendingID != 0},
-			{key: "j/k", label: m.t("tui.footer.scroll")},
-			{key: "pgup/pgdn", label: m.t("tui.footer.page")},
-			{key: "g/G", label: m.t("tui.footer.top_bottom")},
+		tokens = append(tokens,
+			footerToken{key: "j/k", label: m.t("tui.footer.scroll")},
+			footerToken{key: "pgup/pgdn", label: m.t("tui.footer.page")},
+			footerToken{key: "g/G", label: m.t("tui.footer.top_bottom")},
 			m.escBack(),
 			m.helpToken(),
-		}
+		)
+		return tokens
 	case m.taskScreen == taskScreenView:
-		deleteLabel := m.t("tui.footer.arm_delete")
-		if m.taskDeletePendingID != 0 {
-			deleteLabel = m.t("tui.footer.confirm_delete")
-		}
-		enterLabel := m.t("tui.footer.enter_zone_action")
-		switch m.taskFocus {
-		case taskFocusActivity:
-			enterLabel = m.t("tui.footer.open_comment_activity")
-		case taskFocusSubtasks:
-			enterLabel = m.t("tui.footer.open_subtask")
-		}
 		escLabel := m.escBack()
 		if len(m.taskViewStack) > 0 {
 			escLabel = footerToken{key: "esc", label: m.t("tui.footer.back_parent")}
 		}
-		return []footerToken{
+		tokens := []footerToken{
 			{key: "e", label: m.t("tui.footer.edit"), primary: true},
 			{key: "n", label: m.t("tui.footer.sub_task"), primary: true},
 			{key: "f", label: m.t("tui.footer.focus_description"), primary: true},
@@ -331,12 +344,34 @@ func (m Model) footerTokens() []footerToken {
 			{key: "tab", label: m.t("tui.footer.zone")},
 			{key: "j/k", label: m.t("tui.footer.scroll")},
 			{key: "b", label: m.t("tui.footer.blockers")},
-			{key: "d", label: deleteLabel, primary: m.taskDeletePendingID != 0},
-			{key: "enter", label: enterLabel},
-			{key: "r", label: m.t("tui.footer.refresh")},
+		}
+		// `d` (delete) only fires while the form column owns focus —
+		// handleTaskViewKey gates it on taskFocusForm so the same key in
+		// the activity/subtasks zones belongs to per-comment / per-subtask
+		// navigation. Advertise it only in the focus state that acts.
+		if m.taskFocus == taskFocusForm {
+			deleteLabel := m.t("tui.footer.arm_delete")
+			if m.taskDeletePendingID != 0 {
+				deleteLabel = m.t("tui.footer.confirm_delete")
+			}
+			tokens = append(tokens, footerToken{key: "d", label: deleteLabel, primary: m.taskDeletePendingID != 0})
+		}
+		// Enter is a no-op while the form column owns focus (handleTaskViewKey
+		// only binds Enter for activity → open comment, subtasks → drill in).
+		// Surface it only where it acts so the footer never implies a
+		// bare-Enter action on the form zone.
+		switch m.taskFocus {
+		case taskFocusActivity:
+			tokens = append(tokens, footerToken{key: "enter", label: m.t("tui.footer.open_comment_activity")})
+		case taskFocusSubtasks:
+			tokens = append(tokens, footerToken{key: "enter", label: m.t("tui.footer.open_subtask")})
+		}
+		tokens = append(tokens,
+			footerToken{key: "r", label: m.t("tui.footer.refresh")},
 			escLabel,
 			m.helpToken(),
-		}
+		)
+		return tokens
 	case m.taskScreen == taskScreenCreate:
 		return []footerToken{
 			{key: "ctrl+s", label: m.t("tui.footer.create"), primary: true},
@@ -359,14 +394,32 @@ func (m Model) footerTokens() []footerToken {
 			{key: "q", label: m.t("tui.footer.quit")},
 		}
 	case m.entityScreen == entityScreenView:
-		return []footerToken{
+		// Kind-aware action row: every entity supports edit-in-editor /
+		// scroll / refresh / back, but the destructive + secondary verbs
+		// are gated by the handler (entity_screen.go). `p` (skill picker)
+		// is persona-only; `a` (set default) is template-only; `d` is a
+		// real delete for law/skill/persona but a no-op status hint for
+		// template, so it is dropped there. Advertising only the valid
+		// keys keeps the footer from pointing at no-ops.
+		tokens := []footerToken{
 			{key: "e", label: m.t("tui.footer.edit_in_editor"), primary: true},
-			{key: "d", label: m.t("tui.footer.arm_delete")},
-			{key: "p", label: m.t("tui.footer.skills_persona")},
-			{key: "j/k", label: m.t("tui.footer.scroll")},
-			{key: "r", label: m.t("tui.footer.refresh")},
-			m.escBack(),
 		}
+		if m.entityForm.kind != entityKindTemplate {
+			tokens = append(tokens, footerToken{key: "d", label: m.t("tui.footer.arm_delete")})
+		}
+		if m.entityForm.kind == entityKindPersona {
+			tokens = append(tokens, footerToken{key: "p", label: m.t("tui.footer.skills_persona")})
+		}
+		if m.entityForm.kind == entityKindTemplate {
+			tokens = append(tokens, footerToken{key: "a", label: m.t("tui.footer.default")})
+		}
+		tokens = append(tokens,
+			footerToken{key: "j/k", label: m.t("tui.footer.scroll")},
+			footerToken{key: "M", label: m.t("tui.footer.toggle_markdown")},
+			footerToken{key: "r", label: m.t("tui.footer.refresh")},
+			m.escBack(),
+		)
+		return tokens
 	case m.entityScreen == entityScreenSkillPicker:
 		return []footerToken{
 			{key: "space", label: m.t("tui.footer.toggle"), primary: true},
@@ -417,6 +470,7 @@ func (m Model) footerTokens() []footerToken {
 		if m.projectFocus == projectFocusActivity {
 			tokens = append(tokens,
 				footerToken{key: "j/k", label: m.t("tui.footer.scroll")},
+				footerToken{key: "enter", label: m.t("tui.footer.open_comment_activity")},
 				footerToken{key: "pgup/pgdn", label: m.t("tui.footer.page")},
 				footerToken{key: "g/G", label: m.t("tui.footer.top_bottom")},
 			)
@@ -428,10 +482,18 @@ func (m Model) footerTokens() []footerToken {
 		)
 		return tokens
 	case m.sub == subPlans && m.planNetworkOpen:
+		// Enter is row-type-aware in handlePlanNetworkKey: on a task card
+		// it opens the task, on a wave header it toggles collapse/expand.
+		// Label it for whichever row the cursor is on so the hint never
+		// promises "open" while the cursor sits on a wave header.
+		enterLabel := m.t("tui.footer.toggle_wave")
+		if m.planNetworkCursorOnTaskRow() {
+			enterLabel = m.t("tui.footer.open")
+		}
 		return []footerToken{
 			{key: "c", label: m.t("tui.footer.assign"), primary: true},
 			{key: "e", label: m.t("tui.footer.edit_goal"), primary: true},
-			{key: "enter", label: m.t("tui.footer.open"), primary: true},
+			{key: "enter", label: enterLabel, primary: true},
 			{key: "j/k", label: m.t("tui.footer.move")},
 			{key: "space", label: m.t("tui.footer.toggle_wave")},
 			{key: "h/l", label: m.t("tui.footer.collapse_expand")},

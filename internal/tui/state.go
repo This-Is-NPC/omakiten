@@ -504,8 +504,17 @@ type Model struct {
 	// projectActivityScroll is the line offset of the project-view
 	// activity feed viewport. j/k/pgup/pgdn nudge it while the activity
 	// panel owns focus; the form + dashboard zones are not scroll-windowed
-	// (they draw a full fixed body), so the scroll keys no-op there.
+	// (they draw a full fixed body), so the scroll keys no-op there. The
+	// per-card cursor (projectActivityCursor) drives the offset so the
+	// focused card stays in view; the raw line offset survives pgup/pgdn.
 	projectActivityScroll int
+
+	// projectActivityCursor is the index into m.projectActivity of the
+	// selected card; -1 means "no card selected" and disables the
+	// focused-border styling. j/k/arrow move it by card (mirroring
+	// activityCursor for the task feed); the scroll offset auto-follows so
+	// the selected project/universal comment stays inside the viewport.
+	projectActivityCursor int
 
 	// projectDescription caches the current project's description body,
 	// fetched (alongside the activity feed) by refreshProjectSummary via
@@ -588,6 +597,12 @@ type Model struct {
 	// user lands back on the same card.
 	commentScreenOpen bool
 	commentScreenID   int64
+	// commentScreenFromProject marks that the open comment detail was
+	// launched from the project-view activity feed (project/universal scope)
+	// rather than the task activity panel. The detail lookup (activeComment)
+	// reads m.projectActivity instead of the task feed when set, and esc
+	// restores the project activity cursor rather than the task cursor.
+	commentScreenFromProject bool
 	// commentScreen owns the scroll offset and grid build state for the
 	// dedicated full-width comment view; opened via Enter on a focused
 	// comment in the activity feed. The Model resets on each open via

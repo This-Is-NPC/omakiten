@@ -6,6 +6,7 @@ import (
 	"omakiten/internal/app"
 	"omakiten/internal/domain"
 	"omakiten/internal/tui/components/detailscreen"
+	"omakiten/internal/tui/components/scrollwindow"
 	"omakiten/internal/tui/components/viewport"
 )
 
@@ -29,6 +30,7 @@ func (m *Model) openProjectView() {
 	m.sub = subProjectView
 	m.projectFocus = projectFocusForm
 	m.projectActivityScroll = 0
+	m.projectActivityCursor = -1
 	m.projectFormScreenOpen = false
 	m.projectFormScreen = detailscreen.New(0)
 	if err := m.refreshProjectSummary(); err != nil {
@@ -178,11 +180,31 @@ func (m *Model) handleProjectKey(msg tea.KeyMsg) bool {
 	case "f":
 		m.openProjectFormScreen()
 		return true
+	case "enter":
+		// Enter opens the focused project/universal comment in the shared
+		// full-width comment detail overlay. No-op off the activity zone or
+		// on a system-event row (no body to read).
+		if m.projectFocus == projectFocusActivity {
+			m.openProjectCommentScreen()
+		}
+		return true
 	case "j", "down":
-		m.scrollProjectFocused(1)
+		// In the activity zone, j/k move the selection by comment card
+		// (mirroring the task activity panel) and the scroll follows; the
+		// form + dashboard zones have no cursor, so they fall through to the
+		// shared line-scroll no-op.
+		if m.projectFocus == projectFocusActivity {
+			m.moveProjectActivityCursor(1)
+		} else {
+			m.scrollProjectFocused(1)
+		}
 		return true
 	case "k", "up":
-		m.scrollProjectFocused(-1)
+		if m.projectFocus == projectFocusActivity {
+			m.moveProjectActivityCursor(-1)
+		} else {
+			m.scrollProjectFocused(-1)
+		}
 		return true
 	case "pgdown", "pgdn":
 		m.scrollProjectFocused(m.projectActivityViewportLines())
@@ -191,10 +213,22 @@ func (m *Model) handleProjectKey(msg tea.KeyMsg) bool {
 		m.scrollProjectFocused(-m.projectActivityViewportLines())
 		return true
 	case "g", "home":
-		m.setProjectFocusedScroll(0)
+		// In the activity zone, jump the SELECTION to the first card (scroll
+		// follows); other zones snap their raw line offset to the top.
+		if m.projectFocus == projectFocusActivity && len(m.projectActivity) > 0 {
+			m.projectActivityCursor = 0
+			m.syncProjectActivityScrollToCursor()
+		} else {
+			m.setProjectFocusedScroll(0)
+		}
 		return true
 	case "G", "end":
-		m.setProjectFocusedScroll(m.projectFocusedScrollMax())
+		if m.projectFocus == projectFocusActivity && len(m.projectActivity) > 0 {
+			m.projectActivityCursor = len(m.projectActivity) - 1
+			m.syncProjectActivityScrollToCursor()
+		} else {
+			m.setProjectFocusedScroll(m.projectFocusedScrollMax())
+		}
 		return true
 	case "esc":
 		// Leave the project view the same way ctrl+o does: pop the back
@@ -225,11 +259,154 @@ func (m *Model) handleProjectKey(msg tea.KeyMsg) bool {
 // cycleProjectFocus rotates the project-view focus through
 // form → dashboard → activity by delta steps, wrapping at both ends.
 // delta=+1 for Tab, delta=-1 for Shift+Tab. Mirrors cycleTaskField.
+//
+// Entering the activity zone auto-anchors the cursor onto the first card
+// (so the first j/k always moves a visible selection, like applyTaskFocus
+// does for the task feed); leaving it clears the cursor so the panel stops
+// drawing a focused border while another zone owns the keys.
 func (m *Model) cycleProjectFocus(delta int) {
 	const n = 3
 	cur := int(m.projectFocus)
 	cur = (cur + delta + n) % n
 	m.projectFocus = projectScreenFocus(cur)
+	if m.projectFocus == projectFocusActivity {
+		if m.projectActivityCursor < 0 && len(m.projectActivity) > 0 {
+			m.projectActivityCursor = 0
+			m.syncProjectActivityScrollToCursor()
+		}
+	} else {
+		m.projectActivityCursor = -1
+	}
+}
+
+// moveProjectActivityCursor advances the project activity selection by delta
+// cards and scrolls so the focused card stays inside the viewport. Mirrors
+// moveActivityCursor for the task feed: wraps from "no selection" (-1) to the
+// first or last card by direction, and re-anchors onto the nearest visible
+// edge when pgup/pgdn has scrolled the cursor off-screen so the page-scroll
+// work is not thrown away.
+func (m *Model) moveProjectActivityCursor(delta int) {
+	rows := len(m.projectActivity)
+	if rows == 0 {
+		m.projectActivityCursor = -1
+		return
+	}
+	if m.projectActivityCursor < 0 {
+		if delta > 0 {
+			m.projectActivityCursor = 0
+		} else {
+			m.projectActivityCursor = rows - 1
+		}
+		m.syncProjectActivityScrollToCursor()
+		return
+	}
+	if first, last, ok := m.visibleProjectActivityCardRange(); ok && (m.projectActivityCursor < first || m.projectActivityCursor > last) {
+		if m.projectActivityCursor < first {
+			m.projectActivityCursor = first
+		} else {
+			m.projectActivityCursor = last
+		}
+		m.syncProjectActivityScrollToCursor()
+		return
+	}
+	next := m.projectActivityCursor + delta
+	if next < 0 {
+		next = 0
+	}
+	if next >= rows {
+		next = rows - 1
+	}
+	m.projectActivityCursor = next
+	m.syncProjectActivityScrollToCursor()
+}
+
+// visibleProjectActivityCardRange returns the inclusive [first, last] card
+// indices whose start line falls inside the current project activity viewport
+// window. ok=false when the feed is empty or no card start sits in the visible
+// band. Mirrors visibleActivityCardRange but reads the raw
+// projectActivityScroll offset instead of the linelist.
+func (m Model) visibleProjectActivityCardRange() (int, int, bool) {
+	if len(m.projectActivity) == 0 {
+		return 0, 0, false
+	}
+	ranges := cardLineRanges(m.activityRowsForRenderWithCursor(m.projectActivity, m.projectActivityCursor))
+	viewport := m.projectActivityViewportLines()
+	if viewport <= 0 {
+		return 0, 0, false
+	}
+	top := m.projectActivityScroll
+	bottom := top + viewport
+	first, last := -1, -1
+	for i, r := range ranges {
+		if r.start >= top && r.start < bottom {
+			if first < 0 {
+				first = i
+			}
+			last = i
+		}
+	}
+	if first < 0 {
+		return 0, 0, false
+	}
+	return first, last, true
+}
+
+// syncProjectActivityScrollToCursor positions projectActivityScroll (a LINE
+// offset) so the focused card's body is visible inside the viewport. Delegates
+// the slice math to scrollwindow.Follow with HintsSplit so the hint-row
+// reservation matches what renderScrollWindowSplit consumes. Mirrors
+// syncActivityScrollToCursor but operates on the plain int offset (the project
+// feed has no linelist component). Tall cards top-align so the header stays
+// reachable.
+func (m *Model) syncProjectActivityScrollToCursor() {
+	if m.projectActivityCursor < 0 || m.projectActivityCursor >= len(m.projectActivity) {
+		return
+	}
+	cards := m.activityRowsForRenderWithCursor(m.projectActivity, m.projectActivityCursor)
+	body := flattenActivityCards(cards)
+	ranges := cardLineRanges(cards)
+	viewport := m.projectActivityViewportLines()
+	if viewport <= 0 || len(body) <= viewport {
+		m.projectActivityScroll = 0
+		return
+	}
+	r := ranges[m.projectActivityCursor]
+	cardTop := r.start
+	cardLast := r.start + r.height - 1
+	heights := make([]int, len(body))
+	for i := range heights {
+		heights[i] = 1
+	}
+	scroll := scrollwindow.Follow(m.projectActivityScroll, cardLast, heights, viewport, scrollwindow.HintsSplit)
+	// Top-align tall cards: Follow only ADVANCES scroll to fit the last
+	// line, so snap back to the card's first line when it overshot the
+	// header (same UX rule as syncActivityScrollToCursor).
+	if scroll > cardTop {
+		scroll = cardTop
+	}
+	if scroll < 0 {
+		scroll = 0
+	}
+	m.projectActivityScroll = scroll
+}
+
+// openProjectCommentScreen opens the shared full-width comment detail overlay
+// for the project/universal comment under the project activity cursor. System
+// events have no body to read, so Enter ignores them. Sets
+// commentScreenFromProject so the detail lookup reads m.projectActivity and
+// esc restores the project activity cursor. Mirrors openCommentScreen.
+func (m *Model) openProjectCommentScreen() {
+	if m.projectActivityCursor < 0 || m.projectActivityCursor >= len(m.projectActivity) {
+		return
+	}
+	ev := m.projectActivity[m.projectActivityCursor]
+	if ev.EventType != domain.EventTypeComment {
+		return
+	}
+	m.commentScreenOpen = true
+	m.commentScreenFromProject = true
+	m.commentScreenID = ev.ID
+	m.commentScreen = detailscreen.New(0)
 }
 
 // scrollProjectFocused nudges the activity zone's scroll offset by delta

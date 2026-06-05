@@ -183,9 +183,25 @@ func (m Model) renderProjectDashboardPanel(focused bool, width int) string {
 // renderProjectActivityPanel renders the project-scoped activity feed:
 // the same comment/event cards the task feed uses, fed from
 // m.projectActivity (project + universal scope, pinned-first). Read-only
-// in v1 — no embedded comment input, no per-card cursor; long feeds
-// scroll line-by-line via projectActivityScroll. focused flips the kicker
-// accent to mark the active zone.
+// for mutation keys — no embedded comment input — but navigable by card:
+// projectActivityCursor selects the focused card (accent border) and Enter
+// opens its full comment detail. Long feeds scroll by card via
+// projectActivityScroll. focused flips the kicker accent to mark the active
+// zone.
+//
+// The cards are rendered through the SAME helpers the task feed uses
+// (renderCommentCardSelected / renderSystemEventCard) at m.commentCardWidth().
+//
+// Border containment: the prior panel wrapped the cards in m.styles.panel,
+// which adds Padding(0,2) ON TOP of its border. A card's visible width is
+// commentCardWidth()+2 == activityPanelWidth-4, but the padded panel only
+// offered activityPanelWidth-6 of inner content area, so lipgloss clipped
+// each card's right border edge — the "broken borders" the user reported.
+// The panel here drops the horizontal padding and sizes its content area to
+// the exact card visible width, so every card (long bodies, pinned, tag
+// chips) sits inside the rail with its single border intact. The border row
+// is kept (not swapped for a bare indentBlock) so the activity rail stays
+// row-aligned with the framed metadata panel in the side-by-side layout.
 func (m Model) renderProjectActivityPanel(focused bool) string {
 	events := m.projectActivity
 	header := m.styles.kickerCount(m.t("tui.kicker.activity"), len(events))
@@ -197,7 +213,7 @@ func (m Model) renderProjectActivityPanel(focused bool) string {
 	if len(events) == 0 {
 		lines = append(lines, "", m.styles.hint.Render(m.t("tui.empty.project_activity")))
 	} else {
-		cards := m.activityRowsForRender(events)
+		cards := m.activityRowsForRenderWithCursor(events, m.projectActivityCursor)
 		body := flattenActivityCards(cards)
 		heights := make([]int, len(body))
 		for i := range heights {
@@ -206,7 +222,11 @@ func (m Model) renderProjectActivityPanel(focused bool) string {
 		lines = append(lines, m.renderScrollWindowSplit(body, heights, m.projectActivityScroll, m.projectActivityViewportLines())...)
 	}
 
-	return m.styles.panel.Width(m.activityPanelWidth() - 2).Render(strings.Join(lines, "\n"))
+	// Content area == card visible width (commentCardWidth()+2) with zero
+	// horizontal padding so the card border never tips past the panel's
+	// inner edge. Vertical padding stays 0; the kicker already leads.
+	panel := m.styles.panel.Padding(0, 0).Width(m.commentCardWidth() + 2)
+	return panel.Render(strings.Join(lines, "\n"))
 }
 
 // projectActivityViewportLines is the row budget the project-view

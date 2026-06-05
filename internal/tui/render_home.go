@@ -7,6 +7,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 
 	"omakiten/internal/app"
 	"omakiten/internal/domain"
@@ -199,6 +200,23 @@ func (m Model) homeViewportRows() int {
 // geometry — the prior inline version lived in renderHome only and
 // the count-based scroll bypassed the question entirely.
 func (m Model) homeCardSizes() (cardWidth, cardContent int) {
+	columnInner := m.homeColumnInner()
+	cardWidth = columnInner - 2
+	cardContent = cardWidth - 2
+	if cardContent < 16 {
+		cardContent = 16
+	}
+	return cardWidth, cardContent
+}
+
+// homeColumnInner returns the inner width of the Home project column.
+// The min/max band keeps the column readable on wide terminals, but the
+// upper bound is hard-capped at the available width so a narrow terminal
+// (narrower than homeColumnInnerMin) never floors the column above what
+// fits — the prior unconditional min=40 let the column + its border tip
+// past the terminal edge. Centralised so the renderer and the height-aware
+// scroll sync size cards against the exact same geometry.
+func (m Model) homeColumnInner() int {
 	available := m.availableWidth()
 	columnInner := available - 2
 	if columnInner > homeColumnInnerMax {
@@ -207,12 +225,16 @@ func (m Model) homeCardSizes() (cardWidth, cardContent int) {
 	if columnInner < homeColumnInnerMin {
 		columnInner = homeColumnInnerMin
 	}
-	cardWidth = columnInner - 2
-	cardContent = cardWidth - 2
-	if cardContent < 16 {
-		cardContent = 16
+	// Never exceed what the terminal can actually show: when the terminal is
+	// narrower than the min floor, the column shrinks with it (bounded
+	// fallback) instead of overflowing.
+	if maxInner := available - 2; columnInner > maxInner {
+		if maxInner < 1 {
+			maxInner = 1
+		}
+		columnInner = maxInner
 	}
-	return cardWidth, cardContent
+	return columnInner
 }
 
 // syncHomeScroll keeps m.homePicker.Scroll aligned so the cursor
@@ -247,14 +269,7 @@ func (m *Model) syncHomeScroll() {
 // header, internal cards — is identical. wrapBadges is shared with task-
 // card rendering so chip alignment matches across surfaces.
 func (m Model) renderHome() string {
-	available := m.availableWidth()
-	columnInner := available - 2
-	if columnInner > homeColumnInnerMax {
-		columnInner = homeColumnInnerMax
-	}
-	if columnInner < homeColumnInnerMin {
-		columnInner = homeColumnInnerMin
-	}
+	columnInner := m.homeColumnInner()
 	cardWidth, cardContent := m.homeCardSizes()
 
 	headerText := fmt.Sprintf("// PROJECTS · %d", len(m.homeProjects))
@@ -347,7 +362,12 @@ func (m Model) renderProjectBadges(project domain.Project, maxWidth int) string 
 		if label == "" {
 			label = tag.Name
 		}
-		badges = append(badges, m.styles.badgeInfo.Render(strings.ToUpper(label)))
+		// Bound a single tag label to the card content width so an overlong
+		// or unbroken tag name can't render a chip wider than the card —
+		// wrapBadges only line-breaks BETWEEN badges, it never truncates one.
+		// Reserve 2 cells for the badge's horizontal padding.
+		label = truncateText(strings.ToUpper(label), maxWidth-2)
+		badges = append(badges, m.styles.badgeInfo.Render(label))
 	}
 	return wrapBadges(badges, maxWidth)
 }
@@ -365,8 +385,13 @@ func truncatePath(path string, width int) string {
 	parts := strings.Split(path, "/")
 	tail := parts[len(parts)-1]
 	if lipgloss.Width(tail)+2 > width {
-		// Even the leaf is too wide — head-truncate it.
-		return "…" + tail[len(tail)-(width-1):]
+		// Even the leaf is too wide — head-truncate it. The cut walks
+		// runes from the end (not byte index) and tracks accumulated
+		// visible cell width, reserving one cell for the leading
+		// ellipsis. A byte slice here would split a multibyte glyph
+		// mid-rune (invalid UTF-8) and miscount width on wide glyphs,
+		// defeating the bound.
+		return "…" + tailByWidth(tail, width-1)
 	}
 	for i := len(parts) - 2; i >= 0; i-- {
 		candidate := "…/" + strings.Join(parts[i:], "/")
@@ -375,6 +400,33 @@ func truncatePath(path string, width int) string {
 		}
 	}
 	return "…/" + tail
+}
+
+// tailByWidth returns the trailing run of s whose visible cell width is at
+// most maxWidth, cut on a rune boundary. It mirrors the cell-accounting in
+// truncateText (ansi.StringWidth per rune) but keeps the END of the string
+// instead of the head — the leaf directory name is the recognisable part.
+// Walking runes (never byte slicing) guarantees the result is valid UTF-8
+// and never exceeds maxWidth display cells even when s contains wide glyphs.
+func tailByWidth(s string, maxWidth int) string {
+	if maxWidth <= 0 {
+		return ""
+	}
+	if ansi.StringWidth(s) <= maxWidth {
+		return s
+	}
+	runes := []rune(s)
+	width := 0
+	start := len(runes)
+	for i := len(runes) - 1; i >= 0; i-- {
+		rw := ansi.StringWidth(string(runes[i]))
+		if width+rw > maxWidth {
+			break
+		}
+		width += rw
+		start = i
+	}
+	return string(runes[start:])
 }
 
 func (m Model) renderHomeEmptyHint() string {

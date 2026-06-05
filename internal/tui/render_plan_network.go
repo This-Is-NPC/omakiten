@@ -500,6 +500,24 @@ func (m *Model) planNetworkBuildRows() []planNetworkRow {
 	return rows
 }
 
+// planNetworkCursorOnTaskRow reports whether the plan-network cursor
+// currently sits on a task card (vs. a wave header). The footer uses
+// it to describe Enter accurately: Enter on a task row opens the task,
+// while Enter on a wave header toggles collapse/expand (see the
+// "o", "enter" arm of handlePlanNetworkKey). Value receiver — it
+// projects rows directly via planNetworkBuildData (SkipPeek +
+// SkipCritical, the cheap shape used for cursor math) without writing
+// the pointer-receiver row cache, so calling it from the render path
+// never mutates model state.
+func (m Model) planNetworkCursorOnTaskRow() bool {
+	rows := m.planNetworkBuildData(planNetworkBuildOpts{SkipPeek: true, SkipCritical: true}).Rows
+	idx := m.planNetworkCursor.Cursor()
+	if idx < 0 || idx >= len(rows) {
+		return false
+	}
+	return rows[idx].Kind == planRowTaskCard
+}
+
 // planNetworkRowsCacheEntry holds the cached row projection plus the
 // fingerprint that produced it. valid stays false until the first
 // build so a fresh model never hands out a stale empty slice.

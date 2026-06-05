@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"strconv"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -59,21 +60,15 @@ func (m *Model) syncGraphScroll(sel []int, totalLines int) {
 
 // graphViewportRows returns how many DAG lines fit in the graph panel viewport.
 // Returns 0 when the terminal is too small to scroll.
+//
+// Sources its chrome from the shared `panelViewportRows` helper so the budget
+// tracks the live screen header / status / nav strip instead of a hard-coded
+// guess. The prior hand-rolled `chrome := 12` assumed a 5-line header and a
+// +1 status line; both undercounted the real chrome, so the graph
+// over-rendered and its bottom panel border fell off the terminal. Panel
+// chrome here = 2 borders + 2 header rows (kicker + blank) = 4.
 func (m Model) graphViewportRows() int {
-	if m.height <= 0 {
-		return 0
-	}
-	// 5 screen header + 1 leading blank + 2 footer + 2 panel borders
-	// + 2 panel header rows (kicker + blank) = 12.
-	chrome := 12
-	if m.status != "" {
-		chrome++
-	}
-	rows := m.height - chrome
-	if rows < 4 {
-		return 0
-	}
-	return rows
+	return m.panelViewportRows(4)
 }
 
 func (m Model) renderGraph() string {
@@ -90,22 +85,54 @@ func (m Model) renderGraph() string {
 	lines := buildDAGLinesSorted(m.dependencies, m.tasks, m.graphRootLess())
 	sel := dagSelectableIndices(lines)
 
+	// Defensively guard the cursor index against the current selectable
+	// count. refresh() clamps graphCursor via clampGraphCursor, but this is
+	// the value-receiver render path: a stale cursor reassigned between
+	// clamps must never index past sel and panic. Clamp into range here so
+	// the renderer is self-contained.
 	cursorLineIdx := -1
 	if len(sel) > 0 {
-		cursorLineIdx = sel[m.graphCursor.Cursor()]
+		cursor := m.graphCursor.Cursor()
+		if cursor < 0 {
+			cursor = 0
+		}
+		if cursor >= len(sel) {
+			cursor = len(sel) - 1
+		}
+		cursorLineIdx = sel[cursor]
 	}
 
+	// Bound every DAG row to the panel body width before styling, mirroring
+	// render_table.go's contentWidth derivation. Without this the raw DAG
+	// text (deep indentation + long titles + diamond back-refs) flows past
+	// the panel border, pushing the right edge off-screen. truncateText
+	// trims from the right, so the leading "#<id>" prefix stays visible and
+	// users can still identify the task even when its title is clipped.
+	contentWidth := m.availableWidth() - 4
 	dataRows := make([]string, len(lines))
 	for i, l := range lines {
+		text := truncateText(l.text, contentWidth)
 		if i == cursorLineIdx {
-			dataRows[i] = m.styles.hintAccent.Render(l.text)
+			dataRows[i] = m.styles.hintAccent.Render(text)
 		} else {
-			dataRows[i] = l.text
+			dataRows[i] = text
 		}
 	}
 
+	// Bound the kicker/header row to the same contentWidth the DAG rows use:
+	// a long translated dependency_graph label could otherwise exceed the
+	// panel on a narrow terminal and push the right edge off-screen.
+	// Truncate the raw label BEFORE kickerCount styles it (mirrors the DAG
+	// rows, which truncate l.text before styling) so the cut never lands
+	// inside an ANSI escape sequence. The "// " prefix + " · N" suffix
+	// kickerCount adds are short and fixed; reserve room for them so the
+	// composed row stays within contentWidth on a narrow terminal.
+	kickerLabel := m.t("tui.kicker.dependency_graph")
+	if labelBudget := contentWidth - len("//  · ") - len(strconv.Itoa(len(m.dependencies))); labelBudget > 0 {
+		kickerLabel = truncateText(kickerLabel, labelBudget)
+	}
 	rows := []string{
-		m.styles.kickerCount(m.t("tui.kicker.dependency_graph"), len(m.dependencies)),
+		m.styles.kickerCount(kickerLabel, len(m.dependencies)),
 		"",
 	}
 	rows = append(rows, m.sliceScrollRows(dataRows, m.graphList.Scroll(), m.graphViewportRows())...)

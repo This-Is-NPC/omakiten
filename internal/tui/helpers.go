@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 
 	"omakiten/internal/tui/components/gridtable"
 )
@@ -15,19 +16,42 @@ func plural(n int, singular, plural string) string {
 	return plural
 }
 
+// truncateText caps s to a max VISIBLE cell budget, not a rune count.
+// A CJK ideograph or emoji occupies two terminal cells, so the prior
+// rune-count cut let a string with wide glyphs render at up to twice its
+// budget and tip past the panel edge. Width is measured with
+// ansi.StringWidth (display cells) and the cut walks runes while tracking
+// accumulated cell width, reserving one cell for the trailing ellipsis so
+// the result never exceeds max cells.
 func truncateText(s string, max int) string {
-	runes := []rune(s)
 	if max <= 0 {
 		return ""
 	}
-	if len(runes) <= max {
+	if ansi.StringWidth(s) <= max {
 		return s
 	}
-	return string(runes[:max-1]) + "…"
+	// Reserve one cell for the ellipsis; accumulate runes until adding the
+	// next would push the visible width past the remaining budget.
+	budget := max - 1
+	width := 0
+	var b strings.Builder
+	for _, r := range s {
+		rw := ansi.StringWidth(string(r))
+		if width+rw > budget {
+			break
+		}
+		b.WriteRune(r)
+		width += rw
+	}
+	return b.String() + "…"
 }
 
 // wrapWords breaks s into lines where the first line is constrained to firstWidth
-// and subsequent lines to restWidth. It tries to keep whole words.
+// and subsequent lines to restWidth. It tries to keep whole words, but a single
+// word wider than the active limit is HARD-WRAPPED by visible cell width so an
+// unbroken token (a long URL, a path with no spaces, a run of CJK) can never
+// produce a line that overflows the column. Widths are measured in display cells
+// (lipgloss.Width) so wide glyphs are split at the correct cell boundary.
 func wrapWords(s string, firstWidth, restWidth int) []string {
 	if s == "" {
 		return []string{""}
@@ -37,21 +61,92 @@ func wrapWords(s string, firstWidth, restWidth int) []string {
 		return []string{""}
 	}
 	var lines []string
-	current := words[0]
-	for _, word := range words[1:] {
-		limit := firstWidth
+	current := ""
+	limitFor := func() int {
 		if len(lines) > 0 {
-			limit = restWidth
+			return restWidth
+		}
+		return firstWidth
+	}
+	flush := func() {
+		lines = append(lines, current)
+		current = ""
+	}
+	for _, word := range words {
+		limit := limitFor()
+		// A word that cannot fit on a line of its own gets hard-wrapped into
+		// fragments before the normal packing resumes. Fragments are sized to
+		// the active limit (firstWidth on the first line, restWidth after) so
+		// each emitted line stays within its column budget.
+		if lipgloss.Width(word) > limit {
+			if current != "" {
+				flush()
+			}
+			// `limit` was captured BEFORE the flush above, so it still holds
+			// the width of the line this fragment run STARTS on (firstWidth
+			// when this token opens a fresh first line, restWidth otherwise).
+			// Re-reading limitFor() here would always yield restWidth once the
+			// flush pushed a line, under-filling firstWidth. The first fragment
+			// fills `limit`; every fragment after it lands on a subsequent line
+			// so it is sized to restWidth.
+			frags := hardWrapToken(word, limit)
+			current = frags[0]
+			flush()
+			if rest := strings.Join(frags[1:], ""); rest != "" {
+				for _, frag := range hardWrapToken(rest, restWidth) {
+					current = frag
+					flush()
+				}
+			}
+			continue
+		}
+		if current == "" {
+			current = word
+			continue
 		}
 		if lipgloss.Width(current+" "+word) <= limit {
 			current += " " + word
 		} else {
-			lines = append(lines, current)
+			flush()
 			current = word
 		}
 	}
-	lines = append(lines, current)
+	if current != "" {
+		lines = append(lines, current)
+	}
+	if len(lines) == 0 {
+		return []string{""}
+	}
 	return lines
+}
+
+// hardWrapToken splits a single unbroken token into fragments each at most
+// width visible cells wide, cutting on cell boundaries so a wide glyph is
+// never split across two lines. Used by wrapWords to contain overlong tokens.
+func hardWrapToken(token string, width int) []string {
+	if width < 1 {
+		width = 1
+	}
+	if lipgloss.Width(token) <= width {
+		return []string{token}
+	}
+	var frags []string
+	var b strings.Builder
+	cur := 0
+	for _, r := range token {
+		rw := lipgloss.Width(string(r))
+		if cur+rw > width && cur > 0 {
+			frags = append(frags, b.String())
+			b.Reset()
+			cur = 0
+		}
+		b.WriteRune(r)
+		cur += rw
+	}
+	if b.Len() > 0 {
+		frags = append(frags, b.String())
+	}
+	return frags
 }
 
 func renderFixedBox(lines []string, width int, border lipgloss.Style) string {

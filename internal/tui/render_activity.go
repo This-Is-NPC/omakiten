@@ -222,9 +222,18 @@ func (m Model) activityRowsForRender(events []domain.Event) []string {
 // short-circuits when warm. Kept separate so the cache hit path is a
 // pure map read with zero card-render work.
 func (m Model) activityRowsForRenderUncached(events []domain.Event) []string {
+	return m.activityRowsForRenderWithCursor(events, m.activityCursor)
+}
+
+// activityRowsForRenderWithCursor renders the event cards with an explicit
+// focused index instead of reading m.activityCursor. The task feed passes
+// m.activityCursor (via activityRowsForRenderUncached); the project-view
+// activity feed passes m.projectActivityCursor so the two feeds draw their
+// own focused-card accent border without the task cursor leaking across.
+func (m Model) activityRowsForRenderWithCursor(events []domain.Event, cursor int) []string {
 	rows := make([]string, 0, len(events))
 	for i, ev := range events {
-		focused := i == m.activityCursor
+		focused := i == cursor
 		if ev.EventType == domain.EventTypeComment {
 			rows = append(rows, m.renderCommentCardSelected(eventToComment(ev), focused))
 			continue
@@ -253,9 +262,13 @@ func (m *Model) cachedActivityRowsForRender(events []domain.Event) []string {
 // activityRowsForRenderKey fingerprints the inputs activityRowsForRender
 // depends on: cursor (changes the focused-card accent border), commentCard
 // content width (changes wrap), and per-event scope (entity_type +
-// entity_id) + id + type + body length + tag identities. The body length is
-// a cheap proxy that catches edit-in-place mutations without hashing the full
-// body string. Tags are folded as (len, then sorted ids) so a swap (remove
+// entity_id) + id + type + body content + tag identities. The full body
+// content (not just its length) is folded so an edit-in-place that keeps the
+// same character count — e.g. swapping "abc" for "xyz" — still bumps the key
+// and the activity card re-renders the new text instead of reusing the stale
+// cached card. writeString's null separator keeps adjacent fields
+// unambiguous, so deterministic content folding does not widen the key into
+// spurious misses. Tags are folded as (len, then sorted ids) so a swap (remove
 // tag 3, add tag 5 — same length) still bumps the key while a reorder (tags
 // returned in different order from the DB) does not.
 //
@@ -273,7 +286,7 @@ func (m Model) activityRowsForRenderKey(events []domain.Event) uint64 {
 		f.writeInt64(ev.EntityID)
 		f.writeInt64(ev.ID)
 		f.writeString(ev.EventType)
-		f.writeInt64(int64(len(ev.Body)))
+		f.writeString(ev.Body)
 		f.writeInt64(int64(len(ev.Tags)))
 		if n := len(ev.Tags); n > 0 {
 			ids := make([]int64, n)

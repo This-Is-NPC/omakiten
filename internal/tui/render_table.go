@@ -13,6 +13,11 @@ import (
 )
 
 func (m *Model) handleListKey(msg tea.KeyMsg) {
+	// Navigation bounds track the visible (filtered/sorted) table
+	// projection, not raw m.tasks — m.selected indexes the row the user
+	// actually sees, so a non-default table sort/filter can never carry
+	// the cursor onto a hidden task. See task #594.
+	rowCount := len(m.tableRows())
 	switch msg.String() {
 	case "up", "k":
 		if m.selected > 0 {
@@ -20,7 +25,7 @@ func (m *Model) handleListKey(msg tea.KeyMsg) {
 			m.syncTableScroll()
 		}
 	case "down", "j":
-		if m.selected < len(m.tasks)-1 {
+		if m.selected < rowCount-1 {
 			m.selected++
 			m.syncTableScroll()
 		}
@@ -34,8 +39,8 @@ func (m *Model) handleListKey(msg tea.KeyMsg) {
 	case "pgdown", "ctrl+d":
 		step := taskViewPageStep(m.tableViewportRows())
 		m.selected += step
-		if m.selected > len(m.tasks)-1 {
-			m.selected = len(m.tasks) - 1
+		if m.selected > rowCount-1 {
+			m.selected = rowCount - 1
 		}
 		if m.selected < 0 {
 			m.selected = 0
@@ -45,8 +50,8 @@ func (m *Model) handleListKey(msg tea.KeyMsg) {
 		m.selected = 0
 		m.syncTableScroll()
 	case "end", "G":
-		if len(m.tasks) > 0 {
-			m.selected = len(m.tasks) - 1
+		if rowCount > 0 {
+			m.selected = rowCount - 1
 			m.syncTableScroll()
 		}
 	case "enter":
@@ -100,7 +105,14 @@ func (m Model) renderTable() string {
 	dataRows := make([]string, 0, len(tasks))
 	for _, task := range tasks {
 		marker := m.cursorMarker(selectedID == task.ID)
-		dataRows = append(dataRows, fmt.Sprintf("%s %-4d %-11s %-8s %-5d %-9d %s", marker, task.ID, task.BucketKey, m.priorityLabel(task.Priority), m.dependencyCount(task.ID), m.commentCount(task.ID), truncateText(task.Title, titleWidth)))
+		// Cap the variable-width columns to their field budgets so an
+		// overlong bucket key or priority label can't push the fixed-width
+		// `%-11s`/`%-8s` cells past their slots and bleed into the title /
+		// past the panel edge. The title uses the visible-width truncateText
+		// so a wide-glyph or unbroken title stays inside its column too.
+		bucket := truncateText(task.BucketKey, 11)
+		prio := truncateText(m.priorityLabel(task.Priority), 8)
+		dataRows = append(dataRows, fmt.Sprintf("%s %-4d %-11s %-8s %-5d %-9d %s", marker, task.ID, bucket, prio, m.dependencyCount(task.ID), m.commentCount(task.ID), truncateText(task.Title, titleWidth)))
 	}
 
 	rows := []string{
@@ -118,9 +130,24 @@ func (m Model) renderTableCompactWith(tasks []domain.Task) string {
 	dataRows := make([]string, 0, len(tasks))
 	for _, task := range tasks {
 		marker := m.cursorMarker(selectedID == task.ID)
-		prefix := fmt.Sprintf("%s #%d %s %s ", marker, task.ID, task.BucketKey, m.priorityLabel(task.Priority))
-		budget := clampInt(width-lipgloss.Width(prefix), 8, width)
-		dataRows = append(dataRows, prefix+truncateText(task.Title, budget))
+		// Cap the bucket key + priority label so a long key/label can't blow
+		// the prefix past the compact width — once the prefix overflows the
+		// title budget clamps to its floor but the prefix itself still
+		// overflows. Bounding both keeps the whole row inside `width`.
+		bucket := truncateText(task.BucketKey, 12)
+		prio := truncateText(m.priorityLabel(task.Priority), 10)
+		prefix := fmt.Sprintf("%s #%d %s %s ", marker, task.ID, bucket, prio)
+		// Remaining cells after the prefix decide the title budget. When the
+		// prefix already consumes (nearly) the whole row — a tiny terminal or a
+		// long bounded prefix — there is no room for a title, so emit the
+		// prefix trimmed to the row width and skip the title rather than letting
+		// a floored budget push the row past `width`.
+		remaining := width - lipgloss.Width(prefix)
+		if remaining < 8 {
+			dataRows = append(dataRows, truncateText(strings.TrimRight(prefix, " "), width))
+			continue
+		}
+		dataRows = append(dataRows, prefix+truncateText(task.Title, remaining))
 	}
 	rows := []string{
 		m.styles.kickerCount(m.t("tui.kicker.tasks"), len(tasks)),
@@ -130,14 +157,24 @@ func (m Model) renderTableCompactWith(tasks []domain.Task) string {
 	return m.renderPanel(strings.Join(rows, "\n"))
 }
 
-// selectedTaskID resolves the currently-selected task id via m.tasks; used
-// by the table view to flag the matching row even when the visible list
-// has been re-sorted/filtered by view config.
+// tableRows returns the visible (filtered/sorted) table projection that
+// m.selected indexes into. Centralised so navigation bounds, the
+// highlight marker, Enter-open, and move all resolve against the exact
+// rows the user sees — never raw m.tasks. See task #594.
+func (m Model) tableRows() []domain.Task {
+	return m.applyTableView()
+}
+
+// selectedTaskID resolves the currently-selected task id from the visible
+// table projection; used by the table view to flag the highlighted row.
+// Indexing the projection (not raw m.tasks) keeps the marker on the row
+// the cursor actually sits on under a non-default table sort/filter.
 func (m Model) selectedTaskID() int64 {
-	if m.selected < 0 || m.selected >= len(m.tasks) {
+	rows := m.tableRows()
+	if m.selected < 0 || m.selected >= len(rows) {
 		return 0
 	}
-	return m.tasks[m.selected].ID
+	return rows[m.selected].ID
 }
 
 // priorityAllowSet returns nil when the configured slice is empty (meaning

@@ -62,14 +62,17 @@ func NewModel(ctx context.Context, project domain.ProjectContext, repos Reposito
 		tokenBadgeYellow: yellow,
 		tokenBadgeRed:    red,
 		entityKind:       entityKindLaw,
-		entityCursors:    map[entityKind]int{entityKindLaw: 0, entityKindPersona: 0, entityKindSkill: 0, entityKindTag: 0},
-		homePicker:       picker.New(picker.Single),
-		priorities:       priorities,
-		severities:       severities,
-		registry:         domain.NewEnumRegistry(priorityPairs, severityPairs),
-		markdown:         newMarkdownRenderer(tokensFromTheme(theme)),
-		markdownRendered: true,
-		notifications:    notifications.Notifications,
+		// -1 = "no project activity card selected" until the activity zone
+		// takes focus (mirrors activityCursor's -1 sentinel for the task feed).
+		projectActivityCursor: -1,
+		entityCursors:         map[entityKind]int{entityKindLaw: 0, entityKindPersona: 0, entityKindSkill: 0, entityKindTag: 0},
+		homePicker:            picker.New(picker.Single),
+		priorities:            priorities,
+		severities:            severities,
+		registry:              domain.NewEnumRegistry(priorityPairs, severityPairs),
+		markdown:              newMarkdownRenderer(tokensFromTheme(theme)),
+		markdownRendered:      true,
+		notifications:         notifications.Notifications,
 		// Pre-allocated style-by-kind-by-width cache; value-receiver
 		// render paths read + write through this so the
 		// lipgloss.Style.Width(N) allocation only fires once per
@@ -622,6 +625,7 @@ func (m *Model) applyRefreshAfterViewChange(r refreshAfterViewChangeMsg) {
 	m.invalidateBoardCaches()
 	m.rebuildBoardCaches()
 	m.clampPlanCursor()
+	m.clampGraphCursor()
 	m.clampSelection()
 	m.clampCardIdx()
 	m.clampEntityCursor()
@@ -1045,6 +1049,14 @@ func (m Model) activityPanelWidth() int {
 	if candidate > taskCommentsPanelMaxWidth {
 		candidate = taskCommentsPanelMaxWidth
 	}
+	// Hard cap at the available width: the min floor (44) exceeds what a very
+	// narrow terminal can show, and in the stacked project/task layout the
+	// activity rail renders at activityPanelWidth-4 — without this cap that
+	// panel tips past the terminal edge. On wide terminals `available` always
+	// dwarfs the candidate, so this only bites the narrow stacked case.
+	if candidate > available {
+		candidate = available
+	}
 	return candidate
 }
 
@@ -1307,6 +1319,7 @@ func (m *Model) refresh() error {
 	m.invalidateBoardCaches()
 	m.rebuildBoardCaches()
 	m.clampPlanCursor()
+	m.clampGraphCursor()
 	m.clampSelection()
 	m.clampCardIdx()
 	m.clampEntityCursor()
@@ -1321,6 +1334,20 @@ func (m *Model) refresh() error {
 // inline. Deleted plans cannot leave the cursor stranded past end.
 func (m *Model) clampPlanCursor() {
 	m.plansCursor = m.plansCursor.WithItemCount(len(m.plans))
+}
+
+// clampGraphCursor keeps graphCursor inside the [0, selectable-1] window
+// after refresh reassigns m.dependencies. The renderer derives its cursor
+// line via sel[graphCursor.Cursor()] (sel = dagSelectableIndices), so a
+// stale cursor pointing past a shrunk selectable set would panic the value-
+// receiver render path. Mirrors clampPlanCursor: route through
+// cursorwindow.WithItemCount using the same selectable-node count the
+// renderer derives. Removing a dependency while the graph subnav is open
+// can no longer strand the cursor past end.
+func (m *Model) clampGraphCursor() {
+	lines := buildDAGLinesSorted(m.dependencies, m.tasks, m.graphRootLess())
+	sel := dagSelectableIndices(lines)
+	m.graphCursor = m.graphCursor.WithItemCount(len(sel))
 }
 
 func (m Model) computeMetrics(maxTokens int) domain.TokenMetrics {

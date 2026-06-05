@@ -1,9 +1,14 @@
 package tui
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
+
+	"omakiten/internal/config"
 	"omakiten/internal/domain"
 )
 
@@ -186,6 +191,225 @@ func extractTexts(lines []dagLine) []string {
 		out[i] = l.text
 	}
 	return out
+}
+
+// deepLongGraphModel builds a Model whose dependency graph has a deep
+// chain (forcing wide indentation) and very long task titles, rendered at
+// a constrained terminal width. This is the layout that previously pushed
+// the graph panel border off-screen (task #593).
+func deepLongGraphModel(width int) Model {
+	const depth = 8
+	deps := make([]domain.TaskDependency, 0, depth)
+	tasks := make([]domain.Task, 0, depth+1)
+	longTitle := strings.Repeat("very-long-dependency-title-segment ", 6)
+	tasks = append(tasks, makeTask(1, "root "+longTitle))
+	for i := int64(2); i <= depth+1; i++ {
+		tasks = append(tasks, makeTask(i, fmt.Sprintf("node-%d %s", i, longTitle)))
+		deps = append(deps, makeDep(i, i-1)) // i depends on i-1: a straight chain
+	}
+	return Model{
+		styles:       newStyles(config.Theme{}),
+		width:        width,
+		height:       40,
+		tasks:        tasks,
+		dependencies: deps,
+	}
+}
+
+// TestRenderGraphRowsStayInsideTerminal pins task #593: every rendered
+// graph line must fit inside the terminal width once ANSI styling is
+// stripped, even with deep indentation and long titles. Before the fix the
+// raw DAG text flowed past the panel border and the right edge fell off
+// the screen.
+func TestRenderGraphRowsStayInsideTerminal(t *testing.T) {
+	for _, width := range []int{60, 80, 100} {
+		width := width
+		t.Run(fmt.Sprintf("width=%d", width), func(t *testing.T) {
+			m := deepLongGraphModel(width)
+			view := m.renderGraph()
+			for _, line := range strings.Split(view, "\n") {
+				if w := lipgloss.Width(stripANSI(line)); w > width {
+					t.Fatalf("graph line width %d exceeds terminal width %d:\n%q", w, width, line)
+				}
+			}
+			// The fix must actually clip — confirm the long title surfaces an
+			// ellipsis so we know truncation engaged rather than the rows
+			// simply being short.
+			if !strings.Contains(stripANSI(view), "…") {
+				t.Fatalf("expected truncated rows to contain an ellipsis at width %d:\n%s", width, stripANSI(view))
+			}
+			// The leading task id must survive right-truncation so users can
+			// still identify the node. Root is rendered first.
+			if !strings.Contains(stripANSI(view), "#1") {
+				t.Fatalf("expected root task id #1 to remain visible at width %d:\n%s", width, stripANSI(view))
+			}
+		})
+	}
+}
+
+// TestGraphNavigationAndOpenSurviveWidthFix confirms that constraining row
+// width did not disturb j/k/g/G movement or Enter-to-open (task #593, AC 3).
+func TestGraphNavigationAndOpenSurviveWidthFix(t *testing.T) {
+	m := deepLongGraphModel(70)
+	lines := buildDAGLinesSorted(m.dependencies, m.tasks, m.graphRootLess())
+	sel := dagSelectableIndices(lines)
+	if len(sel) < 3 {
+		t.Fatalf("setup: expected >=3 selectable nodes, got %d", len(sel))
+	}
+
+	runes := func(s string) tea.KeyMsg { return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(s)} }
+
+	// j moves the cursor down by one selectable node.
+	m.handleGraphKey(runes("j"))
+	if got := m.graphCursor.Cursor(); got != 1 {
+		t.Fatalf("after j: cursor=%d, want 1", got)
+	}
+	// k moves back up.
+	m.handleGraphKey(runes("k"))
+	if got := m.graphCursor.Cursor(); got != 0 {
+		t.Fatalf("after k: cursor=%d, want 0", got)
+	}
+	// G jumps to the last selectable node.
+	m.handleGraphKey(runes("G"))
+	if got, want := m.graphCursor.Cursor(), len(sel)-1; got != want {
+		t.Fatalf("after G: cursor=%d, want %d", got, want)
+	}
+	// g jumps back to the first.
+	m.handleGraphKey(runes("g"))
+	if got := m.graphCursor.Cursor(); got != 0 {
+		t.Fatalf("after g: cursor=%d, want 0", got)
+	}
+
+	// Enter opens the task under the cursor.
+	m.handleGraphKey(runes("j")) // move to second node
+	wantID := lines[sel[m.graphCursor.Cursor()]].taskID
+	m.handleGraphKey(tea.KeyMsg{Type: tea.KeyEnter})
+	if m.taskScreen != taskScreenView {
+		t.Fatalf("after enter: taskScreen=%v, want taskScreenView", m.taskScreen)
+	}
+	if m.taskID != wantID {
+		t.Fatalf("after enter: opened task %d, want %d", m.taskID, wantID)
+	}
+}
+
+// TestRenderGraphSurvivesStaleCursorAfterDepRemoval pins the crash where
+// refresh() reassigned m.dependencies (e.g. after a dependency is removed
+// while the graph subnav is open) but the graphCursor still pointed past the
+// shrunk selectable-node set. The value-receiver render path indexed
+// sel[graphCursor.Cursor()] without re-clamping, panicking with
+// index-out-of-range. The fix clamps in clampGraphCursor and defensively
+// guards the render-path index.
+func TestRenderGraphSurvivesStaleCursorAfterDepRemoval(t *testing.T) {
+	m := deepLongGraphModel(80)
+	lines := buildDAGLinesSorted(m.dependencies, m.tasks, m.graphRootLess())
+	sel := dagSelectableIndices(lines)
+	if len(sel) < 3 {
+		t.Fatalf("setup: expected >=3 selectable nodes, got %d", len(sel))
+	}
+
+	// Park the cursor on the last selectable node with the FULL item count,
+	// then shrink m.dependencies behind its back — exactly what refresh()
+	// does when a dependency is removed with the graph subnav open. The
+	// cursor's internal itemCount stays stale, so Cursor() now points past
+	// the new selectable set.
+	m.graphCursor = m.graphCursor.WithItemCount(len(sel)).SetCursor(len(sel) - 1)
+	staleCursor := m.graphCursor.Cursor()
+	m.dependencies = m.dependencies[:1] // collapse to a single dependency
+
+	newLines := buildDAGLinesSorted(m.dependencies, m.tasks, m.graphRootLess())
+	newSel := dagSelectableIndices(newLines)
+	if staleCursor < len(newSel) {
+		t.Fatalf("setup: stale cursor %d must exceed new selectable count %d", staleCursor, len(newSel))
+	}
+
+	// The render path must not panic even before the explicit clamp runs.
+	func() {
+		defer func() {
+			if r := recover(); r != nil {
+				t.Fatalf("renderGraph panicked with stale cursor: %v", r)
+			}
+		}()
+		_ = m.renderGraph()
+	}()
+
+	// clampGraphCursor (wired into refresh) must pull the cursor back inside
+	// the new selectable window.
+	m.clampGraphCursor()
+	if got := m.graphCursor.Cursor(); got >= len(newSel) || got < 0 {
+		t.Fatalf("after clampGraphCursor: cursor=%d outside [0,%d)", got, len(newSel))
+	}
+}
+
+// TestRenderGraphKickerStaysInsideTerminal pins FINDING 2: the kicker/header
+// row must stay within the terminal width on a narrow terminal even when the
+// translated dependency_graph label is long, mirroring the bound the DAG rows
+// already enforce.
+func TestRenderGraphKickerStaysInsideTerminal(t *testing.T) {
+	for _, width := range []int{28, 36, 44} {
+		width := width
+		t.Run(fmt.Sprintf("width=%d", width), func(t *testing.T) {
+			m := deepLongGraphModel(width)
+			view := m.renderGraph()
+			// The kicker is the first non-blank content row in the panel body.
+			for _, line := range strings.Split(view, "\n") {
+				if w := lipgloss.Width(stripANSI(line)); w > width {
+					t.Fatalf("graph line width %d exceeds terminal width %d:\n%q", w, width, stripANSI(line))
+				}
+			}
+		})
+	}
+}
+
+// TestRenderGraphBottomBorderStaysVisible pins the vertical-overflow half of
+// the #591 graph regression. graphViewportRows must size the DAG window from
+// the same live-chrome budget the other panels use (panelViewportRows). The
+// prior hand-rolled `chrome := 12` assumed a 5-line screen header and a +1
+// status line; both undercounted the real chrome, so the graph over-rendered
+// and clampViewToHeight chopped the panel's bottom border off the bottom of
+// the terminal — the missing-lower-border the user reported. The panel's
+// closing border row must survive in the composed, height-clamped View().
+func TestRenderGraphBottomBorderStaysVisible(t *testing.T) {
+	// Heights stay above panelViewportRows' 4-row floor; below it the helper
+	// intentionally returns 0 and falls back to clamp-chop on a tiny terminal.
+	for _, height := range []int{20, 24, 30, 40} {
+		height := height
+		t.Run(fmt.Sprintf("height=%d", height), func(t *testing.T) {
+			m := deepLongGraphModel(100)
+			m.height = height
+			m.top = topTasks
+			m.sub = subGraph
+
+			// The panel's bottom border is the last non-blank line renderGraph
+			// emits — capture it independently of the glyph used.
+			panelLines := strings.Split(strings.TrimRight(stripANSI(m.renderGraph()), "\n"), "\n")
+			border := ""
+			for i := len(panelLines) - 1; i >= 0; i-- {
+				if strings.TrimSpace(panelLines[i]) != "" {
+					border = panelLines[i]
+					break
+				}
+			}
+			if border == "" {
+				t.Fatal("setup: renderGraph produced no non-blank lines")
+			}
+
+			viewLines := strings.Split(stripANSI(m.View()), "\n")
+			if len(viewLines) > height {
+				t.Fatalf("View rendered %d lines, exceeds terminal height %d", len(viewLines), height)
+			}
+			found := false
+			for _, l := range viewLines {
+				if l == border {
+					found = true
+					break
+				}
+			}
+			if !found {
+				t.Fatalf("graph panel bottom border %q was clamped off the View at height %d:\n%s",
+					border, height, strings.Join(viewLines, "\n"))
+			}
+		})
+	}
 }
 
 // assertOrder verifies that a, b, c appear in order within s.
