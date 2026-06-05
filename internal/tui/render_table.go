@@ -105,7 +105,14 @@ func (m Model) renderTable() string {
 	dataRows := make([]string, 0, len(tasks))
 	for _, task := range tasks {
 		marker := m.cursorMarker(selectedID == task.ID)
-		dataRows = append(dataRows, fmt.Sprintf("%s %-4d %-11s %-8s %-5d %-9d %s", marker, task.ID, task.BucketKey, m.priorityLabel(task.Priority), m.dependencyCount(task.ID), m.commentCount(task.ID), truncateText(task.Title, titleWidth)))
+		// Cap the variable-width columns to their field budgets so an
+		// overlong bucket key or priority label can't push the fixed-width
+		// `%-11s`/`%-8s` cells past their slots and bleed into the title /
+		// past the panel edge. The title uses the visible-width truncateText
+		// so a wide-glyph or unbroken title stays inside its column too.
+		bucket := truncateText(task.BucketKey, 11)
+		prio := truncateText(m.priorityLabel(task.Priority), 8)
+		dataRows = append(dataRows, fmt.Sprintf("%s %-4d %-11s %-8s %-5d %-9d %s", marker, task.ID, bucket, prio, m.dependencyCount(task.ID), m.commentCount(task.ID), truncateText(task.Title, titleWidth)))
 	}
 
 	rows := []string{
@@ -123,9 +130,24 @@ func (m Model) renderTableCompactWith(tasks []domain.Task) string {
 	dataRows := make([]string, 0, len(tasks))
 	for _, task := range tasks {
 		marker := m.cursorMarker(selectedID == task.ID)
-		prefix := fmt.Sprintf("%s #%d %s %s ", marker, task.ID, task.BucketKey, m.priorityLabel(task.Priority))
-		budget := clampInt(width-lipgloss.Width(prefix), 8, width)
-		dataRows = append(dataRows, prefix+truncateText(task.Title, budget))
+		// Cap the bucket key + priority label so a long key/label can't blow
+		// the prefix past the compact width — once the prefix overflows the
+		// title budget clamps to its floor but the prefix itself still
+		// overflows. Bounding both keeps the whole row inside `width`.
+		bucket := truncateText(task.BucketKey, 12)
+		prio := truncateText(m.priorityLabel(task.Priority), 10)
+		prefix := fmt.Sprintf("%s #%d %s %s ", marker, task.ID, bucket, prio)
+		// Remaining cells after the prefix decide the title budget. When the
+		// prefix already consumes (nearly) the whole row — a tiny terminal or a
+		// long bounded prefix — there is no room for a title, so emit the
+		// prefix trimmed to the row width and skip the title rather than letting
+		// a floored budget push the row past `width`.
+		remaining := width - lipgloss.Width(prefix)
+		if remaining < 8 {
+			dataRows = append(dataRows, truncateText(strings.TrimRight(prefix, " "), width))
+			continue
+		}
+		dataRows = append(dataRows, prefix+truncateText(task.Title, remaining))
 	}
 	rows := []string{
 		m.styles.kickerCount(m.t("tui.kicker.tasks"), len(tasks)),

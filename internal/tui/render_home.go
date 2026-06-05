@@ -199,6 +199,23 @@ func (m Model) homeViewportRows() int {
 // geometry — the prior inline version lived in renderHome only and
 // the count-based scroll bypassed the question entirely.
 func (m Model) homeCardSizes() (cardWidth, cardContent int) {
+	columnInner := m.homeColumnInner()
+	cardWidth = columnInner - 2
+	cardContent = cardWidth - 2
+	if cardContent < 16 {
+		cardContent = 16
+	}
+	return cardWidth, cardContent
+}
+
+// homeColumnInner returns the inner width of the Home project column.
+// The min/max band keeps the column readable on wide terminals, but the
+// upper bound is hard-capped at the available width so a narrow terminal
+// (narrower than homeColumnInnerMin) never floors the column above what
+// fits — the prior unconditional min=40 let the column + its border tip
+// past the terminal edge. Centralised so the renderer and the height-aware
+// scroll sync size cards against the exact same geometry.
+func (m Model) homeColumnInner() int {
 	available := m.availableWidth()
 	columnInner := available - 2
 	if columnInner > homeColumnInnerMax {
@@ -207,12 +224,16 @@ func (m Model) homeCardSizes() (cardWidth, cardContent int) {
 	if columnInner < homeColumnInnerMin {
 		columnInner = homeColumnInnerMin
 	}
-	cardWidth = columnInner - 2
-	cardContent = cardWidth - 2
-	if cardContent < 16 {
-		cardContent = 16
+	// Never exceed what the terminal can actually show: when the terminal is
+	// narrower than the min floor, the column shrinks with it (bounded
+	// fallback) instead of overflowing.
+	if cap := available - 2; columnInner > cap {
+		if cap < 1 {
+			cap = 1
+		}
+		columnInner = cap
 	}
-	return cardWidth, cardContent
+	return columnInner
 }
 
 // syncHomeScroll keeps m.homePicker.Scroll aligned so the cursor
@@ -247,14 +268,7 @@ func (m *Model) syncHomeScroll() {
 // header, internal cards — is identical. wrapBadges is shared with task-
 // card rendering so chip alignment matches across surfaces.
 func (m Model) renderHome() string {
-	available := m.availableWidth()
-	columnInner := available - 2
-	if columnInner > homeColumnInnerMax {
-		columnInner = homeColumnInnerMax
-	}
-	if columnInner < homeColumnInnerMin {
-		columnInner = homeColumnInnerMin
-	}
+	columnInner := m.homeColumnInner()
 	cardWidth, cardContent := m.homeCardSizes()
 
 	headerText := fmt.Sprintf("// PROJECTS · %d", len(m.homeProjects))
@@ -347,7 +361,12 @@ func (m Model) renderProjectBadges(project domain.Project, maxWidth int) string 
 		if label == "" {
 			label = tag.Name
 		}
-		badges = append(badges, m.styles.badgeInfo.Render(strings.ToUpper(label)))
+		// Bound a single tag label to the card content width so an overlong
+		// or unbroken tag name can't render a chip wider than the card —
+		// wrapBadges only line-breaks BETWEEN badges, it never truncates one.
+		// Reserve 2 cells for the badge's horizontal padding.
+		label = truncateText(strings.ToUpper(label), maxWidth-2)
+		badges = append(badges, m.styles.badgeInfo.Render(label))
 	}
 	return wrapBadges(badges, maxWidth)
 }

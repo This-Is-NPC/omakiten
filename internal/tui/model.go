@@ -1048,6 +1048,14 @@ func (m Model) activityPanelWidth() int {
 	if candidate > taskCommentsPanelMaxWidth {
 		candidate = taskCommentsPanelMaxWidth
 	}
+	// Hard cap at the available width: the min floor (44) exceeds what a very
+	// narrow terminal can show, and in the stacked project/task layout the
+	// activity rail renders at activityPanelWidth-4 — without this cap that
+	// panel tips past the terminal edge. On wide terminals `available` always
+	// dwarfs the candidate, so this only bites the narrow stacked case.
+	if candidate > available {
+		candidate = available
+	}
 	return candidate
 }
 
