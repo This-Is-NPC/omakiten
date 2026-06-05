@@ -14,6 +14,14 @@ skill_repertoire:
   - test-driven-development
   - gate-of-truth-toll
   - markdown
+  - okt-config-playbook
+  - okt-help-playbook
+  - okt-project-continue-playbook
+  - okt-project-resume-playbook
+  - okt-skill-playbook
+  - okt-start-playbook
+  - okt-task-check-playbook
+  - okt-task-quality-playbook
 laws:
   - project-scope-only
   - no-assumptions

@@ -16,6 +16,15 @@ skill_repertoire:
   - architecture-mapping
   - postmortem-authoring
   - markdown
+  - okt-note-free-playbook
+  - okt-note-list-playbook
+  - okt-note-recap-playbook
+  - okt-note-show-playbook
+  - okt-pause-playbook
+  - okt-task-debrief-playbook
+  - okt-task-document-playbook
+  - okt-task-review-playbook
+  - okt-task-secure-playbook
 laws:
   - project-scope-only
   - no-praise-pad

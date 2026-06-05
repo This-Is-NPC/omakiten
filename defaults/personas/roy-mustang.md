@@ -15,6 +15,17 @@ skill_repertoire:
   - user-story-writing
   - invest-stories
   - markdown
+  - okt-plan-claim-playbook
+  - okt-plan-continue-playbook
+  - okt-plan-create-playbook
+  - okt-plan-show-playbook
+  - okt-run-playbook
+  - okt-shape-playbook
+  - okt-task-create-playbook
+  - okt-task-decompose-playbook
+  - okt-task-estimate-playbook
+  - okt-task-prioritize-playbook
+  - okt-task-requirements-playbook
 laws:
   - project-scope-only
   - workflow-enforced

@@ -15,6 +15,19 @@ skill_repertoire:
   - postmortem-authoring
   - staged-delivery
   - markdown
+  - okt-config-playbook
+  - okt-help-playbook
+  - okt-note-free-playbook
+  - okt-note-list-playbook
+  - okt-note-recap-playbook
+  - okt-note-show-playbook
+  - okt-pause-playbook
+  - okt-project-continue-playbook
+  - okt-project-resume-playbook
+  - okt-skill-playbook
+  - okt-start-playbook
+  - okt-task-debrief-playbook
+  - okt-task-document-playbook
 laws:
   - project-scope-only
   - no-assumptions

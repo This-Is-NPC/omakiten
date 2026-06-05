@@ -20,6 +20,14 @@ personas:
       - test-driven-development
       - gate-of-truth-toll
       - markdown
+      - okt-config-playbook
+      - okt-help-playbook
+      - okt-project-continue-playbook
+      - okt-project-resume-playbook
+      - okt-skill-playbook
+      - okt-start-playbook
+      - okt-task-check-playbook
+      - okt-task-quality-playbook
   # Scribe — record-keeper. Repertoire includes all four #359 note skills so the
   # okt-pause and okt-note-* slots resolve.
   - slug: alphonse-elric
@@ -33,6 +41,13 @@ personas:
       - recap-timeline
       - postmortem-authoring
       - markdown
+      - okt-note-free-playbook
+      - okt-note-list-playbook
+      - okt-note-recap-playbook
+      - okt-note-show-playbook
+      - okt-pause-playbook
+      - okt-task-debrief-playbook
+      - okt-task-document-playbook
   # Owner — direction, prioritization, requirements, plan authoring.
   - slug: roy-mustang
     schema_version: 2
@@ -49,6 +64,17 @@ personas:
       - user-story-writing
       - invest-stories
       - markdown
+      - okt-plan-claim-playbook
+      - okt-plan-continue-playbook
+      - okt-plan-create-playbook
+      - okt-plan-show-playbook
+      - okt-run-playbook
+      - okt-shape-playbook
+      - okt-task-create-playbook
+      - okt-task-decompose-playbook
+      - okt-task-estimate-playbook
+      - okt-task-prioritize-playbook
+      - okt-task-requirements-playbook
   # Ideator — discovery and cheap experiments.
   - slug: pinako-rockbell
     schema_version: 2
@@ -57,6 +83,9 @@ personas:
       - lean-experimentation
       - five-w-two-h
       - markdown
+      - okt-task-imagine-playbook
+      - okt-task-research-playbook
+      - okt-task-validate-playbook
   # Builder — small green increments, full price paid up front. Repertoire
   # carries the themed gate-of-truth-toll (strict TDD) and automail-fallback
   # (rollback) skills alongside the generic Builder pool.
@@ -73,6 +102,12 @@ personas:
       - code-smells
       - refactoring-catalog
       - markdown
+      - okt-task-continue-playbook
+      - okt-task-design-playbook
+      - okt-task-implement-playbook
+      - okt-task-refactor-playbook
+      - okt-task-resume-playbook
+      - okt-task-self-review-playbook
   # Reviewer — whole-diff read, structural + security lens.
   - slug: olivier-armstrong
     schema_version: 2
@@ -83,12 +118,15 @@ personas:
       - fagan-inspection
       - solid-principles
       - markdown
+      - okt-task-review-playbook
+      - okt-task-secure-playbook
   # Committer — Conventional Commits, scoped history, never auto-pushes.
   - slug: riza-hawkeye
     schema_version: 2
     skill_repertoire:
       - conventional-commits-spec
       - markdown
+      - okt-task-commit-playbook
   # Locked authority — kept in the roster, bound to the hard-gate orchestrator
   # (okt-audit) so the persona ships even when lightly used.
   - slug: king-bradley
@@ -97,6 +135,7 @@ personas:
       - risk-driven-development
       - fagan-inspection
       - markdown
+      - okt-audit-playbook
 
 mcp_commands:
   global:
@@ -104,152 +143,152 @@ mcp_commands:
   # Shokunin slot bindings (#189 W5.1).
   okt:
     persona: maes-hughes
-    skills: [pdca-cycle]
+    skills: [pdca-cycle, okt-start-playbook]
   okt-start:
     persona: maes-hughes
-    skills: [pdca-cycle, discovery]
+    skills: [pdca-cycle, discovery, okt-start-playbook]
   okt-shape:
     persona: roy-mustang
-    skills: [five-w-two-h, smart-goals]
+    skills: [five-w-two-h, smart-goals, okt-shape-playbook]
   okt-audit:
     persona: king-bradley
-    skills: [risk-driven-development]
+    skills: [risk-driven-development, okt-audit-playbook]
     laws: [briggs-fortress-gate]
   okt-run:
     persona: roy-mustang
-    skills: [staged-delivery, dora-mindset]
+    skills: [staged-delivery, dora-mindset, okt-run-playbook]
   okt-task-imagine:
     persona: pinako-rockbell
-    skills: [discovery, lean-experimentation]
+    skills: [discovery, lean-experimentation, okt-task-imagine-playbook]
     laws_disabled: [template-fidelity]
     templates: [comment-5w2h, comment-smart-success]
   okt-task-research:
     persona: pinako-rockbell
-    skills: [discovery]
+    skills: [discovery, okt-task-research-playbook]
     laws_disabled: [template-fidelity]
   okt-task-validate:
     persona: pinako-rockbell
-    skills: [lean-experimentation]
+    skills: [lean-experimentation, okt-task-validate-playbook]
     laws_disabled: [template-fidelity]
   okt-task-requirements:
     persona: roy-mustang
-    skills: [requirements-elicitation, non-functional-requirements]
+    skills: [requirements-elicitation, non-functional-requirements, okt-task-requirements-playbook]
     templates: [comment-requirements, comment-acceptance]
   okt-task-prioritize:
     persona: roy-mustang
-    skills: [moscow-prioritization, rice-scoring]
+    skills: [moscow-prioritization, rice-scoring, okt-task-prioritize-playbook]
     templates: [comment-moscow, comment-rice-score]
   okt-task-create:
     persona: roy-mustang
-    skills: [user-story-writing, invest-stories, smart-goals]
+    skills: [user-story-writing, invest-stories, smart-goals, okt-task-create-playbook]
     laws: [invest-stories, outcome-over-output, non-functional-explicit]
     templates: [task-change-request, comment-requirements, comment-acceptance, comment-smart-success, comment-moscow, comment-non-functional]
   okt-task-decompose:
     persona: roy-mustang
-    skills: [user-story-writing]
+    skills: [user-story-writing, okt-task-decompose-playbook]
   okt-task-estimate:
     persona: roy-mustang
-    skills: [rice-scoring]
+    skills: [rice-scoring, okt-task-estimate-playbook]
   okt-task-design:
     persona: edward-elric
-    skills: [solid-principles]
+    skills: [solid-principles, okt-task-design-playbook]
   okt-project-resume:
     persona: maes-hughes
-    skills: [pdca-cycle]
+    skills: [pdca-cycle, okt-project-resume-playbook]
   okt-project-continue:
     persona: maes-hughes
-    skills: [pdca-cycle]
+    skills: [pdca-cycle, okt-project-continue-playbook]
   okt-plan-create:
     persona: roy-mustang
-    skills: [staged-delivery]
+    skills: [staged-delivery, okt-plan-create-playbook]
   okt-plan-show:
     persona: roy-mustang
-    skills: [staged-delivery]
+    skills: [staged-delivery, okt-plan-show-playbook]
   okt-plan-continue:
     persona: roy-mustang
-    skills: [staged-delivery]
+    skills: [staged-delivery, okt-plan-continue-playbook]
   okt-plan-claim:
     persona: roy-mustang
-    skills: [staged-delivery]
+    skills: [staged-delivery, okt-plan-claim-playbook]
   okt-task-resume:
     persona: edward-elric
-    skills: [implementation]
+    skills: [implementation, okt-task-resume-playbook]
   okt-task-continue:
     persona: edward-elric
-    skills: [implementation]
+    skills: [implementation, okt-task-continue-playbook]
   okt-task-implement:
     persona: edward-elric
-    skills: [implementation, gate-of-truth-toll, automail-fallback, trunk-based-development, continuous-integration]
+    skills: [implementation, gate-of-truth-toll, automail-fallback, trunk-based-development, continuous-integration, okt-task-implement-playbook]
     laws: [transmutation-circle-required, truth-cannot-be-hidden, conventional-commits, no-silent-behavior-changes]
     templates: [pull-request, comment-pre-mortem, comment-rollback-plan, comment-tests-passing-strict, comment-risk-assessment]
   okt-task-self-review:
     persona: edward-elric
-    skills: [code-smells]
+    skills: [code-smells, okt-task-self-review-playbook]
     laws: [no-silent-behavior-changes]
     templates: [comment-peer-review-strict]
   okt-task-refactor:
     persona: edward-elric
-    skills: [refactoring-catalog]
+    skills: [refactoring-catalog, okt-task-refactor-playbook]
     laws: [truth-cannot-be-hidden, no-silent-behavior-changes]
     templates: [comment-review-findings]
   okt-task-document:
     persona: alphonse-elric
-    skills: [documentation, architecture-mapping]
+    skills: [documentation, architecture-mapping, okt-task-document-playbook]
     laws: [blameless-postmortem]
   okt-task-debrief:
     persona: alphonse-elric
-    skills: [postmortem-authoring]
+    skills: [postmortem-authoring, okt-task-debrief-playbook]
     laws: [blameless-postmortem, no-praise-pad]
   okt-help:
     persona: maes-hughes
-    skills: [markdown]
+    skills: [markdown, okt-help-playbook]
   okt-config:
     persona: maes-hughes
-    skills: [markdown]
+    skills: [markdown, okt-config-playbook]
     templates: [config-orientation]
   okt-skill:
     persona: maes-hughes
-    skills: [markdown]
+    skills: [markdown, okt-skill-playbook]
   okt-task-commit:
     persona: riza-hawkeye
-    skills: [conventional-commits-spec]
+    skills: [conventional-commits-spec, okt-task-commit-playbook]
     laws: [conventional-commits, no-coauthored-by, link-task-comments]
   okt-task-review:
     persona: olivier-armstrong
-    skills: [code-smells, refactoring-catalog, fagan-inspection]
+    skills: [code-smells, refactoring-catalog, fagan-inspection, okt-task-review-playbook]
     laws: [briggs-fortress-gate, equivalent-exchange-audit, dual-review-required]
     templates: [comment-review-findings, comment-refactor-opportunities]
   okt-task-secure:
     persona: olivier-armstrong
-    skills: [security-review-lens]
+    skills: [security-review-lens, okt-task-secure-playbook]
     laws: [briggs-fortress-gate]
     templates: [comment-review-findings]
   okt-task-check:
     persona: maes-hughes
-    skills: [regression-detection, coverage-analysis]
+    skills: [regression-detection, coverage-analysis, okt-task-check-playbook]
     laws: [equivalent-exchange-audit, regression-required]
     templates: [comment-check-report]
   okt-task-quality:
     persona: maes-hughes
-    skills: [static-analysis-discipline]
+    skills: [static-analysis-discipline, okt-task-quality-playbook]
     laws: [equivalent-exchange-audit]
     templates: [comment-review-findings]
   okt-pause:
     persona: alphonse-elric
-    skills: [handoff-synthesis]
+    skills: [handoff-synthesis, okt-pause-playbook]
     laws: [project-scope-only, no-praise-pad]
     templates: [note-handoff]
   okt-note-free:
     persona: alphonse-elric
-    skills: [note-capture]
+    skills: [note-capture, okt-note-free-playbook]
     templates: [note-free]
   okt-note-recap:
     persona: alphonse-elric
-    skills: [recap-timeline, standup-digest]
+    skills: [recap-timeline, standup-digest, okt-note-recap-playbook]
     templates: [note-recap, note-standup-digest]
   okt-note-list:
     persona: alphonse-elric
-    skills: [note-capture]
+    skills: [note-capture, okt-note-list-playbook]
   okt-note-show:
     persona: alphonse-elric
-    skills: [note-capture]
+    skills: [note-capture, okt-note-show-playbook]

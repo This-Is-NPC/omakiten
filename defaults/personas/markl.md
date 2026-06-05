@@ -16,6 +16,19 @@ skill_repertoire:
   - invest-stories
   - conventional-commits-spec
   - markdown
+  - okt-audit-playbook
+  - okt-plan-claim-playbook
+  - okt-plan-continue-playbook
+  - okt-plan-create-playbook
+  - okt-plan-show-playbook
+  - okt-run-playbook
+  - okt-shape-playbook
+  - okt-task-commit-playbook
+  - okt-task-create-playbook
+  - okt-task-decompose-playbook
+  - okt-task-estimate-playbook
+  - okt-task-prioritize-playbook
+  - okt-task-requirements-playbook
 laws:
   - project-scope-only
 ---

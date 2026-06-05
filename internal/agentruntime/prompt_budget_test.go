@@ -50,12 +50,22 @@ import (
 // omakase kit. Cross-preset note: omakase is the only preset wiring command-level
 // skill subsets today; others still flow the persona repertoire, but the gate
 // runs against the omakase kit. When W6 themes the rest, re-run the formula.
+//
+// ENTITY-SOURCED PLAYBOOK BIND (mcp-prompts-entity-sourced, Wave 2): every
+// command now also binds its okt-<slug>-playbook skill, so the orchestrator/
+// system prompts that carry the largest playbook bodies (okt, okt-help,
+// okt-run, okt-audit) grew past their prior budgets. The four values below are
+// recalibrated by the same formula (rendered × 1.3, round up to nearest 100)
+// against the post-bind omakase kit. These are transitional: the sibling
+// follow-up that strips the now-duplicated Go Action/Description prose from the
+// render path will reclaim that footprint, at which point the formula should be
+// re-run and these four values re-tightened.
 var promptBudgets = map[string]int{
-	"okt":                   7100,
-	"okt-help":              8300,
+	"okt":                   9600,
+	"okt-help":              11400,
 	"okt-start":             9300,
 	"okt-shape":             10400,
-	"okt-run":               12100,
+	"okt-run":               15800,
 	"okt-task-imagine":      8500,
 	"okt-task-research":     4900,
 	"okt-task-validate":     4800,
@@ -85,7 +95,7 @@ var promptBudgets = map[string]int{
 	"okt-task-secure":       6800,
 	"okt-task-check":        7800,
 	"okt-task-quality":      6700,
-	"okt-audit":             9200,
+	"okt-audit":             12300,
 	"okt-pause":             9100,
 	"okt-note-free":         6500,
 	"okt-note-recap":        11200,
