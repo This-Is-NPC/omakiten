@@ -88,7 +88,6 @@ type ResolveCommandResponse struct {
 	Skills      []SkillInfo    `json:"skills,omitempty"`
 	Laws        []LawInfo      `json:"laws,omitempty"`
 	Templates   []TemplateInfo `json:"templates,omitempty"`
-	Action      string         `json:"action"`
 	Markdown    string         `json:"markdown"`
 	// AgentOutputLanguage carries the raw configured agent-output
 	// language string (config.languages.agent_output). When non-empty,

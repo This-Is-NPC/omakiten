@@ -90,43 +90,11 @@ func TestResolveCommandEmptyName(t *testing.T) {
 	}
 }
 
-// TestResolveCommandRestHandoffsPresent guards the REST-style hypermedia
-// pattern: every command's action text must explicitly point at the next
-// command in the cycle. Without this, the agent has no in-prompt hint about
-// where to go after the current step and the workflow becomes guesswork.
-func TestResolveCommandRestHandoffsPresent(t *testing.T) {
-	expectedHandoffs := map[string][]string{
-		// CW4 (#375): `okt` is the bare shortcut to `okt-start`, so both land on
-		// the smart-entry playbook whose next-move handoffs name the actual
-		// commands to run from the current state (continue a task / a plan, or
-		// shape new work).
-		"okt":                {"okt-task-continue", "okt-plan-continue", "okt-shape"},
-		"okt-start":          {"okt-task-continue", "okt-plan-continue", "okt-shape"},
-		"okt-shape":          {"okt-plan-create", "okt-run"},
-		"okt-audit":          {"okt-task-implement", "okt-pause"},
-		"okt-task-imagine":   {"okt-task-create"},
-		"okt-task-create":    {"comment-selfbranch"},
-		"okt-project-resume": {"okt-task-continue"},
-		"okt-task-continue":  {"okt-task-implement"},
-		"okt-task-implement": {"comment-resume"},
-		"okt-task-document":  {"okt-task-create"},
-		"okt-config":         {"templates.show", "config-orientation", "okt-task-implement"},
-		"okt-task-commit":    {"git push"},
-		"okt-task-review":    {"okt-task-implement"},
-		"okt-task-check":     {"okt-task-implement"},
-	}
-	for name, hints := range expectedHandoffs {
-		text := CommandActionFallback(name)
-		if text == "" {
-			t.Fatalf("CommandActionFallback(%s) is empty", name)
-		}
-		for _, hint := range hints {
-			if !strings.Contains(text, hint) {
-				t.Fatalf("action text for %s missing handoff %q:\n%s", name, hint, text)
-			}
-		}
-	}
-}
+// The REST-style handoff contract (every command's playbook names the next
+// command in the cycle) is now an entity-sourced property of the bound
+// okt-<slug>-playbook skills, asserted against the rendered default kit by
+// agentruntime.TestRestHandoffsPresent — the Go layer no longer carries the
+// action prose to check here.
 
 // TestResolveCommandTemplatesJITRendering pins the just-in-time pattern:
 // when a command has a bound template, the rendered Markdown must list the
@@ -199,7 +167,6 @@ func TestRenderCommandMarkdownDropsRedundantStructure(t *testing.T) {
 // body fall back to the description, and configured order is preserved.
 func TestRenderCommandMarkdownSkillBulletWithBody(t *testing.T) {
 	resp := ResolveCommandResponse{
-		Action: "do the thing",
 		Skills: []SkillInfo{
 			{Slug: "go", Name: "Go", Description: "Idiomatic Go.", Body: "Write small functions.\nPrefer composition."},
 			{Slug: "sqlite", Name: "SQLite", Description: "Embedded SQL.", Body: ""},
@@ -346,56 +313,40 @@ func TestResolveCommandFallsBackToSkillRepertoire(t *testing.T) {
 	}
 }
 
-// TestCommandActionsArePersonaAgnostic guards the architectural separation
-// between command action text and persona body across every `okt-*` prompt.
-// Every command's `mcp_commands.<cmd>.persona` is configurable, so no action
-// text may carry persona-specific role prose ("Take the role of an X",
-// persona slug or name). Role-specific flow lives in the persona body, not
-// the action text — swapping the bound persona must change the prompt
-// uniformly without leaving hardcoded role instructions behind.
-func TestCommandActionsArePersonaAgnostic(t *testing.T) {
-	leakedPhrases := []string{
-		"Take the role",
-		"product owner",
-		"documentation curator",
-		"honoring every law",
-	}
-	for _, name := range CommandNames() {
-		action := CommandActionFallback(name)
-		if action == "" {
-			t.Fatalf("CommandActionFallback(%s) is empty", name)
-		}
-		lower := strings.ToLower(action)
-		for _, phrase := range leakedPhrases {
-			if strings.Contains(lower, strings.ToLower(phrase)) {
-				t.Fatalf("%s action leaks persona-specific phrase %q — role prose belongs in the persona body, not the action text:\n%s", name, phrase, action)
-			}
-		}
-	}
-	// Pin okt-implement specifics: bootstrap tool + handoff marker must remain.
-	implementAction := CommandActionFallback("okt-task-implement")
-	for _, want := range []string{"tasks.continue", "comment-resume"} {
-		if !strings.Contains(implementAction, want) {
-			t.Fatalf("okt-implement action missing required marker %q:\n%s", want, implementAction)
-		}
-	}
-}
+// The persona-agnostic contract (command playbooks carry no persona-specific
+// role prose, since the bound persona is configurable) is now an entity-sourced
+// property of the bound okt-<slug>-playbook skills, asserted against the
+// rendered default kit by agentruntime.TestCommandPlaybooksArePersonaAgnostic —
+// the Go layer no longer carries the action prose to check here.
 
-// TestResolveCommandWithoutCatalogsReturnsAction guards the degraded path:
+// TestResolveCommandWithoutCatalogsDegradesGracefully guards the degraded path:
 // when the runtime is unwired (no skills/laws/personas/commands catalogs),
-// ResolveCommand still surfaces the canonical action text so the MCP harness
-// keeps working through partial bootstraps.
-func TestResolveCommandWithoutCatalogsReturnsAction(t *testing.T) {
+// ResolveCommand still resolves a registered command without error so the MCP
+// harness keeps working through partial bootstraps. The command playbook is
+// entity-sourced now, so with no skill catalog there is nothing to render — the
+// description is empty and no persona/skills attach — but resolution must not
+// fail, and an unknown command must still reject.
+func TestResolveCommandWithoutCatalogsDegradesGracefully(t *testing.T) {
 	fixture := newAgentFixture(t)
 	resp, err := fixture.service.ResolveCommand(fixture.ctx, ResolveCommandInput{Name: "okt"})
 	if err != nil {
 		t.Fatalf("ResolveCommand() error = %v", err)
 	}
-	if resp.Action == "" {
-		t.Fatal("ResolveCommand.Action empty, want fallback action text")
+	if resp.Name != "okt" {
+		t.Fatalf("ResolveCommand.Name = %q, want okt", resp.Name)
+	}
+	if resp.Description != "" {
+		t.Fatalf("ResolveCommand.Description = %q, want empty when the skill catalog is unwired", resp.Description)
 	}
 	if resp.Persona != nil {
 		t.Fatalf("ResolveCommand.Persona = %+v, want nil when catalogs unwired", resp.Persona)
+	}
+	if len(resp.Skills) != 0 {
+		t.Fatalf("ResolveCommand.Skills = %+v, want none when the skill catalog is unwired", resp.Skills)
+	}
+	// An unknown command still rejects even on the degraded path.
+	if _, err := fixture.service.ResolveCommand(fixture.ctx, ResolveCommandInput{Name: "okt-bogus"}); err == nil {
+		t.Fatal("ResolveCommand(unknown) error = nil, want validation failure even when unwired")
 	}
 }
 

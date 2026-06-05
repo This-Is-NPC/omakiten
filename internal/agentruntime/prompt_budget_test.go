@@ -52,55 +52,54 @@ import (
 // runs against the omakase kit. When W6 themes the rest, re-run the formula.
 //
 // ENTITY-SOURCED PLAYBOOK BIND (mcp-prompts-entity-sourced, Wave 2): every
-// command now also binds its okt-<slug>-playbook skill, so the orchestrator/
-// system prompts that carry the largest playbook bodies (okt, okt-help,
-// okt-run, okt-audit) grew past their prior budgets. The four values below are
-// recalibrated by the same formula (rendered × 1.3, round up to nearest 100)
-// against the post-bind omakase kit. These are transitional: the sibling
-// follow-up that strips the now-duplicated Go Action/Description prose from the
-// render path will reclaim that footprint, at which point the formula should be
-// re-run and these four values re-tightened.
+// command binds its okt-<slug>-playbook skill, and the command playbook is now
+// rendered SOLELY from that skill body — the duplicated Go `## Action` prose was
+// stripped from the render path. The four transitional budgets the sibling
+// playbook-bind wave had bumped (okt, okt-help, okt-run, okt-audit) are
+// re-tightened here, and every other value is re-derived by the same formula
+// (rendered × 1.3, round up to nearest 100) against the de-duplicated omakase
+// kit, so the whole map stays self-consistent with no hand-tuned exceptions.
 var promptBudgets = map[string]int{
-	"okt":                   9600,
-	"okt-help":              11400,
-	"okt-start":             9300,
-	"okt-shape":             10400,
-	"okt-run":               15800,
-	"okt-task-imagine":      8500,
-	"okt-task-research":     4900,
-	"okt-task-validate":     4800,
-	"okt-task-requirements": 9000,
-	"okt-task-prioritize":   9200,
-	"okt-task-create":       14100,
-	"okt-task-decompose":    6500,
-	"okt-task-estimate":     6500,
-	"okt-task-design":       4500,
-	"okt-project-resume":    5300,
-	"okt-project-continue":  5800,
-	"okt-plan-create":       7000,
-	"okt-plan-show":         7000,
-	"okt-plan-continue":     7000,
-	"okt-plan-claim":        7100,
-	"okt-task-resume":       5400,
-	"okt-task-continue":     5100,
-	"okt-task-implement":    17400,
-	"okt-task-self-review":  6300,
-	"okt-task-refactor":     6600,
-	"okt-task-document":     8300,
-	"okt-task-debrief":      6700,
-	"okt-config":            6800,
-	"okt-skill":             7000,
-	"okt-task-commit":       6300,
-	"okt-task-review":       10000,
-	"okt-task-secure":       6800,
-	"okt-task-check":        7800,
-	"okt-task-quality":      6700,
-	"okt-audit":             12300,
-	"okt-pause":             9100,
-	"okt-note-free":         6500,
-	"okt-note-recap":        11200,
-	"okt-note-list":         6100,
-	"okt-note-show":         5900,
+	"okt":                   7600,
+	"okt-help":              8400,
+	"okt-start":             9900,
+	"okt-shape":             10600,
+	"okt-run":               12700,
+	"okt-task-imagine":      9100,
+	"okt-task-research":     5500,
+	"okt-task-validate":     5200,
+	"okt-task-requirements": 9300,
+	"okt-task-prioritize":   9400,
+	"okt-task-create":       14900,
+	"okt-task-decompose":    6800,
+	"okt-task-estimate":     6900,
+	"okt-task-design":       4800,
+	"okt-project-resume":    5700,
+	"okt-project-continue":  6100,
+	"okt-plan-create":       7200,
+	"okt-plan-show":         7200,
+	"okt-plan-continue":     7300,
+	"okt-plan-claim":        7300,
+	"okt-task-resume":       5600,
+	"okt-task-continue":     5300,
+	"okt-task-implement":    17700,
+	"okt-task-self-review":  6500,
+	"okt-task-refactor":     6800,
+	"okt-task-document":     8600,
+	"okt-task-debrief":      6900,
+	"okt-config":            6900,
+	"okt-skill":             7200,
+	"okt-task-commit":       6600,
+	"okt-task-review":       12000,
+	"okt-task-secure":       7000,
+	"okt-task-check":        8100,
+	"okt-task-quality":      6800,
+	"okt-audit":             9900,
+	"okt-pause":             9400,
+	"okt-note-free":         7100,
+	"okt-note-recap":        11900,
+	"okt-note-list":         6500,
+	"okt-note-show":         6500,
 }
 
 // TestTemplateBoundCommandsCarryFetchHint guards the JIT contract for
@@ -163,8 +162,9 @@ var orchestratorCommands = map[string]struct{}{
 //
 // Every command must surface:
 //   - a wired Persona section (role slot bound in the preset YAML),
-//   - a non-empty Action section + non-empty Action field,
-//   - a prompts/list description,
+//   - a Skills section carrying the entity-sourced playbook (the bound
+//     okt-<slug>-playbook skill body) plus the command's other skills,
+//   - a prompts/list description (the playbook skill's frontmatter),
 //   - a Laws section (the global law floor reaches every command),
 //   - bullet-with-body Skills (the command's declared skill subset renders,
 //     each as a `- **Name** — body` bullet — the W4 theming contract),
@@ -211,13 +211,16 @@ func TestFullCommandSurfaceSmoke(t *testing.T) {
 				t.Fatalf("%s markdown missing non-empty Persona section:\n%s", name, resp.Markdown)
 			}
 
-			// Action — non-empty section + field.
-			if !strings.Contains(resp.Markdown, "## Action\n") || strings.TrimSpace(resp.Action) == "" {
-				t.Fatalf("%s markdown missing non-empty Action section:\n%s", name, resp.Markdown)
+			// Playbook — entity-sourced. The command playbook renders as the
+			// bound okt-<slug>-playbook skill body under ## Skills (the
+			// per-skill bullet contract below pins the body itself); there is
+			// no hardcoded ## Action section anymore.
+			if !strings.Contains(resp.Markdown, "## Skills\n") {
+				t.Fatalf("%s markdown missing the Skills section that carries the entity-sourced playbook:\n%s", name, resp.Markdown)
 			}
 
-			// prompts/list description.
-			if strings.TrimSpace(agent.CommandDescription(name)) == "" {
+			// prompts/list description — the bound playbook skill's frontmatter.
+			if strings.TrimSpace(resp.Description) == "" {
 				t.Fatalf("%s carries no prompts/list description", name)
 			}
 
@@ -295,25 +298,25 @@ func TestCW5DistinctCommandPairs(t *testing.T) {
 		{"okt-task-self-review", "okt-task-review"},
 	}
 	for _, p := range pairs {
-		a := agent.CommandActionFallback(p[0])
-		b := agent.CommandActionFallback(p[1])
+		a := playbookBodyForSmoke(t, p[0])
+		b := playbookBodyForSmoke(t, p[1])
 		if a == "" || b == "" {
-			t.Fatalf("action text missing for pair %s / %s", p[0], p[1])
+			t.Fatalf("playbook body missing for pair %s / %s", p[0], p[1])
 		}
 		if a == b {
-			t.Fatalf("%s and %s share identical action text — they must behave distinctly", p[0], p[1])
+			t.Fatalf("%s and %s share identical playbook body — they must behave distinctly", p[0], p[1])
 		}
 	}
 	// Cold resume must signal full-context rebuild; warm continue must signal a
 	// checkpoint read. Pin the load-bearing intent words so a future edit that
 	// collapses the distinction surfaces here.
-	resume := agent.CommandActionFallback("okt-task-resume")
+	resume := playbookBodyForSmoke(t, "okt-task-resume")
 	if !strings.Contains(strings.ToLower(resume), "cold") {
-		t.Fatalf("okt-task-resume action should signal a cold full-context start:\n%s", resume)
+		t.Fatalf("okt-task-resume playbook should signal a cold full-context start:\n%s", resume)
 	}
-	cont := agent.CommandActionFallback("okt-task-continue")
+	cont := playbookBodyForSmoke(t, "okt-task-continue")
 	if !strings.Contains(strings.ToLower(cont), "checkpoint") {
-		t.Fatalf("okt-task-continue action should signal a warm checkpoint read:\n%s", cont)
+		t.Fatalf("okt-task-continue playbook should signal a warm checkpoint read:\n%s", cont)
 	}
 }
 
@@ -322,16 +325,16 @@ func TestCW5DistinctCommandPairs(t *testing.T) {
 // materially distinct action text. Resume signals a cold scan; continue signals
 // a warm hand-back.
 func TestCW6ProjectResumeVsContinueDistinct(t *testing.T) {
-	resume := agent.CommandActionFallback("okt-project-resume")
-	cont := agent.CommandActionFallback("okt-project-continue")
+	resume := playbookBodyForSmoke(t, "okt-project-resume")
+	cont := playbookBodyForSmoke(t, "okt-project-continue")
 	if resume == "" || cont == "" {
-		t.Fatalf("action text missing for okt-project-resume / okt-project-continue")
+		t.Fatalf("playbook body missing for okt-project-resume / okt-project-continue")
 	}
 	if resume == cont {
-		t.Fatalf("okt-project-resume and okt-project-continue share identical action text — they must behave distinctly")
+		t.Fatalf("okt-project-resume and okt-project-continue share identical playbook body — they must behave distinctly")
 	}
 	if !strings.Contains(strings.ToLower(cont), "warm") {
-		t.Fatalf("okt-project-continue action should signal a warm last-session resume:\n%s", cont)
+		t.Fatalf("okt-project-continue playbook should signal a warm last-session resume:\n%s", cont)
 	}
 }
 
@@ -366,10 +369,12 @@ func TestCW3OktRunDelegationPlaybook(t *testing.T) {
 	if !strings.Contains(resp.Markdown, "## Persona — ") {
 		t.Fatalf("okt-run markdown missing non-empty Persona section:\n%s", resp.Markdown)
 	}
-	if !strings.Contains(resp.Markdown, "## Action\n") || strings.TrimSpace(resp.Action) == "" {
-		t.Fatalf("okt-run markdown missing non-empty Action section:\n%s", resp.Markdown)
+	// The delegation playbook is entity-sourced (okt-run-playbook skill body
+	// under ## Skills); the contract phrases below pin it in resp.Markdown.
+	if !strings.Contains(resp.Markdown, "## Skills\n") {
+		t.Fatalf("okt-run markdown missing the Skills section that carries the entity-sourced playbook:\n%s", resp.Markdown)
 	}
-	if strings.TrimSpace(agent.CommandDescription("okt-run")) == "" {
+	if strings.TrimSpace(resp.Description) == "" {
 		t.Fatalf("okt-run carries no prompts/list description")
 	}
 
@@ -441,6 +446,28 @@ func resolveForSmoke(t *testing.T, name string) agent.ResolveCommandResponse {
 	return resp
 }
 
+// playbookBodyForSmoke resolves a command against the embedded omakase kit and
+// returns its entity-sourced playbook body — the body of the bound
+// okt-<slug>-playbook skill. It is the post-strip replacement for the removed
+// agent.CommandActionFallback in the distinct-pair gates: the operational prose
+// those tests compare now lives in the bound playbook skill, not in Go.
+func playbookBodyForSmoke(t *testing.T, name string) string {
+	t.Helper()
+	resp := resolveForSmoke(t, name)
+	want := name
+	if want == "okt" {
+		want = "okt-start"
+	}
+	want += "-playbook"
+	for _, sk := range resp.Skills {
+		if sk.Slug == want {
+			return strings.TrimSpace(sk.Body)
+		}
+	}
+	t.Fatalf("%s did not bind its %s playbook skill — entity-sourced playbook missing", name, want)
+	return ""
+}
+
 // assertGuidingOrchestrator is the shared CW4 smoke assertion: the command must
 // resolve as the orchestrator tier, carry a wired persona + non-empty action +
 // prompts/list description, and its rendered prompt must contain every pinned
@@ -455,11 +482,13 @@ func assertGuidingOrchestrator(t *testing.T, name string, resp agent.ResolveComm
 	if !strings.Contains(resp.Markdown, "## Persona — ") {
 		t.Fatalf("%s markdown missing non-empty Persona section:\n%s", name, resp.Markdown)
 	}
-	if !strings.Contains(resp.Markdown, "## Action\n") || strings.TrimSpace(resp.Action) == "" {
-		t.Fatalf("%s markdown missing non-empty Action section:\n%s", name, resp.Markdown)
+	// The command playbook is entity-sourced — it renders as the bound
+	// okt-<slug>-playbook skill body under ## Skills, not a hardcoded ## Action.
+	if !strings.Contains(resp.Markdown, "## Skills\n") {
+		t.Fatalf("%s markdown missing the Skills section that carries the entity-sourced playbook:\n%s", name, resp.Markdown)
 	}
-	if strings.TrimSpace(agent.CommandDescription(name)) == "" {
-		t.Fatalf("%s carries no prompts/list description", name)
+	if strings.TrimSpace(resp.Description) == "" {
+		t.Fatalf("%s carries no prompts/list description (the bound playbook skill's frontmatter)", name)
 	}
 	desc, ok := agent.DescribeCommand(name)
 	if !ok || desc.Tier != agent.CommandTierOrchestrator {
@@ -502,17 +531,30 @@ func TestCW4OktStartSmartEntry(t *testing.T) {
 }
 
 // TestCW4OktStartIsOktShortcut is the AC#6 gate: the bare `okt` must resolve to
-// the SAME smart-entry playbook as `okt-start`. Both keys point at the shared
-// oktStartAction const, so their resolved action text is byte-identical — the
-// resolution-level shortcut with no string-alias table.
+// the SAME smart-entry playbook as `okt-start`. The playbook is entity-sourced:
+// both commands bind the SAME okt-start-playbook skill (playbookSlugForCommand
+// maps `okt` → `okt-start`), so the smart-entry concierge body renders
+// identically for both — the resolution-level shortcut with no string-alias
+// table. (Their full markdown differs only by the surrounding skill subset.)
 func TestCW4OktStartIsOktShortcut(t *testing.T) {
 	okt := resolveForSmoke(t, "okt")
 	start := resolveForSmoke(t, "okt-start")
-	if strings.TrimSpace(okt.Action) == "" {
-		t.Fatal("okt resolved with empty action text")
+
+	playbookBody := func(resp agent.ResolveCommandResponse) string {
+		for _, sk := range resp.Skills {
+			if sk.Slug == "okt-start-playbook" {
+				return strings.TrimSpace(sk.Body)
+			}
+		}
+		return ""
 	}
-	if okt.Action != start.Action {
-		t.Fatalf("`okt` does not shortcut to `okt-start` — action texts diverge.\nokt:\n%s\n\nokt-start:\n%s", okt.Action, start.Action)
+	oktBody := playbookBody(okt)
+	startBody := playbookBody(start)
+	if oktBody == "" {
+		t.Fatal("okt did not bind the okt-start-playbook skill — the shortcut lost its entity-sourced playbook")
+	}
+	if oktBody != startBody {
+		t.Fatalf("`okt` does not shortcut to `okt-start` — playbook bodies diverge.\nokt:\n%s\n\nokt-start:\n%s", oktBody, startBody)
 	}
 	// The shortcut must still carry the smart-entry contract, not the old thin
 	// router — pin the proposes-next-commands clause on the `okt` resolution.
@@ -617,11 +659,13 @@ func assertSystemCommand(t *testing.T, name string, resp agent.ResolveCommandRes
 	if !strings.Contains(resp.Markdown, "## Persona — ") {
 		t.Fatalf("%s markdown missing non-empty Persona section:\n%s", name, resp.Markdown)
 	}
-	if !strings.Contains(resp.Markdown, "## Action\n") || strings.TrimSpace(resp.Action) == "" {
-		t.Fatalf("%s markdown missing non-empty Action section:\n%s", name, resp.Markdown)
+	// The command playbook is entity-sourced — it renders as the bound
+	// okt-<slug>-playbook skill body under ## Skills, not a hardcoded ## Action.
+	if !strings.Contains(resp.Markdown, "## Skills\n") {
+		t.Fatalf("%s markdown missing the Skills section that carries the entity-sourced playbook:\n%s", name, resp.Markdown)
 	}
-	if strings.TrimSpace(agent.CommandDescription(name)) == "" {
-		t.Fatalf("%s carries no prompts/list description", name)
+	if strings.TrimSpace(resp.Description) == "" {
+		t.Fatalf("%s carries no prompts/list description (the bound playbook skill's frontmatter)", name)
 	}
 	desc, ok := agent.DescribeCommand(name)
 	if !ok || desc.Tier != agent.CommandTierSystem {
@@ -708,6 +752,134 @@ func TestCW7OktSkillWiredToSkillTools(t *testing.T) {
 		"any skill",
 		"not gated by the active persona's skill repertoire",
 	})
+}
+
+// TestRestHandoffsPresent pins the REST-style hypermedia handoff contract
+// against the embedded default kit, now that the playbook prose is
+// entity-sourced: each command's bound okt-<slug>-playbook skill body (rendered
+// under ## Skills) must name the next command(s) in the cycle so the agent
+// always has an in-prompt next-move hint. This is the post-strip replacement
+// for the old agent-layer CommandActionFallback handoff check.
+func TestRestHandoffsPresent(t *testing.T) {
+	expectedHandoffs := map[string][]string{
+		// `okt` is the bare shortcut to `okt-start`, so both render the
+		// okt-start-playbook whose next-move handoffs name the actual commands.
+		"okt":                {"okt-task-continue", "okt-plan-continue", "okt-shape"},
+		"okt-start":          {"okt-task-continue", "okt-plan-continue", "okt-shape"},
+		"okt-shape":          {"okt-plan-create", "okt-run"},
+		"okt-audit":          {"okt-task-implement", "okt-pause"},
+		"okt-task-imagine":   {"okt-task-create"},
+		"okt-task-create":    {"comment-selfbranch"},
+		"okt-project-resume": {"okt-task-continue"},
+		"okt-task-continue":  {"okt-task-implement"},
+		"okt-task-implement": {"comment-resume"},
+		"okt-task-document":  {"okt-task-create"},
+		"okt-config":         {"templates.show", "config-orientation", "okt-task-implement"},
+		"okt-task-commit":    {"git push"},
+		"okt-task-review":    {"okt-task-implement"},
+		"okt-task-check":     {"okt-task-implement"},
+	}
+	ctx := context.Background()
+	tmp := t.TempDir()
+	rt, err := Open(ctx, Options{
+		DBPath:     filepath.Join(tmp, "data", "omakiten.db"),
+		ConfigPath: filepath.Join(tmp, "config", "omakase.yaml"),
+		CWD:        tmp,
+	})
+	if err != nil {
+		t.Fatalf("Open() error = %v", err)
+	}
+	defer func() { _ = rt.Close() }()
+
+	for name, hints := range expectedHandoffs {
+		resp, err := rt.Service().ResolveCommand(ctx, agent.ResolveCommandInput{Name: name})
+		if err != nil {
+			t.Fatalf("ResolveCommand(%s) error = %v", name, err)
+		}
+		for _, hint := range hints {
+			if !strings.Contains(resp.Markdown, hint) {
+				t.Fatalf("%s prompt missing handoff %q:\n%s", name, hint, resp.Markdown)
+			}
+		}
+	}
+}
+
+// TestCommandPlaybooksArePersonaAgnostic guards the architectural separation
+// between the command playbook and the persona body across every `okt-*` prompt,
+// against the embedded default kit. Every command's persona is configurable, so
+// the entity-sourced playbook (the bound okt-<slug>-playbook skill body) must
+// carry no persona-specific role prose — role-specific tone lives in the persona
+// body. This is the post-strip replacement for the old agent-layer
+// CommandActionFallback persona-leak check; it scans the bound playbook skill
+// body so it isolates the playbook from the (legitimately persona-named) Persona
+// section in the full markdown.
+func TestCommandPlaybooksArePersonaAgnostic(t *testing.T) {
+	leakedPhrases := []string{
+		"take the role",
+		"product owner",
+		"documentation curator",
+		"honoring every law",
+	}
+	for _, name := range agent.CommandNames() {
+		body := playbookBodyForSmoke(t, name)
+		if body == "" {
+			t.Fatalf("%s has no entity-sourced playbook body", name)
+		}
+		lower := strings.ToLower(body)
+		for _, phrase := range leakedPhrases {
+			if strings.Contains(lower, phrase) {
+				t.Fatalf("%s playbook leaks persona-specific phrase %q — role prose belongs in the persona body, not the playbook:\n%s", name, phrase, body)
+			}
+		}
+	}
+	// Pin okt-task-implement specifics: bootstrap tool + handoff marker remain.
+	implement := playbookBodyForSmoke(t, "okt-task-implement")
+	for _, want := range []string{"tasks.continue", "comment-resume"} {
+		if !strings.Contains(implement, want) {
+			t.Fatalf("okt-task-implement playbook missing required marker %q:\n%s", want, implement)
+		}
+	}
+}
+
+// TestNoteCommandsTargetScopedComments pins the #386 repoint against the
+// embedded default kit, now that the operational prose is entity-sourced: no
+// command's rendered prompt may reference the removed `notes.` tool namespace,
+// and the note-family + handoff-persisting commands must drive the scope-aware
+// `comments.*` surface. The prose lives in the bound okt-<slug>-playbook skills
+// (rendered under ## Skills), so the assertion runs against resp.Markdown — the
+// post-strip replacement for the old agent.CommandActionFallback body check.
+func TestNoteCommandsTargetScopedComments(t *testing.T) {
+	ctx := context.Background()
+	tmp := t.TempDir()
+	rt, err := Open(ctx, Options{
+		DBPath:     filepath.Join(tmp, "data", "omakiten.db"),
+		ConfigPath: filepath.Join(tmp, "config", "omakase.yaml"),
+		CWD:        tmp,
+	})
+	if err != nil {
+		t.Fatalf("Open() error = %v", err)
+	}
+	defer func() { _ = rt.Close() }()
+
+	render := func(name string) string {
+		resp, err := rt.Service().ResolveCommand(ctx, agent.ResolveCommandInput{Name: name})
+		if err != nil {
+			t.Fatalf("ResolveCommand(%s) error = %v", name, err)
+		}
+		return resp.Markdown
+	}
+
+	for _, name := range agent.CommandNames() {
+		if strings.Contains(render(name), "notes.") {
+			t.Errorf("command %q prompt still references the removed notes.* tool", name)
+		}
+	}
+
+	for _, name := range []string{"okt-note-free", "okt-note-recap", "okt-note-list", "okt-note-show", "okt-pause", "okt-start"} {
+		if !strings.Contains(render(name), "comments.") {
+			t.Errorf("command %q prompt does not reference the comments.* surface", name)
+		}
+	}
 }
 
 // TestPromptBudgets renders every `okt-*` prompt against the embedded default
