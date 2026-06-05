@@ -119,7 +119,8 @@ func (m Model) canDeleteComment(taskID int64) (bool, string) {
 // selectedTask returns the task currently driven by the navigation cursor.
 // In task-screen modes, the open task wins regardless of which view sits
 // behind. On the board, it's the card at (colIdx, cardIdx); on the table,
-// the row at m.selected. Returns false when no selection exists.
+// the row at m.selected within the visible (filtered/sorted) projection.
+// Returns false when no selection exists.
 func (m Model) selectedTask() (domain.Task, bool) {
 	if m.taskScreen != taskScreenClosed && m.taskID > 0 {
 		return m.taskByID(m.taskID)
@@ -134,10 +135,14 @@ func (m Model) selectedTask() (domain.Task, bool) {
 		}
 		return bucketTasks[m.cardIdx], true
 	}
-	if m.selected < 0 || m.selected >= len(m.tasks) {
+	// Table cursor: m.selected indexes the visible (filtered/sorted)
+	// projection, so Enter-open and move target the highlighted row
+	// rather than a hidden raw task. See task #594.
+	rows := m.tableRows()
+	if m.selected < 0 || m.selected >= len(rows) {
 		return domain.Task{}, false
 	}
-	return m.tasks[m.selected], true
+	return rows[m.selected], true
 }
 
 // activeTask returns the task currently being viewed/edited (m.taskID).
@@ -235,22 +240,46 @@ func (m Model) tasksInCurrentBucket() []domain.Task {
 // syncSelectedFromBoard mirrors the board cursor (colIdx, cardIdx) into
 // m.selected (the table cursor) so swapping views preserves the sense of
 // "which task is in focus" even though the two views index differently.
+//
+// m.selected indexes the visible table projection, so the focused task is
+// located within applyTableView() rather than raw m.tasks — that keeps the
+// board→table handoff landing on the visible row. When the focused task is
+// filtered out of the table the cursor falls back to the first visible row.
+// See task #594.
 func (m *Model) syncSelectedFromBoard() {
 	task, ok := m.selectedTask()
 	if !ok {
 		return
 	}
-	for i, candidate := range m.tasks {
+	for i, candidate := range m.tableRows() {
 		if candidate.ID == task.ID {
 			m.selected = i
 			return
 		}
 	}
+	m.selected = 0
+}
+
+// tableRowIndex returns the index of taskID within the visible table
+// projection, or 0 when the task is filtered out of the table (so the
+// cursor lands on the first visible row rather than a hidden task). The
+// table cursor (m.selected) indexes this projection. See task #594.
+func (m Model) tableRowIndex(taskID int64) int {
+	for i, task := range m.tableRows() {
+		if task.ID == taskID {
+			return i
+		}
+	}
+	return 0
 }
 
 // selectTaskByID positions every cursor (board col/card, table row) onto
 // the given task id. Returns false when the id no longer exists in the
 // loaded slice — caller can fall back to a default selection.
+//
+// The table row cursor (m.selected) indexes the visible (filtered/sorted)
+// table projection, so it is resolved via tableRowIndex rather than the
+// raw m.tasks position — keeping the table cursor on the visible row.
 //
 // Sub-tasks are not rendered on the board, so when the requested id is a
 // child row the board cursor lands on its nearest visible ancestor (the
@@ -259,12 +288,12 @@ func (m *Model) syncSelectedFromBoard() {
 // tasksByBucket — the cursor would point past the visible cards and
 // every subsequent `j` would chase a phantom row.
 func (m *Model) selectTaskByID(taskID int64) bool {
-	for i, task := range m.tasks {
+	for _, task := range m.tasks {
 		if task.ID != taskID {
 			continue
 		}
 
-		m.selected = i
+		m.selected = m.tableRowIndex(taskID)
 		boardTask := task
 		if task.IsSubTask() {
 			if root, ok := m.boardAncestor(task); ok {
@@ -308,8 +337,11 @@ func (m Model) boardAncestor(task domain.Task) (domain.Task, bool) {
 }
 
 func (m *Model) clampSelection() {
-	if m.selected >= len(m.tasks) {
-		m.selected = len(m.tasks) - 1
+	// m.selected indexes the visible table projection, so clamp against
+	// the filtered/sorted row count — not raw m.tasks. See task #594.
+	rowCount := len(m.tableRows())
+	if m.selected >= rowCount {
+		m.selected = rowCount - 1
 	}
 	if m.selected < 0 {
 		m.selected = 0

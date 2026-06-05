@@ -13,6 +13,11 @@ import (
 )
 
 func (m *Model) handleListKey(msg tea.KeyMsg) {
+	// Navigation bounds track the visible (filtered/sorted) table
+	// projection, not raw m.tasks — m.selected indexes the row the user
+	// actually sees, so a non-default table sort/filter can never carry
+	// the cursor onto a hidden task. See task #594.
+	rowCount := len(m.tableRows())
 	switch msg.String() {
 	case "up", "k":
 		if m.selected > 0 {
@@ -20,7 +25,7 @@ func (m *Model) handleListKey(msg tea.KeyMsg) {
 			m.syncTableScroll()
 		}
 	case "down", "j":
-		if m.selected < len(m.tasks)-1 {
+		if m.selected < rowCount-1 {
 			m.selected++
 			m.syncTableScroll()
 		}
@@ -34,8 +39,8 @@ func (m *Model) handleListKey(msg tea.KeyMsg) {
 	case "pgdown", "ctrl+d":
 		step := taskViewPageStep(m.tableViewportRows())
 		m.selected += step
-		if m.selected > len(m.tasks)-1 {
-			m.selected = len(m.tasks) - 1
+		if m.selected > rowCount-1 {
+			m.selected = rowCount - 1
 		}
 		if m.selected < 0 {
 			m.selected = 0
@@ -45,8 +50,8 @@ func (m *Model) handleListKey(msg tea.KeyMsg) {
 		m.selected = 0
 		m.syncTableScroll()
 	case "end", "G":
-		if len(m.tasks) > 0 {
-			m.selected = len(m.tasks) - 1
+		if rowCount > 0 {
+			m.selected = rowCount - 1
 			m.syncTableScroll()
 		}
 	case "enter":
@@ -130,14 +135,24 @@ func (m Model) renderTableCompactWith(tasks []domain.Task) string {
 	return m.renderPanel(strings.Join(rows, "\n"))
 }
 
-// selectedTaskID resolves the currently-selected task id via m.tasks; used
-// by the table view to flag the matching row even when the visible list
-// has been re-sorted/filtered by view config.
+// tableRows returns the visible (filtered/sorted) table projection that
+// m.selected indexes into. Centralised so navigation bounds, the
+// highlight marker, Enter-open, and move all resolve against the exact
+// rows the user sees — never raw m.tasks. See task #594.
+func (m Model) tableRows() []domain.Task {
+	return m.applyTableView()
+}
+
+// selectedTaskID resolves the currently-selected task id from the visible
+// table projection; used by the table view to flag the highlighted row.
+// Indexing the projection (not raw m.tasks) keeps the marker on the row
+// the cursor actually sits on under a non-default table sort/filter.
 func (m Model) selectedTaskID() int64 {
-	if m.selected < 0 || m.selected >= len(m.tasks) {
+	rows := m.tableRows()
+	if m.selected < 0 || m.selected >= len(rows) {
 		return 0
 	}
-	return m.tasks[m.selected].ID
+	return rows[m.selected].ID
 }
 
 // priorityAllowSet returns nil when the configured slice is empty (meaning
