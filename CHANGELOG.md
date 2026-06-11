@@ -12,6 +12,13 @@
 
 * **cli:** rewrite `okt logs` as the unified event inspector with `--category`, `--since`, and `--limit` flags. Default scope is the last `views.logs.window_days` for the active project; `--category` is repeatable and comma-separated and accepts the same chips as the TUI (`task`, `comment`, `plan`, `tag-dep`, `guard`, `audit`, `hook`, `tool_call`, `trick`, `domain`, plus the `all` shortcut).
 
+## [0.26.0](https://github.com/This-Is-NPC/omakiten/compare/v0.25.3...v0.26.0) (2026-06-11)
+
+
+### Features
+
+* **mcp:** council deliberation — personas/laws catalogs + okt-shape wiring ([#119](https://github.com/This-Is-NPC/omakiten/issues/119)) ([7d9731d](https://github.com/This-Is-NPC/omakiten/commit/7d9731d6ff3608ff31d67d8c9a18b27bd3951a68))
+
 ## [0.25.3](https://github.com/This-Is-NPC/omakiten/compare/v0.25.2...v0.25.3) (2026-06-05)
 
 
