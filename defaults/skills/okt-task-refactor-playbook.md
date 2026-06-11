@@ -14,7 +14,7 @@ Identify a single smell — duplication, long function, feature envy — and app
 
 ## Record the change
 
-Call `templates.show` for any bound refactor scaffold and fill it. Keep it to one transformation; do not let feature work slip in.
+Call `templates.show` for any bound refactor scaffold, fill it, and persist the record with `comments.add` or `progress.record` on the task. Keep it to one transformation; do not let feature work slip in.
 
 ## Handoff
 

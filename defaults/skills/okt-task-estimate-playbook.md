@@ -10,7 +10,7 @@ Size each increment. Estimates are relative and explicit, not gut feel left unst
 
 ## Attach a relative estimate
 
-Attach a relative estimate — points or t-shirt size — to every slice, each with a one-line basis-of-estimate so the number can be questioned.
+Attach a relative estimate — points or t-shirt size — to every slice, each with a one-line basis-of-estimate so the number can be questioned. Persist the sizing note with `comments.add` (or `progress.record` when updating an existing task checkpoint).
 
 ## Flag the uncertain slices
 

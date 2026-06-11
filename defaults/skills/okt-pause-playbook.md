@@ -11,10 +11,10 @@ Close the current session by snapshotting where the work stands into a handoff n
 ## Capture the live picture across all three planes
 
 - GIT state — run `git status` and `git diff --stat` via Bash for the working-tree summary, the current branch, and uncommitted work.
-- ACTIVE task — `tasks.list` for in-flight ids, `task.activity.list` for what moved since the previous handoff.
+- ACTIVE task — `tasks.list` for in-flight ids, `task_activity.list` for what moved since the previous handoff.
 - PLAN — `plans.continue` / `plans.show` for the active wave and what remains claimable.
 
-Synthesise material state since the previous handoff via `project.overview`.
+Find the previous handoff with `comments.list` (`scope=project`, `kind=handoff`, newest first), then synthesise material state since that handoff via `project.overview`.
 
 ## Persist the handoff
 

@@ -13,7 +13,7 @@ Trace untrusted input to sinks, check authz on every new path, look for injectio
 
 ## Record findings
 
-Call `templates.show` for any bound findings scaffold and fill it. Cite the class of each finding and tag it by severity; read-only — never edit.
+Call `templates.show` for any bound findings scaffold, fill it, and persist it with `comments.add` on the task. Cite the class of each finding and tag it by severity; read-only — never edit files.
 
 ## Handoff
 

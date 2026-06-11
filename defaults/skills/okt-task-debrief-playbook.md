@@ -14,7 +14,7 @@ Distill the decisions that held, the assumptions that broke, and the follow-ups 
 
 ## Record the debrief
 
-Call `templates.show` for any bound lessons scaffold and fill it. Record the debrief; stay read-only with respect to code.
+Call `templates.show` for any bound lessons scaffold, fill it, and persist the debrief with `comments.add` on the task or project that owns the completed work. Stay read-only with respect to code.
 
 ## Handoff
 

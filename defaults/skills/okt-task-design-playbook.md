@@ -14,7 +14,7 @@ Sketch the approach — the data flow, the seams you will touch, the interfaces 
 
 ## Record the rationale
 
-Call `templates.show` for any bound design scaffold and fill it. Record the design rationale; do not edit production code here.
+Call `templates.show` for any bound design scaffold, fill it, and persist the design rationale with `comments.add` on the task. Do not edit production code here.
 
 ## Handoff
 
