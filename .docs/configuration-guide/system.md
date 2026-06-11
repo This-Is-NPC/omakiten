@@ -18,7 +18,6 @@ For ConfigRoot precedence, `.active` resolution, and the `<root>/` layout, see [
 - [`config.mcp`](#configmcp)
 - [`config.tui`](#configtui)
 - [`config.sqlite`](#configsqlite)
-- [`config.activity_log`](#configactivity_log)
 - [`config.solutions`](#configsolutions)
 - [`config.backup`](#configbackup)
 - [`config.events`](#configevents)
@@ -229,22 +228,6 @@ config:
 | `cache_size_kb` | int | `> 0` | Sets `PRAGMA cache_size` using SQLite's negative-kilobyte form so hot task/event/dependency pages stay in cache across TUI read fan-out. |
 | `mmap_size_bytes` | int | `>= 0` | Sets `PRAGMA mmap_size`. Zero disables mmap; raise only on local filesystems where memory-mapped reads are safe. |
 
-## `config.activity_log`
-
-Retention window for per-call tool events (`cli.tool_call`, `mcp.tool_call`, `tui.tool_call`) used by logs and activity feeds. **Required block** — disabling retention is not a supported mode (the tool-call log would grow unbounded). Each tracked call runs a synchronous prune pass after insert; the writer never blocks longer than O(rows-deleted).
-
-```yaml
-config:
-  activity_log:
-    max_rows: 500             # int >0
-    max_age_days: 7           # int >0
-```
-
-| Field | Type | Constraint | What it does |
-|---|---|---|---|
-| `max_rows` | int | `> 0` | Hard ceiling on tool-call rows. Older rows are deleted in id-DESC order after every insert. |
-| `max_age_days` | int | `> 0` | Sliding window — rows older than this many days are deleted on every insert. |
-
 ## `config.solutions`
 
 Caps the `solutions.list_top` MCP response shape. **Required block** — `default_top_limit` applies when the caller passes `<=0`; `max_top_limit` clamps caller-supplied limits so MCP responses stay bounded regardless of what the agent asks for.
@@ -279,12 +262,22 @@ For the snapshot filename pattern, atomic copy, and `mise run purge` interaction
 
 ## `config.events`
 
-Fallback recent-events limit plus per-event channel policy. **Required block.** `defaults` must declare all three channels; `overrides` can change any subset per event type and inherits unspecified channels from `defaults`.
+Fallback recent-events limit, per-event channel policy, and **storage retention** for rows in the unified `events` table. **Required block.** `defaults` must declare all three channels; `overrides` can change any subset per event type and inherits unspecified channels from `defaults`.
+
+Retention is distinct from `config.views.logs.window_days`, which only scopes reads in the TUI / CLI / MCP inspectors.
 
 ```yaml
 config:
   events:
     default_recent_limit: 50  # int >0
+    retention:
+      defaults:
+        max_age_days: 0       # 0 = unlimited age (kit canonical)
+        max_rows: 0           # 0 = unlimited row count (kit canonical)
+      # by_category:          # optional — opt-in caps only
+      #   tool_call:
+      #     max_age_days: 7
+      #     max_rows: 500
     defaults:
       log: true               # persist to events table
       broadcast: true         # fan out over the in-process bus
@@ -297,10 +290,15 @@ config:
 | Field | Type | Constraint | What it does |
 |---|---|---|---|
 | `default_recent_limit` | int | `> 0` | Fallback row count applied when the caller passes `<=0`. The query is indexed on `(event_type, created_at, id)` so larger values are cheap. |
+| `retention.defaults` | object | required; both ints `>= 0` | Floor policy for every event type. `0` on either axis means unlimited for that axis. |
+| `retention.by_category` | map | optional; keys ∈ `domain.KnownEventCategories` | Category-level retention. Partial fields inherit from `defaults`. |
+| `retention.overrides` | map | optional; keys must be known event types | Per-type exceptions. Partial fields inherit from category then `defaults`. |
 | `defaults.log` | bool | required | Persists matching events to SQLite when true. Comments are user data and still write even when the log gate is false. |
 | `defaults.broadcast` | bool | required | Publishes matching events to in-process subscribers when true. |
 | `defaults.hook` | bool | required | Lets the hooks engine consider matching events when true. |
 | `overrides` | map | optional; keys must be known event types | Per-event channel overrides. Omitted channel fields inherit from `defaults`; unknown event names fail validation. |
+
+Legacy `config.activity_log` is deprecated. Loaders normalize it into `retention.by_category.tool_call` when that category is unset.
 
 Domain event names live in `internal/domain/event.go::KnownEventTypes` — that file is the source of truth for what's emittable. For action contracts that consume events, see [hooks.md](hooks.md).
 
@@ -398,7 +396,7 @@ The runtime applies one substitution; `golang` → `go` works, but if you also d
 | Missing/zero `config.views.logs.window_days` | `config.views.logs.window_days: must be > 0 (see defaults/config/omakase.yaml)` |
 | Project laws referencing a non-existent law | `projects.<slug> laws: ref "<slug>" has no matching law file` |
 | Missing/zero `config.sqlite.busy_timeout_ms` | `config.sqlite.busy_timeout_ms: must be > 0 (see defaults/config/omakase.yaml)` |
-| Missing/zero `config.activity_log.{max_rows, max_age_days}` | `config.activity_log.max_rows: must be > 0 (see defaults/config/omakase.yaml)` |
+| Missing/invalid `config.events.retention` | `config.events.retention.defaults.max_age_days: must be >= 0` / unknown category or event type in overrides |
 | Missing/zero `config.solutions.*` or inverted range | `config.solutions: max_top_limit (<n>) must be >= default_top_limit (<n>)` |
 | Missing/zero `config.events.default_recent_limit` | `config.events.default_recent_limit: must be > 0 (see defaults/config/omakase.yaml)` |
 | Empty/uppercase/duplicate `config.search.stopwords` | `config.search.stopwords: entry "X" must be lowercase (matching tokenizer output)` |
@@ -432,9 +430,11 @@ config:
     table: { sort: { field: title,      order: asc  } }
     logs:  { limit: 100, window_days: 30 }
   sqlite:       { busy_timeout_ms: 5000 }
-  activity_log: { max_rows: 500, max_age_days: 7 }
   solutions:    { default_top_limit: 10, max_top_limit: 100 }
-  events:       { default_recent_limit: 50 }
+  events:
+    default_recent_limit: 50
+    retention:
+      defaults: { max_age_days: 0, max_rows: 0 }
   search:       { stopwords: [and, are, for, from, into, the, this, that, with] }
   tag_synonyms: { golang: go, javascript: js, k8s: kubernetes }
 
