@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"omakiten/internal/agentruntime"
 	"omakiten/internal/app"
 	"omakiten/internal/config"
 	"omakiten/internal/domain"
@@ -40,6 +41,54 @@ func (m *Model) reloadBundle(path string) error {
 	if err != nil {
 		return err
 	}
+	if err := m.applyProjectRuntime(pr, path); err != nil {
+		return err
+	}
+
+	suppressed := m.suppressNextSwapEmit
+	m.suppressNextSwapEmit = false
+	if m.project.ID != 0 && !suppressed {
+		m.emitBundleSwapped(fromWorkflow, m.workflow.Key, fromPath)
+	}
+	return nil
+}
+
+// reloadBundleIfChanged is the passive hot-reload path used by the TUI's
+// refresh tick. It lets the shared BundleCache stat the watched config sources
+// and applies the rotated runtime only when Resolve actually rebuilt it.
+func (m *Model) reloadBundleIfChanged() (bool, error) {
+	if m.repos.Cache == nil || m.repos.ConfigPath == "" {
+		return false, nil
+	}
+	before := m.repos.Cache.Get(m.repos.ProjectID)
+	// Intentional asymmetry vs the MCP Service() marker re-resolve
+	// (runtime.go): Resolve only re-stats m.repos.ConfigPath (and its
+	// watched sources), never the active-profile marker (.active). A TUI
+	// launched without --config therefore passively picks up in-place
+	// edits to its bundle, but NOT an active-profile SWITCH — that is the
+	// AC2 contract (the switch is observed on the next explicit reload,
+	// not the refresh tick). Do not "fix" this into a marker re-stat.
+	pr, err := m.repos.Cache.Resolve(m.ctx, m.repos.ProjectID, m.repos.ConfigPath)
+	if err != nil {
+		return false, err
+	}
+	if pr == nil || pr == before {
+		return false, nil
+	}
+	path := pr.SourcePath
+	if path == "" {
+		path = m.repos.ConfigPath
+	}
+	if err := m.applyProjectRuntime(pr, path); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+func (m *Model) applyProjectRuntime(pr *agentruntime.ProjectRuntime, path string) error {
+	if pr == nil || pr.Snapshot == nil {
+		return fmt.Errorf("tui: hot-reload returned an empty project runtime")
+	}
 	snap := pr.Snapshot
 	settings := snap.Settings()
 	registry := pr.EnumRegistry
@@ -52,7 +101,10 @@ func (m *Model) reloadBundle(path string) error {
 	}
 	theme := snap.Theme()
 
-	m.repos.Editor.SetPath(path)
+	if m.repos.Editor != nil {
+		m.repos.Editor.SetPath(path)
+	}
+	m.repos.ConfigPath = path
 	m.theme = theme
 	m.styles = newStyles(theme)
 	m.markdown = newMarkdownRenderer(tokensFromTheme(theme))
@@ -74,6 +126,9 @@ func (m *Model) reloadBundle(path string) error {
 	if err := m.refresh(); err != nil {
 		return err
 	}
+	if m.top == topSettings && (m.sub == subSettingsGeneral || m.sub == subSettingsGuards) {
+		m.refreshSettingsGeneralLines()
+	}
 	// Rotate the trick-palette registry against the freshly-loaded
 	// bundle so config.tricks.nav overrides edited in-session take
 	// effect on the next Ctrl+K open. Best-effort: registry build
@@ -81,12 +136,6 @@ func (m *Model) reloadBundle(path string) error {
 	// nil-ing it out and breaking palette dispatch.
 	if reg, err := buildPaletteRegistry(m.repos); err == nil {
 		m.paletteRegistry = reg
-	}
-
-	suppressed := m.suppressNextSwapEmit
-	m.suppressNextSwapEmit = false
-	if m.project.ID != 0 && !suppressed {
-		m.emitBundleSwapped(fromWorkflow, m.workflow.Key, fromPath)
 	}
 	return nil
 }

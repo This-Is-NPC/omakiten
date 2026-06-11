@@ -48,9 +48,13 @@ type Options struct {
 type Runtime struct {
 	store      *sqlite.Store
 	configPath string
-	dbPath     string
-	bus        events.Bus
-	cache      *BundleCache
+	// configPathExplicit is true when the caller supplied --config / ConfigPath.
+	// Default installs re-resolve the active profile marker so long-lived MCP
+	// servers notice `okt setup --update` switching presets.
+	configPathExplicit bool
+	dbPath             string
+	bus                events.Bus
+	cache              *BundleCache
 	// defaultProjectID is the cache key the boot path installed the
 	// initial runtime under. Phase 3a always uses 0 (single bundle
 	// process-wide); Phase 3b–3f switch to per-project ids without
@@ -148,6 +152,7 @@ func Open(ctx context.Context, opts Options) (*Runtime, error) {
 	r := &Runtime{
 		store:              store,
 		configPath:         configPath,
+		configPathExplicit: opts.ConfigPath != "",
 		dbPath:             dbPath,
 		bus:                bus,
 		cache:              cache,
@@ -306,6 +311,38 @@ func (r *Runtime) Bus() events.Bus {
 }
 
 func (r *Runtime) Service() *agent.Service {
+	if r == nil || r.cache == nil {
+		return nil
+	}
+	ctx := context.Background()
+	configPath := r.configPath
+	// Per-call stat cost is intentional: for default installs Service()
+	// re-resolves the active-profile marker (resolvedConfigPath) and, via
+	// the trailing Resolve, stats every watched source on every MCP call.
+	// This makes the active marker authoritative on each call (so an
+	// out-of-band `okt config use` is picked up immediately) at the price
+	// of a handful of stat()s. Acceptable at the current single-bundle
+	// scale; revisit only if the cache grows to many concurrent projects.
+	if !r.configPathExplicit {
+		if activePath, err := resolvedConfigPath(""); err == nil && activePath != "" {
+			configPath = activePath
+			// Active-profile SWITCH: the marker now points at a different
+			// bundle file than the cached entry's SourcePath, so reload
+			// against the new path. Same-file (in-place) edits are NOT
+			// handled here — pr.SourcePath == activePath skips this block
+			// and falls through to the trailing Resolve below, which
+			// rebuilds on the source's mtime change.
+			if pr := r.cache.Get(r.defaultProjectID); pr != nil && pr.SourcePath != "" && pr.SourcePath != activePath {
+				if next, err := r.cache.Reload(ctx, r.defaultProjectID, activePath); err == nil && next != nil {
+					return next.Service
+				}
+				return pr.Service
+			}
+		}
+	}
+	if pr, err := r.cache.Resolve(ctx, r.defaultProjectID, configPath); err == nil && pr != nil {
+		return pr.Service
+	}
 	if pr := r.cache.Get(r.defaultProjectID); pr != nil {
 		return pr.Service
 	}

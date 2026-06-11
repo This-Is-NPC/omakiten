@@ -4,12 +4,22 @@
 
 ### ⚠ BREAKING CHANGES
 
+* **config:** `config.activity_log` is deprecated — retention now lives under `config.events.retention` (`defaults` → `by_category` → `overrides`). Legacy bundles that still declare `activity_log` are normalized into `by_category.tool_call` at load time. Kit defaults are unlimited (`defaults` 0/0); to keep the old 7-day / 500-row tool-call cap, migrate with:
+  ```yaml
+  events:
+    retention:
+      by_category:
+        tool_call:
+          max_age_days: 7
+          max_rows: 500
+  ```
 * **metrics:** `/metrics.summary` JSON shape changed: per-bucket flat fields (`errors_recorded`, `errors_searched`, `solutions_added`, `solutions_liked`, `solutions_failed`, `solutions_top_viewed`) replaced by a `buckets` map keyed by metric tag. Update consumers to read `buckets.error_searched` etc. instead.
 * **cli:** `okt logs` is now a generic event inspector backed by `ListEvents`. The JSON envelope shape changed: each row carries the unified `EventRow` projection (`event_type`, `entity_type`, `author_type`, `category`, `summary`) instead of the legacy `domain.ActivityLog` columns. The `summary` field is the same one-line text the TUI Logs inspector renders. Downstream tooling that scraped `source`-only rows must switch to the new shape; the legacy `ListActivityLogs` repo method is retained for now and is not affected.
 * **events:** event `error.searched` renamed to `errors.researched`; `entity_type` for these rows shifted from `error` to `search`. Migration `030_rename_errors_researched.sql` backfills historical rows. Consumers querying the activity log by event_type must update their filter. The metrics bucket id `error_searched` (in `/metrics.summary buckets`) is unchanged.
 
 ### Features
 
+* **config:** unified `config.events.retention` policy for every row in the `events` table — category defaults, per-type overrides, generic SQLite prune on insert and at `ApplyConfig`, and a TUI Logs footer that contrasts storage retention with `views.logs.window_days`.
 * **cli:** rewrite `okt logs` as the unified event inspector with `--category`, `--since`, and `--limit` flags. Default scope is the last `views.logs.window_days` for the active project; `--category` is repeatable and comma-separated and accepts the same chips as the TUI (`task`, `comment`, `plan`, `tag-dep`, `guard`, `audit`, `hook`, `tool_call`, `trick`, `domain`, plus the `all` shortcut).
 
 ## [0.26.0](https://github.com/This-Is-NPC/omakiten/compare/v0.25.3...v0.26.0) (2026-06-11)

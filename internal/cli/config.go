@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -11,18 +12,37 @@ import (
 	"omakiten/internal/domain"
 )
 
+const updateDefaultsManualCommand = "okt config refresh-defaults"
+
+func updateDefaultsManualCommandForConfig(configPath string) string {
+	if configPath == "" {
+		return updateDefaultsManualCommand
+	}
+	return "okt --config " + shellQuoteArg(configPath) + " config refresh-defaults"
+}
+
+func shellQuoteArg(s string) string {
+	if s == "" {
+		return "''"
+	}
+	if !strings.ContainsAny(s, " \t\n'\"\\$`!*?[]{}();<>|&") {
+		return s
+	}
+	return "'" + strings.ReplaceAll(s, "'", "'\"'\"'") + "'"
+}
+
 // healthCheckRemediations maps a validator error kind to the
 // instructional command the user runs to repair the bundle. Every
 // entry is read-only relative to user-owned files: the catalogue must
 // never expand to include commands that mutate the user's config
 // without their explicit invocation (#365 AC 9 / AC 10).
 //
-// `okt setup --update --skip-wrapper --skip-harnesses` overwrites
-// shipped files only; user-owned `<kind>/custom/` subtrees stay
-// untouched (verified at internal/config/default_files.go:84).
+// `okt config refresh-defaults` overwrites shipped files only; user-owned
+// `<kind>/custom/` subtrees and config/.active stay untouched (verified by
+// internal/config/default_files_test.go).
 var healthCheckRemediations = map[string]string{
-	"missing_shipped_file":   "okt setup --update --skip-wrapper --skip-harnesses",
-	"embedded_default_drift": "okt setup --update --skip-wrapper --skip-harnesses",
+	"missing_shipped_file":   updateDefaultsManualCommand,
+	"embedded_default_drift": updateDefaultsManualCommand,
 	"unknown_schema_key":     "okt config edit <path>",
 	"invalid_value":          "okt config edit <path>",
 	"missing_required_key":   "okt config edit <path>",
@@ -192,9 +212,56 @@ func newConfigCommand(opts *runtimeOptions) *cobra.Command {
 			})
 		},
 	}
+	refreshDefaults := &cobra.Command{
+		Use:   "refresh-defaults",
+		Short: opts.t("cli.config.refresh_defaults.short"),
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return runJSON(cmd, func(context.Context) (any, error) {
+				root, err := opts.resolvedConfigRoot()
+				if err != nil {
+					return nil, err
+				}
+				configPath := ""
+				if resolved, err := opts.resolvedConfigPath(); err == nil {
+					configPath = resolved
+				} else if opts.configPath != "" || !os.IsNotExist(err) {
+					// When --config is explicit, any resolution error is fatal.
+					// When --config is empty we intentionally fall back to the
+					// XDG-default root, but only for a benign "the default config
+					// file does not exist yet" miss; any other error (permission,
+					// walk-up failure, abs-path failure) is surfaced rather than
+					// silently refreshing a possibly-wrong root.
+					return nil, err
+				}
+				if err := config.ValidateDefaultRefreshRoot(root, configPath); err != nil {
+					return nil, domain.NewError(domain.ErrValidation, "refusing to refresh defaults: "+err.Error(), map[string]any{
+						"root":        root,
+						"config_path": configPath,
+					})
+				}
+				if err := config.RefreshDefaultFiles(root); err != nil {
+					// This failure happens AFTER pre-flight validation passed, so
+					// the prune/recopy was already in progress: a partial overwrite
+					// of managed defaults may have landed before the error. Do not
+					// label it a validation refusal (which implies nothing was
+					// written); report it as an update failure and surface the
+					// idempotent repair command the user can re-run.
+					return nil, domain.NewError(domain.ErrUpdateFailed, "defaults refresh failed mid-write (a partial overwrite may have applied); re-run the repair command to finish: "+err.Error(), map[string]any{
+						"root":           root,
+						"config_path":    configPath,
+						"partial_write":  true,
+						"repair_command": updateDefaultsManualCommandForConfig(configPath),
+						"error":          domain.SafeError(err),
+					})
+				}
+				return map[string]any{"root": root, "refreshed": true}, nil
+			})
+		},
+	}
 
 	cmd.AddCommand(validate)
 	cmd.AddCommand(presets)
+	cmd.AddCommand(refreshDefaults)
 	cmd.AddCommand(newConfigInitCommand(opts))
 	cmd.AddCommand(newConfigShowCommand(opts))
 	cmd.AddCommand(newConfigPathCommand(opts))

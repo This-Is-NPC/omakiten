@@ -51,9 +51,9 @@ func kitCacheSizeKB() int {
 // (tasks.go, comments.go, bundles.go, ...) so this file stays small and
 // focused on lifecycle: opening, closing, and bringing the schema up to date.
 //
-// Knobs that flow from config (activity_log retention, events fallback) live
+// Knobs that flow from config (events retention, events fallback) live
 // as fields here so the composition root can write them once with
-// `SetActivityLogRetention` / `SetEventsRecentLimit` after `Open`. The Store
+// `SetEventsPolicy` / `SetEventsRecentLimit` after `Open`. The Store
 // has no in-code defaults: zero values mean "config not yet wired" and the
 // affected code paths skip work or error out rather than masking the gap.
 type Store struct {
@@ -67,9 +67,9 @@ type Store struct {
 	// callers honour the user's config instead of falling back to the
 	// kit default.
 	busyTimeoutMs            int
-	activityLogMaxRows       int
-	activityLogMaxAgeDays    int
 	eventsDefaultRecentLimit int
+	retentionGroups          []config.RetentionGroup
+	eventTypeRetentionIndex  map[string]int
 	// eventsPolicy gates the per-event-type log channel: when
 	// ResolveLog returns false, the audit event is dropped before
 	// reaching the events table. The zero value resolves to "log
@@ -83,14 +83,6 @@ type Store struct {
 	bus events.Bus
 }
 
-// SetActivityLogRetention installs the operation-log retention window the
-// Store applies after every BeginActivityLog. Composition root resolves the
-// values from config.activity_log and calls this exactly once at startup.
-func (s *Store) SetActivityLogRetention(maxRows, maxAgeDays int) {
-	s.activityLogMaxRows = maxRows
-	s.activityLogMaxAgeDays = maxAgeDays
-}
-
 // SetEventsRecentLimit installs the fallback row count Store.ListRecentEvents
 // applies when callers pass <=0. Composition root resolves the value from
 // config.events.default_recent_limit.
@@ -101,9 +93,17 @@ func (s *Store) SetEventsRecentLimit(limit int) {
 // SetEventsPolicy installs the per-event-type channel policy. When the
 // policy resolves Log=false for an event_type, RecordTaskEvent /
 // RecordEntityEvent / insertTaskEvent drop the row before insertion
-// without surfacing an error to callers.
+// without surfacing an error to callers. Retention groups are rebuilt
+// from the same policy so post-insert pruning uses resolved limits.
 func (s *Store) SetEventsPolicy(policy config.EventsSettings) {
 	s.eventsPolicy = policy
+	s.retentionGroups = policy.BuildRetentionGroups()
+	s.eventTypeRetentionIndex = make(map[string]int, len(s.retentionGroups)*4)
+	for i, grp := range s.retentionGroups {
+		for _, eventType := range grp.EventTypes {
+			s.eventTypeRetentionIndex[eventType] = i
+		}
+	}
 }
 
 // shouldLogEvent reports whether an event of eventType should be
@@ -146,8 +146,6 @@ type ConfigKnobs struct {
 	// MmapSizeBytes applies PRAGMA mmap_size. 0 disables mmap; <0 is
 	// rejected by the config validator.
 	MmapSizeBytes            int
-	ActivityLogMaxRows       int
-	ActivityLogMaxAgeDays    int
 	EventsDefaultRecentLimit int
 	// EventsPolicy mirrors bundle.Config.Events so the Store can apply
 	// per-event-type log gates as soon as the bundle reaches it.
@@ -161,8 +159,8 @@ type ConfigKnobs struct {
 // busy_timeout PRAGMA fires on the borrowed connection — modernc.org/sqlite
 // keeps it sticky for the connection's lifetime, and the small pool
 // (MaxOpenConns=2) means subsequent connections rerun PRAGMAs at first
-// use elsewhere. activity_log + events knobs are simple field writes the
-// hot-path code reads without taking a lock.
+// use elsewhere. events policy + recent-limit knobs are simple field
+// writes the hot-path code reads without taking a lock.
 func (s *Store) ApplyConfig(ctx context.Context, k ConfigKnobs) error {
 	if err := applyPragmas(ctx, s.db, pragmaSet{
 		BusyTimeoutMs: k.BusyTimeoutMs,
@@ -174,13 +172,33 @@ func (s *Store) ApplyConfig(ctx context.Context, k ConfigKnobs) error {
 	if k.BusyTimeoutMs > 0 {
 		s.busyTimeoutMs = k.BusyTimeoutMs
 	}
-	s.SetActivityLogRetention(k.ActivityLogMaxRows, k.ActivityLogMaxAgeDays)
 	s.SetEventsRecentLimit(k.EventsDefaultRecentLimit)
 	s.SetEventsPolicy(k.EventsPolicy)
 	if k.EventBus != nil {
 		s.SetEventBus(k.EventBus)
 	}
+	return s.pruneAllRetentionGroups(ctx)
+}
+
+func (s *Store) pruneAllRetentionGroups(ctx context.Context) error {
+	for _, grp := range s.retentionGroups {
+		if err := s.PruneEventTypes(ctx, grp.EventTypes, grp.MaxAgeDays, grp.MaxRows); err != nil {
+			return err
+		}
+	}
 	return nil
+}
+
+func (s *Store) pruneRetentionForEventType(ctx context.Context, eventType string) {
+	if len(s.retentionGroups) == 0 {
+		return
+	}
+	idx, ok := s.eventTypeRetentionIndex[eventType]
+	if !ok {
+		return
+	}
+	grp := s.retentionGroups[idx]
+	_ = s.PruneEventTypes(ctx, grp.EventTypes, grp.MaxAgeDays, grp.MaxRows)
 }
 
 // pragmaSet carries the user-tunable PRAGMA values applyPragmas issues.

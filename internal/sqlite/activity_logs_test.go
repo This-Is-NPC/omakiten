@@ -194,8 +194,12 @@ func TestActivityLogPruneKeepsNewest(t *testing.T) {
 		}
 	}
 
-	if err := store.PruneActivityLogs(ctx, 3, 0); err != nil {
-		t.Fatalf("PruneActivityLogs() error = %v", err)
+	if err := store.PruneEventTypes(ctx, []string{
+		domain.EventTypeCLIToolCall,
+		domain.EventTypeMCPToolCall,
+		domain.EventTypeTUIToolCall,
+	}, 0, 3); err != nil {
+		t.Fatalf("PruneEventTypes() error = %v", err)
 	}
 
 	logs, err := store.ListActivityLogs(ctx, domain.ActivityLogFilter{})

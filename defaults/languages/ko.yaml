@@ -56,6 +56,7 @@ keys:
   cli.config.short: "정규 omakiten.yaml 번들 관리"
   cli.config.validate.short: "omakiten.yaml 파일 검증"
   cli.config.presets.short: "공식 workflow presets 목록"
+  cli.config.refresh_defaults.short: "Refresh shipped default files without running setup"
   cli.projects.short: "Project 수명 주기 utilities (delete — destructive ops)"
   cli.projects.delete.short: "등록된 project 와 모든 종속 row hard-delete (되돌릴 수 없음)"
   cli.projects.delete.long: |-
@@ -683,6 +684,10 @@ keys:
   tui.log.tui: "tui"
   tui.log.refresh_hint: "r 새로 고침 · 전체 인수는 더 넓은 터미널에서 표시됨"
   tui.log.tui_refresh_note: "app service 호출만 기록됩니다. TUI 새로 고침 및 직접 읽기는 표시되지 않습니다."
+  tui.log.retention_note_fmt: "tool_call retention: %dd / %d rows · display window: %dd"
+  tui.log.retention_note_rows_only_fmt: "tool_call retention: %d rows · display window: %dd"
+  tui.log.retention_note_window_only_fmt: "display window: %dd"
+  tui.log.retention_note_unavailable: "retention policy unavailable"
   tui.log.filter.kicker: "logs · 필터"
   tui.log.filter.hint: "(F 순환)"
   tui.log.filter.all: "전체"
@@ -1077,6 +1082,7 @@ keys:
     쓰기 없이 0 으로 종료합니다. --yes 는 비대화형 호출의 확인을 건너뜁니다.
   cli.update.flag.yes: "확인 프롬프트를 건너뛰고 비대화형으로 upgrade 적용"
   cli.update.flag.check: "현재 vs. 최신을 보고하고 쓰기 없이 종료"
+  cli.update.flag.skip_defaults: "update only the binary and skip shipped defaults refresh"
   cli.update.picker.title: "okt 업데이트"
   cli.update.picker.line: "현재=%s  →  최신=%s"
   cli.update.picker.hint: "y 적용 · n 취소 · ctrl+c 종료"

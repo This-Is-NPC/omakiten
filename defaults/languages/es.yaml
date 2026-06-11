@@ -56,6 +56,7 @@ keys:
   cli.config.short: "Gestiona el bundle canónico omakiten.yaml"
   cli.config.validate.short: "Valida un archivo omakiten.yaml"
   cli.config.presets.short: "Lista los presets oficiales de workflow"
+  cli.config.refresh_defaults.short: "Refresh shipped default files without running setup"
   cli.projects.short: "Utilidades del ciclo de vida del proyecto (delete — ops destructivas)"
   cli.projects.delete.short: "Hard-delete de un proyecto registrado y cada fila dependiente (irreversible)"
   cli.projects.delete.long: |-
@@ -692,6 +693,10 @@ keys:
   tui.log.tui: "tui"
   tui.log.refresh_hint: "r actualizar · argumentos completos aparecen en terminales más anchas"
   tui.log.tui_refresh_note: "Solo las llamadas de app service se loguean. Refreshes de la TUI y lecturas directas no aparecen."
+  tui.log.retention_note_fmt: "tool_call retention: %dd / %d rows · display window: %dd"
+  tui.log.retention_note_rows_only_fmt: "tool_call retention: %d rows · display window: %dd"
+  tui.log.retention_note_window_only_fmt: "display window: %dd"
+  tui.log.retention_note_unavailable: "retention policy unavailable"
   tui.log.filter.kicker: "logs · filtro"
   tui.log.filter.hint: "(F ciclo)"
   tui.log.filter.all: "todo"
@@ -1087,6 +1092,7 @@ keys:
     llamadores no interactivos.
   cli.update.flag.yes: "omite el prompt de confirmación y aplica la actualización de forma no interactiva"
   cli.update.flag.check: "informa actual vs. más reciente y sale sin escribir"
+  cli.update.flag.skip_defaults: "update only the binary and skip shipped defaults refresh"
   cli.update.picker.title: "Actualizar okt"
   cli.update.picker.line: "actual=%s  →  última=%s"
   cli.update.picker.hint: "y aplicar · n cancelar · ctrl+c salir"

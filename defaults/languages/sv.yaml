@@ -57,6 +57,7 @@ keys:
   cli.config.short: "Hantera den kanoniska omakiten.yaml-bunten"
   cli.config.validate.short: "Validera en omakiten.yaml-fil"
   cli.config.presets.short: "Lista officiella workflow-presets"
+  cli.config.refresh_defaults.short: "Refresh shipped default files without running setup"
   cli.projects.short: "Verktyg för projektets livscykel (delete — destruktiva ops)"
   cli.projects.delete.short: "Hard-delete av ett registrerat projekt och varje beroende rad (irreversibelt)"
   cli.projects.delete.long: |-
@@ -688,6 +689,10 @@ keys:
   tui.log.tui: "tui"
   tui.log.refresh_hint: "r uppdaterar · fullständiga argument visas på bredare terminaler"
   tui.log.tui_refresh_note: "Endast app-service-anrop loggas. TUI-uppdateringar och direkta läsningar visas inte."
+  tui.log.retention_note_fmt: "tool_call retention: %dd / %d rows · display window: %dd"
+  tui.log.retention_note_rows_only_fmt: "tool_call retention: %d rows · display window: %dd"
+  tui.log.retention_note_window_only_fmt: "display window: %dd"
+  tui.log.retention_note_unavailable: "retention policy unavailable"
   tui.log.filter.kicker: "logs · filter"
   tui.log.filter.hint: "(F cykel)"
   tui.log.filter.all: "alla"
@@ -1082,6 +1087,7 @@ keys:
     non-interaktiva anrop.
   cli.update.flag.yes: "hoppa över bekräftelse och tillämpa upgrade non-interaktivt"
   cli.update.flag.check: "rapportera nuvarande vs. senaste och avsluta utan att skriva"
+  cli.update.flag.skip_defaults: "update only the binary and skip shipped defaults refresh"
   cli.update.picker.title: "Uppdatera okt"
   cli.update.picker.line: "nuvarande=%s  →  senaste=%s"
   cli.update.picker.hint: "y tillämpa · n avbryt · ctrl+c avsluta"

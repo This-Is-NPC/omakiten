@@ -355,12 +355,9 @@ The `events` row carries every column it might need; unused columns are nullable
 
 ### Pruning policy (`*.tool_call` only)
 
-After every successful `*.tool_call` insert, those rows are pruned synchronously by `internal/sqlite/activity_logs.go:PruneActivityLogs`. Both knobs come from the user's bundle (`config.activity_log.max_rows`, `config.activity_log.max_age_days`) and are wired into the `Store` at composition-root time via `Store.SetActivityLogRetention`. The kit canonical (`defaults/config/omakase.yaml`) ships:
+After every successful event insert whose resolved `config.events.retention` policy has a non-zero limit, matching rows are pruned synchronously by `internal/sqlite/events_prune.go:PruneEventTypes`. Policy resolution flows `overrides[event_type]` → `by_category[category]` → `defaults`, wired into the `Store` at composition-root time via `Store.SetEventsPolicy` (called from `ApplyConfig`). The kit canonical (`defaults/config/modules/base-config.yaml`) ships **unlimited** retention (`retention.defaults` 0/0, no `by_category` entries). Opt-in caps per category or event type are YAML-only — e.g. `by_category.tool_call: {max_age_days: 7, max_rows: 500}`.
 
-- **Max age**: 7 days (`config.activity_log.max_age_days`).
-- **Max rows**: 500 most-recent (`config.activity_log.max_rows`).
-
-Both fields are validator-required (> 0) — disabling retention is not a supported mode.
+`config.views.logs.window_days` scopes reads only — it does not delete rows. Legacy `config.activity_log` is normalized into `by_category.tool_call` at load time.
 
 **Comments, task lifecycle, domain, and system events are not pruned** — they are durable history. Pruning is scoped to the tool-call entries.
 

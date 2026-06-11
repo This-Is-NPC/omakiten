@@ -20,7 +20,7 @@ Each doc inlines the YAML schema for the feature it teaches. See [configuration-
 
 | Doc | What it covers |
 |---|---|
-| [system.md](configuration-guide/system.md) | `config.{output,context,workflow,mcp,tui,sqlite,activity_log,solutions,backup,events,search,tag_synonyms}` plus top-level shape and validation. |
+| [system.md](configuration-guide/system.md) | `config.{output,context,workflow,mcp,tui,sqlite,solutions,backup,events,search,tag_synonyms}` plus top-level shape and validation. |
 | [workflows.md](configuration-guide/workflows.md) | Workflow schema — buckets, transitions, operations, task/comment permissions. |
 | [command-bindings.md](configuration-guide/command-bindings.md) | `mcp_commands`, persona skill repertoires, and prompt composition bindings. |
 | [entities.md](configuration-guide/entities.md) | Entity asset loaders — skills, laws, personas, projects, templates, frontmatter, autoload/custom rules. |

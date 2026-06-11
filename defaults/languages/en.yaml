@@ -56,6 +56,7 @@ keys:
   cli.config.short: "Manage the canonical omakiten.yaml bundle"
   cli.config.validate.short: "Validate an omakiten.yaml file"
   cli.config.presets.short: "List official workflow presets"
+  cli.config.refresh_defaults.short: "Refresh shipped default files without running setup"
   cli.projects.short: "Project lifecycle utilities (delete — destructive ops)"
   cli.projects.delete.short: "Hard-delete a registered project and every dependent row (irreversible)"
   cli.projects.delete.long: |-
@@ -708,6 +709,10 @@ keys:
   tui.log.tui: "tui"
   tui.log.refresh_hint: "r refresh · full arguments appear on wider terminals"
   tui.log.tui_refresh_note: "Only app service calls are logged. TUI refreshes and direct reads are not shown."
+  tui.log.retention_note_fmt: "tool_call retention: %dd / %d rows · display window: %dd"
+  tui.log.retention_note_rows_only_fmt: "tool_call retention: %d rows · display window: %dd"
+  tui.log.retention_note_window_only_fmt: "display window: %dd"
+  tui.log.retention_note_unavailable: "retention policy unavailable"
   tui.log.filter.kicker: "logs · filter"
   tui.log.filter.hint: "(F cycle)"
   tui.log.filter.all: "all"
@@ -1114,6 +1119,7 @@ keys:
     non-interactive callers.
   cli.update.flag.yes: "skip the confirmation prompt and apply the upgrade non-interactively"
   cli.update.flag.check: "report current vs. latest and exit without writing"
+  cli.update.flag.skip_defaults: "update only the binary and skip shipped defaults refresh"
   cli.update.picker.title: "Update okt"
   cli.update.picker.line: "current=%s  →  latest=%s"
   cli.update.picker.hint: "y apply · n cancel · ctrl+c quit"

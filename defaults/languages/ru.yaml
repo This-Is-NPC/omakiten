@@ -56,6 +56,7 @@ keys:
   cli.config.short: "Управление каноническим бандлом omakiten.yaml"
   cli.config.validate.short: "Валидировать файл omakiten.yaml"
   cli.config.presets.short: "Список официальных presets workflow"
+  cli.config.refresh_defaults.short: "Refresh shipped default files without running setup"
   cli.projects.short: "Утилиты жизненного цикла project (delete — destructive ops)"
   cli.projects.delete.short: "Hard-delete зарегистрированного project и каждой зависимой строки (необратимо)"
   cli.projects.delete.long: |-
@@ -690,6 +691,10 @@ keys:
   tui.log.tui: "tui"
   tui.log.refresh_hint: "r обновить · полные аргументы появляются на широких терминалах"
   tui.log.tui_refresh_note: "Логируются только вызовы app service. Обновления TUI и прямые чтения не отображаются."
+  tui.log.retention_note_fmt: "tool_call retention: %dd / %d rows · display window: %dd"
+  tui.log.retention_note_rows_only_fmt: "tool_call retention: %d rows · display window: %dd"
+  tui.log.retention_note_window_only_fmt: "display window: %dd"
+  tui.log.retention_note_unavailable: "retention policy unavailable"
   tui.log.filter.kicker: "logs · фильтр"
   tui.log.filter.hint: "(F цикл)"
   tui.log.filter.all: "все"
@@ -1086,6 +1091,7 @@ keys:
     неинтерактивных вызовов.
   cli.update.flag.yes: "пропустить подтверждение и применить upgrade неинтерактивно"
   cli.update.flag.check: "сообщить текущий vs. последний и выйти без записи"
+  cli.update.flag.skip_defaults: "update only the binary and skip shipped defaults refresh"
   cli.update.picker.title: "Обновить okt"
   cli.update.picker.line: "текущая=%s  →  последняя=%s"
   cli.update.picker.hint: "y применить · n отмена · ctrl+c выход"

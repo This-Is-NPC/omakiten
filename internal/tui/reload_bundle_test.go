@@ -103,3 +103,80 @@ func TestReloadBundleUsesCacheWhenWired(t *testing.T) {
 			model.registry, secondEntry.EnumRegistry)
 	}
 }
+
+func TestReloadBundleIfChangedAppliesMtimeReload(t *testing.T) {
+	ctx := context.Background()
+	tmp := t.TempDir()
+	configPath := filepath.Join(tmp, "config", "omakase.yaml")
+	dbPath := filepath.Join(tmp, "omakiten.db")
+
+	if err := config.SaveFullBundle(configPath, tuiTestBundle(t)); err != nil {
+		t.Fatalf("SaveFullBundle: %v", err)
+	}
+	writeThemeFile(t, filepath.Join(tmp, "themes", "catppuccin.yaml"), "catppuccin", "Catppuccin")
+
+	store := snapstore.Open(t, dbPath)
+	files := configstore.New()
+	editor := app.NewBundleEditor(files, configPath)
+	if _, err := editor.Apply(ctx, nil); err != nil {
+		t.Fatalf("editor.Apply: %v", err)
+	}
+	project, err := store.UpsertProject(ctx, "Project", "project", "/work/project")
+	if err != nil {
+		t.Fatalf("UpsertProject: %v", err)
+	}
+
+	bus := events.NewInProcessBus(config.EventsSettings{})
+	cache := agentruntime.NewBundleCache(store.Store, bus, files)
+	if _, err := cache.Resolve(ctx, project.ID, configPath); err != nil {
+		t.Fatalf("cache.Resolve initial: %v", err)
+	}
+	firstEntry := cache.Get(project.ID)
+
+	model, err := NewModel(ctx, project.Context(), Repositories{
+		Tasks:        store,
+		Workflow:     app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot()),
+		Comments:     store,
+		Dependencies: store,
+		Editor:       editor,
+		BundleStore:  files,
+		EntityFiles:  files,
+		Slugger:      files,
+		Cache:        cache,
+		ProjectID:    project.ID,
+		ConfigPath:   configPath,
+	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
+	if err != nil {
+		t.Fatalf("NewModel: %v", err)
+	}
+	if model.languages.AgentOutput != "" {
+		t.Fatalf("initial AgentOutput = %q, want empty", model.languages.AgentOutput)
+	}
+
+	bundle, err := config.LoadBundle(configPath)
+	if err != nil {
+		t.Fatalf("LoadBundle: %v", err)
+	}
+	bundle.Config.Languages.AgentOutput = "Português (Brasil)"
+	if err := config.SaveBundle(configPath, bundle); err != nil {
+		t.Fatalf("SaveBundle: %v", err)
+	}
+	future := time.Now().Add(2 * time.Second)
+	if err := os.Chtimes(configPath, future, future); err != nil {
+		t.Fatalf("Chtimes: %v", err)
+	}
+
+	changed, err := model.reloadBundleIfChanged()
+	if err != nil {
+		t.Fatalf("reloadBundleIfChanged: %v", err)
+	}
+	if !changed {
+		t.Fatal("reloadBundleIfChanged reported no change after config mtime advanced")
+	}
+	if cache.Get(project.ID) == firstEntry {
+		t.Fatal("cache pointer did not rotate after mtime reload")
+	}
+	if model.languages.AgentOutput != "Português (Brasil)" {
+		t.Fatalf("model AgentOutput = %q, want Português (Brasil)", model.languages.AgentOutput)
+	}
+}

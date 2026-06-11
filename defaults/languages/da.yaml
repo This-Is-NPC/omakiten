@@ -57,6 +57,7 @@ keys:
   cli.config.short: "Administrerer den kanoniske omakiten.yaml-bundle"
   cli.config.validate.short: "Validerer en omakiten.yaml-fil"
   cli.config.presets.short: "Lister officielle workflow-presets"
+  cli.config.refresh_defaults.short: "Refresh shipped default files without running setup"
   cli.projects.short: "Projekt livscyklus-værktøjer (delete — destruktive ops)"
   cli.projects.delete.short: "Hard-delete et registreret projekt og hver afhængig række (irreversibelt)"
   cli.projects.delete.long: |-
@@ -689,6 +690,10 @@ keys:
   tui.log.tui: "tui"
   tui.log.refresh_hint: "r genindlæs · fulde argumenter vises på bredere terminaler"
   tui.log.tui_refresh_note: "Kun app-service-kald logges. TUI-refreshes og direkte læsninger vises ikke."
+  tui.log.retention_note_fmt: "tool_call retention: %dd / %d rows · display window: %dd"
+  tui.log.retention_note_rows_only_fmt: "tool_call retention: %d rows · display window: %dd"
+  tui.log.retention_note_window_only_fmt: "display window: %dd"
+  tui.log.retention_note_unavailable: "retention policy unavailable"
   tui.log.filter.kicker: "logs · filter"
   tui.log.filter.hint: "(F cyklus)"
   tui.log.filter.all: "alle"
@@ -1086,6 +1091,7 @@ keys:
     non-interaktive kald.
   cli.update.flag.yes: "spring bekræftelsesprompt over og anvend upgrade non-interaktivt"
   cli.update.flag.check: "rapportér nuværende vs. seneste og afslut uden at skrive"
+  cli.update.flag.skip_defaults: "update only the binary and skip shipped defaults refresh"
   cli.update.picker.title: "Opdater okt"
   cli.update.picker.line: "nuværende=%s  →  seneste=%s"
   cli.update.picker.hint: "y anvend · n annuller · ctrl+c afslut"

@@ -7,6 +7,10 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"omakiten/internal/agent"
+	"omakiten/internal/config"
+	"omakiten/internal/paths"
 )
 
 // TestBundleCacheHitReturnsSamePointer asserts the Phase 3a invariant:
@@ -72,6 +76,242 @@ func TestBundleCacheMtimeChangeTriggersRebuild(t *testing.T) {
 	}
 	if cache.Size() != 1 {
 		t.Fatalf("cache size after rebuild = %d, want 1", cache.Size())
+	}
+}
+
+func TestRuntimeServiceResolvesMtimeChanges(t *testing.T) {
+	ctx := context.Background()
+	rt := openTestRuntime(t)
+	defer func() { _ = rt.Close() }()
+
+	first := rt.Service()
+	if first == nil {
+		t.Fatal("Service() = nil")
+	}
+	resp, err := first.ResolveCommand(ctx, agent.ResolveCommandInput{Name: "okt"})
+	if err != nil {
+		t.Fatalf("ResolveCommand before edit: %v", err)
+	}
+	if resp.AgentOutputLanguage != "" {
+		t.Fatalf("initial agent output language = %q, want empty", resp.AgentOutputLanguage)
+	}
+
+	bundle, err := config.LoadBundle(rt.configPath)
+	if err != nil {
+		t.Fatalf("LoadBundle: %v", err)
+	}
+	bundle.Config.Languages.AgentOutput = "Português (Brasil)"
+	if err := config.SaveBundle(rt.configPath, bundle); err != nil {
+		t.Fatalf("SaveBundle: %v", err)
+	}
+	future := time.Now().Add(2 * time.Second)
+	if err := os.Chtimes(rt.configPath, future, future); err != nil {
+		t.Fatalf("Chtimes: %v", err)
+	}
+
+	second := rt.Service()
+	if second == nil {
+		t.Fatal("Service() after edit = nil")
+	}
+	if second == first {
+		t.Fatal("Service() returned stale service after config mtime changed")
+	}
+	resp, err = second.ResolveCommand(ctx, agent.ResolveCommandInput{Name: "okt"})
+	if err != nil {
+		t.Fatalf("ResolveCommand after edit: %v", err)
+	}
+	if resp.AgentOutputLanguage != "Português (Brasil)" {
+		t.Fatalf("agent output language after reload = %q, want Português (Brasil)", resp.AgentOutputLanguage)
+	}
+}
+
+func TestRuntimeServiceResolvesActiveProfileSwitch(t *testing.T) {
+	ctx := context.Background()
+	tmp := t.TempDir()
+	t.Setenv(paths.HomeEnv, tmp)
+
+	omakase, err := config.SeedInstall(tmp, "omakase", true)
+	if err != nil {
+		t.Fatalf("SeedInstall omakase: %v", err)
+	}
+	kaiseki, err := config.SeedInstall(tmp, "kaiseki", false)
+	if err != nil {
+		t.Fatalf("SeedInstall kaiseki: %v", err)
+	}
+	bundle, err := config.LoadBundle(kaiseki.Path)
+	if err != nil {
+		t.Fatalf("LoadBundle kaiseki: %v", err)
+	}
+	bundle.Config.Languages.AgentOutput = "Português (Brasil)"
+	if err := config.SaveBundle(kaiseki.Path, bundle); err != nil {
+		t.Fatalf("SaveBundle kaiseki: %v", err)
+	}
+	if err := paths.SetActiveConfigInDir(filepath.Join(tmp, "config"), filepath.Base(omakase.Path)); err != nil {
+		t.Fatalf("SetActiveConfig omakase: %v", err)
+	}
+
+	rt, err := Open(ctx, Options{DBPath: filepath.Join(tmp, "omakiten.db"), CWD: tmp})
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	defer func() { _ = rt.Close() }()
+
+	first := rt.Service()
+	if first == nil {
+		t.Fatal("Service() = nil")
+	}
+	resp, err := first.ResolveCommand(ctx, agent.ResolveCommandInput{Name: "okt"})
+	if err != nil {
+		t.Fatalf("ResolveCommand before active switch: %v", err)
+	}
+	if resp.AgentOutputLanguage != "" {
+		t.Fatalf("initial agent output language = %q, want empty", resp.AgentOutputLanguage)
+	}
+
+	if err := paths.SetActiveConfigInDir(filepath.Join(tmp, "config"), filepath.Base(kaiseki.Path)); err != nil {
+		t.Fatalf("SetActiveConfig kaiseki: %v", err)
+	}
+	second := rt.Service()
+	if second == nil {
+		t.Fatal("Service() after active switch = nil")
+	}
+	if second == first {
+		t.Fatal("Service() returned stale service after active profile switched")
+	}
+	resp, err = second.ResolveCommand(ctx, agent.ResolveCommandInput{Name: "okt"})
+	if err != nil {
+		t.Fatalf("ResolveCommand after active switch: %v", err)
+	}
+	if resp.AgentOutputLanguage != "Português (Brasil)" {
+		t.Fatalf("agent output language after active switch = %q, want Português (Brasil)", resp.AgentOutputLanguage)
+	}
+}
+
+// TestRuntimeServicePreservesPriorRuntimeOnInvalidInPlaceEdit pins the
+// AC3 contract: when the active config file is overwritten in place with
+// malformed YAML and its mtime bumped, Service() must keep returning the
+// PRIOR working service (still resolving the OLD settings) rather than
+// nil/panicking or surfacing the broken bundle. The reload path is
+// Service() -> Resolve -> rebuild; rebuild's buildProjectRuntime fails to
+// parse, returns an error WITHOUT swapping c.entries, so Resolve bubbles
+// the error and Service() falls back to cache.Get -> the prior pr.Service.
+func TestRuntimeServicePreservesPriorRuntimeOnInvalidInPlaceEdit(t *testing.T) {
+	ctx := context.Background()
+	rt := openTestRuntime(t)
+	defer func() { _ = rt.Close() }()
+
+	first := rt.Service()
+	if first == nil {
+		t.Fatal("Service() = nil")
+	}
+	resp, err := first.ResolveCommand(ctx, agent.ResolveCommandInput{Name: "okt"})
+	if err != nil {
+		t.Fatalf("ResolveCommand before edit: %v", err)
+	}
+	if resp.AgentOutputLanguage != "" {
+		t.Fatalf("initial agent output language = %q, want empty", resp.AgentOutputLanguage)
+	}
+
+	// Overwrite the active source in place with unparseable YAML, then
+	// bump its mtime so Resolve attempts a rebuild on the next call.
+	if err := os.WriteFile(rt.configPath, []byte("::: not: [valid yaml"), 0o644); err != nil {
+		t.Fatalf("write malformed bundle: %v", err)
+	}
+	future := time.Now().Add(2 * time.Second)
+	if err := os.Chtimes(rt.configPath, future, future); err != nil {
+		t.Fatalf("Chtimes: %v", err)
+	}
+
+	second := rt.Service()
+	if second == nil {
+		t.Fatal("Service() after invalid in-place edit = nil; broken bundle must not drop the prior runtime")
+	}
+	if second != first {
+		t.Fatal("Service() swapped to a different service after an invalid edit; rebuild must not replace c.entries on parse failure")
+	}
+	// The prior service still resolves the OLD (empty) language — the
+	// broken bundle was never installed.
+	resp, err = second.ResolveCommand(ctx, agent.ResolveCommandInput{Name: "okt"})
+	if err != nil {
+		t.Fatalf("ResolveCommand after invalid edit: %v", err)
+	}
+	if resp.AgentOutputLanguage != "" {
+		t.Fatalf("agent output language after invalid edit = %q, want empty (prior settings preserved)", resp.AgentOutputLanguage)
+	}
+}
+
+// TestRuntimeServiceExplicitConfigIgnoresActiveSwitch pins the AC5
+// contract: a caller that opened the runtime with an explicit
+// Options.ConfigPath (configPathExplicit) must NOT be redirected when the
+// active-profile marker (.active) flips to a different profile. Service()
+// short-circuits the marker re-resolve for explicit callers and keeps
+// resolving the path it was given.
+func TestRuntimeServiceExplicitConfigIgnoresActiveSwitch(t *testing.T) {
+	ctx := context.Background()
+	tmp := t.TempDir()
+	t.Setenv(paths.HomeEnv, tmp)
+
+	omakase, err := config.SeedInstall(tmp, "omakase", true)
+	if err != nil {
+		t.Fatalf("SeedInstall omakase: %v", err)
+	}
+	kaiseki, err := config.SeedInstall(tmp, "kaiseki", false)
+	if err != nil {
+		t.Fatalf("SeedInstall kaiseki: %v", err)
+	}
+	// Give kaiseki a distinct language so a wrong redirect would be
+	// observable in the resolved command.
+	bundle, err := config.LoadBundle(kaiseki.Path)
+	if err != nil {
+		t.Fatalf("LoadBundle kaiseki: %v", err)
+	}
+	bundle.Config.Languages.AgentOutput = "Português (Brasil)"
+	if err := config.SaveBundle(kaiseki.Path, bundle); err != nil {
+		t.Fatalf("SaveBundle kaiseki: %v", err)
+	}
+	if err := paths.SetActiveConfigInDir(filepath.Join(tmp, "config"), filepath.Base(omakase.Path)); err != nil {
+		t.Fatalf("SetActiveConfig omakase: %v", err)
+	}
+
+	// Open with an EXPLICIT ConfigPath (omakase) — this sets
+	// configPathExplicit so the marker re-resolve is bypassed.
+	rt, err := Open(ctx, Options{
+		DBPath:     filepath.Join(tmp, "omakiten.db"),
+		ConfigPath: omakase.Path,
+		CWD:        tmp,
+	})
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	defer func() { _ = rt.Close() }()
+
+	first := rt.Service()
+	if first == nil {
+		t.Fatal("Service() = nil")
+	}
+	resp, err := first.ResolveCommand(ctx, agent.ResolveCommandInput{Name: "okt"})
+	if err != nil {
+		t.Fatalf("ResolveCommand before active switch: %v", err)
+	}
+	if resp.AgentOutputLanguage != "" {
+		t.Fatalf("initial agent output language = %q, want empty (explicit omakase)", resp.AgentOutputLanguage)
+	}
+
+	// Flip the active marker to kaiseki. An explicit caller must ignore
+	// this — Service() keeps resolving the omakase path it was opened with.
+	if err := paths.SetActiveConfigInDir(filepath.Join(tmp, "config"), filepath.Base(kaiseki.Path)); err != nil {
+		t.Fatalf("SetActiveConfig kaiseki: %v", err)
+	}
+	second := rt.Service()
+	if second == nil {
+		t.Fatal("Service() after active switch = nil")
+	}
+	resp, err = second.ResolveCommand(ctx, agent.ResolveCommandInput{Name: "okt"})
+	if err != nil {
+		t.Fatalf("ResolveCommand after active switch: %v", err)
+	}
+	if resp.AgentOutputLanguage != "" {
+		t.Fatalf("explicit --config caller was redirected by the active marker: language = %q, want empty (omakase)", resp.AgentOutputLanguage)
 	}
 }
 

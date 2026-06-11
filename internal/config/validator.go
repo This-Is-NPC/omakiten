@@ -82,9 +82,6 @@ func ValidateBundle(bundle Bundle, loadedSkills []Skill, loadedLaws []Law, loade
 	if err := validateSQLiteSettings(bundle.Config.SQLite); err != nil {
 		return err
 	}
-	if err := validateActivityLogSettings(bundle.Config.ActivityLog); err != nil {
-		return err
-	}
 	if err := validateSolutionsSettings(bundle.Config.Solutions); err != nil {
 		return err
 	}
@@ -389,19 +386,6 @@ func validateSQLiteSettings(s SQLiteSettings) error {
 	return nil
 }
 
-// validateActivityLogSettings enforces the operation-log retention
-// block. Both knobs are required and positive — disabling retention is
-// not a supported mode (the activity log would grow unbounded).
-func validateActivityLogSettings(a ActivityLogSettings) error {
-	if a.MaxRows <= 0 {
-		return fmt.Errorf("config.activity_log.max_rows: must be > 0 (see defaults/omakiten.yaml)")
-	}
-	if a.MaxAgeDays <= 0 {
-		return fmt.Errorf("config.activity_log.max_age_days: must be > 0 (see defaults/omakiten.yaml)")
-	}
-	return nil
-}
-
 // validateSolutionsSettings enforces the solutions.list_top limits.
 // Both required; max must be >= default so the validator catches an
 // inverted range that would clamp every caller below the implicit
@@ -452,6 +436,60 @@ func validateEventsSettings(e EventsSettings) error {
 		if _, ok := e.Definitions[key]; !ok {
 			return fmt.Errorf("config.events.overrides: unknown event_type %q (declare it under config.events.definitions in the active kit)", key)
 		}
+	}
+	if err := validateEventsRetention(e.Retention); err != nil {
+		return err
+	}
+	if err := validateEventsRetentionOverridesKeys(e); err != nil {
+		return err
+	}
+	return nil
+}
+
+func validateEventsRetention(r EventsRetentionBlock) error {
+	if r.Defaults.MaxAgeDays < 0 {
+		return fmt.Errorf("config.events.retention.defaults.max_age_days: must be >= 0")
+	}
+	if r.Defaults.MaxRows < 0 {
+		return fmt.Errorf("config.events.retention.defaults.max_rows: must be >= 0")
+	}
+	knownCategories := make(map[string]struct{}, len(domain.KnownEventCategories))
+	for _, c := range domain.KnownEventCategories {
+		knownCategories[string(c)] = struct{}{}
+	}
+	for cat, layer := range r.ByCategory {
+		if _, ok := knownCategories[cat]; !ok {
+			return fmt.Errorf("config.events.retention.by_category: unknown category %q", cat)
+		}
+		if err := validateRetentionLayer(layer, "config.events.retention.by_category."+cat); err != nil {
+			return err
+		}
+	}
+	for eventType, layer := range r.Overrides {
+		if err := validateRetentionLayer(layer, "config.events.retention.overrides."+eventType); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// validateEventsRetentionOverridesKeys is called from validateEventsSettings
+// after definitions are checked for channel overrides.
+func validateEventsRetentionOverridesKeys(e EventsSettings) error {
+	for eventType := range e.Retention.Overrides {
+		if _, ok := e.Definitions[eventType]; !ok {
+			return fmt.Errorf("config.events.retention.overrides: unknown event_type %q (declare it under config.events.definitions in the active kit)", eventType)
+		}
+	}
+	return nil
+}
+
+func validateRetentionLayer(layer EventRetentionSettings, path string) error {
+	if layer.MaxAgeDays != nil && *layer.MaxAgeDays < 0 {
+		return fmt.Errorf("%s.max_age_days: must be >= 0", path)
+	}
+	if layer.MaxRows != nil && *layer.MaxRows < 0 {
+		return fmt.Errorf("%s.max_rows: must be >= 0", path)
 	}
 	return nil
 }

@@ -4,7 +4,7 @@ How to configure Omakiten through the active profile yaml plus the sibling entit
 
 | Doc | Covers |
 |---|---|
-| [system.md](system.md) | Runtime knobs — `config.{output,context,workflow,mcp,tui,sqlite,activity_log,solutions,backup,events,search,tag_synonyms}` plus top-level shape and validation. |
+| [system.md](system.md) | Runtime knobs — `config.{output,context,workflow,mcp,tui,sqlite,solutions,backup,events,search,tag_synonyms}` plus top-level shape and validation. |
 | [workflows.md](workflows.md) | `workflows[]` schema — buckets, transitions, operations, task/comment permissions. |
 | [command-bindings.md](command-bindings.md) | `mcp_commands` and persona skill-repertoire bindings for MCP prompt composition. |
 | [entities.md](entities.md) | Entity asset loaders — skills, laws, personas, projects, templates, frontmatter, autoload/custom rules. |

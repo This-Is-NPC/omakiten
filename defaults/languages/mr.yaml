@@ -56,6 +56,7 @@ keys:
   cli.config.short: "कॅनॉनिकल omakiten.yaml bundle व्यवस्थापित करा"
   cli.config.validate.short: "omakiten.yaml फाइल वैध करा"
   cli.config.presets.short: "अधिकृत workflow preset ची सूची दाखवा"
+  cli.config.refresh_defaults.short: "Refresh shipped default files without running setup"
   cli.projects.short: "Project जीवनचक्र utilities (delete — destructive ops)"
   cli.projects.delete.short: "नोंदणीकृत project आणि प्रत्येक dependent row hard-delete (अपरिवर्तनीय)"
   cli.projects.delete.long: |-
@@ -684,6 +685,10 @@ keys:
   tui.log.tui: "tui"
   tui.log.refresh_hint: "r रीफ्रेश · पूर्ण arguments रुंद terminal वर दिसतात"
   tui.log.tui_refresh_note: "फक्त app service कॉल लॉग केले जातात. TUI रीफ्रेश आणि थेट read दाखवले जात नाहीत."
+  tui.log.retention_note_fmt: "tool_call retention: %dd / %d rows · display window: %dd"
+  tui.log.retention_note_rows_only_fmt: "tool_call retention: %d rows · display window: %dd"
+  tui.log.retention_note_window_only_fmt: "display window: %dd"
+  tui.log.retention_note_unavailable: "retention policy unavailable"
   tui.log.filter.kicker: "logs · filter"
   tui.log.filter.hint: "(F सायकल)"
   tui.log.filter.all: "सर्व"
@@ -1077,6 +1082,7 @@ keys:
     लिहित नसताना 0 ने बाहेर पडते. --yes non-interactive callers साठी पुष्टी वगळते.
   cli.update.flag.yes: "पुष्टी prompt वगळा आणि upgrade non-interactive लागू करा"
   cli.update.flag.check: "सध्याचे vs. नवीनतम अहवाल द्या आणि लिहित नसताना बाहेर पडा"
+  cli.update.flag.skip_defaults: "update only the binary and skip shipped defaults refresh"
   cli.update.picker.title: "okt अपडेट करा"
   cli.update.picker.line: "सध्याचे=%s  →  नवीनतम=%s"
   cli.update.picker.hint: "y लागू · n रद्द · ctrl+c बाहेर"

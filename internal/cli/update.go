@@ -97,6 +97,8 @@ type updateValidatorResult struct {
 // validator non-zero exit returns OK=false with parsed details.
 type updateValidatorFn func(ctx context.Context, binaryPath, configPath string) (updateValidatorResult, error)
 
+type updateDefaultsRefresherFn func(ctx context.Context, binaryPath string) error
+
 // updateClient bundles the two injected dependencies plus the
 // command-version + binary-path resolution helpers so RunE can stay
 // tiny. Production wiring is built by defaultUpdateClient; tests pass
@@ -142,6 +144,15 @@ type updateClient struct {
 	// activity-write failures are swallowed regardless so the swap's
 	// success criterion is the binary state, not the audit row.
 	EventStore healthCheckEventStore
+	// DefaultsRefresher runs the newly swapped binary's direct defaults
+	// refresh command after the binary update is durable. nil skips the
+	// post-swap refresh, which keeps direct unit tests from exec'ing fake
+	// binary bytes; production wiring always supplies it.
+	DefaultsRefresher updateDefaultsRefresherFn
+	// DefaultsRefreshConfigPath is the exact resolved profile path passed
+	// to the post-swap refresh subprocess. It also drives the repair
+	// command surfaced when the binary swap succeeded but refresh failed.
+	DefaultsRefreshConfigPath string
 }
 
 // updateBackupRunner is the narrow port runUpdate uses to invoke the
@@ -155,8 +166,9 @@ type updateBackupRunner interface {
 
 func newUpdateCommand(opts *runtimeOptions) *cobra.Command {
 	var (
-		yes   bool
-		check bool
+		yes          bool
+		check        bool
+		skipDefaults bool
 	)
 
 	cmd := &cobra.Command{
@@ -165,23 +177,72 @@ func newUpdateCommand(opts *runtimeOptions) *cobra.Command {
 		Long:  opts.t("cli.update.long"),
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return runJSON(cmd, func(ctx context.Context) (any, error) {
-				client, err := defaultUpdateClient(cmd.Root().Version)
+				client, err := defaultUpdateClientFactory(cmd.Root().Version)
 				if err != nil {
 					return nil, err
 				}
 				client.BackupFactory = func(_ context.Context) (updateBackupRunner, error) {
 					return updateBackupForOpts(cmd, opts)
 				}
-				cleanup := wireHealthCheckEmission(ctx, opts, &client)
-				defer cleanup()
-				return runUpdate(ctx, client, updateInputs{Check: check, Yes: yes})
+				if !check {
+					if err := prepareUpdateDiscovery(ctx, opts); err != nil {
+						return nil, err
+					}
+					if !skipDefaults {
+						refreshConfigPath, err := resolvedUpdateConfigPathForRefresh(opts)
+						if err != nil {
+							return nil, err
+						}
+						client.DefaultsRefreshConfigPath = refreshConfigPath
+						client.DefaultsRefresher = updateDefaultsRefresherForConfigPath(refreshConfigPath)
+					}
+					cleanup := wireHealthCheckEmission(ctx, opts, &client)
+					defer cleanup()
+				}
+				return runUpdate(ctx, client, updateInputs{Check: check, Yes: yes, SkipDefaults: skipDefaults})
 			})
 		},
 	}
 
 	cmd.Flags().BoolVarP(&yes, "yes", "y", false, opts.t("cli.update.flag.yes"))
 	cmd.Flags().BoolVar(&check, "check", false, opts.t("cli.update.flag.check"))
+	cmd.Flags().BoolVar(&skipDefaults, "skip-defaults", false, opts.t("cli.update.flag.skip_defaults"))
 	return cmd
+}
+
+func prepareUpdateDiscovery(ctx context.Context, opts *runtimeOptions) error {
+	if opts == nil || opts.configPath != "" || (opts.project == "" && opts.projectID == 0) {
+		return nil
+	}
+	dbPath, err := opts.resolvedDBPath()
+	if err != nil {
+		return err
+	}
+	store, err := sqlite.Open(ctx, dbPath)
+	if err != nil {
+		return err
+	}
+	defer store.Close()
+	start, err := opts.resolveDiscoveryStart(ctx, store)
+	if err != nil {
+		return err
+	}
+	opts.discoveryStart = start
+	return nil
+}
+
+func resolvedUpdateConfigPathForRefresh(opts *runtimeOptions) (string, error) {
+	if opts == nil {
+		return "", nil
+	}
+	configPath, err := opts.resolvedConfigPath()
+	if err != nil {
+		if opts.configPath != "" || opts.project != "" || opts.projectID != 0 {
+			return "", err
+		}
+		return "", nil
+	}
+	return configPath, nil
 }
 
 // wireHealthCheckEmission resolves the runtime knobs the production
@@ -228,8 +289,9 @@ func wireHealthCheckEmission(ctx context.Context, opts *runtimeOptions, client *
 // future flags (--channel beta, --prerelease) drop in without
 // breaking call sites.
 type updateInputs struct {
-	Check bool
-	Yes   bool
+	Check        bool
+	Yes          bool
+	SkipDefaults bool
 }
 
 // runUpdate is the headless-friendly entry point: resolve latest,
@@ -432,15 +494,36 @@ func runUpdate(ctx context.Context, c updateClient, inputs updateInputs) (any, e
 		"binary_path":  c.BinaryPath,
 		"backup_path":  backupPath,
 	})
+	defaultsRefreshed := false
+	if !inputs.SkipDefaults && c.DefaultsRefresher != nil {
+		if err := c.DefaultsRefresher(ctx, c.BinaryPath); err != nil {
+			manualCommand := updateDefaultsManualCommandForConfig(c.DefaultsRefreshConfigPath)
+			return nil, domain.NewError(domain.ErrUpdateFailed, fmt.Sprintf("binary update applied but defaults refresh failed: %s; run `%s` to repair", err.Error(), manualCommand), map[string]any{
+				"reason":         "defaults_refresh_failed",
+				"current":        current,
+				"latest":         latest,
+				"action":         action,
+				"applied":        true,
+				"binary_path":    c.BinaryPath,
+				"backup_path":    backupPath,
+				"manual_command": manualCommand,
+				"config_path":    c.DefaultsRefreshConfigPath,
+				"cause":          err.Error(),
+			})
+		}
+		defaultsRefreshed = true
+	}
 
 	return map[string]any{
-		"code":        "update_completed",
-		"current":     current,
-		"latest":      latest,
-		"action":      action,
-		"applied":     true,
-		"binary_path": c.BinaryPath,
-		"backup_path": backupPath,
+		"code":                     "update_completed",
+		"current":                  current,
+		"latest":                   latest,
+		"action":                   action,
+		"applied":                  true,
+		"binary_path":              c.BinaryPath,
+		"backup_path":              backupPath,
+		"defaults_refreshed":       defaultsRefreshed,
+		"defaults_refresh_skipped": inputs.SkipDefaults,
 	}, nil
 }
 
@@ -494,6 +577,8 @@ func runUpdateConfirm(ctx context.Context, current, latest string) (bool, error)
 	return result.accepted && !result.declined, nil
 }
 
+var defaultUpdateClientFactory = defaultUpdateClient
+
 // defaultUpdateClient builds the production wiring: HTTP-backed
 // LatestFetcher + AssetDownloader pointing at the GitHub releases API,
 // the os.Executable() binary path, and the cobra Version literal.
@@ -515,11 +600,89 @@ func defaultUpdateClient(version string) (updateClient, error) {
 	}
 	hc := &http.Client{Timeout: 30 * time.Second}
 	return updateClient{
-		Fetcher:    &githubLatestFetcher{Repo: updateRepo, HTTP: hc},
-		Downloader: &githubAssetDownloader{Repo: updateRepo, HTTP: hc},
-		Current:    version,
-		BinaryPath: bin,
+		Fetcher:           &githubLatestFetcher{Repo: updateRepo, HTTP: hc},
+		Downloader:        &githubAssetDownloader{Repo: updateRepo, HTTP: hc},
+		Current:           version,
+		BinaryPath:        bin,
+		DefaultsRefresher: defaultUpdateDefaultsRefresher,
 	}, nil
+}
+
+func defaultUpdateDefaultsRefresher(ctx context.Context, binaryPath string) error {
+	return runUpdateDefaultsRefreshCommand(ctx, binaryPath, updateDefaultsRefreshArgs("")...)
+}
+
+func updateDefaultsRefresherForConfigPath(configPath string) updateDefaultsRefresherFn {
+	return func(ctx context.Context, binaryPath string) error {
+		return runUpdateDefaultsRefreshCommand(ctx, binaryPath, updateDefaultsRefreshArgs(configPath)...)
+	}
+}
+
+func updateDefaultsRefreshArgs(configPath string) []string {
+	args := []string{}
+	if configPath != "" {
+		args = append(args, "--config", configPath)
+	}
+	return append(args, "config", "refresh-defaults")
+}
+
+func runUpdateDefaultsRefreshCommand(ctx context.Context, binaryPath string, args ...string) error {
+	cmd := exec.CommandContext(ctx, binaryPath, args...)
+	cmd.Env = os.Environ()
+	stdout := newCappedOutputBuffer(updateDefaultsRefreshOutputLimit)
+	stderr := newCappedOutputBuffer(updateDefaultsRefreshOutputLimit)
+	cmd.Stdout = stdout
+	cmd.Stderr = stderr
+	if err := cmd.Run(); err != nil {
+		parts := []string{err.Error()}
+		if out := strings.TrimSpace(stdout.String()); out != "" {
+			parts = append(parts, "stdout: "+out)
+		}
+		if out := strings.TrimSpace(stderr.String()); out != "" {
+			parts = append(parts, "stderr: "+out)
+		}
+		return errors.New(strings.Join(parts, "; "))
+	}
+	return nil
+}
+
+const updateDefaultsRefreshOutputLimit = 64 << 10
+
+type cappedOutputBuffer struct {
+	limit     int
+	buf       bytes.Buffer
+	truncated int
+}
+
+func newCappedOutputBuffer(limit int) *cappedOutputBuffer {
+	return &cappedOutputBuffer{limit: limit}
+}
+
+func (b *cappedOutputBuffer) Write(p []byte) (int, error) {
+	if b.limit <= 0 {
+		b.truncated += len(p)
+		return len(p), nil
+	}
+	remaining := b.limit - b.buf.Len()
+	if remaining > 0 {
+		if len(p) <= remaining {
+			_, _ = b.buf.Write(p)
+			return len(p), nil
+		}
+		_, _ = b.buf.Write(p[:remaining])
+	}
+	if len(p) > remaining {
+		b.truncated += len(p) - max(remaining, 0)
+	}
+	return len(p), nil
+}
+
+func (b *cappedOutputBuffer) String() string {
+	out := b.buf.String()
+	if b.truncated > 0 {
+		out += fmt.Sprintf("\n[okt update: subprocess output truncated after %d bytes; %d bytes suppressed]", b.limit, b.truncated)
+	}
+	return out
 }
 
 // defaultUpdateValidator runs the staged binary's `okt config validate

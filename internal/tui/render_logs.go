@@ -327,7 +327,7 @@ func (m Model) renderLogsWidePanel() string {
 		m.hRule(contentWidth),
 	}
 	rows = append(rows, m.sliceScrollRows(dataRows, m.logsList.Scroll(), m.logsViewportRows())...)
-	rows = append(rows, "", m.styles.hint.Render(m.t("tui.log.tui_refresh_note")))
+	rows = append(rows, "", m.styles.hint.Render(m.renderLogsFooterNotes()))
 
 	return m.styles.panel.Render(strings.Join(rows, "\n"))
 }
@@ -376,8 +376,39 @@ func (m Model) renderLogsCompactPanel() string {
 		m.hRule(width),
 	}
 	rows = append(rows, m.sliceScrollRows(dataRows, m.logsList.Scroll(), m.logsViewportRows())...)
-	rows = append(rows, "", m.styles.hint.Render(m.t("tui.log.refresh_hint")))
+	rows = append(rows, "", m.styles.hint.Render(m.renderLogsFooterNotes()))
 	return m.styles.panel.Render(strings.Join(rows, "\n"))
+}
+
+// renderLogsFooterNotes composes the LOGS panel footer: retention vs
+// display-window context plus the existing refresh / tracking hints.
+func (m Model) renderLogsFooterNotes() string {
+	parts := []string{m.renderLogsRetentionNote()}
+	if note := strings.TrimSpace(m.t("tui.log.tui_refresh_note")); note != "" && note != "tui.log.tui_refresh_note" {
+		parts = append(parts, note)
+	}
+	return strings.Join(parts, " · ")
+}
+
+// renderLogsRetentionNote surfaces the resolved tool_call storage
+// retention beside the configured LOGS display window so operators
+// understand why older tool calls may be absent from the panel.
+func (m Model) renderLogsRetentionNote() string {
+	snap := m.repos.activeSnapshot()
+	if snap == nil {
+		return m.t("tui.log.retention_note_unavailable")
+	}
+	events := snap.Events()
+	resolved := events.ResolveRetention("mcp.tool_call")
+	windowDays := int(snap.LogsWindowDays().Hours() / 24)
+	rows := resolved.MaxRows
+	if rows == 0 {
+		return fmt.Sprintf(m.t("tui.log.retention_note_window_only_fmt"), windowDays)
+	}
+	if resolved.MaxAgeDays == 0 {
+		return fmt.Sprintf(m.t("tui.log.retention_note_rows_only_fmt"), rows, windowDays)
+	}
+	return fmt.Sprintf(m.t("tui.log.retention_note_fmt"), resolved.MaxAgeDays, rows, windowDays)
 }
 
 // shortTimeForLogs trims the SQLite "YYYY-MM-DD HH:MM:SS" timestamp

@@ -199,7 +199,6 @@ var effectiveSectionRenderOrder = []string{
 	"output",
 	"search",
 	"solutions",
-	"activity_log",
 	"mcp",
 	"events",
 	"sqlite",
