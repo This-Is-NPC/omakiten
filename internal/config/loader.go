@@ -126,6 +126,11 @@ func loadBundle(path string, opts loadBundleOptions) (Bundle, error) {
 		slugSet(loadedLawSlugs(laws)),
 		slugSet(loadedTemplateSlugs(templates)),
 	)...)
+	if kit, kitErr := LoadKitConfigByKey(bundle.Kit.Key); kitErr == nil {
+		NormalizeEventsRetention(&bundle.Config, kit)
+	}
+	bundle.Warnings = append(bundle.Warnings, warnLogsWindowExceedsRetention(bundle.Config)...)
+
 	if err := ValidateBundle(bundle, skills, laws, personas, templates); err != nil {
 		return Bundle{}, err
 	}

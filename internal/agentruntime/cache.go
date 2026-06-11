@@ -511,8 +511,6 @@ func buildProjectRuntime(ctx context.Context, store *sqlite.Store, cs *configsto
 		BusyTimeoutMs:            bundle.Config.SQLite.BusyTimeoutMs,
 		CacheSizeKB:              bundle.Config.SQLite.CacheSizeKB,
 		MmapSizeBytes:            bundle.Config.SQLite.MmapSizeBytes,
-		ActivityLogMaxRows:       bundle.Config.ActivityLog.MaxRows,
-		ActivityLogMaxAgeDays:    bundle.Config.ActivityLog.MaxAgeDays,
 		EventsDefaultRecentLimit: bundle.Config.Events.DefaultRecentLimit,
 		EventsPolicy:             bundle.Config.Events,
 		EventBus:                 bus,

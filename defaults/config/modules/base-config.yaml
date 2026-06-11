@@ -47,11 +47,6 @@ sqlite:
   # local-only filesystems can raise this to e.g. 268435456 (256 MiB)
   # for a measurable read-path win on larger databases.
   mmap_size_bytes: 0
-# activity_log retention: prunes the per-call `operation` event log so
-# the activity feed stays fast.
-activity_log:
-  max_rows: 500
-  max_age_days: 7
 # solutions caps the `solutions.list_top` MCP response shape.
 solutions:
   default_top_limit: 10
@@ -65,6 +60,13 @@ backup:
 # are deep-merged on top of this base via merge_from semantics.
 events:
   default_recent_limit: 50
+  retention:
+    # 0 on either axis = unlimited for that axis. Omit by_category to keep
+    # every event category on these defaults; add per-category overrides
+    # only when you want storage caps (e.g. tool_call 7d / 500 rows).
+    defaults:
+      max_age_days: 0
+      max_rows: 0
   defaults:
     log: true
     broadcast: true

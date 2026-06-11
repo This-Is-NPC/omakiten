@@ -165,7 +165,9 @@ type Settings struct {
 	MCP              MCPSettings         `yaml:"mcp,omitempty" json:"mcp,omitempty"`
 	TUI              TUISettings         `yaml:"tui,omitempty" json:"tui,omitempty"`
 	SQLite           SQLiteSettings      `yaml:"sqlite,omitempty" json:"sqlite,omitempty"`
-	ActivityLog      ActivityLogSettings `yaml:"activity_log,omitempty" json:"activity_log,omitempty"`
+	// ActivityLog is deprecated — use config.events.retention.by_category.tool_call.
+	// Still unmarshaled so legacy bundles migrate via NormalizeEventsRetention.
+	ActivityLog ActivityLogSettings `yaml:"activity_log,omitempty" json:"activity_log,omitempty"`
 	Solutions        SolutionsSettings   `yaml:"solutions,omitempty" json:"solutions,omitempty"`
 	Backup           BackupSettings      `yaml:"backup,omitempty" json:"backup,omitempty"`
 	Events           EventsSettings      `yaml:"events,omitempty" json:"events,omitempty"`
@@ -498,6 +500,9 @@ type TricksSettings struct {
 // Broadcast and Hook are reserved for the upcoming event-bus task —
 // declared today so authors can stage configuration alongside log gating.
 type EventsSettings struct {
+	// Retention governs how long persisted event rows survive in SQLite.
+	// Distinct from views.logs.window_days, which only scopes reads.
+	Retention EventsRetentionBlock `yaml:"retention" json:"retention"`
 	// DefaultRecentLimit is the fallback row count applied when the
 	// caller passes <=0. Required; > 0.
 	DefaultRecentLimit int `yaml:"default_recent_limit" json:"default_recent_limit"`

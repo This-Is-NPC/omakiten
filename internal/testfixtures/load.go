@@ -165,13 +165,9 @@ func mergeKitDefaults(b *config.Bundle) {
 	// MmapSizeBytes intentionally falls through: 0 is the valid
 	// "disabled" sentinel.
 
-	// Activity log retention.
-	if cfg.ActivityLog.MaxRows == 0 {
-		cfg.ActivityLog.MaxRows = kit.ActivityLog.MaxRows
-	}
-	if cfg.ActivityLog.MaxAgeDays == 0 {
-		cfg.ActivityLog.MaxAgeDays = kit.ActivityLog.MaxAgeDays
-	}
+	// Events retention inherits kit defaults when the fixture omits the
+	// block (validator-required on full bundles).
+	config.NormalizeEventsRetention(cfg, kit)
 
 	// Solutions limits.
 	if cfg.Solutions.DefaultTopLimit == 0 {

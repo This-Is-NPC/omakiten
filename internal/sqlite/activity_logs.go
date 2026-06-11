@@ -102,13 +102,10 @@ RETURNING id
 	}
 	// Prune synchronously after insert; cleanup is fast on local SQLite.
 	// Errors during pruning must not break the original insert. Retention
-	// values come from config.activity_log (max_rows, max_age_days) wired
-	// in by the composition root via Store.SetActivityLogRetention; when
-	// unset (rare paths that build a Store without going through a
-	// composition root, e.g. some boundary tests) prune is skipped.
-	if s.activityLogMaxRows > 0 && s.activityLogMaxAgeDays > 0 {
-		_ = s.PruneActivityLogs(ctx, s.activityLogMaxRows, s.activityLogMaxAgeDays)
-	}
+	// limits come from config.events.retention resolved through
+	// Store.SetEventsPolicy; when unset (tests that skip ApplyConfig)
+	// prune is skipped.
+	s.pruneRetentionForEventType(ctx, eventType)
 	return id, nil
 }
 
@@ -276,24 +273,3 @@ FROM events WHERE ` + strings.Join(conds, " AND ")
 	return stats, nil
 }
 
-func (s *Store) PruneActivityLogs(ctx context.Context, maxRows int, maxAgeDays int) error {
-	if maxAgeDays > 0 {
-		if _, err := s.db.ExecContext(ctx, `
-DELETE FROM events
-WHERE event_type IN (`+toolCallEventTypeList+`) AND created_at < datetime('now', '-' || ? || ' days')
-`, maxAgeDays); err != nil {
-			return err
-		}
-	}
-	if maxRows > 0 {
-		if _, err := s.db.ExecContext(ctx, `
-DELETE FROM events
-WHERE event_type IN (`+toolCallEventTypeList+`) AND id NOT IN (
-  SELECT id FROM events WHERE event_type IN (`+toolCallEventTypeList+`) ORDER BY created_at DESC LIMIT ?
-)
-`, maxRows); err != nil {
-			return err
-		}
-	}
-	return nil
-}

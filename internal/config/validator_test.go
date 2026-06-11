@@ -103,12 +103,17 @@ func TestValidateBundleErrors(t *testing.T) {
 					TaskActivity: TaskActivityViewSettings{Sort: SortSettings{Order: "asc"}},
 				},
 				SQLite:      SQLiteSettings{BusyTimeoutMs: 5000, CacheSizeKB: 1024, MmapSizeBytes: 0},
-				ActivityLog: ActivityLogSettings{MaxRows: 500, MaxAgeDays: 7},
-				Solutions:   SolutionsSettings{DefaultTopLimit: 10, MaxTopLimit: 100},
-				Backup:      BackupSettings{RetentionCount: 5},
+				Solutions: SolutionsSettings{DefaultTopLimit: 10, MaxTopLimit: 100},
+				Backup:    BackupSettings{RetentionCount: 5},
 				Events: EventsSettings{
 					DefaultRecentLimit: 50,
-					Defaults:           EventChannelSettings{Log: &tru, Broadcast: &tru, Hook: &tru},
+					Retention: EventsRetentionBlock{
+						Defaults: EventRetentionDefaults{MaxAgeDays: 0, MaxRows: 0},
+						ByCategory: map[string]EventRetentionSettings{
+							"tool_call": {MaxAgeDays: intPtr(7), MaxRows: intPtr(500)},
+						},
+					},
+					Defaults: EventChannelSettings{Log: &tru, Broadcast: &tru, Hook: &tru},
 				},
 				Search:      SearchSettings{Stopwords: []string{"and", "the"}},
 				TagSynonyms: map[string]string{"golang": "go"},
