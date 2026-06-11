@@ -49,6 +49,10 @@ func TestToolsIncludePlannedSurface(t *testing.T) {
 		"plans.unassign":      false,
 		"skills.list":         false,
 		"skills.get":          false,
+		"personas.list":       false,
+		"personas.get":        false,
+		"laws.list":           false,
+		"laws.get":            false,
 	}
 	for _, tool := range Tools() {
 		if _, ok := want[tool.Name]; ok {
@@ -219,6 +223,10 @@ func TestAdapterCallToolAllTools(t *testing.T) {
 		"plans.delete",
 		"skills.list",
 		"skills.get",
+		"personas.list",
+		"personas.get",
+		"laws.list",
+		"laws.get",
 	}
 
 	for _, name := range tools {
@@ -226,6 +234,10 @@ func TestAdapterCallToolAllTools(t *testing.T) {
 		switch name {
 		case "skills.get":
 			args = map[string]any{"slug": "go"}
+		case "personas.get":
+			args = map[string]any{"slug": "agent"}
+		case "laws.get":
+			args = map[string]any{"slug": "scope"}
 		case "tasks.continue", "comments.add", "comments.list", "task_activity.list", "dependencies.add", "dependencies.remove", "dependencies.list":
 			args = map[string]any{"task_id": 1}
 		case "tasks.move":
@@ -549,6 +561,24 @@ func TestAdapterGetPromptCacheHintToggle(t *testing.T) {
 	}
 	if off.Messages[0].Content.Meta != nil {
 		t.Fatalf("Meta = %+v with CachePrompts=false, want nil", off.Messages[0].Content.Meta)
+	}
+}
+
+func TestAdapterGetPromptRendersInvocationArguments(t *testing.T) {
+	ctx := context.Background()
+	service := newMCPTestService(t, ctx)
+	adapter := NewAdapter(service)
+
+	result, err := adapter.GetPrompt(ctx, "okt-task-continue", map[string]any{"task_id": 42})
+	if err != nil {
+		t.Fatalf("GetPrompt() error = %v", err)
+	}
+	body := result.Messages[0].Content.Text
+	if !strings.Contains(body, "## Invocation Args\n") {
+		t.Fatalf("prompt missing invocation args section:\n%s", body)
+	}
+	if !strings.Contains(body, "- `task_id`: 42") {
+		t.Fatalf("prompt missing task_id argument:\n%s", body)
 	}
 }
 
@@ -1351,9 +1381,96 @@ func mcpTestBundle(t *testing.T) config.Bundle {
 	t.Helper()
 	bundle, _ := testfixtures.LoadBundle(t, "default.yaml")
 	bundle.Skills = []config.Skill{{Slug: "go", Name: "Go", Description: "Idiomatic Go.", Body: "Write idiomatic, well-tested Go."}}
-	bundle.Personas = []config.Persona{{Slug: "agent", Name: "Agent", Skills: []string{"go"}}}
-	bundle.Laws = []config.Law{{Slug: "scope", Severity: "error", Body: "Stay scoped.", Scope: "global"}}
+	bundle.Personas = []config.Persona{{
+		Slug:        "agent",
+		Name:        "Agent",
+		Description: "Test agent persona.",
+		Body:        "You are the test agent.",
+		Skills:      []string{"go"},
+		Laws:        []string{"scope"},
+	}}
+	bundle.Laws = []config.Law{{Slug: "scope", Name: "Scope", Severity: "error", Body: "Stay scoped.", Scope: "global"}}
 	return bundle
+}
+
+// TestAdapterPersonasAndLawsToolsReadOnly pins the read-only persona/law
+// catalog surface: list endpoints omit bodies; get endpoints expand references
+// on personas and return law bodies.
+func TestAdapterPersonasAndLawsToolsReadOnly(t *testing.T) {
+	ctx := context.Background()
+	service := newMCPTestService(t, ctx)
+	adapter := NewAdapter(service)
+
+	for _, name := range []string{"personas.create", "personas.edit", "laws.create"} {
+		if _, err := adapter.CallTool(ctx, name, withModel(nil)); err == nil {
+			t.Fatalf("%s unexpectedly dispatched — catalog must be read-only", name)
+		}
+	}
+
+	listRes, err := adapter.CallTool(ctx, "personas.list", withModel(nil))
+	if err != nil {
+		t.Fatalf("CallTool(personas.list) error = %v", err)
+	}
+	if listRes.IsError {
+		t.Fatalf("personas.list error: %s", listRes.Content[0].Text)
+	}
+	var listPayload struct {
+		Personas []struct {
+			Slug string `json:"slug"`
+			Body string `json:"body"`
+		} `json:"personas"`
+	}
+	if err := json.Unmarshal([]byte(listRes.Content[0].Text), &listPayload); err != nil {
+		t.Fatalf("personas.list payload not JSON: %v", err)
+	}
+	if len(listPayload.Personas) == 0 {
+		t.Fatal("personas.list returned no personas")
+	}
+	for _, p := range listPayload.Personas {
+		if p.Body != "" {
+			t.Fatalf("personas.list leaked body for %q", p.Slug)
+		}
+	}
+
+	getRes, err := adapter.CallTool(ctx, "personas.get", withModel(map[string]any{"slug": "agent"}))
+	if err != nil {
+		t.Fatalf("CallTool(personas.get) error = %v", err)
+	}
+	if getRes.IsError {
+		t.Fatalf("personas.get error: %s", getRes.Content[0].Text)
+	}
+	var getPayload struct {
+		Persona struct {
+			Slug  string `json:"slug"`
+			Body  string `json:"body"`
+			Laws  []struct{ Body string `json:"body"` } `json:"laws"`
+			Skills []struct{ Body string `json:"body"` } `json:"skills"`
+		} `json:"persona"`
+	}
+	if err := json.Unmarshal([]byte(getRes.Content[0].Text), &getPayload); err != nil {
+		t.Fatalf("personas.get payload not JSON: %v", err)
+	}
+	if getPayload.Persona.Body == "" || len(getPayload.Persona.Laws) == 0 || getPayload.Persona.Laws[0].Body == "" {
+		t.Fatalf("personas.get missing expanded payload: %#v", getPayload.Persona)
+	}
+	if len(getPayload.Persona.Skills) == 0 || getPayload.Persona.Skills[0].Body == "" {
+		t.Fatalf("personas.get missing expanded skills: %#v", getPayload.Persona.Skills)
+	}
+
+	lawList, err := adapter.CallTool(ctx, "laws.list", withModel(nil))
+	if err != nil {
+		t.Fatalf("CallTool(laws.list) error = %v", err)
+	}
+	if lawList.IsError {
+		t.Fatalf("laws.list error: %s", lawList.Content[0].Text)
+	}
+	lawGet, err := adapter.CallTool(ctx, "laws.get", withModel(map[string]any{"slug": "scope"}))
+	if err != nil {
+		t.Fatalf("CallTool(laws.get) error = %v", err)
+	}
+	if lawGet.IsError {
+		t.Fatalf("laws.get error: %s", lawGet.Content[0].Text)
+	}
 }
 
 // TestAdapterCommentsScopeDispatch drives the reworked comments.* surface
