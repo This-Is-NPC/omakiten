@@ -20,6 +20,7 @@ skill_repertoire:
   - okt-plan-create-playbook
   - okt-plan-show-playbook
   - okt-run-playbook
+  - council-deliberation
   - okt-shape-playbook
   - okt-task-create-playbook
   - okt-task-decompose-playbook

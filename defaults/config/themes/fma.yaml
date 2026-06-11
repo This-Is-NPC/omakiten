@@ -69,6 +69,7 @@ personas:
       - okt-plan-create-playbook
       - okt-plan-show-playbook
       - okt-run-playbook
+      - council-deliberation
       - okt-shape-playbook
       - okt-task-create-playbook
       - okt-task-decompose-playbook
@@ -149,7 +150,7 @@ mcp_commands:
     skills: [pdca-cycle, discovery, okt-start-playbook]
   okt-shape:
     persona: roy-mustang
-    skills: [five-w-two-h, smart-goals, okt-shape-playbook]
+    skills: [five-w-two-h, smart-goals, council-deliberation, okt-shape-playbook]
   okt-audit:
     persona: king-bradley
     skills: [risk-driven-development, okt-audit-playbook]
