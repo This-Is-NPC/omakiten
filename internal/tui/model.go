@@ -172,6 +172,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// already advertises this contract.
 			savedCtx := m.ctx
 			m.ctx = activity.WithoutTracking(m.ctx)
+			// Passive reload latency is state-dependent, not purely
+			// time-based: this whole branch is gated behind
+			// shouldRealtimeRefresh() (false on Home/modals/help/move/
+			// entity screens), so an external edit made while in one of
+			// those states is not observed until a live view returns and
+			// the next tick fires. Expected, not a missed-reload bug.
+			if _, err := m.reloadBundleIfChanged(); err != nil {
+				m.status = err.Error()
+			}
 			if err := m.refreshCurrentView(); err != nil {
 				m.status = err.Error()
 			}
