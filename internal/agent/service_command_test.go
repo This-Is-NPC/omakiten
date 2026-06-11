@@ -198,6 +198,47 @@ func TestRenderCommandMarkdownSkillBulletWithBody(t *testing.T) {
 	}
 }
 
+func TestRenderCommandMarkdownInvocationArgs(t *testing.T) {
+	resp := ResolveCommandResponse{
+		InvocationArgs: []InvocationArg{{Name: "slug", Value: "\"release-plan\""}, {Name: "task_id", Value: "42"}},
+		Skills:         []SkillInfo{{Slug: "playbook", Name: "Playbook", Body: "Run it."}},
+	}
+	md := renderCommandMarkdown(resp)
+
+	if !strings.Contains(md, "## Invocation Args\n- `slug`: \"release-plan\"\n- `task_id`: 42\n") {
+		t.Fatalf("invocation args should render as their own section in supplied order, got:\n%s", md)
+	}
+	if strings.Index(md, "## Invocation Args") > strings.Index(md, "## Skills") {
+		t.Fatalf("invocation args should render before skills, got:\n%s", md)
+	}
+}
+
+func TestResolveCommandInvocationArgsAreSortedAndJSONRendered(t *testing.T) {
+	fixture := newAgentFixture(t)
+	wireBindingFixtures(t, fixture)
+
+	resp, err := fixture.service.ResolveCommand(fixture.ctx, ResolveCommandInput{
+		Name:      "okt",
+		Arguments: map[string]any{"task_id": 42, "slug": "release-plan"},
+	})
+	if err != nil {
+		t.Fatalf("ResolveCommand() error = %v", err)
+	}
+	if got := resp.InvocationArgs; len(got) != 2 || got[0].Name != "slug" || got[0].Value != "\"release-plan\"" || got[1].Name != "task_id" || got[1].Value != "42" {
+		t.Fatalf("InvocationArgs = %#v, want sorted JSON-rendered args", got)
+	}
+	if !strings.Contains(resp.Markdown, "- `slug`: \"release-plan\"\n- `task_id`: 42") {
+		t.Fatalf("Markdown missing invocation args:\n%s", resp.Markdown)
+	}
+}
+
+func TestInvocationArgsTrimKeysWithoutLosingValues(t *testing.T) {
+	got := invocationArgs(map[string]any{" task_id ": 42, " ": "skip"})
+	if len(got) != 1 || got[0].Name != "task_id" || got[0].Value != "42" {
+		t.Fatalf("invocationArgs() = %#v, want trimmed task_id retaining value", got)
+	}
+}
+
 // TestRenderCommandMarkdownTemplateNameEchoSuppressed pins the rule that the
 // human-readable template name is dropped from the bound-template line when
 // it is just the title-case of the slug — the slug already carries the
@@ -558,8 +599,8 @@ func stripGoComments(src string) string {
 func TestCreateTaskWithTemplateSlugMergesBody(t *testing.T) {
 	fixture := newAgentFixture(t)
 	fixture.service.SetSnapshot(snapshotWithTemplates(t, []TemplateSummary{
-			{Slug: "user-story", Name: "Story", Default: "task", Body: "**User Story**\n\nAs a [role]..."},
-		}))
+		{Slug: "user-story", Name: "Story", Default: "task", Body: "**User Story**\n\nAs a [role]..."},
+	}))
 
 	resp, err := fixture.service.CreateTask(fixture.ctx, CreateTaskInput{
 		Title:        "Brand new direction",
@@ -603,8 +644,8 @@ func TestCreateTaskWithUnknownTemplateSlugFails(t *testing.T) {
 func TestAddCommentTemplateSlugMergesBody(t *testing.T) {
 	fixture := newAgentFixture(t)
 	fixture.service.SetSnapshot(snapshotWithTemplates(t, []TemplateSummary{
-			{Slug: "comment-resume", Name: "Resume", Default: "comment-resume", Body: "## What changed\n## Open questions"},
-		}))
+		{Slug: "comment-resume", Name: "Resume", Default: "comment-resume", Body: "## What changed\n## Open questions"},
+	}))
 
 	resp, err := fixture.service.AddComment(fixture.ctx, AddCommentInput{
 		TaskID:       fixture.taskA1.ID,
@@ -633,8 +674,8 @@ func TestCreateTaskWithTemplateSlugSkipsDuplicateScaffold(t *testing.T) {
 	fixture := newAgentFixture(t)
 	scaffold := "## Description\n\nAs a [role], I want [capability].\n\n## Acceptance criteria\n\n1.\n\n## Definition of done\n\n- [ ] tests pass"
 	fixture.service.SetSnapshot(snapshotWithTemplates(t, []TemplateSummary{
-			{Slug: "user-story", Name: "Story", Default: "task", Body: scaffold},
-		}))
+		{Slug: "user-story", Name: "Story", Default: "task", Body: scaffold},
+	}))
 
 	filled := "## Description\n\nAs a developer, I want template dedupe.\n\n## Acceptance criteria\n\n1. filled scaffold is not duplicated.\n\n## Definition of done\n\n- [ ] regression test green"
 
@@ -667,8 +708,8 @@ func TestAddCommentTemplateSlugSkipsDuplicateScaffold(t *testing.T) {
 	fixture := newAgentFixture(t)
 	scaffold := "## What changed\n\n- [ ] entry\n\n## Open questions\n\n- [ ] question"
 	fixture.service.SetSnapshot(snapshotWithTemplates(t, []TemplateSummary{
-			{Slug: "comment-resume", Name: "Resume", Default: "comment-resume", Body: scaffold},
-		}))
+		{Slug: "comment-resume", Name: "Resume", Default: "comment-resume", Body: scaffold},
+	}))
 
 	filled := "## What changed\n\n- migrated tests.\n\n## Open questions\n\n- none."
 
