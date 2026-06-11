@@ -56,6 +56,7 @@ keys:
   cli.config.short: "Керувати канонічним bundle omakiten.yaml"
   cli.config.validate.short: "Перевірити файл omakiten.yaml"
   cli.config.presets.short: "Показати офіційні presets workflow"
+  cli.config.refresh_defaults.short: "Refresh shipped default files without running setup"
   cli.projects.short: "Утиліти життєвого циклу project (delete — destructive ops)"
   cli.projects.delete.short: "Hard-delete зареєстрованого project і кожного залежного рядка (необоротно)"
   cli.projects.delete.long: |-
@@ -1087,6 +1088,7 @@ keys:
     неінтерактивних викликів.
   cli.update.flag.yes: "пропустити підтвердження і застосувати upgrade неінтерактивно"
   cli.update.flag.check: "повідомити поточний vs. останній і вийти без запису"
+  cli.update.flag.skip_defaults: "update only the binary and skip shipped defaults refresh"
   cli.update.picker.title: "Оновити okt"
   cli.update.picker.line: "поточна=%s  →  остання=%s"
   cli.update.picker.hint: "y застосувати · n скасувати · ctrl+c вихід"

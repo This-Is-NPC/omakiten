@@ -56,6 +56,7 @@ keys:
   cli.config.short: "管理规范的 omakiten.yaml bundle"
   cli.config.validate.short: "验证 omakiten.yaml 文件"
   cli.config.presets.short: "列出官方 workflow presets"
+  cli.config.refresh_defaults.short: "Refresh shipped default files without running setup"
   cli.projects.short: "Project 生命周期 utilities (delete — destructive ops)"
   cli.projects.delete.short: "Hard-delete 已注册 project 及每条依赖行（不可逆）"
   cli.projects.delete.long: |-
@@ -1077,6 +1078,7 @@ keys:
     以 0 退出且不写入。--yes 为非交互调用跳过确认提示。
   cli.update.flag.yes: "跳过确认提示,非交互式应用升级"
   cli.update.flag.check: "报告当前 vs. 最新版本并退出且不写入"
+  cli.update.flag.skip_defaults: "update only the binary and skip shipped defaults refresh"
   cli.update.picker.title: "更新 okt"
   cli.update.picker.line: "当前=%s  →  最新=%s"
   cli.update.picker.hint: "y 应用 · n 取消 · ctrl+c 退出"

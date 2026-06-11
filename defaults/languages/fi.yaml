@@ -57,6 +57,7 @@ keys:
   cli.config.short: "Hallinnoi kanonista omakiten.yaml-pakettia"
   cli.config.validate.short: "Validoi omakiten.yaml-tiedosto"
   cli.config.presets.short: "Listaa viralliset workflow-presetit"
+  cli.config.refresh_defaults.short: "Refresh shipped default files without running setup"
   cli.projects.short: "Projektin elinkaari-apuohjelmat (delete — tuhoavat ops)"
   cli.projects.delete.short: "Hard-delete rekisteröidystä projektista ja jokaisesta riippuvasta rivistä (peruuttamaton)"
   cli.projects.delete.long: |-
@@ -1087,6 +1088,7 @@ keys:
     poistuu 0:lla kirjoittamatta. --yes ohittaa vahvistuksen ei-interaktiivisille kutsujille.
   cli.update.flag.yes: "ohita vahvistuskehotus ja käytä upgrade ei-interaktiivisesti"
   cli.update.flag.check: "raportoi nykyinen vs. uusin ja poistu kirjoittamatta"
+  cli.update.flag.skip_defaults: "update only the binary and skip shipped defaults refresh"
   cli.update.picker.title: "Päivitä okt"
   cli.update.picker.line: "nykyinen=%s  →  uusin=%s"
   cli.update.picker.hint: "y käytä · n peru · ctrl+c lopeta"

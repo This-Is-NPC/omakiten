@@ -82,20 +82,21 @@ OKT_CLI_LANG=pt-br OKT_TUI_LANG=pt-br OKT_PRESET=omakase OKT_HARNESSES=0 \
 
 ## `okt update` — fetch latest release and swap the binary
 
-`internal/cli/update.go`. The in-binary counterpart of the curl|bash refresh path. Resolves the running binary via `os.Executable`, queries `https://api.github.com/repos/This-Is-NPC/omakiten/releases/latest`, downloads the matching asset (`okt_<OS>_<arch>.tar.gz` on POSIX, `.zip` on Windows), verifies its SHA256 against `checksums.txt` from the same release, extracts the `okt` entry from the archive, and atomically replaces the binary with a sibling temp file + rename.
+`internal/cli/update.go`. The in-binary counterpart of the curl|bash refresh path. Resolves the running binary via `os.Executable`, queries `https://api.github.com/repos/This-Is-NPC/omakiten/releases/latest`, downloads the matching asset (`okt_<OS>_<arch>.tar.gz` on POSIX, `.zip` on Windows), verifies its SHA256 against `checksums.txt` from the same release, extracts the `okt` entry from the archive, atomically replaces the binary with a sibling temp file + rename, then runs the new binary's `okt config refresh-defaults` so shipped defaults match the installed release.
 
-Flags: `--check` is a dry-run that prints `current=<v> latest=<v> action=<noop|upgrade>` and exits; `--yes` / `-y` skips the confirmation prompt for non-interactive callers.
+Flags: `--check` is a dry-run that prints `current=<v> latest=<v> action=<noop|upgrade>` and exits without swapping the binary or refreshing defaults; `--yes` / `-y` skips the confirmation prompt for non-interactive callers; `--skip-defaults` swaps only the binary and skips the shipped-default refresh.
 
 JSON envelope codes (under `data.code`):
 - `update_available` — `--check` saw a newer tag; nothing written.
 - `update_not_required` — current matches latest (both `--check` and apply paths).
 - `update_completed` — swap applied successfully.
-- `update_failed` — any failure across fetch / checksum / download / extract / swap.
+- `update_failed` — any failure across fetch / checksum / download / extract / swap, or a post-swap defaults refresh failure. When refresh fails after the binary swap, the error details include `applied:true` and a `manual_command` repair command, including `--config <path>` when the update resolved a specific config path.
 - `validation_error` — dev build (no version baked in), no TTY without `--yes`, or user declined the confirmation prompt.
 
 ```sh
 okt update --check                  # report only — exits 0 on both upgrade-available and noop
 okt update --yes                    # apply non-interactively
+okt update --yes --skip-defaults    # update only the binary
 okt update                          # interactive y/n confirmation (needs a TTY)
 ```
 
@@ -417,6 +418,14 @@ okt config validate ./omakase.yaml
 
 ```sh
 okt config validate --migrate
+```
+
+### `okt config refresh-defaults`
+
+Directly refreshes the resolved install root from the running binary's embedded defaults. This is not setup: it does not run the picker, install wrappers, configure harnesses, load/save the active bundle, or flatten imported preset YAML. It overwrites and prunes managed shipped files outside `custom/`, preserves every `custom/` subtree, and preserves `config/.active`. The command fails closed when the target does not look like an existing Omakiten install or a managed top-level defaults directory is a symlink.
+
+```sh
+okt config refresh-defaults
 ```
 
 ### `okt config init --scope <global|local> --preset <name> [--force]`
@@ -796,6 +805,13 @@ Examples: okt config language set --cli pt-br okt config language set --tui en -
 
 Print the active language settings and the discovered language packs  
 `okt config language show [flags]`
+
+_No flags beyond globals._
+
+### `okt config refresh-defaults`
+
+Refresh shipped default files without running setup. Preserves `custom/` subtrees and `config/.active`; removes stale managed files outside `custom/`; refuses unsafe non-install roots and managed top-level symlink directories.  
+`okt config refresh-defaults [flags]`
 
 _No flags beyond globals._
 
@@ -1288,12 +1304,13 @@ Remove the binary the installer wrote to $INSTALL_DIR (defaults to ~/.local/bin 
 
 ### `okt update`
 
-Detect the running binary's path (os.Executable), query the GitHub releases API for the latest tag, download the matching asset, and atomically replace the binary on disk. The current process exits after the swap; the next invocation runs the new version. --check prints `current=<v> latest=<v> action=<noop|upgrade>` and exits 0 without writing. --yes skips the confirmation prompt for non-interactive callers.  
+Detect the running binary's path (os.Executable), query the GitHub releases API for the latest tag, download the matching asset, atomically replace the binary on disk, then refresh shipped defaults from the new binary. The current process exits after the swap; the next invocation runs the new version. --check prints `current=<v> latest=<v> action=<noop|upgrade>` and exits 0 without writing. --yes skips the confirmation prompt for non-interactive callers. --skip-defaults updates only the binary.  
 `okt update [flags]`
 
 | Flag | Short | Type | Description |
 |---|---|---|---|
 | `--check` |  |  | report current vs. latest and exit without writing |
+| `--skip-defaults` |  |  | update only the binary and skip shipped defaults refresh |
 | `--yes` | `-y` |  | skip the confirmation prompt and apply the upgrade non-interactively |
 
 ### `okt workflow orphans`

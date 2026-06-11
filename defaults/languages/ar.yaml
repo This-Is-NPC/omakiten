@@ -56,6 +56,7 @@ keys:
   cli.config.short: "إدارة حزمة omakiten.yaml الرسمية"
   cli.config.validate.short: "التحقّق من ملف omakiten.yaml"
   cli.config.presets.short: "عرض قائمة preset الرسمية لـ workflow"
+  cli.config.refresh_defaults.short: "Refresh shipped default files without running setup"
   cli.projects.short: "أدوات دورة حياة المشروع (delete — عمليات مدمرة)"
   cli.projects.delete.short: "Hard-delete لمشروع مسجّل وكل صف تابع (لا رجعة)"
   cli.projects.delete.long: |-
@@ -1082,6 +1083,7 @@ keys:
     يخرج بـ 0 دون كتابة. --yes يتخطى تأكيد غير التفاعلي.
   cli.update.flag.yes: "تخطي مطالبة التأكيد وتطبيق upgrade بشكل غير تفاعلي"
   cli.update.flag.check: "الإبلاغ عن الحالي vs. الأحدث والخروج دون كتابة"
+  cli.update.flag.skip_defaults: "update only the binary and skip shipped defaults refresh"
   cli.update.picker.title: "تحديث okt"
   cli.update.picker.line: "الحالي=%s  →  الأحدث=%s"
   cli.update.picker.hint: "y تطبيق · n إلغاء · ctrl+c خروج"

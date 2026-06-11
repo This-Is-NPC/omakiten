@@ -56,6 +56,7 @@ keys:
   cli.config.short: "正準 omakiten.yaml バンドルを管理"
   cli.config.validate.short: "omakiten.yaml ファイルを検証"
   cli.config.presets.short: "公式 workflow preset を一覧表示"
+  cli.config.refresh_defaults.short: "Refresh shipped default files without running setup"
   cli.projects.short: "Project ライフサイクル utilities (delete — destructive ops)"
   cli.projects.delete.short: "登録済み project と依存する全行を hard-delete (不可逆)"
   cli.projects.delete.long: |-
@@ -1083,6 +1084,7 @@ keys:
     書き込みなしで 0 終了します。--yes は非対話呼び出しの確認をスキップします。
   cli.update.flag.yes: "確認プロンプトをスキップし、非対話で upgrade を適用"
   cli.update.flag.check: "現在 vs. 最新を報告し、書き込みなしで終了"
+  cli.update.flag.skip_defaults: "update only the binary and skip shipped defaults refresh"
   cli.update.picker.title: "okt を更新"
   cli.update.picker.line: "現在=%s  →  最新=%s"
   cli.update.picker.hint: "y 適用 · n 取消 · ctrl+c 終了"

@@ -56,6 +56,7 @@ keys:
   cli.config.short: "정규 omakiten.yaml 번들 관리"
   cli.config.validate.short: "omakiten.yaml 파일 검증"
   cli.config.presets.short: "공식 workflow presets 목록"
+  cli.config.refresh_defaults.short: "Refresh shipped default files without running setup"
   cli.projects.short: "Project 수명 주기 utilities (delete — destructive ops)"
   cli.projects.delete.short: "등록된 project 와 모든 종속 row hard-delete (되돌릴 수 없음)"
   cli.projects.delete.long: |-
@@ -1081,6 +1082,7 @@ keys:
     쓰기 없이 0 으로 종료합니다. --yes 는 비대화형 호출의 확인을 건너뜁니다.
   cli.update.flag.yes: "확인 프롬프트를 건너뛰고 비대화형으로 upgrade 적용"
   cli.update.flag.check: "현재 vs. 최신을 보고하고 쓰기 없이 종료"
+  cli.update.flag.skip_defaults: "update only the binary and skip shipped defaults refresh"
   cli.update.picker.title: "okt 업데이트"
   cli.update.picker.line: "현재=%s  →  최신=%s"
   cli.update.picker.hint: "y 적용 · n 취소 · ctrl+c 종료"

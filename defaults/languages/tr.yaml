@@ -56,6 +56,7 @@ keys:
   cli.config.short: "Kanonik omakiten.yaml paketini yönet"
   cli.config.validate.short: "Bir omakiten.yaml dosyasını doğrula"
   cli.config.presets.short: "Resmî workflow preset'lerini listele"
+  cli.config.refresh_defaults.short: "Refresh shipped default files without running setup"
   cli.projects.short: "Project yaşam döngüsü yardımcıları (delete — destructive ops)"
   cli.projects.delete.short: "Kayıtlı project ve her bağımlı satırı hard-delete (geri alınamaz)"
   cli.projects.delete.long: |-
@@ -1084,6 +1085,7 @@ keys:
     yazmadan 0 ile çıkar. --yes non-interactive çağrılar için onayı atlar.
   cli.update.flag.yes: "onay istemini atla ve upgrade'i non-interactive uygula"
   cli.update.flag.check: "mevcut vs. en son raporla ve yazmadan çık"
+  cli.update.flag.skip_defaults: "update only the binary and skip shipped defaults refresh"
   cli.update.picker.title: "okt'yi güncelle"
   cli.update.picker.line: "mevcut=%s  →  en son=%s"
   cli.update.picker.hint: "y uygula · n iptal · ctrl+c çık"

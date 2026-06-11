@@ -56,6 +56,7 @@ keys:
   cli.config.short: "कैनोनिकल omakiten.yaml बंडल प्रबंधित करें"
   cli.config.validate.short: "omakiten.yaml फ़ाइल को मान्य करें"
   cli.config.presets.short: "आधिकारिक workflow preset सूचीबद्ध करें"
+  cli.config.refresh_defaults.short: "Refresh shipped default files without running setup"
   cli.projects.short: "Project जीवनचक्र utilities (delete — destructive ops)"
   cli.projects.delete.short: "Registered project और हर dependent row hard-delete (अपरिवर्तनीय)"
   cli.projects.delete.long: |-
@@ -1085,6 +1086,7 @@ keys:
     बिना लिखे 0 पर बाहर निकलता है। --yes गैर-इंटरैक्टिव callers के लिए पुष्टि छोड़ता है।
   cli.update.flag.yes: "पुष्टि prompt छोड़ें और upgrade गैर-इंटरैक्टिव लागू करें"
   cli.update.flag.check: "वर्तमान vs. नवीनतम रिपोर्ट करें और बिना लिखे बाहर निकलें"
+  cli.update.flag.skip_defaults: "update only the binary and skip shipped defaults refresh"
   cli.update.picker.title: "okt अपडेट करें"
   cli.update.picker.line: "वर्तमान=%s  →  नवीनतम=%s"
   cli.update.picker.hint: "y लागू · n रद्द · ctrl+c बाहर"

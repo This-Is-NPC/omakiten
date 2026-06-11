@@ -56,6 +56,7 @@ keys:
   cli.config.short: "Verwaltet das kanonische omakiten.yaml-Bundle"
   cli.config.validate.short: "Validiert eine omakiten.yaml-Datei"
   cli.config.presets.short: "Listet offizielle workflow-presets"
+  cli.config.refresh_defaults.short: "Refresh shipped default files without running setup"
   cli.projects.short: "Projekt-Lifecycle-Hilfsmittel (delete — destruktive ops)"
   cli.projects.delete.short: "Hard-delete eines registrierten Projekts und jeder abhängigen Zeile (irreversibel)"
   cli.projects.delete.long: |-
@@ -1095,6 +1096,7 @@ keys:
     non-interaktive Aufrufer.
   cli.update.flag.yes: "Bestätigungs-Prompt überspringen und Upgrade non-interaktiv anwenden"
   cli.update.flag.check: "aktuell vs. neueste melden und ohne Schreiben beenden"
+  cli.update.flag.skip_defaults: "update only the binary and skip shipped defaults refresh"
   cli.update.picker.title: "okt aktualisieren"
   cli.update.picker.line: "aktuell=%s  →  neueste=%s"
   cli.update.picker.hint: "y anwenden · n abbrechen · ctrl+c beenden"

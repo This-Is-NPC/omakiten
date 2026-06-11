@@ -93,6 +93,20 @@ func autoChecksums(assets map[string][]byte) string {
 	return b.String()
 }
 
+type recordingDefaultsRefresher struct {
+	calls      int
+	binaryPath string
+	err        error
+}
+
+func (r *recordingDefaultsRefresher) fn() updateDefaultsRefresherFn {
+	return func(_ context.Context, binaryPath string) error {
+		r.calls++
+		r.binaryPath = binaryPath
+		return r.err
+	}
+}
+
 func TestRunUpdate_CheckUpgradeAvailable(t *testing.T) {
 	c := updateClient{
 		Fetcher: stubFetcher{Tag: "0.20.0"},
@@ -138,6 +152,27 @@ func TestRunUpdate_CheckUpToDate(t *testing.T) {
 	}
 	if payload["action"] != "noop" {
 		t.Fatalf("action: got %v want noop", payload["action"])
+	}
+}
+
+func TestUpdateCommandCheckDoesNotWireMutableState(t *testing.T) {
+	prevFactory := defaultUpdateClientFactory
+	defaultUpdateClientFactory = func(string) (updateClient, error) {
+		return updateClient{Fetcher: stubFetcher{Tag: "0.20.0"}, Current: "0.19.0"}, nil
+	}
+	t.Cleanup(func() { defaultUpdateClientFactory = prevFactory })
+
+	root := filepath.Join(t.TempDir(), "omakiten")
+	dbPath := filepath.Join(root, "data", "omakiten.db")
+	cfgPath := filepath.Join(root, "config", "omakase.yaml")
+	out := runCLI(t, dbPath, cfgPath, "update", "--check")
+	envelope := decodeEnvelope(t, out)
+	data := envelope["data"].(map[string]any)
+	if data["code"] != "update_available" || data["applied"] != false {
+		t.Fatalf("check payload = %v, want update_available applied=false", data)
+	}
+	if _, err := os.Stat(root); !os.IsNotExist(err) {
+		t.Fatalf("update --check created mutable state under %s; stat err=%v", root, err)
 	}
 }
 
@@ -209,6 +244,174 @@ func TestRunUpdate_YesSwapsBinary(t *testing.T) {
 	info, _ := os.Stat(bin)
 	if info.Mode().Perm() != 0o755 {
 		t.Fatalf("swap perms: got %v want 0755", info.Mode().Perm())
+	}
+}
+
+func TestRunUpdate_YesRefreshesDefaultsAfterSwap(t *testing.T) {
+	if goruntime.GOOS == "windows" {
+		t.Skip("posix-only path: tar archive shape")
+	}
+	dir := t.TempDir()
+	bin := filepath.Join(dir, "okt")
+	if err := os.WriteFile(bin, []byte("OLD"), 0o755); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	archive := tarGzWith(t, map[string][]byte{"okt": []byte("NEW")})
+	asset, err := assetName(goruntime.GOOS, goruntime.GOARCH)
+	if err != nil {
+		t.Fatalf("assetName: %v", err)
+	}
+	refresher := &recordingDefaultsRefresher{}
+	c := updateClient{
+		Fetcher:           stubFetcher{Tag: "0.20.0"},
+		Downloader:        stubDownloader{Assets: map[string][]byte{asset: archive}},
+		Current:           "0.19.0",
+		BinaryPath:        bin,
+		DefaultsRefresher: refresher.fn(),
+	}
+
+	res, err := runUpdate(context.Background(), c, updateInputs{Yes: true})
+	if err != nil {
+		t.Fatalf("runUpdate: %v", err)
+	}
+	if refresher.calls != 1 {
+		t.Fatalf("defaults refresher calls = %d, want 1", refresher.calls)
+	}
+	if refresher.binaryPath != bin {
+		t.Fatalf("defaults refresher binary path = %q, want %q", refresher.binaryPath, bin)
+	}
+	if got, _ := os.ReadFile(bin); string(got) != "NEW" {
+		t.Fatalf("bin = %q want NEW before defaults refresh runs", got)
+	}
+	payload, _ := res.(map[string]any)
+	if payload["defaults_refreshed"] != true {
+		t.Fatalf("defaults_refreshed = %v, want true", payload["defaults_refreshed"])
+	}
+}
+
+func TestRunUpdate_SkipDefaultsSkipsPostSwapRefresh(t *testing.T) {
+	if goruntime.GOOS == "windows" {
+		t.Skip("posix-only path: tar archive shape")
+	}
+	dir := t.TempDir()
+	bin := filepath.Join(dir, "okt")
+	if err := os.WriteFile(bin, []byte("OLD"), 0o755); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	archive := tarGzWith(t, map[string][]byte{"okt": []byte("NEW")})
+	asset, err := assetName(goruntime.GOOS, goruntime.GOARCH)
+	if err != nil {
+		t.Fatalf("assetName: %v", err)
+	}
+	refresher := &recordingDefaultsRefresher{}
+	c := updateClient{
+		Fetcher:           stubFetcher{Tag: "0.20.0"},
+		Downloader:        stubDownloader{Assets: map[string][]byte{asset: archive}},
+		Current:           "0.19.0",
+		BinaryPath:        bin,
+		DefaultsRefresher: refresher.fn(),
+	}
+
+	res, err := runUpdate(context.Background(), c, updateInputs{Yes: true, SkipDefaults: true})
+	if err != nil {
+		t.Fatalf("runUpdate: %v", err)
+	}
+	if refresher.calls != 0 {
+		t.Fatalf("defaults refresher calls = %d, want 0 with --skip-defaults", refresher.calls)
+	}
+	payload, _ := res.(map[string]any)
+	if payload["defaults_refreshed"] != false || payload["defaults_refresh_skipped"] != true {
+		t.Fatalf("defaults payload = refreshed:%v skipped:%v, want false/true", payload["defaults_refreshed"], payload["defaults_refresh_skipped"])
+	}
+}
+
+func TestRunUpdate_DefaultsRefreshFailureReportsAppliedBinary(t *testing.T) {
+	if goruntime.GOOS == "windows" {
+		t.Skip("posix-only path: tar archive shape")
+	}
+	dir := t.TempDir()
+	bin := filepath.Join(dir, "okt")
+	if err := os.WriteFile(bin, []byte("OLD"), 0o755); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	archive := tarGzWith(t, map[string][]byte{"okt": []byte("NEW")})
+	asset, err := assetName(goruntime.GOOS, goruntime.GOARCH)
+	if err != nil {
+		t.Fatalf("assetName: %v", err)
+	}
+	refresher := &recordingDefaultsRefresher{err: errors.New("refresh subprocess failed")}
+	c := updateClient{
+		Fetcher:           stubFetcher{Tag: "0.20.0"},
+		Downloader:        stubDownloader{Assets: map[string][]byte{asset: archive}},
+		Current:           "0.19.0",
+		BinaryPath:        bin,
+		DefaultsRefresher: refresher.fn(),
+	}
+
+	_, err = runUpdate(context.Background(), c, updateInputs{Yes: true})
+	if err == nil {
+		t.Fatalf("expected defaults refresh failure")
+	}
+	if refresher.calls != 1 {
+		t.Fatalf("defaults refresher calls = %d, want 1", refresher.calls)
+	}
+	if got, _ := os.ReadFile(bin); string(got) != "NEW" {
+		t.Fatalf("binary should already be updated after defaults failure, got %q", got)
+	}
+	var coded *domain.CodedError
+	if !errors.As(err, &coded) || coded.Code != domain.ErrUpdateFailed {
+		t.Fatalf("error = %v, want ErrUpdateFailed", err)
+	}
+	if coded.Details["reason"] != "defaults_refresh_failed" {
+		t.Fatalf("reason = %v, want defaults_refresh_failed", coded.Details["reason"])
+	}
+	if coded.Details["applied"] != true {
+		t.Fatalf("applied = %v, want true because binary swap already completed", coded.Details["applied"])
+	}
+	if coded.Details["manual_command"] != updateDefaultsManualCommand {
+		t.Fatalf("manual_command = %v, want %s", coded.Details["manual_command"], updateDefaultsManualCommand)
+	}
+}
+
+func TestRunUpdate_DefaultsRefreshFailureReportsExactConfigRepairCommand(t *testing.T) {
+	if goruntime.GOOS == "windows" {
+		t.Skip("posix-only path: tar archive shape")
+	}
+	dir := t.TempDir()
+	bin := filepath.Join(dir, "okt")
+	if err := os.WriteFile(bin, []byte("OLD"), 0o755); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	archive := tarGzWith(t, map[string][]byte{"okt": []byte("NEW")})
+	asset, err := assetName(goruntime.GOOS, goruntime.GOARCH)
+	if err != nil {
+		t.Fatalf("assetName: %v", err)
+	}
+	configPath := filepath.Join(dir, "with space", "config", "omakase.yaml")
+	refresher := &recordingDefaultsRefresher{err: errors.New("refresh subprocess failed")}
+	c := updateClient{
+		Fetcher:                   stubFetcher{Tag: "0.20.0"},
+		Downloader:                stubDownloader{Assets: map[string][]byte{asset: archive}},
+		Current:                   "0.19.0",
+		BinaryPath:                bin,
+		DefaultsRefresher:         refresher.fn(),
+		DefaultsRefreshConfigPath: configPath,
+	}
+
+	_, err = runUpdate(context.Background(), c, updateInputs{Yes: true})
+	if err == nil {
+		t.Fatalf("expected defaults refresh failure")
+	}
+	var coded *domain.CodedError
+	if !errors.As(err, &coded) || coded.Code != domain.ErrUpdateFailed {
+		t.Fatalf("error = %v, want ErrUpdateFailed", err)
+	}
+	wantCommand := "okt --config '" + configPath + "' config refresh-defaults"
+	if coded.Details["manual_command"] != wantCommand {
+		t.Fatalf("manual_command = %v, want %s", coded.Details["manual_command"], wantCommand)
+	}
+	if coded.Details["config_path"] != configPath {
+		t.Fatalf("config_path = %v, want %s", coded.Details["config_path"], configPath)
 	}
 }
 
@@ -540,10 +743,12 @@ func (r *recordingBackupFactory) build(context.Context) (updateBackupRunner, err
 
 func TestRunUpdate_CheckSkipsBackupFactory(t *testing.T) {
 	factory := &recordingBackupFactory{err: errors.New("paths.BackupDir: state home unwritable")}
+	refresher := &recordingDefaultsRefresher{err: errors.New("defaults refresh should not run")}
 	c := updateClient{
-		Fetcher:       stubFetcher{Tag: "0.20.0"},
-		Current:       "0.19.0",
-		BackupFactory: factory.build,
+		Fetcher:           stubFetcher{Tag: "0.20.0"},
+		Current:           "0.19.0",
+		BackupFactory:     factory.build,
+		DefaultsRefresher: refresher.fn(),
 	}
 	res, err := runUpdate(context.Background(), c, updateInputs{Check: true})
 	if err != nil {
@@ -552,9 +757,48 @@ func TestRunUpdate_CheckSkipsBackupFactory(t *testing.T) {
 	if factory.calls != 0 {
 		t.Fatalf("BackupFactory invoked %d times on --check; want 0 (no swap → no snapshot needed)", factory.calls)
 	}
+	if refresher.calls != 0 {
+		t.Fatalf("DefaultsRefresher invoked %d times on --check; want 0", refresher.calls)
+	}
 	payload, _ := res.(map[string]any)
 	if payload["code"] != "update_available" {
 		t.Fatalf("code: got %v want update_available", payload["code"])
+	}
+}
+
+func TestUpdateDefaultsRefreshArgsIncludesConfigPath(t *testing.T) {
+	configPath := filepath.Join(t.TempDir(), "config", "omakase.yaml")
+	args := updateDefaultsRefreshArgs(configPath)
+	want := []string{"--config", configPath, "config", "refresh-defaults"}
+	if fmt.Sprint(args) != fmt.Sprint(want) {
+		t.Fatalf("updateDefaultsRefreshArgs = %v, want %v", args, want)
+	}
+}
+
+func TestCappedOutputBufferTruncates(t *testing.T) {
+	buf := newCappedOutputBuffer(5)
+	if _, err := buf.Write([]byte("abcdef")); err != nil {
+		t.Fatalf("first write: %v", err)
+	}
+	if _, err := buf.Write([]byte("ghi")); err != nil {
+		t.Fatalf("second write: %v", err)
+	}
+	got := buf.String()
+	if !strings.HasPrefix(got, "abcde") {
+		t.Fatalf("capped output = %q, want abcde prefix", got)
+	}
+	if !strings.Contains(got, "subprocess output truncated after 5 bytes; 4 bytes suppressed") {
+		t.Fatalf("capped output missing truncation marker: %q", got)
+	}
+}
+
+func TestDefaultUpdateClientWiresDefaultsRefresher(t *testing.T) {
+	c, err := defaultUpdateClient("0.19.0")
+	if err != nil {
+		t.Fatalf("defaultUpdateClient: %v", err)
+	}
+	if c.DefaultsRefresher == nil {
+		t.Fatalf("defaultUpdateClient must wire defaults refresher for production okt update")
 	}
 }
 
