@@ -255,6 +255,10 @@ func tools() []ToolDefinition {
 		{Name: "templates.show", Description: "Return one template by slug, including its full body. Read-only. Hard-rejects (validation_error) when the requested slug is a global template that is shadowed by a project-scoped override in the active project — the rejection's details name the active slug so callers can re-call directly.", InputSchema: showTemplateSchema()},
 		{Name: "skills.list", Description: "List every loaded skill (slug + name + description), ordered by slug. Bodies are omitted — call skills.get for one body. Read-only; skills are authored by the user and the agent never creates, edits, or deletes them through MCP.", InputSchema: objectSchema(map[string]any{}, nil)},
 		{Name: "skills.get", Description: "Return one skill by slug, including its full body. Read-only; there is no mutation counterpart. Rejects (validation_error) when the slug is unknown, naming the missing slug.", InputSchema: objectSchema(map[string]any{"slug": stringSchema("Skill slug")}, []string{"slug"})},
+		{Name: "personas.list", Description: "List every persona wired in the active config personas: block (slug + name + description), ordered by slug. Bodies and expanded references are omitted — call personas.get for one persona with laws and skills expanded inline. Read-only.", InputSchema: objectSchema(map[string]any{}, nil)},
+		{Name: "personas.get", Description: "Return one active-config persona by slug, including its body and every explicitly referenced law and skill expanded inline with full bodies. Read-only. Rejects (validation_error) when the slug is unknown or a referenced law/skill is missing.", InputSchema: objectSchema(map[string]any{"slug": stringSchema("Persona slug")}, []string{"slug"})},
+		{Name: "laws.list", Description: "List every loaded law (slug + name + severity + scope), ordered by slug. Bodies are omitted — call laws.get for one body. Read-only.", InputSchema: objectSchema(map[string]any{}, nil)},
+		{Name: "laws.get", Description: "Return one law by slug, including its full body. Read-only. Rejects (validation_error) when the slug is unknown, naming the missing slug.", InputSchema: objectSchema(map[string]any{"slug": stringSchema("Law slug")}, []string{"slug"})},
 		{Name: "plans.create", Description: "Create a WBS-style plan that groups child tasks in ordered waves. Slug must be unique within the project; goal_body is markdown describing the plan's intent and acceptance criteria. Emits plan.created.", InputSchema: objectSchema(map[string]any{"slug": stringSchema("Plan slug (kebab-case recommended); unique per project"), "name": stringSchema("Human-readable plan name"), "goal_body": stringSchema("Optional markdown body describing the plan goal and acceptance criteria")}, []string{"slug", "name"})},
 		{Name: "plans.list", Description: "List every plan in the active project, ordered by creation. Goal bodies are omitted from list entries — call plans.show to fetch one with its full body.", InputSchema: selectorSchema()},
 		{Name: "plans.show", Description: "Return one plan with its waves, tasks per wave, per-wave and overall done/total counts, integer percent, and the active wave id (lowest-position wave with pending work). Archived tasks are filtered out of the counts but stay in the wave's tasks list.", InputSchema: objectSchema(map[string]any{"slug": stringSchema("Plan slug")}, []string{"slug"})},
@@ -282,11 +286,40 @@ func Resources() []ResourceDefinition {
 // Prompts() means new commands only need a description in the agent layer
 // plus, optionally, an entry here when they take inputs.
 var promptArguments = map[string][]PromptArgument{
-	"okt-task-imagine":   {{Name: "topic", Description: "Topic, problem, or feature seed to explore", Required: false}},
-	"okt-task-create":    {{Name: "description", Description: "Task description", Required: true}},
-	"okt-task-continue":  {{Name: "task_id", Description: "Task id", Required: true}},
-	"okt-task-implement": {{Name: "task_id", Description: "Task id to implement", Required: false}},
-	"okt-task-document":  {{Name: "focus", Description: "Optional area to focus the survey (e.g. 'README', 'architecture')", Required: false}},
+	"okt-shape":             {{Name: "topic", Description: "Raw idea, backlog, or shaping focus", Required: false}},
+	"okt-run":               {{Name: "target", Description: "Optional task id, plan id, or plan slug to run", Required: false}},
+	"okt-audit":             {{Name: "target", Description: "Optional task id, plan id, plan slug, or branch/diff target to audit", Required: false}},
+	"okt-task-imagine":      {{Name: "topic", Description: "Topic, problem, or feature seed to explore", Required: false}},
+	"okt-task-research":     {{Name: "task_id", Description: "Optional task id or topic to research", Required: false}},
+	"okt-task-validate":     {{Name: "task_id", Description: "Optional task id or framing to validate", Required: false}},
+	"okt-task-requirements": {{Name: "task_id", Description: "Optional task id or candidate to capture requirements for", Required: false}},
+	"okt-task-prioritize":   {{Name: "task_id", Description: "Optional task id or candidate set to prioritize", Required: false}},
+	"okt-task-create":       {{Name: "description", Description: "Task description", Required: true}},
+	"okt-task-decompose":    {{Name: "task_id", Description: "Task id or coarse work item to decompose", Required: false}},
+	"okt-task-estimate":     {{Name: "task_id", Description: "Task id or increment set to estimate", Required: false}},
+	"okt-task-design":       {{Name: "task_id", Description: "Task id to design", Required: false}},
+	"okt-plan-create":       {{Name: "slug", Description: "Optional plan slug to create", Required: false}, {Name: "name", Description: "Optional plan name", Required: false}},
+	"okt-plan-show":         {{Name: "slug", Description: "Plan slug", Required: true}},
+	"okt-plan-continue":     {{Name: "slug", Description: "Plan slug", Required: true}},
+	"okt-plan-claim":        {{Name: "slug", Description: "Plan slug", Required: true}},
+	"okt-task-resume":       {{Name: "task_id", Description: "Task id", Required: true}},
+	"okt-task-continue":     {{Name: "task_id", Description: "Task id", Required: true}},
+	"okt-task-implement":    {{Name: "task_id", Description: "Task id to implement", Required: false}},
+	"okt-task-self-review":  {{Name: "task_id", Description: "Optional task id whose diff is being self-reviewed", Required: false}, {Name: "base", Description: "Optional git diff base", Required: false}},
+	"okt-task-refactor":     {{Name: "task_id", Description: "Optional task id or finding to refactor", Required: false}},
+	"okt-task-document":     {{Name: "focus", Description: "Optional area to focus the survey (e.g. 'README', 'architecture')", Required: false}},
+	"okt-task-debrief":      {{Name: "task_id", Description: "Optional completed task id to debrief", Required: false}},
+	"okt-config":            {{Name: "focus", Description: "Optional config topic or file to inspect", Required: false}},
+	"okt-skill":             {{Name: "slug", Description: "Optional skill slug to load", Required: false}},
+	"okt-task-review":       {{Name: "task_id", Description: "Optional task id whose diff is being reviewed", Required: false}, {Name: "base", Description: "Optional git diff base", Required: false}},
+	"okt-task-secure":       {{Name: "task_id", Description: "Optional task id whose diff is being security-reviewed", Required: false}, {Name: "base", Description: "Optional git diff base", Required: false}},
+	"okt-task-check":        {{Name: "task_id", Description: "Optional task id whose checks are being run", Required: false}, {Name: "target", Description: "Optional specific check target", Required: false}},
+	"okt-task-quality":      {{Name: "task_id", Description: "Optional task id whose diff is being quality-reviewed", Required: false}},
+	"okt-pause":             {{Name: "body", Description: "Optional handoff body override", Required: false}, {Name: "note", Description: "Optional extra handoff context", Required: false}},
+	"okt-note-free":         {{Name: "title", Description: "Note title", Required: false}, {Name: "body", Description: "Note body", Required: false}, {Name: "scope", Description: "Optional scope: project or global", Required: false}, {Name: "kind", Description: "Optional note kind", Required: false}},
+	"okt-note-recap":        {{Name: "since", Description: "Optional recap window (e.g. 24h, 7d, day)", Required: false}, {Name: "kinds", Description: "Optional comma-separated kind filter", Required: false}, {Name: "project", Description: "Optional project slug", Required: false}, {Name: "limit", Description: "Optional per-project limit", Required: false}},
+	"okt-note-list":         {{Name: "scope", Description: "Optional scope: project, global, or both", Required: false}, {Name: "kind", Description: "Optional kind filter", Required: false}, {Name: "tag", Description: "Optional tag filter", Required: false}, {Name: "pinned", Description: "Optional pinned-only filter", Required: false}},
+	"okt-note-show":         {{Name: "id", Description: "Note/comment id", Required: true}},
 }
 
 // Prompts lists every `okt-*` prompt with its entity-sourced one-line
@@ -611,6 +644,30 @@ func (a *Adapter) dispatchTool(ctx context.Context, service *agent.Service, name
 		if err == nil {
 			data, err = service.ShowSkill(ctx, input)
 		}
+	case "personas.list":
+		var input agent.ListPersonasInput
+		err = decodeArgs(args, &input)
+		if err == nil {
+			data, err = service.ListPersonas(ctx, input)
+		}
+	case "personas.get":
+		var input agent.ShowPersonaInput
+		err = decodeArgs(args, &input)
+		if err == nil {
+			data, err = service.ShowPersona(ctx, input)
+		}
+	case "laws.list":
+		var input agent.ListLawsInput
+		err = decodeArgs(args, &input)
+		if err == nil {
+			data, err = service.ListLaws(ctx, input)
+		}
+	case "laws.get":
+		var input agent.ShowLawInput
+		err = decodeArgs(args, &input)
+		if err == nil {
+			data, err = service.ShowLaw(ctx, input)
+		}
 	case "metrics.summary":
 		var input agent.MetricsSummaryInput
 		err = decodeArgs(args, &input)
@@ -737,7 +794,7 @@ func (a *Adapter) ReadResource(ctx context.Context, uri string) (ToolResult, err
 // Unaware clients simply ignore the metadata field — there is no protocol
 // risk in always emitting it, but the toggle exists for users who want to
 // observe pre/post caching behavior or work around a buggy client.
-func (a *Adapter) GetPrompt(ctx context.Context, name string, _ map[string]any) (PromptResult, error) {
+func (a *Adapter) GetPrompt(ctx context.Context, name string, args map[string]any) (PromptResult, error) {
 	var service *agent.Service
 	if a != nil {
 		service = a.defaultService()
@@ -754,7 +811,7 @@ func (a *Adapter) GetPrompt(ctx context.Context, name string, _ map[string]any) 
 		}
 		return promptResult("", "", true), nil
 	}
-	resolved, err := service.ResolveCommand(ctx, agent.ResolveCommandInput{Name: name})
+	resolved, err := service.ResolveCommand(ctx, agent.ResolveCommandInput{Name: name, Arguments: args})
 	if err != nil {
 		return PromptResult{}, err
 	}

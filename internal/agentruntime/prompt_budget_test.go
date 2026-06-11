@@ -3,10 +3,12 @@ package agentruntime
 import (
 	"context"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 
 	"omakiten/internal/agent"
+	"omakiten/internal/mcp"
 )
 
 // promptBudgets caps each `okt-*` prompt's resolved markdown size in bytes,
@@ -63,8 +65,8 @@ var promptBudgets = map[string]int{
 	"okt":                   7600,
 	"okt-help":              8400,
 	"okt-start":             9900,
-	"okt-shape":             10600,
-	"okt-run":               12700,
+	"okt-shape":             13800,
+	"okt-run":               13400,
 	"okt-task-imagine":      9100,
 	"okt-task-research":     5500,
 	"okt-task-validate":     5200,
@@ -136,6 +138,73 @@ func TestTemplateBoundCommandsCarryFetchHint(t *testing.T) {
 					name, len(resp.Templates), resp.Markdown)
 			}
 		})
+	}
+}
+
+func TestPromptPlaybooksReferenceOnlyKnownMCPTools(t *testing.T) {
+	known := map[string]struct{}{}
+	for _, tool := range mcp.Tools() {
+		known[tool.Name] = struct{}{}
+	}
+	ignored := map[string]struct{}{"omakiten.yaml": {}, "package.json": {}, "task.assigned": {}}
+	dottedBacktick := regexp.MustCompile("`([a-z_]+(?:\\.[a-z_]+)+)(?:\\s|`)")
+
+	for _, name := range agent.CommandNames() {
+		resp := resolveForSmoke(t, name)
+		matches := dottedBacktick.FindAllStringSubmatch(resp.Markdown, -1)
+		for _, match := range matches {
+			ref := match[1]
+			if _, ok := ignored[ref]; ok {
+				continue
+			}
+			if _, ok := known[ref]; !ok {
+				t.Fatalf("%s prompt references unknown MCP tool %q:\n%s", name, ref, resp.Markdown)
+			}
+		}
+	}
+}
+
+func TestPromptOperationalToolContracts(t *testing.T) {
+	required := map[string][]string{
+		"okt-shape":             {"plans.add_wave", "plans.assign_task", "dependencies.add", "plans.show", "dependencies.list"},
+		"okt-plan-create":       {"plans.create", "plans.add_wave", "plans.assign_task", "plans.show"},
+		"okt-run":               {"plans.claim_next", "plans.edit", "plans.show", "do not call `okt-start`", "do not summarize the board", "tasks.move", "progress.record", "keep the plan current"},
+		"okt-audit":             {"do not call `okt-start`", "not a plan progress summary", "severity-tagged findings"},
+		"okt-pause":             {"task_activity.list", "comments.list", "kind=handoff"},
+		"okt-task-review":       {"comments.add"},
+		"okt-task-check":        {"comments.add"},
+		"okt-task-secure":       {"comments.add"},
+		"okt-task-quality":      {"comments.add"},
+		"okt-task-self-review":  {"comments.add", "progress.record"},
+		"okt-task-requirements": {"comments.add"},
+		"okt-task-prioritize":   {"comments.add"},
+		"okt-task-design":       {"comments.add"},
+		"okt-task-debrief":      {"comments.add"},
+		"okt-task-refactor":     {"comments.add", "progress.record"},
+		"okt-task-research":     {"comments.add"},
+		"okt-task-imagine":      {"comments.add"},
+		"okt-task-estimate":     {"comments.add"},
+		"okt-task-resume":       {"comments.list"},
+	}
+	for name, phrases := range required {
+		resp := resolveForSmoke(t, name)
+		for _, phrase := range phrases {
+			if !strings.Contains(strings.ToLower(resp.Markdown), strings.ToLower(phrase)) {
+				t.Fatalf("%s prompt missing operational contract phrase %q:\n%s", name, phrase, resp.Markdown)
+			}
+		}
+	}
+
+	for name, forbidden := range map[string][]string{
+		"okt-pause":      {"task.activity.list"},
+		"okt-note-recap": {"enumerate every project"},
+	} {
+		resp := resolveForSmoke(t, name)
+		for _, phrase := range forbidden {
+			if strings.Contains(strings.ToLower(resp.Markdown), strings.ToLower(phrase)) {
+				t.Fatalf("%s prompt still carries forbidden phrase %q:\n%s", name, phrase, resp.Markdown)
+			}
+		}
 	}
 }
 
@@ -525,6 +594,8 @@ func TestCW3OktRunDelegationPlaybook(t *testing.T) {
 		{"clean halt on a failing/blocked task", "halt cleanly"},
 		{"run is resumable from the halted task", "resumable"},
 		{"single-task or plan target detected from context", "detect the target from context"},
+		{"plan bookkeeping per task, not only umbrella", "keep the plan current"},
+		{"close plan with plans.edit when all tasks done", "plans.edit"},
 	}
 	for _, c := range contract {
 		if !strings.Contains(lower, c.phrase) {
@@ -700,6 +771,23 @@ func TestCW4OktShapeChainsGranulars(t *testing.T) {
 	})
 }
 
+// TestCW4OktShapeConvenesCouncil pins the council deliberation contract:
+// okt-shape spawns subagents per personas.list, each loads personas.get, and
+// synthesis precedes persistence.
+func TestCW4OktShapeConvenesCouncil(t *testing.T) {
+	resp := resolveForSmoke(t, "okt-shape")
+	assertGuidingOrchestrator(t, "okt-shape", resp, []string{
+		"omakiten returns a prompt",
+		"personas.list",
+		"personas.get",
+		"spawn",
+		"subject brief",
+		"synthesize",
+		"before you persist",
+		"council deliberation",
+	})
+}
+
 // TestCW4OktAuditSpawnsSubagents is the AC#4 smoke gate: okt-audit is a PROMPT
 // that instructs the consuming agent to spawn Reviewer + Security subagents and
 // aggregate severity-tagged findings (omakiten cannot spawn agents itself). The
@@ -742,7 +830,7 @@ func TestCW4OktPauseHandoffNote(t *testing.T) {
 		// snapshot the three planes: git + active task + plan
 		"git status",
 		"active task",
-		"task.activity.list",
+		"task_activity.list",
 		"plans.continue",
 		// persists a project-scoped handoff via the comments surface
 		"comments.add",

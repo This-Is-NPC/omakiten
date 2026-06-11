@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"sort"
 	"strings"
@@ -36,7 +37,7 @@ func (s *Service) ResolveCommand(_ context.Context, input ResolveCommandInput) (
 		return ResolveCommandResponse{}, domain.NewError(domain.ErrValidation, "unknown MCP command", map[string]any{"name": name})
 	}
 
-	resp := ResolveCommandResponse{Name: name}
+	resp := ResolveCommandResponse{Name: name, InvocationArgs: invocationArgs(input.Arguments)}
 
 	commands := s.loadCommandCatalog()
 	personas := s.loadPersonaCatalog()
@@ -185,6 +186,35 @@ func pickSkills(slugs []string, skills map[string]SkillInfo) []SkillInfo {
 	return out
 }
 
+func invocationArgs(args map[string]any) []InvocationArg {
+	if len(args) == 0 {
+		return nil
+	}
+	keys := make([]string, 0, len(args))
+	values := make(map[string]any, len(args))
+	for key, value := range args {
+		key = strings.TrimSpace(key)
+		if key != "" {
+			keys = append(keys, key)
+			values[key] = value
+		}
+	}
+	sort.Strings(keys)
+	out := make([]InvocationArg, 0, len(keys))
+	for _, key := range keys {
+		out = append(out, InvocationArg{Name: key, Value: formatInvocationArg(values[key])})
+	}
+	return out
+}
+
+func formatInvocationArg(value any) string {
+	data, err := json.Marshal(value)
+	if err != nil {
+		return fmt.Sprint(value)
+	}
+	return string(data)
+}
+
 // effectiveLaws computes the deduped union of global, persona, command and
 // template-bound law slugs, then subtracts laws_disabled. Each surviving slug
 // is resolved against the law catalog so the prompt ships the law body, not
@@ -280,6 +310,13 @@ func renderCommandMarkdown(resp ResolveCommandResponse) string {
 		}
 		if body := strings.TrimSpace(resp.Persona.Body); body != "" {
 			fmt.Fprintf(&b, "\n%s\n", body)
+		}
+	}
+
+	if len(resp.InvocationArgs) > 0 {
+		openSection("## Invocation Args")
+		for _, arg := range resp.InvocationArgs {
+			fmt.Fprintf(&b, "- `%s`: %s\n", arg.Name, arg.Value)
 		}
 	}
 

@@ -18,7 +18,7 @@ Enumerate the unknowns the task must resolve — the open questions, the gaps in
 
 ## Produce a findings digest
 
-Produce a findings digest: options, trade-offs, and open questions. Keep it read-only — record what you learned, do not commit a solution here.
+Produce a findings digest: options, trade-offs, and open questions. Persist it with `comments.add` (task-scoped when a task id exists, project-scoped when researching before task creation). Keep it read-only with respect to code — record what you learned, do not commit a solution here.
 
 ## Handoff
 

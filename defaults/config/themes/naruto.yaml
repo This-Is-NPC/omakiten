@@ -54,6 +54,7 @@ personas:
       - okt-plan-create-playbook
       - okt-plan-show-playbook
       - okt-run-playbook
+      - council-deliberation
       - okt-shape-playbook
       - okt-task-create-playbook
       - okt-task-decompose-playbook
@@ -148,6 +149,7 @@ mcp_commands:
     skills:
       - five-w-two-h
       - smart-goals
+      - council-deliberation
       - okt-shape-playbook
   okt-audit:
     persona: third-hokage

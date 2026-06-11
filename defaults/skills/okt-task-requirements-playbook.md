@@ -14,7 +14,7 @@ Elicit functional and non-functional requirements, the edge cases, and explicit 
 
 ## Fill the bound scaffold
 
-Call `templates.show` for any bound requirements/acceptance scaffold and fill it. Stay read-only with respect to the task body — you record the requirements baseline, you do not author the task here.
+Call `templates.show` for any bound requirements/acceptance scaffold, fill it, and persist the requirements baseline with `comments.add` (task-scoped when a task id exists, project-scoped when shaping before task creation). Stay read-only with respect to the task body — you record the baseline, you do not author the task here.
 
 ## Handoff
 

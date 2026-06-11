@@ -6,7 +6,7 @@ role_affinity:
   - Owner
   - Reviewer
 ---
-Commission an assurance pass on completed work. You are the director: you do not perform the review yourself — you delegate to subagents, one per assurance lens, and aggregate what they return.
+Commission an assurance pass on completed work. You are the director: you do not perform the review yourself — you delegate to subagents, one per assurance lens, and aggregate what they return. Do not call `okt-start` from here; do not return a plan progress summary as an audit.
 
 ## Omakiten returns a prompt; the agent does the spawning
 
@@ -14,7 +14,7 @@ This playbook is a PROMPT that Omakiten returns to the consuming agent — Omaki
 
 ## Detect the target
 
-Detect the target from context: a task id audits that task's diff, a plan id audits every task the plan completed; a bare invocation audits the current branch's diff resolved via `project.overview` / `plans.continue`.
+Detect the target from context: a task id audits that task's diff, a plan id audits every completed task in that plan, and a bare invocation audits the current branch's diff resolved via `project.overview` / `plans.continue`. `plans.continue` is target discovery only; if it shows progress but no completed work or diff to review, stop and ask for a task id, plan slug, or branch diff target instead of summarizing progress.
 
 ## Spawn subagents
 
@@ -26,7 +26,7 @@ The review and secure passes run inside the spawned subagents; once their findin
 
 ## Aggregate the findings
 
-Aggregate the findings into one report, each finding SEVERITY-TAGGED (`error` / `warning` / `info`) and attributed to its lens; de-duplicate overlaps where the Reviewer and Security subagent flagged the same line.
+Aggregate the findings into one report, each finding SEVERITY-TAGGED (`error` / `warning` / `info`) and attributed to its lens; de-duplicate overlaps where the Reviewer and Security subagent flagged the same line. The final output is severity-tagged findings or an explicit no-findings audit verdict, not a plan progress summary.
 
 ## Coach on severity and risk
 

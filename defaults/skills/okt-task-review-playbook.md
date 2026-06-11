@@ -17,7 +17,7 @@ Order the pass correctness → security → smells → refactor opportunities �
 
 ## Post the filled scaffolds
 
-Call `templates.show comment-review-findings` and `templates.show comment-refactor-opportunities` for the scaffolds, then post the filled comments on the task. Read-only — never edit files, never run `git commit`.
+Call `templates.show comment-review-findings` and `templates.show comment-refactor-opportunities` for the scaffolds, then persist each filled task comment with `comments.add` (`scope=task`, the reviewed `task_id`, `author_type=agent`). Read-only means no file edits and no `git commit`; writing review comments is the durable artifact.
 
 ## Handoff
 

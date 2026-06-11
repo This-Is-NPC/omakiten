@@ -74,7 +74,8 @@ type CommandCatalog func() map[string]MCPCommandBinding
 // the persona/skills/laws/templates package the MCP layer renders into a
 // single prompt message.
 type ResolveCommandInput struct {
-	Name string `json:"name"`
+	Name      string         `json:"name"`
+	Arguments map[string]any `json:"arguments,omitempty"`
 }
 
 // ResolveCommandResponse is the resolved package for one MCP prompt call.
@@ -88,13 +89,23 @@ type ResolveCommandResponse struct {
 	Skills      []SkillInfo    `json:"skills,omitempty"`
 	Laws        []LawInfo      `json:"laws,omitempty"`
 	Templates   []TemplateInfo `json:"templates,omitempty"`
-	Markdown    string         `json:"markdown"`
+	// InvocationArgs carries prompt invocation arguments from MCP prompts/get.
+	// They render into the prompt body only when present, so command playbooks
+	// that refer to "the task id" or "the slug" receive the concrete values the
+	// user supplied without every playbook re-declaring an argument section.
+	InvocationArgs []InvocationArg `json:"invocation_args,omitempty"`
+	Markdown       string          `json:"markdown"`
 	// AgentOutputLanguage carries the raw configured agent-output
 	// language string (config.languages.agent_output). When non-empty,
 	// renderCommandMarkdown appends a trailing "**Output language:** X"
 	// line so the agent honors it for commits, docs, code comments,
 	// and PR bodies. Empty means no directive is appended.
 	AgentOutputLanguage string `json:"agent_output_language,omitempty"`
+}
+
+type InvocationArg struct {
+	Name  string `json:"name"`
+	Value string `json:"value"`
 }
 
 // MCPCommandsGlobalKey mirrors config.MCPCommandsGlobalKey on the agent side.

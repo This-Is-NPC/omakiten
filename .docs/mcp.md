@@ -72,7 +72,7 @@ Resolves each `okt-*` prompt through the running agent service (using your activ
 
 ## Tools
 
-The full surface is the source of truth in `internal/mcp/adapter.go::Tools` (the public entry; the inner `tools()` returns the literal table). Currently 53 tools, grouped below.
+The full surface is the source of truth in `internal/mcp/adapter.go::Tools` (the public entry; the inner `tools()` returns the literal table). Currently 57 tools, grouped below.
 
 ### Required `_agent_model` on every call
 
@@ -191,6 +191,20 @@ System-internal entry points (`ReadResource`) bypass the coercive check and writ
 | `skills.list` | Lists every loaded skill by slug, name, and description. Bodies are omitted. |
 | `skills.get` | Returns one skill body by slug. Used by `okt-skill`; rejects unknown slugs with `validation_error`. |
 
+### Personas (read-only)
+
+| Tool | Purpose |
+|---|---|
+| `personas.list` | Lists every persona wired in the active config `personas:` block (slug, name, description). Bodies and expanded references are omitted — the council is exactly this list. |
+| `personas.get` | Returns one active-config persona by slug, including its body and every explicitly referenced law and skill expanded inline with full bodies. Used by council deliberation subagents; rejects unknown slugs or broken references with `validation_error`. |
+
+### Laws (read-only)
+
+| Tool | Purpose |
+|---|---|
+| `laws.list` | Lists every loaded law by slug, name, severity, and scope. Bodies are omitted. |
+| `laws.get` | Returns one law body by slug. Rejects unknown slugs with `validation_error`. |
+
 ### Metrics (cross-agent benchmarking)
 
 | Tool | Purpose |
@@ -222,9 +236,9 @@ Bindings come from `mcp_commands` in the active profile yaml. Each prompt resolv
 
 Every `okt-*` prompt follows the same shape — only the bound tools and templates change. The flow is:
 
-1. **Prompt resolution** — the MCP client sends `prompts/get` and the server returns a single composed `PromptMessage`. This message carries the bound persona, the persona's skills (including the command's `okt-<slug>-playbook` skill), every effective law (global ∪ persona ∪ command ∪ template-bound, minus `laws_disabled`), and any bound templates. The bound playbook skill body — rendered as a bullet in the `## Skills` section — carries the command's operational steps and ends with a REST-style handoff to the next command.
+1. **Prompt resolution** — the MCP client sends `prompts/get` and the server returns a single composed `PromptMessage`. This message carries the invocation arguments supplied by the client, the bound persona, the persona's skills (including the command's `okt-<slug>-playbook` skill), every effective law (global ∪ persona ∪ command ∪ template-bound, minus `laws_disabled`), and any bound templates. The bound playbook skill body — rendered as a bullet in the `## Skills` section — carries the command's operational steps and usually ends with a REST-style handoff to the next command.
 2. **Tool calls (zero or more)** — the agent reads the playbook and calls the tool(s) named there. Granular prompts often point at one canonical tool (`okt-task-continue` → `tasks.continue`, `okt-task-create` → `tasks.create_intent`); orchestrators such as `okt-start` and `okt-run` read several surfaces before directing the next step.
-3. **REST handoff** — the playbook body always ends with a pointer at the next prompt in the cycle, so the agent can suggest `/okt-task-implement` after `/okt-task-continue`, `/okt-task-create` after `/okt-task-imagine`, and so on.
+3. **REST handoff** — the playbook body carries a pointer at the next prompt or operator action in the cycle, so the agent can suggest `/okt-task-implement` after `/okt-task-continue`, `/okt-task-create` after `/okt-task-imagine`, and so on. Durable state changes inside a step still name concrete MCP tools such as `comments.add`, `tasks.move`, `plans.assign_task`, or `dependencies.add`.
 
 The diagram below traces a concrete invocation — `/okt-task-continue 42` — but the shape applies to every prompt. Substitute the bound tool name and the DTO returned for the relevant command.
 
@@ -242,11 +256,11 @@ sequenceDiagram
     User->>Client: /okt-<command> [args]
     Client->>Server: prompts/get { name, args }
     Server->>Adapter: GetPrompt
-    Adapter->>Service: ResolveCommand(name)
+    Adapter->>Service: ResolveCommand(name, args)
 
     Note over Service: Reads bundle snapshots seeded<br/>at runtime startup — no DB hit.<br/>Effective laws =<br/>global ∪ persona ∪ command<br/>∪ template-bound,<br/>− laws_disabled, deduped.
 
-    Service->>Service: renderCommandMarkdown<br/>(persona description + body inline,<br/>skill subset bullet-with-body inline<br/>— incl. okt-&lt;slug&gt;-playbook body,<br/>law severity + name + body inline,<br/>template metadata only — body JIT)
+    Service->>Service: renderCommandMarkdown<br/>(invocation args when supplied,<br/>persona description + body inline,<br/>skill subset bullet-with-body inline<br/>— incl. okt-&lt;slug&gt;-playbook body,<br/>law severity + name inline,<br/>template metadata only — body JIT)
     Service-->>Adapter: ResolveCommandResponse{ Markdown, … }
     Adapter->>Adapter: cache_prompts? attach<br/>cache_control: ephemeral hint
     Adapter-->>Server: PromptResult
@@ -278,7 +292,7 @@ sequenceDiagram
 
 Every prompt invocation injects **at least one message** (the composed prompt) and typically a second (the tool result):
 
-1. **The composed prompt** — one `PromptMessage` (`role: user`, `content.text: <rendered markdown>`). Size is **fixed per prompt** because no per-task data is embedded.
+1. **The composed prompt** — one `PromptMessage` (`role: user`, `content.text: <rendered markdown>`). Size is fixed per prompt plus a compact `## Invocation Args` section when the caller supplied prompt arguments.
 2. **Tool result(s)** — zero or more, depending on what the playbook directs. For prompts tied to a single tool, this is one `ToolResult` carrying a JSON payload whose size **varies** with the underlying data.
 
 For action-heavy prompts (`okt-task-implement`, `okt-task-document`) the agent will fan out and call several tools — `progress.record`, `comments.add`, `tasks.move` — each one adding another tool result message to the window. Those are the agent's choice, not the prompt's structure.
@@ -289,10 +303,15 @@ Not every entity body trafega in the prompt. The renderer pre-loads what the age
 
 | Entity | What ships in the prompt | When body is fetched |
 |---|---|---|
+| Invocation args | Sorted `name: value` pairs under `## Invocation Args` when `prompts/get.arguments` is non-empty | Always inline — this is the user's concrete task id, plan slug, note id, filter, or target |
 | Persona | `description` + full `body` (inline under `## Persona`) | Always inline — body carries the role's procedural loop |
-| Skills (incl. playbook) | The command's declared skill subset, rendered bullet-with-body under `## Skills` — one `- **Name** — body` bullet per skill (body, or description when body-less). The command's bound `okt-<slug>-playbook` skill is one of these bullets; its body is the command's operational playbook and ends with the REST handoff. | Always inline — the skill body is the procedural payload the role applies at this step |
+| Skills (incl. playbook) | The command's declared skill subset, rendered bullet-with-body under `## Skills` — one `- **Name** — body` bullet per skill (body, or description when body-less). The command's bound `okt-<slug>-playbook` skill is one of these bullets; its body is the command's operational playbook and usually ends with the REST handoff to the next command or operator action. | Always inline — the skill body is the procedural payload the role applies at this step |
 | Laws | `severity` + `name` + full `body` (inline under `## Laws`) | Always inline — laws are constraints that must frame every step |
 | Templates | Slug + optional name (when divergent from slug) + default kind + description | On demand via `templates.show <slug>` — template bodies can be long (PR scaffolds, story templates) and shipping them inline would dominate the prompt window |
+| Personas (catalog) | Not in the composed prompt body — command prompts ship one bound persona inline | On demand via `personas.list` / `personas.get` — `personas.get` expands every law and skill slug declared on the persona inline with full bodies |
+| Laws (catalog) | Law bodies for the *bound command persona* ship inline under `## Laws` | On demand via `laws.list` / `laws.get` when a tool needs a law outside the active prompt package |
+
+**Entity get expansion:** when an entity is fetched via a `*.get` / `*.show` catalog tool, the server expands inline every entity explicitly referenced on that row (for example `personas.get` inlines referenced laws and skills with bodies). Broken references reject with `validation_error` naming the missing slug.
 
 The fetch hint for templates lives in the bound playbook skill body or the bound persona's body — not as a generic footer — so the prompt only mentions `templates.show` for commands that actually need it. `internal/agentruntime.TestTemplateBoundCommandsCarryFetchHint` enforces that contract: every `okt-*` prompt with bound templates must surface the hint somewhere in its rendered Markdown.
 
@@ -316,10 +335,10 @@ The `mise run mcp:prompts` task renders every resolved prompt to stdout against 
 
 The default kit follows Anthropic's [context engineering for AI agents](https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents) guidance. Customizers who add their own commands, laws, or templates should match these conventions so the resolved prompts stay coherent:
 
-- **Right altitude in playbook skills.** The `okt-<slug>-playbook` skill body describes the command's contract — name the canonical tool, end with a REST handoff. **Role lives in the persona body** (rendered in `## Persona`); **constraints live in bound laws** (rendered in `## Laws`); **scaffold lives in the templates section**. The playbook never restates any of those — `mcp_commands.<cmd>.persona` is configurable, so persona-coupled prose in the playbook would leak role-specific instructions into prompts that bind a different persona. The persona body is the single source of truth for "how this role works"; the laws are the single source for "what is forbidden / required"; the playbook is just the command-specific bootstrap and handoff.
+- **Right altitude in playbook skills.** The `okt-<slug>-playbook` skill body describes the command's contract: name the canonical tools required for durable state, then hand off to the next command or operator action. **Role lives in the persona body** (rendered in `## Persona`); **constraints live in bound laws** (rendered in `## Laws`); **scaffold metadata lives in the templates section**. The playbook never restates persona-specific prose — `mcp_commands.<cmd>.persona` is configurable, so persona-coupled prose in the playbook would leak role-specific instructions into prompts that bind a different persona. The persona body is the single source of truth for "how this role works"; the laws are the single source for "what is forbidden / required"; the playbook is just the command-specific bootstrap and handoff.
 - **Just-in-time over pre-loading.** Template bodies are fetched via `templates.show` rather than embedded inline. The same logic applies to any heavy artifact (long comment threads, large bodies): expose a tool, ship the slug, let the agent pull the body when actually needed.
 - **Few-shot examples in load-bearing laws.** Laws that govern judgment calls (`template-fidelity`, `conventional-commits`, `no-assumptions`, `self-report`) carry a `Bad:` / `Good:` micro-example after the directive paragraph. Anthropic's principle: examples teach generalization better than abstract rules. Plain text labels (no emoji) keep the prompt readable across terminals and clients.
-- **No conditional logic in prompts.** Anti-pattern: `if returns requires_confirmation, ask the user…`. Instead, the server's response carries an actionable `Reason` field that names the next-step tools — the agent acts on the response shape, not on prompt-side branching. See `agent.Confirmation.Reason` in `internal/agent/dto.go`.
+- **No brittle response-shape branching in prompts.** Anti-pattern: `if returns requires_confirmation, ask the user…`. Instead, the server's response carries an actionable `Reason` field that names the next-step tools — the agent acts on the response shape, not on prompt-side branching. Normal workflow conditions are still allowed in playbooks when they describe the command's domain logic, such as "tasks with unmet dependencies wait". See `agent.Confirmation.Reason` in `internal/agent/dto.go`.
 - **Failure-driven additions.** Add a law or example only after observing a real failure mode. `template-fidelity` was added because the agent fabricated `Closes #40`; `authorize-remote-writes` was added because `git push` is destructive. Don't speculate.
 - **Markdown sections, not XML tags.** The renderer uses `## Persona`, `## Skills`, `## Laws`, `## Templates` — the operational playbook arrives as a bullet inside `## Skills` (the bound `okt-<slug>-playbook` skill), so there is no separate `## Action` section. Same load-bearing structure Anthropic recommends, but markdown reads cleanly in both the agent prompt and a developer's terminal when debugging.
 
