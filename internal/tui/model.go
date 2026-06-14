@@ -181,7 +181,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if _, err := m.reloadBundleIfChanged(); err != nil {
 				m.status = err.Error()
 			}
-			if err := m.refreshCurrentView(); err != nil {
+			if err := m.realtimeRefresh(); err != nil {
 				m.status = err.Error()
 			}
 			m.ctx = savedCtx
@@ -428,7 +428,31 @@ func (m Model) shouldRealtimeRefresh() bool {
 		// is driven by ctrl+h / startup, not by the per-project tick.
 		return false
 	}
-	return !m.helpOpen && m.mode == modeNormal && m.taskScreen == taskScreenClosed && m.entityScreen == entityScreenClosed && !m.moveMode
+	if m.helpOpen || m.mode != modeNormal || m.moveMode {
+		return false
+	}
+	// The Ctrl+K palette is a keyboard-input overlay that can sit over the
+	// board / plan-network view (canOpenPalette only blocks task/entity
+	// screens, not those). A passive reload underneath an open palette is an
+	// unguarded input-mode refresh — mirror canOpenPalette and suppress it.
+	if m.paletteOpen {
+		return false
+	}
+	if m.entityScreen != entityScreenClosed {
+		return false
+	}
+	// The single-task view refreshes only in its read-only state. taskScreenEdit
+	// owns the title/description/field inputs; reloading under it would discard a
+	// half-typed edit. The comment / description / plan-goal / project-form
+	// overlays own keyboard focus on top of whatever view is open and must not be
+	// reloaded out from under the user either.
+	if m.taskScreen == taskScreenEdit {
+		return false
+	}
+	if m.commentScreenOpen || m.descriptionScreenOpen || m.planGoalScreenOpen || m.projectFormScreenOpen {
+		return false
+	}
+	return true
 }
 
 // canOpenPalette gates the global Ctrl+K binding so the palette
@@ -642,6 +666,52 @@ func (m *Model) applyRefreshAfterViewChange(r refreshAfterViewChangeMsg) {
 	if r.preservedTaskID > 0 {
 		m.selectTaskByID(r.preservedTaskID)
 	}
+}
+
+// realtimeRefresh runs one passive reload cycle for whatever live view is
+// open. The board / table / graph / stats routes go through
+// refreshCurrentView; the plan-network and single-task views are layered on
+// top of the board and the board snapshot alone does not refresh their
+// projections, so each is reloaded explicitly when open. This is the tick's
+// counterpart to the manual `r` bindings, which already pair refreshCurrentView
+// with reloadPlanNetwork (plan view) or refresh (task view).
+//
+// View state survives the reload: reloadPlanNetwork clamps the cursor via
+// WithItemCount and keeps collapse keyed by stable wave id; the task activity
+// cursor and the activityLines scroll offset are model state that
+// refreshTaskActivity + refreshActivityLines rebuild around rather than reset.
+// The caller (the refreshTickMsg branch) only reaches here under
+// shouldRealtimeRefresh(), so taskScreenView is the only task-screen state that
+// can be live here — never an edit or an overlay.
+func (m *Model) realtimeRefresh() error {
+	if err := m.refreshCurrentView(); err != nil {
+		return err
+	}
+	// A task drilled open over a plan-network keeps planNetworkOpen set, but
+	// renderTaskScreen takes precedence so the plan-network is not on screen.
+	// Skip its projection reload here — the task-view branch below is the only
+	// live view — so the tick does not run a redundant PlanService.Show() under
+	// an invisible plan-network. Board + plan-only behaviour is unchanged
+	// because taskScreen is taskScreenClosed in those cases.
+	if m.planNetworkOpen && m.taskScreen != taskScreenView {
+		m.reloadPlanNetwork()
+	}
+	if m.taskScreen == taskScreenView && m.taskID > 0 {
+		// Anchor the focused activity card to its event id across the reload.
+		// activityCursor is an index into the feed; a row inserted above it
+		// (newest-first feeds put a new comment at index 0) would otherwise
+		// shift which card the cursor names by one. Capture the id before the
+		// reload and re-resolve the index after so the selected card survives
+		// an insert-above. anchorID stays 0 when nothing is focused, leaving the
+		// existing no-selection behaviour untouched.
+		anchorID := m.focusedActivityEventID()
+		if err := m.refreshTaskActivity(m.taskID); err != nil {
+			return err
+		}
+		m.reanchorActivityCursor(anchorID)
+		m.refreshActivityLines()
+	}
+	return nil
 }
 
 func (m *Model) refreshCurrentView() error {

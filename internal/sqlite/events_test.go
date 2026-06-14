@@ -198,6 +198,56 @@ func TestListTaskActivityUnifiesCommentsAndEvents(t *testing.T) {
 	}
 }
 
+// TestListTaskActivityHonoursRecentLimit pins the bounded feed: with the
+// events.default_recent_limit fallback set to N, ListTaskActivity returns at
+// most N rows and always keeps the most recent ones, re-ordered into the
+// requested direction. Without the cap the feed grows unbounded over a task's
+// lifetime and is now re-queried every ~1s while a task view is open.
+func TestListTaskActivityHonoursRecentLimit(t *testing.T) {
+	ctx := context.Background()
+	store, project := openStoreWithProject(ctx, t)
+	store.SetEventsRecentLimit(3)
+
+	task, err := store.CreateTask(ctx, project.ID, "noisy", "", domain.Priority(2), "backlog", nil, store.snap())
+	if err != nil {
+		t.Fatalf("CreateTask = %v", err)
+	}
+	// task.created is row 1; add five comments so the lifetime feed is 6 rows.
+	for i := 0; i < 5; i++ {
+		if _, err := store.AddComment(ctx, project.ID, task.ID, "c"+string(rune('1'+i)), "human", nil); err != nil {
+			t.Fatalf("AddComment(%d) = %v", i, err)
+		}
+	}
+
+	desc, err := store.ListTaskActivity(ctx, project.ID, task.ID, "desc")
+	if err != nil {
+		t.Fatalf("ListTaskActivity desc = %v", err)
+	}
+	if len(desc) != 3 {
+		t.Fatalf("desc len = %d, want 3 (capped by recent limit)", len(desc))
+	}
+	// Newest-first: the three highest ids, descending.
+	if desc[0].ID <= desc[1].ID || desc[1].ID <= desc[2].ID {
+		t.Fatalf("desc not newest-first by id: %d,%d,%d", desc[0].ID, desc[1].ID, desc[2].ID)
+	}
+
+	asc, err := store.ListTaskActivity(ctx, project.ID, task.ID, "asc")
+	if err != nil {
+		t.Fatalf("ListTaskActivity asc = %v", err)
+	}
+	if len(asc) != 3 {
+		t.Fatalf("asc len = %d, want 3 (capped by recent limit)", len(asc))
+	}
+	// The capped window is still the MOST RECENT rows, just oldest-first within
+	// the window — so the asc feed must end on the single newest event.
+	if asc[len(asc)-1].ID != desc[0].ID {
+		t.Fatalf("asc tail id = %d, want %d (newest row must survive the cap)", asc[len(asc)-1].ID, desc[0].ID)
+	}
+	if asc[0].ID >= asc[1].ID || asc[1].ID >= asc[2].ID {
+		t.Fatalf("asc not oldest-first by id: %d,%d,%d", asc[0].ID, asc[1].ID, asc[2].ID)
+	}
+}
+
 func TestCommentsAddRoutesThroughEvents(t *testing.T) {
 	ctx := context.Background()
 	store, project := openStoreWithProject(ctx, t)
