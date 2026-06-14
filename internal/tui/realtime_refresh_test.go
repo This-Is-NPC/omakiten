@@ -36,6 +36,12 @@ func TestShouldRealtimeRefreshGate(t *testing.T) {
 		want bool
 	}{
 		{"task read view refreshes", func(m *Model) { m.taskScreen = taskScreenView }, true},
+		{"plan-network open refreshes", func(m *Model) { m.planNetworkOpen = true }, true},
+		{"task drilled over plan-network refreshes", func(m *Model) {
+			m.planNetworkOpen = true
+			m.taskScreen = taskScreenView
+		}, true},
+		{"palette open blocks", func(m *Model) { m.paletteOpen = true }, false},
 		{"task edit view blocks", func(m *Model) { m.taskScreen = taskScreenEdit }, false},
 		{"comment overlay blocks", func(m *Model) { m.commentScreenOpen = true }, false},
 		{"description overlay blocks", func(m *Model) { m.descriptionScreenOpen = true }, false},
@@ -188,7 +194,17 @@ func TestRealtimeTickReloadsTaskActivity(t *testing.T) {
 	if model.taskScreen != taskScreenView {
 		t.Fatalf("openTaskView: taskScreen = %v, want taskScreenView", model.taskScreen)
 	}
+	// Focus the activity pane and land the cursor on the first card so the
+	// tick has live view state (cursor + scroll) to preserve, mirroring the
+	// plan-network test that asserts the cursor survives the reload.
+	model.applyTaskFocus(taskFocusActivity)
+	if model.activityCursor < 0 {
+		t.Fatalf("applyTaskFocus(activity): activityCursor = %d, want >= 0", model.activityCursor)
+	}
 	before := len(model.activity)
+	cursorBefore := model.activityCursor
+	scrollBefore := model.activityLines.Scroll()
+	anchoredEventID := model.activity[model.activityCursor].ID
 
 	if _, err := store.AddComment(ctx, project.ID, task.ID, "live comment from another session", "human", nil); err != nil {
 		t.Fatalf("AddComment() error = %v", err)
@@ -204,5 +220,94 @@ func TestRealtimeTickReloadsTaskActivity(t *testing.T) {
 	}
 	if !strings.Contains(ansi.Strip(got.View()), "live comment from another session") {
 		t.Fatalf("task view missing live comment after tick\n%s", ansi.Strip(got.View()))
+	}
+	// State preservation: the activity cursor and scroll offset must survive
+	// the tick (asc feed appends below the held cursor, so both are unchanged).
+	if got.activityCursor != cursorBefore {
+		t.Fatalf("activityCursor moved on tick: got %d, want %d (state must survive)", got.activityCursor, cursorBefore)
+	}
+	if got.activityLines.Scroll() != scrollBefore {
+		t.Fatalf("activity scroll moved on tick: got %d, want %d (state must survive)", got.activityLines.Scroll(), scrollBefore)
+	}
+	// The cursor must still name the same event it named before the reload.
+	if got.activity[got.activityCursor].ID != anchoredEventID {
+		t.Fatalf("activity cursor names a different event after tick: got id %d, want %d", got.activity[got.activityCursor].ID, anchoredEventID)
+	}
+}
+
+// TestRealtimeTickActivityCursorSurvivesInsertAbove pins the id-anchoring fix:
+// with a newest-first (desc) feed a comment from another session lands at
+// index 0, pushing every existing row down by one. The index-based cursor
+// would then name the wrong card; anchoring it to the focused event id keeps
+// the same card selected across the reload.
+func TestRealtimeTickActivityCursorSurvivesInsertAbove(t *testing.T) {
+	ctx := context.Background()
+	store := snapstore.Open(t, t.TempDir()+"/omakiten.db")
+	// Force newest-first at the bundle level so the order survives the
+	// refresh()-driven m.views reset that runs at the start of every tick — a
+	// fresh comment then inserts ABOVE the held cursor.
+	bundle := tuiTestBundle(t)
+	bundle.Config.Views.TaskActivity.Sort.Order = "desc"
+	if err := store.ImportBundle(ctx, bundle, "test.yaml", "hash"); err != nil {
+		t.Fatalf("ImportBundle() error = %v", err)
+	}
+	project, err := store.UpsertProject(ctx, "Project", "project", "/work/project")
+	if err != nil {
+		t.Fatalf("UpsertProject() error = %v", err)
+	}
+	snap := store.Snapshot()
+	task, err := store.CreateTask(ctx, project.ID, "anchor-task", "", domain.Priority(2), "backlog", nil, snap)
+	if err != nil {
+		t.Fatalf("CreateTask() error = %v", err)
+	}
+	// Two comments so the feed has an interior card to hold a cursor on.
+	if _, err := store.AddComment(ctx, project.ID, task.ID, "older comment", "human", nil); err != nil {
+		t.Fatalf("AddComment(older) error = %v", err)
+	}
+	if _, err := store.AddComment(ctx, project.ID, task.ID, "newer comment", "human", nil); err != nil {
+		t.Fatalf("AddComment(newer) error = %v", err)
+	}
+
+	model, err := NewModel(ctx, project.Context(), Repositories{
+		Tasks:        store,
+		Comments:     store,
+		Dependencies: store,
+		Events:       store,
+		Cache:        runtimecache.Install(0, store.Snapshot()),
+		Workflow:     app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot()),
+	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
+	if err != nil {
+		t.Fatalf("NewModel() error = %v", err)
+	}
+	model.height = 40
+	model.width = 160
+	if err := model.refresh(); err != nil {
+		t.Fatalf("refresh() error = %v", err)
+	}
+	model.openTaskView(task)
+	model.applyTaskFocus(taskFocusActivity)
+	if model.views.TaskActivity.Sort.Order != "desc" {
+		t.Fatalf("task activity order = %q, want desc (insert-above precondition)", model.views.TaskActivity.Sort.Order)
+	}
+
+	// Hold the cursor on the oldest event (last row in a desc feed).
+	model.activityCursor = len(model.activity) - 1
+	anchoredEventID := model.activity[model.activityCursor].ID
+	indexBefore := model.activityCursor
+
+	// Another session adds a comment — newest-first, it lands at index 0 and
+	// shifts the held card down by one.
+	if _, err := store.AddComment(ctx, project.ID, task.ID, "intruder from another session", "human", nil); err != nil {
+		t.Fatalf("AddComment(intruder) error = %v", err)
+	}
+
+	ticked, _ := model.Update(refreshTickMsg{})
+	got := ticked.(Model)
+
+	if got.activityCursor == indexBefore {
+		t.Fatalf("cursor index did not shift after insert-above: still %d (anchor not exercised)", got.activityCursor)
+	}
+	if got.activity[got.activityCursor].ID != anchoredEventID {
+		t.Fatalf("cursor names wrong card after insert-above: got id %d, want %d", got.activity[got.activityCursor].ID, anchoredEventID)
 	}
 }

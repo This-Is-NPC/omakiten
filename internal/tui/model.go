@@ -431,6 +431,13 @@ func (m Model) shouldRealtimeRefresh() bool {
 	if m.helpOpen || m.mode != modeNormal || m.moveMode {
 		return false
 	}
+	// The Ctrl+K palette is a keyboard-input overlay that can sit over the
+	// board / plan-network view (canOpenPalette only blocks task/entity
+	// screens, not those). A passive reload underneath an open palette is an
+	// unguarded input-mode refresh — mirror canOpenPalette and suppress it.
+	if m.paletteOpen {
+		return false
+	}
 	if m.entityScreen != entityScreenClosed {
 		return false
 	}
@@ -680,13 +687,28 @@ func (m *Model) realtimeRefresh() error {
 	if err := m.refreshCurrentView(); err != nil {
 		return err
 	}
-	if m.planNetworkOpen {
+	// A task drilled open over a plan-network keeps planNetworkOpen set, but
+	// renderTaskScreen takes precedence so the plan-network is not on screen.
+	// Skip its projection reload here — the task-view branch below is the only
+	// live view — so the tick does not run a redundant PlanService.Show() under
+	// an invisible plan-network. Board + plan-only behaviour is unchanged
+	// because taskScreen is taskScreenClosed in those cases.
+	if m.planNetworkOpen && m.taskScreen != taskScreenView {
 		m.reloadPlanNetwork()
 	}
 	if m.taskScreen == taskScreenView && m.taskID > 0 {
+		// Anchor the focused activity card to its event id across the reload.
+		// activityCursor is an index into the feed; a row inserted above it
+		// (newest-first feeds put a new comment at index 0) would otherwise
+		// shift which card the cursor names by one. Capture the id before the
+		// reload and re-resolve the index after so the selected card survives
+		// an insert-above. anchorID stays 0 when nothing is focused, leaving the
+		// existing no-selection behaviour untouched.
+		anchorID := m.focusedActivityEventID()
 		if err := m.refreshTaskActivity(m.taskID); err != nil {
 			return err
 		}
+		m.reanchorActivityCursor(anchorID)
 		m.refreshActivityLines()
 	}
 	return nil

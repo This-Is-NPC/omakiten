@@ -101,6 +101,41 @@ func (m Model) activityForTaskInView(taskID int64) []domain.Event {
 	return out
 }
 
+// focusedActivityEventID returns the event id of the currently focused
+// activity card, or 0 when no card is focused (cursor < 0) or the cursor
+// sits out of range. Used by the realtime tick to anchor the selection to a
+// stable id across a feed reload so an insert-above does not shift which card
+// the cursor names.
+func (m Model) focusedActivityEventID() int64 {
+	if m.activityCursor < 0 {
+		return 0
+	}
+	events := m.activityForTaskInView(m.taskID)
+	if m.activityCursor >= len(events) {
+		return 0
+	}
+	return events[m.activityCursor].ID
+}
+
+// reanchorActivityCursor re-points activityCursor at the row carrying anchorID
+// after a reload. When anchorID is 0 (nothing was focused) or the anchored
+// event is no longer present (e.g. deleted), the cursor is left untouched so
+// the existing clamp/no-selection behaviour governs. When the anchored event
+// is found at a new index — because a row was inserted above it — the cursor
+// follows it so the same card stays selected.
+func (m *Model) reanchorActivityCursor(anchorID int64) {
+	if anchorID == 0 {
+		return
+	}
+	events := m.activityForTaskInView(m.taskID)
+	for i := range events {
+		if events[i].ID == anchorID {
+			m.activityCursor = i
+			return
+		}
+	}
+}
+
 // commentToEvent projects a domain.Comment into the domain.Event shape the
 // activity renderers consume. Scope-aware: the comment's Scope (task |
 // project | universal) selects entity_type, and EntityID is the comment's

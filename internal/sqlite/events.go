@@ -168,12 +168,32 @@ func (s *Store) ListTaskActivity(ctx context.Context, projectID, taskID int64, o
 	if strings.EqualFold(order, "desc") {
 		direction = "DESC"
 	}
+	// Bound the per-task feed with the same config-backed limit ListRecentEvents
+	// uses (events.default_recent_limit). Without a cap the feed returns every
+	// row for the task's lifetime, and the TUI re-runs this query every ~1s
+	// while a task view is open. The inner select always takes the most recent
+	// rows by id; the outer select re-orders that window into the requested
+	// direction so an "asc" (oldest-first) feed still shows the newest activity.
+	limit := s.eventsDefaultRecentLimit
+	if limit <= 0 {
+		// Composition root forgot to wire SetEventsRecentLimit; fall through to
+		// the kit canonical so the query still runs. Production always sets a
+		// positive value via the runtime bootstrap.
+		if cfg, err := config.LoadKitConfig(); err == nil && cfg.Events.DefaultRecentLimit > 0 {
+			limit = cfg.Events.DefaultRecentLimit
+		}
+	}
 	rows, err := s.db.QueryContext(ctx, `
-SELECT id, entity_type, entity_id, COALESCE(project_id, 0), event_type, body, payload, COALESCE(author_type, ''), created_at
-FROM events
-WHERE entity_type = 'task' AND project_id = ? AND entity_id = ?
+SELECT id, entity_type, entity_id, project_id, event_type, body, payload, author_type, created_at
+FROM (
+	SELECT id, entity_type, entity_id, COALESCE(project_id, 0) AS project_id, event_type, body, payload, COALESCE(author_type, '') AS author_type, created_at
+	FROM events
+	WHERE entity_type = 'task' AND project_id = ? AND entity_id = ?
+	ORDER BY created_at DESC, id DESC
+	LIMIT ?
+)
 ORDER BY created_at `+direction+`, id `+direction+`
-`, projectID, taskID)
+`, projectID, taskID, limit)
 	if err != nil {
 		return nil, err
 	}
