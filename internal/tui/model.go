@@ -181,7 +181,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if _, err := m.reloadBundleIfChanged(); err != nil {
 				m.status = err.Error()
 			}
-			if err := m.refreshCurrentView(); err != nil {
+			if err := m.realtimeRefresh(); err != nil {
 				m.status = err.Error()
 			}
 			m.ctx = savedCtx
@@ -428,7 +428,24 @@ func (m Model) shouldRealtimeRefresh() bool {
 		// is driven by ctrl+h / startup, not by the per-project tick.
 		return false
 	}
-	return !m.helpOpen && m.mode == modeNormal && m.taskScreen == taskScreenClosed && m.entityScreen == entityScreenClosed && !m.moveMode
+	if m.helpOpen || m.mode != modeNormal || m.moveMode {
+		return false
+	}
+	if m.entityScreen != entityScreenClosed {
+		return false
+	}
+	// The single-task view refreshes only in its read-only state. taskScreenEdit
+	// owns the title/description/field inputs; reloading under it would discard a
+	// half-typed edit. The comment / description / plan-goal / project-form
+	// overlays own keyboard focus on top of whatever view is open and must not be
+	// reloaded out from under the user either.
+	if m.taskScreen == taskScreenEdit {
+		return false
+	}
+	if m.commentScreenOpen || m.descriptionScreenOpen || m.planGoalScreenOpen || m.projectFormScreenOpen {
+		return false
+	}
+	return true
 }
 
 // canOpenPalette gates the global Ctrl+K binding so the palette
@@ -642,6 +659,37 @@ func (m *Model) applyRefreshAfterViewChange(r refreshAfterViewChangeMsg) {
 	if r.preservedTaskID > 0 {
 		m.selectTaskByID(r.preservedTaskID)
 	}
+}
+
+// realtimeRefresh runs one passive reload cycle for whatever live view is
+// open. The board / table / graph / stats routes go through
+// refreshCurrentView; the plan-network and single-task views are layered on
+// top of the board and the board snapshot alone does not refresh their
+// projections, so each is reloaded explicitly when open. This is the tick's
+// counterpart to the manual `r` bindings, which already pair refreshCurrentView
+// with reloadPlanNetwork (plan view) or refresh (task view).
+//
+// View state survives the reload: reloadPlanNetwork clamps the cursor via
+// WithItemCount and keeps collapse keyed by stable wave id; the task activity
+// cursor and the activityLines scroll offset are model state that
+// refreshTaskActivity + refreshActivityLines rebuild around rather than reset.
+// The caller (the refreshTickMsg branch) only reaches here under
+// shouldRealtimeRefresh(), so taskScreenView is the only task-screen state that
+// can be live here — never an edit or an overlay.
+func (m *Model) realtimeRefresh() error {
+	if err := m.refreshCurrentView(); err != nil {
+		return err
+	}
+	if m.planNetworkOpen {
+		m.reloadPlanNetwork()
+	}
+	if m.taskScreen == taskScreenView && m.taskID > 0 {
+		if err := m.refreshTaskActivity(m.taskID); err != nil {
+			return err
+		}
+		m.refreshActivityLines()
+	}
+	return nil
 }
 
 func (m *Model) refreshCurrentView() error {
