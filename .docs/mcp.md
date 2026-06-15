@@ -72,7 +72,7 @@ Resolves each `okt-*` prompt through the running agent service (using your activ
 
 ## Tools
 
-The full surface is the source of truth in `internal/mcp/adapter.go::Tools` (the public entry; the inner `tools()` returns the literal table). Currently 57 tools, grouped below.
+The full surface is the source of truth in `internal/mcp/adapter.go::Tools` (the public entry; the inner `tools()` returns the literal table). Currently 59 tools, grouped below.
 
 ### Required `_agent_model` on every call
 
