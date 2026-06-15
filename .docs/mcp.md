@@ -217,6 +217,17 @@ System-internal entry points (`ReadResource`) bypass the coercive check and writ
 |---|---|
 | `progress.record` | Records material progress through task edits, a progress comment, and optional workflow moves in a single call. |
 
+### Commands (agent-callable playbook surface)
+
+The `okt-*` playbooks are also exposed as MCP **prompts** (see [Prompts](#prompts)), but an MCP prompt only surfaces as a user-typed slash command — it is never placed in the model's tool-list, so an agent in a `/loop`, subagent, or Workflow (no human to type the slash) cannot reach it. These two tools close that gap by making the **same** playbooks agent-callable, routed through the same `service.ResolveCommand` as the prompt path:
+
+| Tool | Purpose |
+|---|---|
+| `commands.list` | Lists every `okt-*` command (slug + entity-sourced description + arguments), mirroring `prompts/list`. Discovery surface for the playbook catalog. |
+| `commands.resolve` | Resolves one `okt-*` command (`name` + optional freeform `arguments`) to its composed playbook markdown — **byte-identical** to the prompt path, so Anthropic prompt-cache hits are preserved. Render-only; mutates nothing. The agent reads the returned markdown and acts. |
+
+This is a **dual-surface** design: the prompt/slash path is unchanged and additive. `commands.resolve` is the agent-callable twin of `prompts/get` — both call `ResolveCommand`, so there is a single source of truth and identical bytes. Adding a command to `command_table.go` lights up the slash prompt, `commands.list`, and `commands.resolve` together with no adapter churn.
+
 Every tool accepts optional project selector fields where useful: `project_id`, `project`, and `cwd`. Resolution follows Omakiten's standard order: explicit id, explicit slug, then current working directory inside a registered project root. `tags.list_all`, `errors.*`, `solutions.*`, `templates.list`, and `metrics.summary` are intentionally cross-project and ignore the selector (`metrics.summary` accepts a separate `project_id` filter argument when scoped is desired).
 
 ## Resources
@@ -231,6 +242,8 @@ Every tool accepts optional project selector fields where useful: `project_id`, 
 `prompts/list` is built from `agent.CommandNames()` and currently exposes 40 `okt-*` prompts. Each prompt's one-line description is **entity-sourced**: it comes from the frontmatter `description` of the command's bound `okt-<slug>-playbook` skill, not from Go. The stable command tiers, roles, scopes, and write behavior live in [`command-surface.md`](command-surface.md). This MCP guide documents how prompt resolution travels over the protocol and how the rendered prompt is composed.
 
 Bindings come from `mcp_commands` in the active profile yaml. Each prompt resolves a persona, the command skill subset (including the command's `okt-<slug>-playbook` skill, whose body is the command's operational playbook), the union of bound laws, and any bound templates into a single user message. There is no hardcoded Go playbook prose — `internal/agent/command_table.go` is a bare slug table. The binding schema and the playbook-skill convention live in [`configuration-guide/command-bindings.md`](configuration-guide/command-bindings.md).
+
+The same 40 playbooks are reachable as agent-callable **tools** (`commands.list` / `commands.resolve`, see [Commands](#commands-agent-callable-playbook-surface)) for contexts with no human to type the slash. The tool path returns byte-identical markdown to `prompts/get` — same `ResolveCommand`, same source of truth — so this is a dual-surface, not a fork.
 
 ## Anatomy of an MCP command
 
