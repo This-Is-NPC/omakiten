@@ -272,6 +272,8 @@ func tools() []ToolDefinition {
 		{Name: "plans.rename_wave", Description: "Rename a wave. The new name must be non-blank and differ from the current name. Emits plan.wave_renamed.", InputSchema: objectSchema(map[string]any{"wave_id": integerSchema("Wave id to rename"), "name": stringSchema("New wave name")}, []string{"wave_id", "name"})},
 		{Name: "plans.reorder_wave", Description: "Move a wave to a new 1-based position within its plan. A collision with an occupied slot swaps the two waves. Emits plan.wave_reordered.", InputSchema: objectSchema(map[string]any{"wave_id": integerSchema("Wave id to move"), "position": integerSchema("New 1-based position")}, []string{"wave_id", "position"})},
 		{Name: "plans.unassign", Description: "Detach a task from its plan, clearing both plan_id and wave_id (full detach; the task becomes a standalone work item again). A task already unattached is a no-op. Emits plan.task_unassigned.", InputSchema: objectSchema(map[string]any{"task_id": integerSchema("Task id to detach")}, []string{"task_id"})},
+		{Name: "commands.list", Description: "List every agent-callable okt-* command (slug + entity-sourced description + arguments), mirroring the prompts/list surface. Use to discover the playbook catalog from the tool-list when no human is present to type a slash command (loop / subagent / Workflow), then fetch one with commands.resolve.", InputSchema: objectSchema(map[string]any{}, nil)},
+		{Name: "commands.resolve", Description: "Resolve an okt-* command to its composed playbook markdown (persona + invocation args + skills + laws + templates) via the same path the /mcp__omakiten__okt-* slash prompt uses — byte-identical output. This is the agent-callable twin of the prompt surface: it lets a loop / subagent / Workflow run a playbook (okt-audit, okt-run, okt-task-*, …) without a human typing the slash. Render-only; mutates nothing — the agent reads the returned markdown and acts.", InputSchema: commandResolveSchema()},
 	}
 }
 
@@ -752,6 +754,14 @@ func (a *Adapter) dispatchTool(ctx context.Context, service *agent.Service, name
 		if err == nil {
 			data, err = service.UnassignPlanTask(ctx, input)
 		}
+	case "commands.resolve":
+		// Returns the composed playbook markdown as RAW text — not JSON —
+		// so it stays byte-identical to the prompt path (GetPrompt ships the
+		// same resolved.Markdown). Early return bypasses resultFromData,
+		// which would JSON-escape the markdown and break the cache contract.
+		return resolveCommandTool(ctx, service, args)
+	case "commands.list":
+		data = a.Prompts()
 	default:
 		return ToolResult{}, fmt.Errorf("unknown MCP tool %q", name)
 	}
@@ -816,6 +826,25 @@ func (a *Adapter) GetPrompt(ctx context.Context, name string, args map[string]an
 		return PromptResult{}, err
 	}
 	return promptResult(resolved.Description, resolved.Markdown, service.SettingsCachePrompts()), nil
+}
+
+// resolveCommandTool backs the `commands.resolve` tool: it fetches the same
+// composed playbook markdown the prompt path renders and returns it as raw
+// text. The agent-callable twin of GetPrompt — both route through
+// service.ResolveCommand so there is a single source of truth and the bytes
+// match (AC#4). An unknown/invalid name surfaces as a structured IsError tool
+// result, mirroring how every other tool reports a domain error.
+func resolveCommandTool(ctx context.Context, service *agent.Service, args map[string]any) (ToolResult, error) {
+	name, _ := args["name"].(string)
+	var arguments map[string]any
+	if raw, ok := args["arguments"].(map[string]any); ok {
+		arguments = raw
+	}
+	resolved, err := service.ResolveCommand(ctx, agent.ResolveCommandInput{Name: name, Arguments: arguments})
+	if err != nil {
+		return resultFromData(agent.FailureFromError(err), true)
+	}
+	return ToolResult{Content: []ContentItem{{Type: "text", Text: resolved.Markdown}}}, nil
 }
 
 func promptResult(description, body string, cacheControl bool) PromptResult {
@@ -930,6 +959,23 @@ func tagListSchema() map[string]any {
 	props["entity_type"] = stringSchema("Entity type: 'task' or 'project'")
 	props["entity_id"] = integerSchema("Entity id (task_id for tasks; omit for projects)")
 	return objectSchema(props, []string{"entity_type"})
+}
+
+// commandResolveSchema declares the param surface for the `commands.resolve`
+// tool: a required okt-* command slug plus an optional freeform arguments
+// object passed through to ResolveCommand exactly as the prompt path passes
+// prompts/get arguments.
+func commandResolveSchema() map[string]any {
+	return objectSchema(map[string]any{
+		"name":      stringSchema("okt-* command slug to resolve (e.g. \"okt-audit\", \"okt-run\", \"okt-task-implement\"). Discover the full set via commands.list."),
+		"arguments": objectValueSchema("Optional command arguments passed through to the playbook, equivalent to the prompt path (e.g. {\"task_id\": 42} or {\"target\": \"1175\"})."),
+	}, []string{"name"})
+}
+
+// objectValueSchema declares a freeform JSON object property (arbitrary keys),
+// used for pass-through argument bags whose shape varies per command.
+func objectValueSchema(description string) map[string]any {
+	return map[string]any{"type": "object", "description": description}
 }
 
 func objectSchema(properties map[string]any, required []string) map[string]any {
