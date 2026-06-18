@@ -33,13 +33,20 @@ func explainQueryPlan(t *testing.T, store *Store, query string, args ...any) str
 	return strings.Join(details, "\n")
 }
 
-// TestMigration034IndexesServeRealtimeReadPath asserts the two indexes added
-// in migration 034 are actually chosen by the planner for the read paths they
-// target. Migration 034 was justified by an EXPLAIN before/after diff (task
-// #1263): without these indexes both target queries full-SCAN. The migration
-// is pure schema, so the only meaningful regression guard is that the planner
-// keeps using the indexes — a plan that reverts to SCAN means the index stopped
-// pulling its weight and should be revisited, not shipped speculatively.
+// TestMigration034IndexesServeRealtimeReadPath asserts the read paths
+// migration 034 targeted are still served by an index (no full SCAN) after the
+// full migration chain. Migration 034 was justified by an EXPLAIN before/after
+// diff (task #1263): without its indexes both target queries full-SCAN. The
+// migration is pure schema, so the only meaningful regression guard is that the
+// planner keeps the path on an index — a plan that reverts to SCAN means the
+// coverage stopped pulling its weight and should be revisited, not shipped
+// speculatively.
+//
+// Migration 035 (task #1291) later superseded idx_events_project_type with
+// idx_events_project_created + idx_events_project_type_created to also kill the
+// ORDER BY temp b-tree, so the events subtests below assert the read path stays
+// index-served without naming the dropped 034 index; the no-temp-b-tree
+// assertion lives in TestMigration035EventsOrderByIndexes.
 func TestMigration034IndexesServeRealtimeReadPath(t *testing.T) {
 	ctx := context.Background()
 	dbPath := filepath.Join(t.TempDir(), "omakiten.db")
@@ -54,26 +61,19 @@ func TestMigration034IndexesServeRealtimeReadPath(t *testing.T) {
 
 	seedRealtimeReadPathRows(t, store)
 
-	t.Run("events project-filtered uses idx_events_project_type", func(t *testing.T) {
+	t.Run("events project-filtered stays index-served (no full scan)", func(t *testing.T) {
 		plan := explainQueryPlan(t, store,
 			"SELECT id FROM events WHERE project_id = ? AND event_type IN ('comment','operation') "+
 				"AND created_at >= ? ORDER BY created_at DESC, id DESC LIMIT 200",
 			1, "2000-01-01 00:00:00")
-		if !strings.Contains(plan, "USING INDEX idx_events_project_type") &&
-			!strings.Contains(plan, "USING COVERING INDEX idx_events_project_type") {
-			t.Fatalf("project-filtered events plan does not use idx_events_project_type:\n%s", plan)
-		}
 		if strings.Contains(plan, "SCAN events") {
 			t.Fatalf("project-filtered events plan still full-scans events:\n%s", plan)
 		}
 	})
 
-	t.Run("events project-only uses idx_events_project_type", func(t *testing.T) {
+	t.Run("events project-only stays index-served (no full scan)", func(t *testing.T) {
 		plan := explainQueryPlan(t, store,
 			"SELECT id FROM events WHERE project_id = ? ORDER BY created_at DESC, id DESC LIMIT 200", 1)
-		if !strings.Contains(plan, "idx_events_project_type") {
-			t.Fatalf("project-only events plan does not use idx_events_project_type:\n%s", plan)
-		}
 		if strings.Contains(plan, "SCAN events") {
 			t.Fatalf("project-only events plan still full-scans events:\n%s", plan)
 		}
