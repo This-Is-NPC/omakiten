@@ -13,6 +13,38 @@ import (
 	"omakiten/internal/testfixtures/snapstore"
 )
 
+// TestCreateTaskIntentRejectsOverCapBeforeSimilarity pins audit #65782: an
+// over-cap title/description submitted to tasks.create_intent must be rejected
+// with ErrValidation BEFORE the similarity scan runs — not after loading the
+// whole task list and tokenizing the oversized text. The fixture seeds
+// "Add MCP agent integration" (taskA1), so a matching title on the similarity
+// path would otherwise return a RequiresConfirmation response; getting
+// ErrValidation instead proves the cap short-circuits ahead of that work.
+func TestCreateTaskIntentRejectsOverCapBeforeSimilarity(t *testing.T) {
+	t.Run("over-cap description rejected ahead of similarity", func(t *testing.T) {
+		f := newAgentFixture(t)
+		resp, err := f.service.CreateTaskIntent(f.ctx, CreateTaskInput{
+			Title:       "Add MCP agent integration", // matches taskA1 → would trigger similarity
+			Description: strings.Repeat("d", domain.MaxTaskDescriptionBytes+1),
+		})
+		assertCodedError(t, err, domain.ErrValidation)
+		if resp.Confirmation.RequiresConfirmation {
+			t.Fatal("over-cap intent returned a similarity confirmation; cap must reject before the scan")
+		}
+		if len(resp.SimilarTasks) != 0 {
+			t.Fatalf("over-cap intent surfaced %d similar tasks; similarity ran before the cap", len(resp.SimilarTasks))
+		}
+	})
+
+	t.Run("over-cap title rejected ahead of similarity", func(t *testing.T) {
+		f := newAgentFixture(t)
+		_, err := f.service.CreateTaskIntent(f.ctx, CreateTaskInput{
+			Title: strings.Repeat("t", domain.MaxTaskTitleRunes+1),
+		})
+		assertCodedError(t, err, domain.ErrValidation)
+	})
+}
+
 func TestEditTaskHappyPath(t *testing.T) {
 	f := newAgentFixture(t)
 
