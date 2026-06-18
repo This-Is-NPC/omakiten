@@ -184,24 +184,38 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// `Logs.List`) bypasses the activity tracker. Otherwise the
 			// log viewer fills with one row per second and pushes real
 			// agent activity out of the bounded window. The footer hint
-			// already advertises this contract.
+			// already advertises this contract. The suppression is applied
+			// to m.ctx for the duration of the capture so the worker closure
+			// (which captures m.ctx) inherits it, then restored — the
+			// closure runs off-thread but holds its own ctx copy.
 			savedCtx := m.ctx
 			m.ctx = activity.WithoutTracking(m.ctx)
+			// reloadBundleIfChanged is a cheap config-mtime reload that
+			// mutates the active snapshot in place; it stays synchronous on
+			// the Update goroutine. Only the heavy DB read pipeline
+			// (Snapshot / ListRollups / activity feed / plan Show) is moved
+			// off-thread via realtimeRefreshCmd so a slow query can no longer
+			// stall a keystroke.
+			if _, err := m.reloadBundleIfChanged(); err != nil {
+				m.status = err.Error()
+			}
 			// Passive reload latency is state-dependent, not purely
 			// time-based: this whole branch is gated behind
 			// shouldRealtimeRefresh() (false on Home/modals/help/move/
 			// entity screens), so an external edit made while in one of
 			// those states is not observed until a live view returns and
 			// the next tick fires. Expected, not a missed-reload bug.
-			if _, err := m.reloadBundleIfChanged(); err != nil {
-				m.status = err.Error()
-			}
-			if err := m.realtimeRefresh(); err != nil {
-				m.status = err.Error()
-			}
+			reload := m.realtimeRefreshCmd()
 			m.ctx = savedCtx
+			// Batch the off-thread reload with the next tick so input keeps
+			// flowing while the worker runs. The reload's result lands as a
+			// realtimeReloadMsg that applyRealtimeReload folds in.
+			return m, tea.Batch(reload, scheduleRefreshTick())
 		}
 		return m, scheduleRefreshTick()
+	case realtimeReloadMsg:
+		m.applyRealtimeReload(msg)
+		return m, nil
 	case editorFinishedMsg:
 		m.handleEditorFinished(msg)
 		return m, nil
@@ -719,50 +733,355 @@ func (m *Model) applyRefreshAfterViewChange(r refreshAfterViewChangeMsg) {
 	}
 }
 
-// realtimeRefresh runs one passive reload cycle for whatever live view is
-// open. The board / table / graph / stats routes go through
-// refreshCurrentView; the plan-network and single-task views are layered on
-// top of the board and the board snapshot alone does not refresh their
-// projections, so each is reloaded explicitly when open. This is the tick's
-// counterpart to the manual `r` bindings, which already pair refreshCurrentView
-// with reloadPlanNetwork (plan view) or refresh (task view).
+// realtimeReloadKind names which view-scoped projection the changed-tick
+// reload hydrates. The kind is decided on the Update goroutine (where view
+// state is read race-free) and travels into the worker closure so the worker
+// runs only the IO that view needs — never the whole board pipeline when only
+// a task feed or a plan projection is on screen.
+type realtimeReloadKind int
+
+const (
+	realtimeReloadNone     realtimeReloadKind = iota
+	realtimeReloadBoard                       // board / table / graph / plans
+	realtimeReloadTaskView                    // single-task activity feed only
+	realtimeReloadPlan                        // plan-network projection only
+	realtimeReloadStats                       // stats › general summary
+	realtimeReloadLogs                        // stats › logs inspector
+)
+
+// realtimeReloadMsg is the worker-to-main envelope for the changed-tick
+// reload. It is the tick counterpart of refreshAfterViewChangeMsg: the worker
+// cmd does only IO and packs the result here; applyRealtimeReload folds it into
+// the model on the Update goroutine. Each payload carries its own *valid flag
+// so the fold overwrites only what this kind actually loaded — a torn read
+// cannot leak one view's slice into another. status carries a best-effort
+// error string (plan/stats/logs paths swallow their error into the status bar
+// exactly as the old inline code did) while err is the hard failure the board
+// path surfaces.
+type realtimeReloadMsg struct {
+	kind   realtimeReloadKind
+	err    error
+	status string
+	cmdKey uintptr
+
+	// board payload (kind == realtimeReloadBoard)
+	snap       app.TUISnapshot
+	snapValid  bool
+	plans      []app.PlanRollup
+	plansValid bool
+	langs      config.LanguageSettings
+
+	// task-view payload (kind == realtimeReloadTaskView)
+	activity      []domain.Event
+	activityForID int64
+	activityValid bool
+	anchorID      int64
+
+	// plan-network payload (kind == realtimeReloadPlan)
+	planShow  app.PlanShow
+	planValid bool
+
+	// stats payload (kind == realtimeReloadStats)
+	statsSummary domain.MetricsSummary
+	statsValid   bool
+
+	// logs payload (kind == realtimeReloadLogs)
+	events      []domain.EventRow
+	eventCounts map[domain.EventCategory]int
+	logsValid   bool
+}
+
+// realtimeRefreshCmd builds the off-thread changed-tick reload. It runs on the
+// Update goroutine, reads the current view + every input the worker needs, and
+// returns a tea.Cmd whose closure does ONLY IO before packing a
+// realtimeReloadMsg — the closure never touches m (Council/Olivier flagged the
+// former inline realtimeRefresh, which mutated m under the tick, as a data
+// race). applyRealtimeReload performs the assignment back on the Update
+// goroutine. Mirrors the proven refreshHeavyAfterViewChangeCmd packer: same
+// input-capture-then-pure-IO shape and the same self-referential registry key
+// so applyRealtimeReload can drop the entry on fold.
 //
-// View state survives the reload: reloadPlanNetwork clamps the cursor via
-// WithItemCount and keeps collapse keyed by stable wave id; the task activity
-// cursor and the activityLines scroll offset are model state that
-// refreshTaskActivity + refreshActivityLines rebuild around rather than reset.
-// The caller (the refreshTickMsg branch) only reaches here under
-// shouldRealtimeRefresh(), so taskScreenView is the only task-screen state that
-// can be live here — never an edit or an overlay.
-func (m *Model) realtimeRefresh() error {
-	if err := m.refreshCurrentView(); err != nil {
-		return err
-	}
-	// A task drilled open over a plan-network keeps planNetworkOpen set, but
-	// renderTaskScreen takes precedence so the plan-network is not on screen.
-	// Skip its projection reload here — the task-view branch below is the only
-	// live view — so the tick does not run a redundant PlanService.Show() under
-	// an invisible plan-network. Board + plan-only behaviour is unchanged
-	// because taskScreen is taskScreenClosed in those cases.
-	if m.planNetworkOpen && m.taskScreen != taskScreenView {
-		m.reloadPlanNetwork()
-	}
+// View scope: the kind decided here picks the IO. The single-task view loads
+// only its activity feed — the board snapshot is NOT rebuilt, because
+// renderTaskScreen fully occludes the board (a board rebuild under it is pure
+// waste). Board / plan / stats / logs each reload only their own projection.
+// Returns nil when nothing is reloadable for the current view (e.g. an empty
+// plan-network), leaving the tick a no-op.
+func (m *Model) realtimeRefreshCmd() tea.Cmd {
+	ctx := m.ctx
+	project := m.project
+
+	// The single-task view is layered over the board; renderTaskScreen takes
+	// precedence so the board underneath is invisible. Scope the reload to the
+	// activity feed only — skip the board snapshot entirely.
 	if m.taskScreen == taskScreenView && m.taskID > 0 {
-		// Anchor the focused activity card to its event id across the reload.
-		// activityCursor is an index into the feed; a row inserted above it
-		// (newest-first feeds put a new comment at index 0) would otherwise
-		// shift which card the cursor names by one. Capture the id before the
-		// reload and re-resolve the index after so the selected card survives
-		// an insert-above. anchorID stays 0 when nothing is focused, leaving the
-		// existing no-selection behaviour untouched.
-		anchorID := m.focusedActivityEventID()
-		if err := m.refreshTaskActivity(m.taskID); err != nil {
-			return err
+		if m.repos.Events == nil {
+			return nil
 		}
-		m.reanchorActivityCursor(anchorID)
-		m.refreshActivityLines()
+		taskID := m.taskID
+		order := m.activeViewSettings().TaskActivity.Sort.Order
+		anchorID := m.focusedActivityEventID()
+		events := m.repos.Events
+		var cmd tea.Cmd
+		cmd = func() tea.Msg {
+			result := realtimeReloadMsg{kind: realtimeReloadTaskView, anchorID: anchorID, cmdKey: reflect.ValueOf(cmd).Pointer()}
+			rows, err := events.ListTaskActivity(ctx, project.ID, taskID, order)
+			if err != nil {
+				result.err = err
+				return result
+			}
+			result.activity = rows
+			result.activityForID = taskID
+			result.activityValid = true
+			return result
+		}
+		registerRealtimeReloadCmd(cmd)
+		return cmd
 	}
-	return nil
+
+	// Plan-network open (and not under a task view): reload only the plan
+	// projection.
+	if m.planNetworkOpen && m.repos.Plans != nil && m.planNetworkShow.Plan.Slug != "" {
+		slug := m.planNetworkShow.Plan.Slug
+		plansSvc := app.NewPlanServiceWithSnapshot(m.repos.Plans, m.repos.activeSnapshot())
+		var cmd tea.Cmd
+		cmd = func() tea.Msg {
+			result := realtimeReloadMsg{kind: realtimeReloadPlan, cmdKey: reflect.ValueOf(cmd).Pointer()}
+			show, err := plansSvc.Show(ctx, project, slug)
+			if err != nil {
+				// Match the old reloadPlanNetwork: surface to the status bar,
+				// not a hard reload failure.
+				result.status = err.Error()
+				return result
+			}
+			result.planShow = show
+			result.planValid = true
+			return result
+		}
+		registerRealtimeReloadCmd(cmd)
+		return cmd
+	}
+
+	// Stats › general.
+	if m.top == topStats && m.sub == subStatsGeneral {
+		if m.repos.Metrics == nil {
+			return nil
+		}
+		period := m.statsPeriod
+		if period == "" {
+			period = "30d"
+		}
+		metrics := m.repos.Metrics
+		var cmd tea.Cmd
+		cmd = func() tea.Msg {
+			result := realtimeReloadMsg{kind: realtimeReloadStats, cmdKey: reflect.ValueOf(cmd).Pointer()}
+			summary, err := metrics.Summary(ctx, project, period, 0)
+			if err != nil {
+				result.err = err
+				return result
+			}
+			result.statsSummary = summary
+			result.statsValid = true
+			return result
+		}
+		registerRealtimeReloadCmd(cmd)
+		return cmd
+	}
+
+	// Stats › logs.
+	if m.top == topStats && m.sub == subStatsLogs {
+		if m.repos.Events == nil {
+			return nil
+		}
+		views := m.activeViewSettings()
+		filter := domain.EventFilter{
+			ProjectID:  project.ID,
+			Categories: m.logsCategoryFilter(),
+			Since:      m.logsSinceFloor(views.Logs.WindowDays),
+			Limit:      views.Logs.Limit,
+			Order:      views.Logs.Sort.Order,
+		}
+		since := filter.Since
+		events := m.repos.Events
+		var cmd tea.Cmd
+		cmd = func() tea.Msg {
+			result := realtimeReloadMsg{kind: realtimeReloadLogs, cmdKey: reflect.ValueOf(cmd).Pointer()}
+			rows, err := events.ListEvents(ctx, filter)
+			if err != nil {
+				result.err = err
+				return result
+			}
+			counts, err := events.EventCategoryCounts(ctx, project.ID, since)
+			if err != nil {
+				result.err = err
+				return result
+			}
+			result.events = rows
+			result.eventCounts = counts
+			result.logsValid = true
+			return result
+		}
+		registerRealtimeReloadCmd(cmd)
+		return cmd
+	}
+
+	// Home is gated out by shouldRealtimeRefresh; everything else is a
+	// board-family view (board / table / graph / plans). Reload the heavy read
+	// pipeline (snapshot + rollups) off-thread.
+	views := m.activeViewSettings()
+	cfgSnap := m.repos.activeSnapshot()
+	query := app.NewTUIQueryService(m.repos.Tasks, cfgSnap, m.repos.Dependencies, m.repos.Comments, m.repos.Tags)
+	var plansSvc *app.PlanService
+	if m.repos.Plans != nil {
+		plansSvc = app.NewPlanServiceWithSnapshot(m.repos.Plans, cfgSnap)
+	}
+	langs := m.languages
+	if cfgSnap != nil {
+		langs = cfgSnap.Settings().EffectiveLanguages()
+	}
+	sort := domain.TaskSort{Field: views.Board.Sort.Field, Order: views.Board.Sort.Order}
+	archived := m.includeArchived
+	var preservedTaskID int64
+	if task, ok := m.selectedTask(); ok {
+		preservedTaskID = task.ID
+	}
+	var cmd tea.Cmd
+	cmd = func() tea.Msg {
+		result := realtimeReloadMsg{kind: realtimeReloadBoard, langs: langs, anchorID: preservedTaskID, cmdKey: reflect.ValueOf(cmd).Pointer()}
+		s, err := query.Snapshot(ctx, project, sort, app.SnapshotOptions{IncludeArchived: archived})
+		if err != nil {
+			result.err = err
+			return result
+		}
+		result.snap = s
+		result.snapValid = true
+		if plansSvc != nil {
+			if rollups, perr := plansSvc.ListRollups(ctx, project); perr == nil {
+				result.plans = rollups
+				result.plansValid = true
+			}
+		}
+		return result
+	}
+	registerRealtimeReloadCmd(cmd)
+	return cmd
+}
+
+// realtimeReloadRegistry mirrors viewChangeRefreshRegistry: it tracks the
+// function pointer of each cmd realtimeRefreshCmd produces so test helpers can
+// recognise the async tick reload without executing it, and so
+// applyRealtimeReload can drop the entry on fold (otherwise a long session
+// leaks one map entry per changed tick).
+var realtimeReloadRegistry sync.Map
+
+func registerRealtimeReloadCmd(cmd tea.Cmd) uintptr {
+	if cmd == nil {
+		return 0
+	}
+	key := reflect.ValueOf(cmd).Pointer()
+	realtimeReloadRegistry.Store(key, struct{}{})
+	return key
+}
+
+func isRealtimeReloadCmd(cmd tea.Cmd) bool {
+	if cmd == nil {
+		return false
+	}
+	_, ok := realtimeReloadRegistry.Load(reflect.ValueOf(cmd).Pointer())
+	return ok
+}
+
+// applyRealtimeReload folds the worker's view-scoped result into the model.
+// Pure assignment + cursor reanchoring — no IO — so it is safe on the Update
+// goroutine even while a later tick's worker is still running. It is the
+// apply-half of the former inline realtimeRefresh; every m mutation that used
+// to run on the worker side now lives here.
+func (m *Model) applyRealtimeReload(r realtimeReloadMsg) {
+	if r.cmdKey != 0 {
+		realtimeReloadRegistry.Delete(r.cmdKey)
+	}
+	if r.err != nil {
+		m.status = r.err.Error()
+		return
+	}
+	if r.status != "" {
+		m.status = r.status
+	}
+	switch r.kind {
+	case realtimeReloadBoard:
+		if !r.snapValid {
+			return
+		}
+		snap := r.snap
+		m.tasks = snap.Tasks
+		m.workflow = snap.Workflow
+		m.dependencies = snap.Dependencies
+		m.comments = snap.Comments
+		m.laws = snap.Laws
+		m.skills = snap.Skills
+		m.personas = snap.Personas
+		m.templates = snap.Templates
+		m.tags = snap.AllTags
+		m.taskTagsMap = snap.TaskTagsByID
+		m.metrics = m.computeMetrics(0)
+		m.languages = r.langs
+		if r.plansValid {
+			m.plans = r.plans
+		}
+		m.invalidateBoardCaches()
+		m.rebuildBoardCaches()
+		m.clampPlanCursor()
+		m.clampGraphCursor()
+		m.clampSelection()
+		m.clampCardIdx()
+		m.clampEntityCursor()
+		m.syncSelectedFromBoard()
+		if r.anchorID > 0 {
+			m.selectTaskByID(r.anchorID)
+		}
+	case realtimeReloadTaskView:
+		if !r.activityValid {
+			return
+		}
+		m.activity = r.activity
+		m.activityForTask = r.activityForID
+		m.reanchorActivityCursor(r.anchorID)
+		m.refreshActivityLines()
+	case realtimeReloadPlan:
+		if !r.planValid {
+			return
+		}
+		m.planNetworkShow = r.planShow
+		m.invalidatePlanNetworkRowsCache()
+		rows := m.planNetworkBuildRows()
+		m.planNetworkCursor = m.planNetworkCursor.WithItemCount(len(rows))
+		if m.planNetworkCursor.Cursor() >= len(rows) && len(rows) > 0 {
+			m.planNetworkCursor = m.planNetworkCursor.SetCursor(0)
+		}
+		m.syncPlanNetworkScroll(rows)
+	case realtimeReloadStats:
+		if !r.statsValid {
+			return
+		}
+		m.statsSummary = r.statsSummary
+	case realtimeReloadLogs:
+		if !r.logsValid {
+			return
+		}
+		rows := r.events
+		if m.logsFilterMode == LogsFilterAll {
+			rows = filterLogVisibleRows(rows)
+		}
+		m.events = rows
+		if m.logsSelected >= len(m.events) {
+			if len(m.events) == 0 {
+				m.logsSelected = 0
+			} else {
+				m.logsSelected = len(m.events) - 1
+			}
+		}
+		m.eventStats = computeEventStats(rows, r.eventCounts)
+	}
 }
 
 func (m *Model) refreshCurrentView() error {

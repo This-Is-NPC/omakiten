@@ -150,10 +150,12 @@ func TestRealtimeTickReloadsWhenWatermarkAdvances(t *testing.T) {
 	model = first.(Model)
 	tasks.listCalls.Store(0)
 
-	// Watermark moves → next tick must reload the board exactly once.
+	// Watermark moves → next tick must reload the board exactly once. The
+	// reload is now off-thread (a tea.Cmd batched with the next tick), so the
+	// ListTasks call lands when the worker cmd runs, not inline in Update —
+	// driveRealtimeTick executes it the way the runtime would.
 	watermark.version = 2
-	next, _ := model.Update(refreshTickMsg{})
-	model = next.(Model)
+	model, _ = driveRealtimeTick(t, model)
 	if got := tasks.listCalls.Load(); got == 0 {
 		t.Fatal("watermark advanced but the tick did not reload the board (ListTasks not called)")
 	}
