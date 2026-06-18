@@ -97,10 +97,10 @@ func TestRealtimeTickConfigReloadIndependentOfWatermark(t *testing.T) {
 	if err := model.refresh(); err != nil {
 		t.Fatalf("refresh: %v", err)
 	}
-	// Drive the first tick to establish the watermark baseline (first probe
-	// always reloads). dataVersionSynced is now true and frozen at 99.
-	first, _ := model.Update(refreshTickMsg{})
-	model = first.(Model)
+	// Drive the first tick to establish the bundle watermark baseline (first probe
+	// always reloads). The bundle baseline is now frozen at 99.
+	model, _ = driveRealtimeTick(t, model)
+	assertRealtimeBaselineEstablished(t, model, 99)
 	if model.languages.AgentOutput != "" {
 		t.Fatalf("initial AgentOutput = %q, want empty", model.languages.AgentOutput)
 	}
@@ -121,16 +121,15 @@ func TestRealtimeTickConfigReloadIndependentOfWatermark(t *testing.T) {
 
 	// Next tick: watermark unchanged (idle DB), but the config-mtime gate must
 	// still run and apply the edit.
-	next, _ := model.Update(refreshTickMsg{})
-	model = next.(Model)
+	model, _ = updateRealtimeTick(t, model)
 	if model.languages.AgentOutput != "Português (Brasil)" {
 		t.Fatalf("config-only edit not picked up on tick: AgentOutput = %q, want Português (Brasil) (F1: config reload still gated on watermark)", model.languages.AgentOutput)
 	}
 }
 
-// TestRealtimeTickFailedReloadRetainsWatermark proves F2: a failing board
-// reload must leave m.lastDataVersion unadvanced so the next tick re-observes
-// the same external write and retries it. Before the fix dataVersionChanged
+// TestRealtimeTickFailedReloadRetainsWatermark proves F2: a failing bundle
+// reload must leave its baseline unadvanced so the next tick re-observes the
+// same external write and retries it. Before the fix dataVersionChanged
 // committed the version up-front, so a failed reload consumed the watermark and
 // the write was lost until an unrelated write moved it again.
 func TestRealtimeTickFailedReloadRetainsWatermark(t *testing.T) {
@@ -168,9 +167,7 @@ func TestRealtimeTickFailedReloadRetainsWatermark(t *testing.T) {
 	}
 	// First tick: establishes the baseline at version 1 (a successful reload).
 	model, _ = driveRealtimeTick(t, model)
-	if model.lastDataVersion != 1 {
-		t.Fatalf("after baseline tick: lastDataVersion = %d, want 1", model.lastDataVersion)
-	}
+	assertRealtimeBaselineEstablished(t, model, 1)
 
 	// External write moves the watermark; arm the next board query to fail.
 	watermark.version = 2
@@ -178,18 +175,18 @@ func TestRealtimeTickFailedReloadRetainsWatermark(t *testing.T) {
 	model, _ = driveRealtimeTick(t, model)
 	// The reload failed (board worker returned r.err), so the watermark baseline
 	// must NOT have advanced to 2 — the write is still pending.
-	if model.lastDataVersion == 2 {
-		t.Fatal("failed reload committed the watermark (lastDataVersion = 2) — the external write would be lost (F2)")
+	if version, ok := model.dataVersionBaseline(realtimeReloadBundle); ok && version == 2 {
+		t.Fatal("failed reload committed the bundle watermark baseline = 2; the external write would be lost (F2)")
 	}
-	if model.lastDataVersion != 1 {
-		t.Fatalf("after failed reload: lastDataVersion = %d, want 1 (unadvanced)", model.lastDataVersion)
+	if version, ok := model.dataVersionBaseline(realtimeReloadBundle); !ok || version != 1 {
+		t.Fatalf("after failed reload: bundle baseline = %d (ok=%v), want 1 (unadvanced)", version, ok)
 	}
 
 	// Next tick still sees version 2 != baseline 1 → retries. This time the
 	// query succeeds and the baseline advances.
 	model, _ = driveRealtimeTick(t, model)
-	if model.lastDataVersion != 2 {
-		t.Fatalf("retry tick did not commit watermark: lastDataVersion = %d, want 2 (write must be observed on retry)", model.lastDataVersion)
+	if version, ok := model.dataVersionBaseline(realtimeReloadBundle); !ok || version != 2 {
+		t.Fatalf("retry tick did not commit bundle watermark: baseline = %d (ok=%v), want 2 (write must be observed on retry)", version, ok)
 	}
 }
 
@@ -204,7 +201,7 @@ func TestApplyRealtimeReloadDropsStaleGeneration(t *testing.T) {
 	// and is applied; the older one (gen 1, one task) arrives late and must be
 	// dropped so it cannot regress the view.
 	newer := realtimeReloadMsg{
-		kind:             realtimeReloadBoard,
+		kind:             realtimeReloadBundle,
 		gen:              2,
 		dataVersion:      20,
 		dataVersionValid: true,
@@ -212,7 +209,7 @@ func TestApplyRealtimeReloadDropsStaleGeneration(t *testing.T) {
 		snapValid:        true,
 	}
 	older := realtimeReloadMsg{
-		kind:             realtimeReloadBoard,
+		kind:             realtimeReloadBundle,
 		gen:              1,
 		dataVersion:      10,
 		dataVersionValid: true,
@@ -224,11 +221,11 @@ func TestApplyRealtimeReloadDropsStaleGeneration(t *testing.T) {
 	if len(m.tasks) != 2 {
 		t.Fatalf("after newer apply: %d tasks, want 2", len(m.tasks))
 	}
-	if m.lastAppliedReloadGen != 2 {
-		t.Fatalf("after newer apply: lastAppliedReloadGen = %d, want 2", m.lastAppliedReloadGen)
+	if got := m.lastAppliedRealtimeReloadGen(realtimeReloadBundle); got != 2 {
+		t.Fatalf("after newer apply: bundle lastAppliedReloadGen = %d, want 2", got)
 	}
-	if m.lastDataVersion != 20 {
-		t.Fatalf("after newer apply: lastDataVersion = %d, want 20", m.lastDataVersion)
+	if version, ok := m.dataVersionBaseline(realtimeReloadBundle); !ok || version != 20 {
+		t.Fatalf("after newer apply: bundle baseline = %d (ok=%v), want 20", version, ok)
 	}
 
 	// The stale older msg arrives — must be dropped, leaving tasks + watermark
@@ -237,10 +234,47 @@ func TestApplyRealtimeReloadDropsStaleGeneration(t *testing.T) {
 	if len(m.tasks) != 2 {
 		t.Fatalf("stale gen folded over newer snapshot: %d tasks, want 2 (F3)", len(m.tasks))
 	}
-	if m.lastDataVersion != 20 {
-		t.Fatalf("stale gen committed its watermark: lastDataVersion = %d, want 20 (F2/F3 interaction)", m.lastDataVersion)
+	if version, ok := m.dataVersionBaseline(realtimeReloadBundle); !ok || version != 20 {
+		t.Fatalf("stale gen committed its watermark: bundle baseline = %d (ok=%v), want 20 (F2/F3 interaction)", version, ok)
 	}
-	if m.lastAppliedReloadGen != 2 {
-		t.Fatalf("stale gen advanced lastAppliedReloadGen: %d, want 2", m.lastAppliedReloadGen)
+	if got := m.lastAppliedRealtimeReloadGen(realtimeReloadBundle); got != 2 {
+		t.Fatalf("stale gen advanced bundle lastAppliedReloadGen: %d, want 2", got)
+	}
+}
+
+// TestApplyRealtimeReloadGenerationGuardIsPerDomain proves F3 is scoped by
+// reload domain: a newer activity apply must not cause an older bundle apply to
+// be dropped, because the two domains hydrate different model projections.
+func TestApplyRealtimeReloadGenerationGuardIsPerDomain(t *testing.T) {
+	var m Model
+
+	activity := realtimeReloadMsg{
+		kind:             realtimeReloadActivity,
+		gen:              2,
+		dataVersion:      20,
+		dataVersionValid: true,
+		activity:         []domain.Event{{ID: 1, Body: "activity"}},
+		activityForID:    100,
+		activityValid:    true,
+	}
+	bundle := realtimeReloadMsg{
+		kind:             realtimeReloadBundle,
+		gen:              1,
+		dataVersion:      10,
+		dataVersionValid: true,
+		snap:             app.TUISnapshot{Tasks: []domain.Task{{ID: 1, Title: "bundle-task"}}},
+		snapValid:        true,
+	}
+
+	m.applyRealtimeReload(activity)
+	m.applyRealtimeReload(bundle)
+	if len(m.tasks) != 1 || m.tasks[0].Title != "bundle-task" {
+		t.Fatalf("bundle reload was incorrectly dropped after activity gen applied: tasks=%#v", m.tasks)
+	}
+	if version, ok := m.dataVersionBaseline(realtimeReloadActivity); !ok || version != 20 {
+		t.Fatalf("activity baseline = %d (ok=%v), want 20", version, ok)
+	}
+	if version, ok := m.dataVersionBaseline(realtimeReloadBundle); !ok || version != 10 {
+		t.Fatalf("bundle baseline = %d (ok=%v), want 10", version, ok)
 	}
 }

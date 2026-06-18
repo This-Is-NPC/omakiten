@@ -83,18 +83,14 @@ func TestRealtimeTickIdleSkipsReload(t *testing.T) {
 	// The FIRST tick always reloads (no trusted baseline yet) — drive it once
 	// so the watermark baseline is established, then reset the ListTasks
 	// counter so the idle assertion measures only the steady state.
-	first, _ := model.Update(refreshTickMsg{})
-	model = first.(Model)
+	model, _ = driveRealtimeTick(t, model)
+	assertRealtimeBaselineEstablished(t, model, 42)
 	tasks.listCalls.Store(0)
 	probesBefore := watermark.calls.Load()
 
 	const idleTicks = 5
 	for i := 0; i < idleTicks; i++ {
-		next, cmd := model.Update(refreshTickMsg{})
-		if cmd == nil {
-			t.Fatalf("idle tick %d: command = nil, want next realtime tick", i)
-		}
-		model = next.(Model)
+		model, _ = updateRealtimeTick(t, model)
 	}
 
 	if got := tasks.listCalls.Load(); got != 0 {
@@ -146,8 +142,8 @@ func TestRealtimeTickReloadsWhenWatermarkAdvances(t *testing.T) {
 
 	// Establish the baseline (first tick always reloads), then clear the
 	// counter so the assertion isolates the watermark-advance reload.
-	first, _ := model.Update(refreshTickMsg{})
-	model = first.(Model)
+	model, _ = driveRealtimeTick(t, model)
+	assertRealtimeBaselineEstablished(t, model, 1)
 	tasks.listCalls.Store(0)
 
 	// Watermark moves → next tick must reload the board exactly once. The
@@ -226,8 +222,8 @@ func TestSelfWriteRepaintsInlineWithoutTick(t *testing.T) {
 		t.Fatalf("self-write not visible after inline refresh: activity len = %d, want > %d", len(model.activity), before)
 	}
 	// And the watermark never moved — proving the repaint did NOT depend on it.
-	if model.dataVersionSynced && model.lastDataVersion != 0 {
-		// lastDataVersion is only set by a tick probe; no tick ran here.
-		t.Fatalf("watermark state changed without a tick: synced=%v last=%d", model.dataVersionSynced, model.lastDataVersion)
+	if len(model.dataVersionBaselines) != 0 {
+		// Baselines are only set by tick reload apply; no tick ran here.
+		t.Fatalf("watermark state changed without a tick: baselines=%v", model.dataVersionBaselines)
 	}
 }

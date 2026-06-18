@@ -444,33 +444,23 @@ type Model struct {
 	// returns so the parent shell wrapper can `cd` into the project.
 	lastProjectRoot string
 
-	// lastDataVersion is the SQLite change watermark (PRAGMA data_version)
-	// observed at the previous realtime tick. The tick re-probes
-	// repos.Watermark each second and only triggers the expensive reload
-	// (reloadBundleIfChanged + realtimeRefresh) when the watermark moved —
-	// an idle second (no external write) costs one cheap probe and skips
-	// the rebuild. Self-writes are exempt by design: they commit on the
-	// pool, not the pinned probe connection, AND repaint inline via the
-	// synchronous m.refresh() on the write path, so the watermark gate
-	// never starves them. Zero before the first probe; -1 has no special
-	// meaning, any value is just compared for equality.
-	lastDataVersion int64
-	// dataVersionSynced records whether lastDataVersion holds a real probe
-	// result yet. The first tick after launch always reloads (treat as
-	// changed) so the view reflects writes that landed between Open and
-	// the first tick; thereafter the equality compare gates reloads.
-	dataVersionSynced bool
+	// dataVersionBaselines stores the SQLite change watermark (PRAGMA
+	// data_version) per realtime reload domain. A scoped reload in one domain
+	// (for example the task activity view) must not consume another domain's
+	// pending board/bundle change. Map presence means the domain has an
+	// established baseline; zero is a valid SQLite value. Baselines advance only
+	// from applyRealtimeReload after that domain's payload has successfully
+	// folded into m.
+	dataVersionBaselines map[realtimeReloadKind]int64
 
-	// realtimeReloadGen is a monotonic generation counter incremented on the
-	// Update goroutine each time a changed-tick reload cmd is built. The value
-	// is stamped onto the realtimeReloadMsg the worker produces so
-	// applyRealtimeReload can recognise stale arrivals: two reloads in flight
-	// (consecutive watermark-moving ticks + a slow worker) can complete out of
-	// order, and folding an older snapshot over a newer one would briefly
-	// regress the view. lastAppliedReloadGen tracks the newest generation
-	// already folded; any msg with an older generation is dropped (F3).
-	realtimeReloadGen    uint64
-	lastAppliedReloadGen uint64
+	// realtimeReloadGen is a per-domain monotonic generation counter incremented
+	// on the Update goroutine each time a changed-tick reload cmd is built. The
+	// value is stamped onto the realtimeReloadMsg the worker produces so
+	// applyRealtimeReload can recognise stale arrivals within the same domain.
+	// lastAppliedReloadGen tracks the newest generation already folded per domain;
+	// a high-gen activity reload must never make a lower-gen bundle reload stale.
+	realtimeReloadGen    map[realtimeReloadKind]uint64
+	lastAppliedReloadGen map[realtimeReloadKind]uint64
 
 	// events is the bounded row buffer rendered by the unified Logs
 	// inspector (umbrella #320, sub-task #325). Populated by

@@ -17,32 +17,81 @@ import (
 	"omakiten/internal/token"
 )
 
-// driveRealtimeTick delivers a refreshTickMsg, then completes the off-thread
-// reload the same way the Bubble Tea runtime would: it executes the returned
-// cmd, finds the realtimeReloadMsg the worker produced (the tick batches the
-// reload cmd with the next-tick scheduler), and folds that msg back through
-// Update. It returns the post-fold model plus the cmd Update returned for the
-// reload msg (nil in normal use). When the tick reloaded nothing (gated out or
-// an empty view) the reload cmd is absent and the model is returned as-ticked.
-func driveRealtimeTick(t *testing.T, m Model) (Model, tea.Cmd) {
+func updateRealtimeTick(t *testing.T, m Model) (Model, tea.Cmd) {
 	t.Helper()
-	ticked, cmd := m.Update(refreshTickMsg{})
-	model := ticked.(Model)
+	updated, cmd := m.Update(refreshTickMsg{})
+	model, ok := updated.(Model)
+	if !ok {
+		t.Fatalf("Update(refreshTickMsg) returned %T, want Model", updated)
+	}
 	if cmd == nil {
 		t.Fatal("Update(refreshTickMsg) command = nil, want next realtime tick")
 	}
+	return model, cmd
+}
+
+// driveRealtimeTick delivers a refreshTickMsg, then completes every off-thread
+// reload the same way the Bubble Tea runtime would: it executes the returned
+// cmd, finds realtimeReloadMsg workers produced by the tick (batched with the
+// next-tick scheduler), and folds those msgs back through Update. It returns the
+// post-fold model. When the tick reloaded nothing (gated out or an empty view)
+// the reload cmd is absent and the model is returned as-ticked.
+func driveRealtimeTick(t *testing.T, m Model) (Model, tea.Cmd) {
+	t.Helper()
+	model, _ := driveRealtimeTickAll(t, m)
+	return model, nil
+}
+
+func foldRealtimeReload(t *testing.T, m Model, cmd tea.Cmd) (Model, realtimeReloadMsg, bool, tea.Cmd) {
+	t.Helper()
 	reload := findRealtimeReloadCmd(cmd)
 	if reload == nil {
-		// Nothing reloadable for this view this tick.
-		return model, nil
+		return m, realtimeReloadMsg{}, false, nil
 	}
 	msg := reload()
 	rmsg, ok := msg.(realtimeReloadMsg)
 	if !ok {
 		t.Fatalf("realtime reload cmd produced %T, want realtimeReloadMsg", msg)
 	}
-	folded, foldCmd := model.Update(rmsg)
-	return folded.(Model), foldCmd
+	folded, foldCmd := m.Update(rmsg)
+	model, ok := folded.(Model)
+	if !ok {
+		t.Fatalf("Update(realtimeReloadMsg) returned %T, want Model", folded)
+	}
+	return model, rmsg, true, foldCmd
+}
+
+func mustFoldRealtimeReload(t *testing.T, m Model, cmd tea.Cmd) (Model, realtimeReloadMsg, tea.Cmd) {
+	t.Helper()
+	folded, rmsg, ok, foldCmd := foldRealtimeReload(t, m, cmd)
+	if !ok {
+		t.Fatal("returned cmd carries no realtime reload cmd; the reload was not handed off-thread")
+	}
+	return folded, rmsg, foldCmd
+}
+
+func assertRealtimeBaselineEstablished(t *testing.T, m Model, wantVersion int64) {
+	t.Helper()
+	assertRealtimeDomainBaselineEstablished(t, m, realtimeReloadBundle, wantVersion)
+}
+
+func assertRealtimeDomainBaselineEstablished(t *testing.T, m Model, kind realtimeReloadKind, wantVersion int64) {
+	t.Helper()
+	version, ok := m.dataVersionBaseline(kind)
+	if !ok {
+		t.Fatalf("realtime baseline for domain %v was not established", kind)
+	}
+	if version != wantVersion {
+		t.Fatalf("realtime baseline version for domain %v = %d, want %d", kind, version, wantVersion)
+	}
+	builtGen := m.realtimeReloadGen[kind]
+	if builtGen == 0 {
+		t.Fatalf("realtime baseline for domain %v was not established: no reload generation was built", kind)
+	}
+	appliedGen := m.lastAppliedRealtimeReloadGen(kind)
+	if appliedGen != builtGen {
+		t.Fatalf("realtime baseline reload for domain %v was not folded: applied gen %d, built gen %d", kind, appliedGen, builtGen)
+	}
 }
 
 // findRealtimeReloadCmd flattens a (possibly batched) cmd and returns the
@@ -399,41 +448,28 @@ func TestRealtimeTickReturnsReloadCmdNotInlineMutation(t *testing.T) {
 		t.Fatalf("refresh() error = %v", err)
 	}
 	// Establish baseline watermark (first tick), then isolate the steady state.
-	firstUpdated, _ := model.Update(refreshTickMsg{})
-	model = firstUpdated.(Model)
+	model, _ = driveRealtimeTick(t, model)
+	assertRealtimeBaselineEstablished(t, model, 1)
 	tasks.listCalls.Store(0)
 
 	// Changed watermark → Update must return a reload cmd WITHOUT having issued
 	// the board query inline.
 	watermark.version = 2
-	updated, cmd := model.Update(refreshTickMsg{})
-	model = updated.(Model)
+	model, cmd := updateRealtimeTick(t, model)
 	if got := tasks.listCalls.Load(); got != 0 {
 		t.Fatalf("board query ran inline during Update (ListTasks calls = %d, want 0); the reload must be off-thread", got)
 	}
-	if cmd == nil {
-		t.Fatal("Update(refreshTickMsg) returned nil cmd, want a batched reload + next tick")
-	}
-	reload := findRealtimeReloadCmd(cmd)
-	if reload == nil {
-		t.Fatal("returned cmd carries no realtime reload cmd; the reload was not handed off-thread")
-	}
 
 	// Running the worker now issues the query and produces a fold-ready msg.
-	msg := reload()
-	rmsg, ok := msg.(realtimeReloadMsg)
-	if !ok {
-		t.Fatalf("reload cmd produced %T, want realtimeReloadMsg", msg)
-	}
-	if rmsg.kind != realtimeReloadBoard || !rmsg.snapValid {
+	folded, rmsg, _ := mustFoldRealtimeReload(t, model, cmd)
+	if rmsg.kind != realtimeReloadBundle || !rmsg.snapValid {
 		t.Fatalf("board reload msg kind=%v snapValid=%v, want board/true", rmsg.kind, rmsg.snapValid)
 	}
 	if got := tasks.listCalls.Load(); got == 0 {
 		t.Fatal("worker cmd ran but ListTasks was not issued")
 	}
-	folded, _ := model.Update(rmsg)
-	if got := folded.(Model); len(got.tasks) != 1 || got.tasks[0].Title != "live-task" {
-		t.Fatalf("post-fold tasks = %#v, want live-task", got.tasks)
+	if len(folded.tasks) != 1 || folded.tasks[0].Title != "live-task" {
+		t.Fatalf("post-fold tasks = %#v, want live-task", folded.tasks)
 	}
 }
 
@@ -493,18 +529,10 @@ func TestRealtimeTickTaskViewSkipsBoardRebuild(t *testing.T) {
 	watermark.version = 2
 
 	// Inspect the reload cmd kind directly: it must be the task-view scope.
-	updated, cmd := model.Update(refreshTickMsg{})
-	model = updated.(Model)
-	reload := findRealtimeReloadCmd(cmd)
-	if reload == nil {
-		t.Fatal("task-view tick returned no reload cmd")
-	}
-	rmsg, ok := reload().(realtimeReloadMsg)
-	if !ok {
-		t.Fatalf("reload cmd produced %T, want realtimeReloadMsg", reload())
-	}
-	if rmsg.kind != realtimeReloadTaskView {
-		t.Fatalf("task-view tick reload kind = %v, want realtimeReloadTaskView (board must not rebuild)", rmsg.kind)
+	model, cmd := updateRealtimeTick(t, model)
+	folded, rmsg, _ := mustFoldRealtimeReload(t, model, cmd)
+	if rmsg.kind != realtimeReloadActivity {
+		t.Fatalf("task-view tick reload kind = %v, want realtimeReloadActivity (board must not rebuild)", rmsg.kind)
 	}
 	if got := tasks.listCalls.Load(); got != 0 {
 		t.Fatalf("task-view tick rebuilt the board (ListTasks calls = %d, want 0)", got)
@@ -513,8 +541,7 @@ func TestRealtimeTickTaskViewSkipsBoardRebuild(t *testing.T) {
 	// Folding the feed result must surface the comment without disturbing the
 	// (untouched) board task slice.
 	boardTasksBefore := len(model.tasks)
-	folded, _ := model.Update(rmsg)
-	got := folded.(Model)
+	got := folded
 	if len(got.tasks) != boardTasksBefore {
 		t.Fatalf("board task slice changed under task-view tick: got %d, want %d", len(got.tasks), boardTasksBefore)
 	}
@@ -526,5 +553,94 @@ func TestRealtimeTickTaskViewSkipsBoardRebuild(t *testing.T) {
 	}
 	if !foundComment {
 		t.Fatal("task-view tick did not load the new comment into the activity feed")
+	}
+}
+
+// TestRealtimeTickBoardCatchesUpAfterTaskViewScopedReload proves the per-domain
+// watermark regression: a board-visible write made while the task view is open
+// must not be consumed by the activity-only tick. Returning to the board must
+// still observe the same DB watermark movement and rebuild the board.
+func TestRealtimeTickBoardCatchesUpAfterTaskViewScopedReload(t *testing.T) {
+	ctx := context.Background()
+	store := snapstore.Open(t, t.TempDir()+"/omakiten.db")
+	if err := store.ImportBundle(ctx, tuiTestBundle(t), "test.yaml", "hash"); err != nil {
+		t.Fatalf("ImportBundle() error = %v", err)
+	}
+	project, err := store.UpsertProject(ctx, "Project", "project", "/work/project")
+	if err != nil {
+		t.Fatalf("UpsertProject() error = %v", err)
+	}
+	snap := store.Snapshot()
+	task, err := store.CreateTask(ctx, project.ID, "open-task", "", domain.Priority(2), "backlog", nil, snap)
+	if err != nil {
+		t.Fatalf("CreateTask() error = %v", err)
+	}
+
+	tasks := &countingTaskRepo{TaskRepository: store}
+	watermark := &stubWatermark{version: 1}
+	model, err := NewModel(ctx, project.Context(), Repositories{
+		Tasks:        tasks,
+		Comments:     store,
+		Dependencies: store,
+		Events:       store,
+		Watermark:    watermark,
+		Cache:        runtimecache.Install(0, store.Snapshot()),
+		Workflow:     app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot()),
+	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
+	if err != nil {
+		t.Fatalf("NewModel() error = %v", err)
+	}
+	model.height, model.width = 40, 160
+	if err := model.refresh(); err != nil {
+		t.Fatalf("refresh() error = %v", err)
+	}
+
+	model, _ = driveRealtimeTick(t, model)
+	assertRealtimeBaselineEstablished(t, model, 1)
+	model.openTaskView(task)
+
+	if _, err := store.CreateTask(ctx, project.ID, "external-board-task", "", domain.Priority(2), "backlog", nil, store.Snapshot()); err != nil {
+		t.Fatalf("CreateTask(external) error = %v", err)
+	}
+	if _, err := store.AddComment(ctx, project.ID, task.ID, "activity-only change", "human", nil); err != nil {
+		t.Fatalf("AddComment() error = %v", err)
+	}
+	watermark.version = 2
+	tasks.listCalls.Store(0)
+
+	model, cmd := updateRealtimeTick(t, model)
+	folded, rmsg, _ := mustFoldRealtimeReload(t, model, cmd)
+	if rmsg.kind != realtimeReloadActivity {
+		t.Fatalf("task-view tick reload kind = %v, want realtimeReloadActivity", rmsg.kind)
+	}
+	if got := tasks.listCalls.Load(); got != 0 {
+		t.Fatalf("task-view tick rebuilt the board (ListTasks calls = %d, want 0)", got)
+	}
+	model = folded
+	assertRealtimeDomainBaselineEstablished(t, model, realtimeReloadActivity, 2)
+	if version, ok := model.dataVersionBaseline(realtimeReloadBundle); !ok || version != 1 {
+		t.Fatalf("activity-only tick advanced bundle baseline: got %d (ok=%v), want 1", version, ok)
+	}
+	for _, task := range model.tasks {
+		if task.Title == "external-board-task" {
+			t.Fatal("board task slice changed while task view was open; task-view tick must stay activity-scoped")
+		}
+	}
+
+	model.closeTaskScreen("")
+	tasks.listCalls.Store(0)
+	model, _ = driveRealtimeTick(t, model)
+	if got := tasks.listCalls.Load(); got == 0 {
+		t.Fatal("returning to board did not rebuild after activity-only tick; bundle baseline should still lag")
+	}
+	foundBoardTask := false
+	for _, task := range model.tasks {
+		if task.Title == "external-board-task" {
+			foundBoardTask = true
+			break
+		}
+	}
+	if !foundBoardTask {
+		t.Fatalf("board did not catch up after returning from task view; tasks = %#v", model.tasks)
 	}
 }
