@@ -43,20 +43,28 @@ const MaxListEventsLimit = 10_000
 // domain.EventTypesForCategory — the inversion is computed in the
 // domain layer from KnownEventTypes + EventCategoryOf, so adding a new
 // event_type with a category arm propagates here automatically. The
-// expanded set becomes a `event_type IN (?, ?, ...)`
-// predicate so the planner reuses `idx_events_type_started`
-// (event_type, created_at) from migration 009 — the same index
-// activity_logs.go relies on. No new index is added by this read path.
+// expanded set becomes a `event_type IN (?, ?, ...)` predicate.
 //
-// EXPLAIN QUERY PLAN for the canonical category-filtered query reports:
+// Index coverage (migration 035, reshaped from 034 — see task #1291).
+// The hot query is project-scoped and ends with
+// `ORDER BY created_at <dir>, id <dir> LIMIT ?`, so the indexes carry
+// the ORDER BY columns immediately after the equality-filtered prefix
+// and the planner reads rows already in sort order (no temp b-tree):
 //
-//	SEARCH events USING INDEX idx_events_type_started (event_type=?)
+//   - project-only / all-events and multi-value `event_type IN (...)`:
+//     idx_events_project_created (project_id, created_at, id). The
+//     multi-value IN cannot be an index-ordered prefix, so event_type
+//     is filtered as a residual while the (created_at, id) ordering is
+//     preserved.
+//   - single project-scoped `event_type`:
+//     idx_events_project_type_created (project_id, event_type,
+//     created_at, id), a covering search.
 //
-// confirming the planner uses the existing index and avoids a full
-// table scan. When Categories is empty the planner falls back to a
-// covering scan over `events` — acceptable because the caller is
-// asking for everything; the `Since` predicate still narrows the row
-// set when present.
+// EXPLAIN QUERY PLAN confirms each path uses the named index with no
+// `USE TEMP B-TREE FOR ORDER BY` (asserted by
+// TestMigration035EventsOrderByIndexes). When neither a project nor a
+// category is supplied the planner reads the whole table; the `Since`
+// predicate still narrows the row set when present.
 //
 // When every supplied category is unknown the helper would emit an
 // empty IN list (`IN ()`), which SQLite rejects as a syntax error. We

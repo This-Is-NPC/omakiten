@@ -120,6 +120,19 @@ func (s *Service) CreateTaskIntent(ctx context.Context, input CreateTaskInput) (
 		template = applied
 	}
 
+	// Enforce the title/description size caps on the merged (post-template)
+	// input BEFORE any list/similarity work. createTask validates these again at
+	// the domain boundary, but reaching it requires loading the full project
+	// task list and tokenizing title+description for the similarity scan — so an
+	// over-cap MCP payload (a 64 KiB+ description) would otherwise force that
+	// whole scan before being rejected. Validate up front so the reject is O(1).
+	if err := domain.ValidateTaskTitle(strings.TrimSpace(title)); err != nil {
+		return CreateTaskResponse{}, err
+	}
+	if err := domain.ValidateTaskDescription(strings.TrimSpace(description)); err != nil {
+		return CreateTaskResponse{}, err
+	}
+
 	if !input.SkipSimilarityCheck && !input.Confirmed {
 		tasks, err := app.NewTaskServiceFromStore(s.repo, s.registry, s.snapshot).List(ctx, project, domain.TaskFilter{})
 		if err != nil {

@@ -626,6 +626,67 @@ ORDER BY pw.position ASC
 	return waves, rows.Err()
 }
 
+// ListProjectPlanWaves returns every wave for every plan in the project in a
+// single query, ordered by (plan_id, position). Bulk counterpart to
+// ListPlanWaves: ListRollups groups the flat slice by PlanWave.PlanID in Go
+// instead of issuing one ListPlanWaves per plan. The per-plan ordering matches
+// ListPlanWaves (position ASC) so the grouped sub-slices are byte-identical.
+func (s *Store) ListProjectPlanWaves(ctx context.Context, projectID int64) ([]domain.PlanWave, error) {
+	rows, err := s.db.QueryContext(ctx, `
+SELECT pw.id, pw.plan_id, pw.name, pw.position
+FROM plan_waves pw
+JOIN plans p ON p.id = pw.plan_id
+WHERE p.project_id = ?
+ORDER BY pw.plan_id ASC, pw.position ASC
+`, projectID)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+
+	var waves []domain.PlanWave
+	for rows.Next() {
+		var wave domain.PlanWave
+		if err := rows.Scan(&wave.ID, &wave.PlanID, &wave.Name, &wave.Position); err != nil {
+			return nil, err
+		}
+		waves = append(waves, wave)
+	}
+	return waves, rows.Err()
+}
+
+// ListProjectPlanTasks returns every plan-attached task in the project in a
+// single query, each tagged with its owning plan id. Bulk counterpart to
+// ListPlanTasks: ListRollups groups by ProjectPlanTaskRow.PlanID in Go. The
+// projection, bucket resolution, and per-plan ordering (wave position then id,
+// NULL waves last) mirror ListPlanTasks so the rollup counts match the
+// per-plan path exactly.
+func (s *Store) ListProjectPlanTasks(ctx context.Context, projectID int64, buckets domain.BucketResolver) ([]domain.ProjectPlanTaskRow, error) {
+	rows, err := s.db.QueryContext(ctx, `
+SELECT t.plan_id, t.id, COALESCE(t.wave_id, 0), t.title, COALESCE(t.bucket_id, 0), t.state, COALESCE(t.assigned_to, '')
+FROM tasks t
+LEFT JOIN plan_waves w ON w.id = t.wave_id
+WHERE t.project_id = ? AND t.plan_id IS NOT NULL
+ORDER BY t.plan_id ASC, COALESCE(w.position, 1<<30) ASC, t.id ASC
+`, projectID)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+
+	var out []domain.ProjectPlanTaskRow
+	for rows.Next() {
+		var row domain.ProjectPlanTaskRow
+		var bucketID int64
+		if err := rows.Scan(&row.PlanID, &row.TaskID, &row.WaveID, &row.Title, &bucketID, &row.State, &row.AssignedTo); err != nil {
+			return nil, err
+		}
+		row.BucketKey = s.bucketKeyByID(bucketID, buckets)
+		out = append(out, row)
+	}
+	return out, rows.Err()
+}
+
 // AssignTaskToPlan attaches an existing task to a (plan, wave). Both must
 // live in the same project as the task — cross-project mixes fail with
 // ErrPlanNotFound / ErrPlanWaveNotFound. The wave must belong to the named

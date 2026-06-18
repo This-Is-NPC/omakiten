@@ -198,6 +198,8 @@ mise run build
 
 The shell tests do **not** depend on Go; they extract helper functions from `install.sh` / `install.ps1` via awk / PowerShell AST and exercise them in-process. Run them whenever you touch the installers.
 
+Installer checksum coverage is split by runner availability. `internal/installscript` executes the `install.sh` tamper-abort and positive paths hermetically. When a real PowerShell/Windows runner is unavailable, `install.ps1` is covered only by `[assumption]`-grade Go parity tests that statically assert the same checksum trust-root and verify-before-extract/copy/PATH/exec ordering as `install.sh`; those tests do not prove Windows execution. Treat real `install.ps1` tamper-abort as an integration gate to run when `pwsh` or Windows CI is available.
+
 ### Test fixtures
 
 Tests construct `config.Bundle` values from real YAML files under each package's `testdata/` directory instead of inline Go literals. This keeps test inputs identical to what the parser sees in production from `defaults/config/omakase.yaml` — there is no "works in tests, fails in prod" drift.

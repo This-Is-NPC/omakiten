@@ -57,6 +57,17 @@ type Checkpointer interface {
 	Checkpoint(ctx context.Context) error
 }
 
+// DataVersionReader exposes the SQLite `PRAGMA data_version` change
+// watermark the TUI's realtime tick probes to decide whether an external
+// write landed since the last tick. *sqlite.Store satisfies it via
+// DataVersion(ctx), which reads the pragma on a connection pinned out of
+// the pool for the store's lifetime (the pragma is per-connection, so a
+// pooled read would thrash). Optional collaborator — when nil the TUI
+// falls back to reloading every tick, preserving pre-watermark behaviour.
+type DataVersionReader interface {
+	DataVersion(ctx context.Context) (int64, error)
+}
+
 // EventRecorder is the narrow port ProjectService uses to emit the
 // project.removed audit event after a successful delete. *sqlite.Store
 // satisfies it via RecordEntityEvent.
@@ -343,6 +354,17 @@ type PlanRepository interface {
 	// endpoints belong to the same plan; powers the network
 	// diagram's in-plan arrows.
 	ListPlanTaskDependencies(ctx context.Context, projectID, planID int64) ([]domain.TaskDependency, error)
+	// ListProjectPlanWaves returns every wave for every plan in the project
+	// in one query, ordered by (plan_id, position). It is the bulk
+	// counterpart to ListPlanWaves used by ListRollups to avoid the per-plan
+	// N+1: callers group the flat slice by PlanWave.PlanID in Go.
+	ListProjectPlanWaves(ctx context.Context, projectID int64) ([]domain.PlanWave, error)
+	// ListProjectPlanTasks returns every plan-attached task in the project in
+	// one query, each tagged with its owning plan id. Bulk counterpart to
+	// ListPlanTasks; callers group by ProjectPlanTaskRow.PlanID in Go. Mirrors
+	// ListPlanTasks' projection and bucket resolution so the rollup counts are
+	// byte-identical to the per-plan path.
+	ListProjectPlanTasks(ctx context.Context, projectID int64, buckets domain.BucketResolver) ([]domain.ProjectPlanTaskRow, error)
 	// MaybeFinalizePlanForTask transitions the task's owning plan to
 	// status='done' when every other task in the plan already sits in
 	// the workflow's final bucket. No-op when the task has no plan,

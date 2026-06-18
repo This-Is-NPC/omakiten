@@ -78,18 +78,20 @@ func NewModel(ctx context.Context, project domain.ProjectContext, repos Reposito
 		// lipgloss.Style.Width(N) allocation only fires once per
 		// (kind, width) pair across the lifetime of the model. Inner
 		// maps lazily fill on first write per kind.
-		styleByKindWidth:     map[styleKind]map[int]lipgloss.Style{},
-		tokenCountCache:      map[uint64]int{},
-		subtasks:             cardlist.New(),
-		planNetwork:          cardlist.New(),
-		activityLines:        linelist.New(),
-		logsList:             linelist.New(),
-		tableList:            linelist.New(),
-		graphList:            linelist.New(),
-		graphCursor:          cursorwindow.New(0),
-		plansCursor:          cursorwindow.New(0),
-		planNetworkCursor:    cursorwindow.New(0),
-		settingsGeneralLines: linelist.New(),
+		styleByKindWidth:      map[styleKind]map[int]lipgloss.Style{},
+		boardStringCache:      &boardStringCacheEntry{},
+		planNetworkBuildCache: &planNetworkBuildCacheEntry{},
+		tokenCountCache:       map[uint64]int{},
+		subtasks:              cardlist.New(),
+		planNetwork:           cardlist.New(),
+		activityLines:         linelist.New(),
+		logsList:              linelist.New(),
+		tableList:             linelist.New(),
+		graphList:             linelist.New(),
+		graphCursor:           cursorwindow.New(0),
+		plansCursor:           cursorwindow.New(0),
+		planNetworkCursor:     cursorwindow.New(0),
+		settingsGeneralLines:  linelist.New(),
 	}
 	if reg, err := buildPaletteRegistry(repos); err == nil {
 		model.paletteRegistry = reg
@@ -164,29 +166,87 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.palette.SetMaxResultRows(m.paletteResultRowsBudget())
 	case refreshTickMsg:
 		if m.shouldRealtimeRefresh() {
+			// reloadBundleIfChanged is a cheap config-mtime gate (a
+			// BundleCache stat + pointer-compare, not a DB hit) that mutates
+			// the active snapshot in place. It runs on EVERY honored tick,
+			// independent of the DB watermark (F1): a config-file edit moves
+			// no DB row, so gating it on data_version meant a config
+			// hot-reload (#121) was never picked up until an unrelated DB
+			// write happened to advance the watermark. Keep it synchronous on
+			// the Update goroutine — it mutates m.
+			if _, err := m.reloadBundleIfChanged(); err != nil {
+				m.status = err.Error()
+			}
+			// Cheap change-probe gate for the HEAVY DB reload only: decide the
+			// current reload domain set, read the DB watermark once (one PRAGMA
+			// data_version on a pinned connection), then skip each domain whose
+			// baseline is already current. The idle second — the common case while
+			// the user reads a live view — therefore costs exactly one probe query
+			// (plus the config-mtime stat above) and zero
+			// Snapshot/ListRollups/board-rebuild calls.
+			// Self-writes are NOT gated here: they repaint inline via the
+			// synchronous m.refresh() on their own write path and the
+			// watermark deliberately does not move for them, so this gate
+			// never delays a self-write.
+			reloadKinds := m.currentReloadKinds()
+			if len(reloadKinds) == 0 {
+				return m, scheduleRefreshTick()
+			}
+			reloadDecisions := m.dataVersionChanges(reloadKinds)
+			if len(reloadDecisions) == 0 {
+				return m, scheduleRefreshTick()
+			}
 			// Realtime tick is renderer-driven, not user-triggered, so
 			// every app-service call it spawns (`MetricsService.Summary`,
 			// `Logs.List`) bypasses the activity tracker. Otherwise the
 			// log viewer fills with one row per second and pushes real
 			// agent activity out of the bounded window. The footer hint
-			// already advertises this contract.
+			// already advertises this contract. The suppression is applied
+			// to m.ctx for the duration of the capture so the worker closure
+			// (which captures m.ctx) inherits it, then restored — the
+			// closure runs off-thread but holds its own ctx copy.
 			savedCtx := m.ctx
 			m.ctx = activity.WithoutTracking(m.ctx)
+			// Only the heavy DB read pipeline (Snapshot / ListRollups /
+			// activity feed / plan Show) is moved off-thread via
+			// realtimeRefreshCmd so a slow query can no longer stall a
+			// keystroke. The probed watermark version is carried through the
+			// reload msg and committed to that reload domain's baseline only
+			// after a successful apply (F2) — never consumed up-front by a
+			// reload that might fail. ok=false (no-watermark / probe-error path)
+			// means there is no trustworthy version to commit, so pass 0 and
+			// applyRealtimeReload leaves the baseline alone.
+			//
 			// Passive reload latency is state-dependent, not purely
 			// time-based: this whole branch is gated behind
 			// shouldRealtimeRefresh() (false on Home/modals/help/move/
 			// entity screens), so an external edit made while in one of
 			// those states is not observed until a live view returns and
 			// the next tick fires. Expected, not a missed-reload bug.
-			if _, err := m.reloadBundleIfChanged(); err != nil {
-				m.status = err.Error()
-			}
-			if err := m.realtimeRefresh(); err != nil {
-				m.status = err.Error()
+			reloads := make([]tea.Cmd, 0, len(reloadDecisions)+1)
+			for _, decision := range reloadDecisions {
+				var commitVersion int64
+				if decision.ok {
+					commitVersion = decision.version
+				}
+				if reload := m.realtimeRefreshCmd(decision.kind, commitVersion, decision.ok); reload != nil {
+					reloads = append(reloads, reload)
+				}
 			}
 			m.ctx = savedCtx
+			// Batch the off-thread reload with the next tick so input keeps
+			// flowing while the worker runs. The reload's result lands as a
+			// realtimeReloadMsg that applyRealtimeReload folds in.
+			if len(reloads) == 0 {
+				return m, scheduleRefreshTick()
+			}
+			reloads = append(reloads, scheduleRefreshTick())
+			return m, tea.Batch(reloads...)
 		}
 		return m, scheduleRefreshTick()
+	case realtimeReloadMsg:
+		m.applyRealtimeReload(msg)
+		return m, nil
 	case editorFinishedMsg:
 		m.handleEditorFinished(msg)
 		return m, nil
@@ -422,6 +482,130 @@ func scheduleRefreshTick() tea.Cmd {
 	})
 }
 
+type realtimeReloadDecision struct {
+	kind    realtimeReloadKind
+	version int64
+	ok      bool
+}
+
+// dataVersionChanges probes the DB change watermark once for the current tick
+// and returns the reload domains whose baselines lag that one probed version.
+// It does NOT mutate any domain baseline: the probed version is carried through
+// each off-thread reload and committed only after that domain successfully
+// applies (applyRealtimeReload). This keeps one failed domain from consuming its
+// pending write while allowing another domain from the same tick to advance.
+//
+// The probed version is meaningful only when ok is true. With no Watermark
+// reader, or when the probe errors, every requested domain reloads as a fallback
+// with ok=false so no baseline is committed. That preserves the old
+// reload-every-tick behaviour for fixtures and keeps probe errors from wedging a
+// live view. With a good probe, only domains with no established baseline or a
+// different baseline are returned.
+func (m *Model) dataVersionChanges(kinds []realtimeReloadKind) []realtimeReloadDecision {
+	if len(kinds) == 0 {
+		return nil
+	}
+	if m.repos.Watermark == nil {
+		decisions := make([]realtimeReloadDecision, 0, len(kinds))
+		for _, kind := range kinds {
+			if kind != realtimeReloadNone {
+				decisions = append(decisions, realtimeReloadDecision{kind: kind})
+			}
+		}
+		return decisions
+	}
+	version, err := m.repos.Watermark.DataVersion(m.ctx)
+	if err != nil {
+		// Surface the failure but treat every requested domain as changed so
+		// the reloads still run. ok=false prevents baseline commits.
+		m.status = err.Error()
+		decisions := make([]realtimeReloadDecision, 0, len(kinds))
+		for _, kind := range kinds {
+			if kind != realtimeReloadNone {
+				decisions = append(decisions, realtimeReloadDecision{kind: kind})
+			}
+		}
+		return decisions
+	}
+	decisions := make([]realtimeReloadDecision, 0, len(kinds))
+	for _, kind := range kinds {
+		if kind == realtimeReloadNone {
+			continue
+		}
+		baseline, synced := m.dataVersionBaseline(kind)
+		if !synced || version != baseline {
+			decisions = append(decisions, realtimeReloadDecision{kind: kind, version: version, ok: true})
+		}
+	}
+	return decisions
+}
+
+func (m Model) dataVersionBaseline(kind realtimeReloadKind) (int64, bool) {
+	if kind == realtimeReloadNone || m.dataVersionBaselines == nil {
+		return 0, false
+	}
+	version, ok := m.dataVersionBaselines[kind]
+	return version, ok
+}
+
+// commitDataVersion advances the named domain's watermark baseline after the
+// reload it gated has been successfully applied. Map presence is the synced bit;
+// the first-probe baseline is now committed downstream of apply (F2).
+func (m *Model) commitDataVersion(kind realtimeReloadKind, version int64) {
+	if kind == realtimeReloadNone {
+		return
+	}
+	if m.dataVersionBaselines == nil {
+		m.dataVersionBaselines = map[realtimeReloadKind]int64{}
+	}
+	m.dataVersionBaselines[kind] = version
+}
+
+func (m *Model) nextRealtimeReloadGen(kind realtimeReloadKind) uint64 {
+	if kind == realtimeReloadNone {
+		return 0
+	}
+	if m.realtimeReloadGen == nil {
+		m.realtimeReloadGen = map[realtimeReloadKind]uint64{}
+	}
+	m.realtimeReloadGen[kind]++
+	return m.realtimeReloadGen[kind]
+}
+
+// realtimeReloadScopeMatches reports whether an entity-scoped reload still
+// targets the current context. activity is scoped to a task id, plan-show to a
+// plan slug; both are captured when the worker cmd is built and may go stale if
+// the user navigates synchronously before the slow worker folds. Unscoped
+// payloads (scope zero/empty — bundle/stats/logs, or test-constructed msgs)
+// always match so only entity reloads are gated.
+func (m Model) realtimeReloadScopeMatches(r realtimeReloadMsg) bool {
+	switch r.kind {
+	case realtimeReloadActivity:
+		return r.scopeTaskID == 0 || r.scopeTaskID == m.taskID
+	case realtimeReloadPlanShow:
+		return r.scopeSlug == "" || r.scopeSlug == m.planNetworkShow.Plan.Slug
+	default:
+		return true
+	}
+}
+
+func (m Model) lastAppliedRealtimeReloadGen(kind realtimeReloadKind) uint64 {
+	if kind == realtimeReloadNone || m.lastAppliedReloadGen == nil {
+		return 0
+	}
+	return m.lastAppliedReloadGen[kind]
+}
+
+func (m *Model) markRealtimeReloadApplied(kind realtimeReloadKind, gen uint64) {
+	if kind == realtimeReloadNone || gen == 0 {
+		return
+	}
+	if m.lastAppliedReloadGen == nil {
+		m.lastAppliedReloadGen = map[realtimeReloadKind]uint64{}
+	}
+	m.lastAppliedReloadGen[kind] = gen
+}
+
 func (m Model) shouldRealtimeRefresh() bool {
 	if m.onHome() {
 		// Home reads cross-project metadata (tags, pending counts) — refresh
@@ -453,6 +637,33 @@ func (m Model) shouldRealtimeRefresh() bool {
 		return false
 	}
 	return true
+}
+
+// currentReloadKinds is the pure view-state gate for the realtime tick. It maps
+// every visible surface to the reload domain(s) whose baselines the tick should
+// compare before building worker cmds. Board, table, graph, and entity-family
+// projections all share the bundle domain; task detail, plan show, stats, and
+// logs each advance independently after their own successful apply. The open
+// plan-network consumes both bundle-backed surrounding state and the focused
+// PlanShow projection, so it subscribes to both without letting either baseline
+// advance the other.
+func (m Model) currentReloadKinds() []realtimeReloadKind {
+	if m.taskScreen == taskScreenView && m.taskID > 0 {
+		return []realtimeReloadKind{realtimeReloadActivity}
+	}
+	if m.planNetworkOpen {
+		if m.planNetworkShow.Plan.Slug == "" {
+			return nil
+		}
+		return []realtimeReloadKind{realtimeReloadBundle, realtimeReloadPlanShow}
+	}
+	if m.top == topStats && m.sub == subStatsGeneral {
+		return []realtimeReloadKind{realtimeReloadStats}
+	}
+	if m.top == topStats && m.sub == subStatsLogs {
+		return []realtimeReloadKind{realtimeReloadLogs}
+	}
+	return []realtimeReloadKind{realtimeReloadBundle}
 }
 
 // canOpenPalette gates the global Ctrl+K binding so the palette
@@ -668,50 +879,441 @@ func (m *Model) applyRefreshAfterViewChange(r refreshAfterViewChangeMsg) {
 	}
 }
 
-// realtimeRefresh runs one passive reload cycle for whatever live view is
-// open. The board / table / graph / stats routes go through
-// refreshCurrentView; the plan-network and single-task views are layered on
-// top of the board and the board snapshot alone does not refresh their
-// projections, so each is reloaded explicitly when open. This is the tick's
-// counterpart to the manual `r` bindings, which already pair refreshCurrentView
-// with reloadPlanNetwork (plan view) or refresh (task view).
+// realtimeReloadKind names the reload domain the changed-tick reload hydrates.
+// The kind is decided on the Update goroutine (where view state is read
+// race-free), keys the per-domain data_version baseline, and travels into the
+// worker closure so the worker runs only the IO that view needs — never the
+// whole bundle pipeline when only a task feed or a plan projection is on screen.
+type realtimeReloadKind int
+
+const (
+	realtimeReloadNone realtimeReloadKind = iota
+	realtimeReloadBundle
+	realtimeReloadActivity
+	realtimeReloadPlanShow
+	realtimeReloadStats
+	realtimeReloadLogs
+)
+
+// realtimeReloadMsg is the worker-to-main envelope for the changed-tick
+// reload. It is the tick counterpart of refreshAfterViewChangeMsg: the worker
+// cmd does only IO and packs the result here; applyRealtimeReload folds it into
+// the model on the Update goroutine. Each payload carries its own *valid flag
+// so the fold overwrites only what this kind actually loaded — a torn read
+// cannot leak one view's slice into another. status carries a best-effort
+// error string (plan/stats/logs paths swallow their error into the status bar
+// exactly as the old inline code did) while err is the hard failure the board
+// path surfaces.
+type realtimeReloadMsg struct {
+	kind   realtimeReloadKind
+	err    error
+	status string
+	cmdKey uintptr
+
+	// gen is the monotonic generation stamped when this reload cmd was built
+	// on the Update goroutine. applyRealtimeReload drops any msg whose gen is
+	// older than the latest already-applied generation so a slow worker can
+	// never overwrite a newer snapshot with a staler one (F3).
+	gen uint64
+
+	// dataVersion is the DB watermark probed by the tick that spawned this
+	// reload; committed to this kind's baseline only on a successful apply (F2).
+	// dataVersionValid is false on the no-watermark / probe-error path, where
+	// there is no trustworthy baseline to commit.
+	dataVersion      int64
+	dataVersionValid bool
+
+	// scope identity captured on the Update goroutine when the cmd was built.
+	// applyRealtimeReload drops an entity-scoped fold whose captured scope no
+	// longer matches the current context (F4). The per-domain gen guard (F3)
+	// only orders async reloads *within* a domain; it cannot see a synchronous
+	// navigation (open another task, switch plan) that swapped the active entity
+	// between request and apply, so a stale slow worker for the previous entity
+	// would otherwise clobber the new view. Zero/empty means unscoped
+	// (test-constructed or non-entity kind) and is never gated.
+	scopeTaskID int64  // realtimeReloadActivity: the task whose feed this loaded
+	scopeSlug   string // realtimeReloadPlanShow: the plan slug this loaded
+
+	// bundle payload (kind == realtimeReloadBundle)
+	snap       app.TUISnapshot
+	snapValid  bool
+	plans      []app.PlanRollup
+	plansValid bool
+	langs      config.LanguageSettings
+
+	// activity payload (kind == realtimeReloadActivity)
+	activity      []domain.Event
+	activityForID int64
+	activityValid bool
+	anchorID      int64
+
+	// plan-show payload (kind == realtimeReloadPlanShow)
+	planShow  app.PlanShow
+	planValid bool
+
+	// stats payload (kind == realtimeReloadStats)
+	statsSummary domain.MetricsSummary
+	statsValid   bool
+
+	// logs payload (kind == realtimeReloadLogs)
+	events      []domain.EventRow
+	eventCounts map[domain.EventCategory]int
+	logsValid   bool
+}
+
+// realtimeRefreshCmd builds the off-thread changed-tick reload. It runs on the
+// Update goroutine, reads the current view + every input the worker needs, and
+// returns a tea.Cmd whose closure does ONLY IO before packing a
+// realtimeReloadMsg — the closure never touches m (Council/Olivier flagged the
+// former inline realtimeRefresh, which mutated m under the tick, as a data
+// race). applyRealtimeReload performs the assignment back on the Update
+// goroutine. Mirrors the proven refreshHeavyAfterViewChangeCmd packer: same
+// input-capture-then-pure-IO shape and the same self-referential registry key
+// so applyRealtimeReload can drop the entry on fold.
 //
-// View state survives the reload: reloadPlanNetwork clamps the cursor via
-// WithItemCount and keeps collapse keyed by stable wave id; the task activity
-// cursor and the activityLines scroll offset are model state that
-// refreshTaskActivity + refreshActivityLines rebuild around rather than reset.
-// The caller (the refreshTickMsg branch) only reaches here under
-// shouldRealtimeRefresh(), so taskScreenView is the only task-screen state that
-// can be live here — never an edit or an overlay.
-func (m *Model) realtimeRefresh() error {
-	if err := m.refreshCurrentView(); err != nil {
-		return err
-	}
-	// A task drilled open over a plan-network keeps planNetworkOpen set, but
-	// renderTaskScreen takes precedence so the plan-network is not on screen.
-	// Skip its projection reload here — the task-view branch below is the only
-	// live view — so the tick does not run a redundant PlanService.Show() under
-	// an invisible plan-network. Board + plan-only behaviour is unchanged
-	// because taskScreen is taskScreenClosed in those cases.
-	if m.planNetworkOpen && m.taskScreen != taskScreenView {
-		m.reloadPlanNetwork()
-	}
-	if m.taskScreen == taskScreenView && m.taskID > 0 {
-		// Anchor the focused activity card to its event id across the reload.
-		// activityCursor is an index into the feed; a row inserted above it
-		// (newest-first feeds put a new comment at index 0) would otherwise
-		// shift which card the cursor names by one. Capture the id before the
-		// reload and re-resolve the index after so the selected card survives
-		// an insert-above. anchorID stays 0 when nothing is focused, leaving the
-		// existing no-selection behaviour untouched.
-		anchorID := m.focusedActivityEventID()
-		if err := m.refreshTaskActivity(m.taskID); err != nil {
-			return err
+// View scope: the kind decided here picks the IO. The single-task view loads
+// only its activity feed — the board snapshot is NOT rebuilt, because
+// renderTaskScreen fully occludes the board (a board rebuild under it is pure
+// waste). Board / plan / stats / logs each reload only their own projection.
+// Returns nil when nothing is reloadable for the current view (e.g. an empty
+// plan-network), leaving the tick a no-op.
+func (m *Model) realtimeRefreshCmd(kind realtimeReloadKind, dataVersion int64, dataVersionValid bool) tea.Cmd {
+	ctx := m.ctx
+	project := m.project
+
+	// Per-domain generation captured on the Update goroutine: stamped onto every
+	// msg this cmd produces so applyRealtimeReload can drop a stale arrival within
+	// the same domain (F3). The probed watermark version rides along on the same
+	// msgs and is committed only after a successful apply (F2).
+	newStamp := func() func(realtimeReloadMsg) realtimeReloadMsg {
+		gen := m.nextRealtimeReloadGen(kind)
+		return func(r realtimeReloadMsg) realtimeReloadMsg {
+			r.gen = gen
+			r.dataVersion = dataVersion
+			r.dataVersionValid = dataVersionValid
+			return r
 		}
-		m.reanchorActivityCursor(anchorID)
-		m.refreshActivityLines()
 	}
-	return nil
+
+	switch kind {
+	case realtimeReloadActivity:
+		// The single-task view is layered over the board; renderTaskScreen takes
+		// precedence so the board underneath is invisible. Scope the reload to the
+		// activity feed only — skip the bundle snapshot entirely.
+		if m.taskID <= 0 || m.repos.Events == nil {
+			return nil
+		}
+		stamp := newStamp()
+		taskID := m.taskID
+		order := m.activeViewSettings().TaskActivity.Sort.Order
+		anchorID := m.focusedActivityEventID()
+		events := m.repos.Events
+		var cmd tea.Cmd
+		cmd = func() tea.Msg {
+			result := stamp(realtimeReloadMsg{kind: kind, anchorID: anchorID, scopeTaskID: taskID, cmdKey: reflect.ValueOf(cmd).Pointer()})
+			rows, err := events.ListTaskActivity(ctx, project.ID, taskID, order)
+			if err != nil {
+				result.err = err
+				return result
+			}
+			result.activity = rows
+			result.activityForID = taskID
+			result.activityValid = true
+			return result
+		}
+		registerRealtimeReloadCmd(cmd)
+		return cmd
+	case realtimeReloadPlanShow:
+		// Plan-network open (and not under a task view): reload only the plan
+		// projection.
+		if m.repos.Plans == nil || m.planNetworkShow.Plan.Slug == "" {
+			return nil
+		}
+		stamp := newStamp()
+		slug := m.planNetworkShow.Plan.Slug
+		plansSvc := app.NewPlanServiceWithSnapshot(m.repos.Plans, m.repos.activeSnapshot())
+		var cmd tea.Cmd
+		cmd = func() tea.Msg {
+			result := stamp(realtimeReloadMsg{kind: kind, scopeSlug: slug, cmdKey: reflect.ValueOf(cmd).Pointer()})
+			show, err := plansSvc.Show(ctx, project, slug)
+			if err != nil {
+				// Match the old reloadPlanNetwork: surface to the status bar,
+				// not a hard reload failure.
+				result.status = err.Error()
+				return result
+			}
+			result.planShow = show
+			result.planValid = true
+			return result
+		}
+		registerRealtimeReloadCmd(cmd)
+		return cmd
+	case realtimeReloadStats:
+		// Stats › general.
+		if m.repos.Metrics == nil {
+			return nil
+		}
+		stamp := newStamp()
+		period := m.statsPeriod
+		if period == "" {
+			period = "30d"
+		}
+		metrics := m.repos.Metrics
+		var cmd tea.Cmd
+		cmd = func() tea.Msg {
+			result := stamp(realtimeReloadMsg{kind: kind, cmdKey: reflect.ValueOf(cmd).Pointer()})
+			summary, err := metrics.Summary(ctx, project, period, 0)
+			if err != nil {
+				result.err = err
+				return result
+			}
+			result.statsSummary = summary
+			result.statsValid = true
+			return result
+		}
+		registerRealtimeReloadCmd(cmd)
+		return cmd
+	case realtimeReloadLogs:
+		// Stats › logs.
+		if m.repos.Events == nil {
+			return nil
+		}
+		stamp := newStamp()
+		views := m.activeViewSettings()
+		filter := domain.EventFilter{
+			ProjectID:  project.ID,
+			Categories: m.logsCategoryFilter(),
+			Since:      m.logsSinceFloor(views.Logs.WindowDays),
+			Limit:      views.Logs.Limit,
+			Order:      views.Logs.Sort.Order,
+		}
+		since := filter.Since
+		events := m.repos.Events
+		var cmd tea.Cmd
+		cmd = func() tea.Msg {
+			result := stamp(realtimeReloadMsg{kind: kind, cmdKey: reflect.ValueOf(cmd).Pointer()})
+			rows, err := events.ListEvents(ctx, filter)
+			if err != nil {
+				result.err = err
+				return result
+			}
+			counts, err := events.EventCategoryCounts(ctx, project.ID, since)
+			if err != nil {
+				result.err = err
+				return result
+			}
+			result.events = rows
+			result.eventCounts = counts
+			result.logsValid = true
+			return result
+		}
+		registerRealtimeReloadCmd(cmd)
+		return cmd
+	case realtimeReloadBundle:
+		stamp := newStamp()
+		// Home is gated out by shouldRealtimeRefresh; everything else in the
+		// board family (board / table / graph / plans / entity) reloads the heavy
+		// read pipeline (snapshot + rollups) off-thread.
+		views := m.activeViewSettings()
+		cfgSnap := m.repos.activeSnapshot()
+		query := app.NewTUIQueryService(m.repos.Tasks, cfgSnap, m.repos.Dependencies, m.repos.Comments, m.repos.Tags)
+		var plansSvc *app.PlanService
+		if m.repos.Plans != nil {
+			plansSvc = app.NewPlanServiceWithSnapshot(m.repos.Plans, cfgSnap)
+		}
+		langs := m.languages
+		if cfgSnap != nil {
+			langs = cfgSnap.Settings().EffectiveLanguages()
+		}
+		sort := domain.TaskSort{Field: views.Board.Sort.Field, Order: views.Board.Sort.Order}
+		archived := m.includeArchived
+		var preservedTaskID int64
+		if task, ok := m.selectedTask(); ok {
+			preservedTaskID = task.ID
+		}
+		var cmd tea.Cmd
+		cmd = func() tea.Msg {
+			result := stamp(realtimeReloadMsg{kind: kind, langs: langs, anchorID: preservedTaskID, cmdKey: reflect.ValueOf(cmd).Pointer()})
+			s, err := query.Snapshot(ctx, project, sort, app.SnapshotOptions{IncludeArchived: archived})
+			if err != nil {
+				result.err = err
+				return result
+			}
+			result.snap = s
+			result.snapValid = true
+			if plansSvc != nil {
+				if rollups, perr := plansSvc.ListRollups(ctx, project); perr == nil {
+					result.plans = rollups
+					result.plansValid = true
+				}
+			}
+			return result
+		}
+		registerRealtimeReloadCmd(cmd)
+		return cmd
+	default:
+		return nil
+	}
+}
+
+// realtimeReloadRegistry mirrors viewChangeRefreshRegistry: it tracks the
+// function pointer of each cmd realtimeRefreshCmd produces so test helpers can
+// recognise the async tick reload without executing it, and so
+// applyRealtimeReload can drop the entry on fold (otherwise a long session
+// leaks one map entry per changed tick).
+var realtimeReloadRegistry sync.Map
+
+func registerRealtimeReloadCmd(cmd tea.Cmd) uintptr {
+	if cmd == nil {
+		return 0
+	}
+	key := reflect.ValueOf(cmd).Pointer()
+	realtimeReloadRegistry.Store(key, struct{}{})
+	return key
+}
+
+func isRealtimeReloadCmd(cmd tea.Cmd) bool {
+	if cmd == nil {
+		return false
+	}
+	_, ok := realtimeReloadRegistry.Load(reflect.ValueOf(cmd).Pointer())
+	return ok
+}
+
+// applyRealtimeReload folds the worker's view-scoped result into the model.
+// Pure assignment + cursor reanchoring — no IO — so it is safe on the Update
+// goroutine even while a later tick's worker is still running. It is the
+// apply-half of the former inline realtimeRefresh; every m mutation that used
+// to run on the worker side now lives here.
+func (m *Model) applyRealtimeReload(r realtimeReloadMsg) {
+	if r.cmdKey != 0 {
+		realtimeReloadRegistry.Delete(r.cmdKey)
+	}
+	// F3 — stale-generation guard. Two reloads for the same domain can be in
+	// flight (consecutive watermark-moving ticks + a slow worker) and complete
+	// out of order; folding an older snapshot over a newer one would briefly
+	// regress the view. Drop any msg whose generation is older-or-equal to the
+	// latest one already applied for that domain. gen==0 means a legacy/unstamped
+	// msg (test-constructed) — never gated. The committed-on-apply contract
+	// (below) means a dropped stale msg also never advances the domain watermark
+	// baseline (F2 interaction): its version is not committed, so the newer reload
+	// still owns that domain's watermark.
+	if r.gen != 0 && r.gen <= m.lastAppliedRealtimeReloadGen(r.kind) {
+		return
+	}
+	// F4 — stale-scope guard. The gen guard above only orders async reloads
+	// within a domain; a synchronous navigation (open another task, switch the
+	// focused plan) swaps the active entity WITHOUT advancing the domain gen, so
+	// a slow worker captured for the previous entity can still pass F3. Drop the
+	// fold when the captured scope no longer matches the current context — and do
+	// NOT commit the watermark/generation (fall through to neither markApplied nor
+	// commitDataVersion), so the next tick re-observes and reloads the current
+	// entity cleanly. Zero/empty scope is unscoped (legacy/test/non-entity) and is
+	// never gated.
+	if !m.realtimeReloadScopeMatches(r) {
+		return
+	}
+	if r.err != nil {
+		// Hard failure: surface it and do NOT commit the watermark or the
+		// generation (F2). The baseline stays where it was so the next tick
+		// re-observes the same external write and retries the reload.
+		m.status = r.err.Error()
+		return
+	}
+	if r.status != "" {
+		m.status = r.status
+	}
+	// applied tracks whether the payload actually folded in; an empty/torn
+	// payload (!*Valid) leaves the view untouched, so it must NOT commit the
+	// watermark — the write is still pending and the next tick must retry it.
+	applied := false
+	switch r.kind {
+	case realtimeReloadBundle:
+		if r.snapValid {
+			snap := r.snap
+			m.tasks = snap.Tasks
+			m.workflow = snap.Workflow
+			m.dependencies = snap.Dependencies
+			m.comments = snap.Comments
+			m.laws = snap.Laws
+			m.skills = snap.Skills
+			m.personas = snap.Personas
+			m.templates = snap.Templates
+			m.tags = snap.AllTags
+			m.taskTagsMap = snap.TaskTagsByID
+			m.metrics = m.computeMetrics(0)
+			m.languages = r.langs
+			if r.plansValid {
+				m.plans = r.plans
+			}
+			m.invalidateBoardCaches()
+			m.rebuildBoardCaches()
+			m.clampPlanCursor()
+			m.clampGraphCursor()
+			m.clampSelection()
+			m.clampCardIdx()
+			m.clampEntityCursor()
+			m.syncSelectedFromBoard()
+			if r.anchorID > 0 {
+				m.selectTaskByID(r.anchorID)
+			}
+			applied = true
+		}
+	case realtimeReloadActivity:
+		if r.activityValid {
+			m.activity = r.activity
+			m.activityForTask = r.activityForID
+			m.reanchorActivityCursor(r.anchorID)
+			m.refreshActivityLines()
+			applied = true
+		}
+	case realtimeReloadPlanShow:
+		if r.planValid {
+			m.planNetworkShow = r.planShow
+			m.invalidatePlanNetworkRowsCache()
+			rows := m.planNetworkBuildRows()
+			m.planNetworkCursor = m.planNetworkCursor.WithItemCount(len(rows))
+			if m.planNetworkCursor.Cursor() >= len(rows) && len(rows) > 0 {
+				m.planNetworkCursor = m.planNetworkCursor.SetCursor(0)
+			}
+			m.syncPlanNetworkScroll(rows)
+			applied = true
+		}
+	case realtimeReloadStats:
+		if r.statsValid {
+			m.statsSummary = r.statsSummary
+			applied = true
+		}
+	case realtimeReloadLogs:
+		if r.logsValid {
+			rows := r.events
+			if m.logsFilterMode == LogsFilterAll {
+				rows = filterLogVisibleRows(rows)
+			}
+			m.events = rows
+			if m.logsSelected >= len(m.events) {
+				if len(m.events) == 0 {
+					m.logsSelected = 0
+				} else {
+					m.logsSelected = len(m.events) - 1
+				}
+			}
+			m.eventStats = computeEventStats(rows, r.eventCounts)
+			applied = true
+		}
+	}
+	if !applied {
+		return
+	}
+	// Successful apply: advance the stale-guard generation (F3) and commit the
+	// probed watermark baseline (F2). dataVersionValid is false on the
+	// no-watermark / probe-error path, where there is no trustworthy version
+	// to commit — leave the baseline alone so the fallback reload-every-tick
+	// behaviour is preserved.
+	m.markRealtimeReloadApplied(r.kind, r.gen)
+	if r.dataVersionValid {
+		m.commitDataVersion(r.kind, r.dataVersion)
+	}
 }
 
 func (m *Model) refreshCurrentView() error {

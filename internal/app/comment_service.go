@@ -57,6 +57,9 @@ func (s *CommentService) Add(ctx context.Context, project domain.ProjectContext,
 		err = domain.NewError(domain.ErrValidation, "comment body is required", nil)
 		return
 	}
+	if err = domain.ValidateCommentBody(body); err != nil {
+		return
+	}
 	authorType = strings.TrimSpace(authorType)
 	if authorType == "" {
 		authorType = "human"
@@ -117,6 +120,15 @@ func (s *CommentService) AddScoped(ctx context.Context, project domain.ProjectCo
 	w.Body = strings.TrimSpace(w.Body)
 	if w.Body == "" {
 		err = domain.NewError(domain.ErrValidation, "comment body is required", nil)
+		return
+	}
+	if err = domain.ValidateCommentBody(w.Body); err != nil {
+		return
+	}
+	if err = domain.ValidateCommentTitle(w.Title); err != nil {
+		return
+	}
+	if err = domain.ValidateCommentKind(w.Kind); err != nil {
 		return
 	}
 	w.AuthorType = strings.TrimSpace(w.AuthorType)
@@ -270,6 +282,9 @@ func (s *CommentService) Edit(ctx context.Context, project domain.ProjectContext
 		err = domain.NewError(domain.ErrValidation, "comment body is required", nil)
 		return
 	}
+	if err = domain.ValidateCommentBody(body); err != nil {
+		return
+	}
 
 	existing, err := s.repo.CommentByID(ctx, project.ID, commentID)
 	if err != nil {
@@ -326,7 +341,20 @@ func (s *CommentService) EditScoped(ctx context.Context, project domain.ProjectC
 			err = domain.NewError(domain.ErrValidation, "comment body is required", nil)
 			return
 		}
+		if err = domain.ValidateCommentBody(trimmed); err != nil {
+			return
+		}
 		edit.Body = &trimmed
+	}
+	if edit.Title != nil {
+		if err = domain.ValidateCommentTitle(*edit.Title); err != nil {
+			return
+		}
+	}
+	if edit.Kind != nil {
+		if err = domain.ValidateCommentKind(*edit.Kind); err != nil {
+			return
+		}
 	}
 
 	// Reject a no-op patch: an edit that changes nothing (no body, no

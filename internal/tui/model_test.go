@@ -299,11 +299,7 @@ func TestModelRealtimeTickRefreshesBoardTasks(t *testing.T) {
 		t.Fatalf("CreateTask() error = %v", err)
 	}
 
-	updated, cmd := model.Update(refreshTickMsg{})
-	if cmd == nil {
-		t.Fatal("Update(refreshTickMsg) command = nil, want next realtime tick")
-	}
-	got := updated.(Model)
+	got, _ := driveRealtimeTick(t, model)
 	if len(got.tasks) != 1 || got.tasks[0].Title != "External task" {
 		t.Fatalf("tasks after realtime tick = %#v, want external task", got.tasks)
 	}

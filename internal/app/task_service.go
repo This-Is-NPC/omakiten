@@ -123,12 +123,19 @@ func (s *TaskService) createTask(ctx context.Context, project domain.ProjectCont
 		err = domain.NewError(domain.ErrValidation, "task title is required", nil)
 		return
 	}
+	if err = domain.ValidateTaskTitle(title); err != nil {
+		return
+	}
+	description = strings.TrimSpace(description)
+	if err = domain.ValidateTaskDescription(description); err != nil {
+		return
+	}
 	priorityID, err := s.resolvePriorityInput(strings.TrimSpace(priority))
 	if err != nil {
 		return
 	}
 
-	task, err = s.workflow.CreateTask(ctx, project.ID, title, strings.TrimSpace(description), priorityID, strings.TrimSpace(bucketKey), parentID)
+	task, err = s.workflow.CreateTask(ctx, project.ID, title, description, priorityID, strings.TrimSpace(bucketKey), parentID)
 	return
 }
 
@@ -204,11 +211,17 @@ func (s *TaskService) Edit(ctx context.Context, project domain.ProjectContext, t
 			err = domain.NewError(domain.ErrValidation, "task title is required", nil)
 			return
 		}
+		if err = domain.ValidateTaskTitle(title); err != nil {
+			return
+		}
 		update.Title = &title
 		changed = true
 	}
 	if update.Description != nil {
 		description := strings.TrimSpace(*update.Description)
+		if err = domain.ValidateTaskDescription(description); err != nil {
+			return
+		}
 		update.Description = &description
 		changed = true
 	}

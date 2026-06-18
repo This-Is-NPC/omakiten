@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"reflect"
 	"sync"
 	"testing"
 
@@ -1522,5 +1523,102 @@ func TestUnassignTaskFromPlanNotFound(t *testing.T) {
 	var coded *domain.CodedError
 	if !errors.As(err, &coded) || coded.Code != domain.ErrTaskNotFound {
 		t.Fatalf("missing task error = %v, want ErrTaskNotFound", err)
+	}
+}
+
+// TestProjectBulkPlanReadsMatchPerPlan verifies the project-wide bulk hydrators
+// (ListProjectPlanWaves / ListProjectPlanTasks) return, when grouped by plan,
+// exactly what the per-plan ListPlanWaves / ListPlanTasks return — the
+// invariant ListRollups' N+1 kill relies on for byte-identical output — and
+// that the bulk reads stay scoped to the active project.
+func TestProjectBulkPlanReadsMatchPerPlan(t *testing.T) {
+	ctx, store, project := setupPlans(t)
+
+	// Two plans in the active project, each with two waves and assigned tasks.
+	type planFix struct {
+		plan  domain.Plan
+		waves []domain.PlanWave
+	}
+	var fixtures []planFix
+	for _, slug := range []string{"plan-a", "plan-b"} {
+		plan, err := store.CreatePlan(ctx, project.ID, slug, slug, "")
+		if err != nil {
+			t.Fatalf("CreatePlan %s: %v", slug, err)
+		}
+		w1, err := store.AddPlanWave(ctx, project.ID, plan.ID, "wave-1", 0)
+		if err != nil {
+			t.Fatalf("AddPlanWave: %v", err)
+		}
+		w2, err := store.AddPlanWave(ctx, project.ID, plan.ID, "wave-2", 0)
+		if err != nil {
+			t.Fatalf("AddPlanWave: %v", err)
+		}
+		for i, w := range []domain.PlanWave{w1, w2} {
+			task, err := store.CreateTask(ctx, project.ID, slug+"-t"+string(rune('1'+i)), "", domain.Priority(2), "backlog", nil, store.snap())
+			if err != nil {
+				t.Fatalf("CreateTask: %v", err)
+			}
+			if err := store.AssignTaskToPlan(ctx, project.ID, task.ID, plan.ID, w.ID); err != nil {
+				t.Fatalf("AssignTaskToPlan: %v", err)
+			}
+		}
+		fixtures = append(fixtures, planFix{plan: plan, waves: []domain.PlanWave{w1, w2}})
+	}
+
+	// A second project with its own plan that must not leak into the bulk reads.
+	other, err := store.UpsertProject(ctx, "Other", "other", "/work/other")
+	if err != nil {
+		t.Fatalf("UpsertProject other: %v", err)
+	}
+	otherPlan, err := store.CreatePlan(ctx, other.ID, "plan-x", "plan-x", "")
+	if err != nil {
+		t.Fatalf("CreatePlan other: %v", err)
+	}
+	if _, err := store.AddPlanWave(ctx, other.ID, otherPlan.ID, "wave-x", 0); err != nil {
+		t.Fatalf("AddPlanWave other: %v", err)
+	}
+
+	// Bulk waves, grouped by plan, equal per-plan ListPlanWaves.
+	bulkWaves, err := store.ListProjectPlanWaves(ctx, project.ID)
+	if err != nil {
+		t.Fatalf("ListProjectPlanWaves: %v", err)
+	}
+	wavesByPlan := map[int64][]domain.PlanWave{}
+	for _, w := range bulkWaves {
+		if w.PlanID == otherPlan.ID {
+			t.Fatalf("ListProjectPlanWaves leaked a wave from another project: %+v", w)
+		}
+		wavesByPlan[w.PlanID] = append(wavesByPlan[w.PlanID], w)
+	}
+	for _, f := range fixtures {
+		want, err := store.ListPlanWaves(ctx, project.ID, f.plan.ID)
+		if err != nil {
+			t.Fatalf("ListPlanWaves: %v", err)
+		}
+		if !reflect.DeepEqual(wavesByPlan[f.plan.ID], want) {
+			t.Fatalf("plan %d bulk waves %+v != per-plan %+v", f.plan.ID, wavesByPlan[f.plan.ID], want)
+		}
+	}
+
+	// Bulk tasks, grouped by plan, equal per-plan ListPlanTasks.
+	bulkTasks, err := store.ListProjectPlanTasks(ctx, project.ID, store.snap())
+	if err != nil {
+		t.Fatalf("ListProjectPlanTasks: %v", err)
+	}
+	tasksByPlan := map[int64][]domain.PlanTaskRow{}
+	for _, tr := range bulkTasks {
+		if tr.PlanID == otherPlan.ID {
+			t.Fatalf("ListProjectPlanTasks leaked a task from another project: %+v", tr)
+		}
+		tasksByPlan[tr.PlanID] = append(tasksByPlan[tr.PlanID], tr.PlanTaskRow)
+	}
+	for _, f := range fixtures {
+		want, err := store.ListPlanTasks(ctx, project.ID, f.plan.ID, store.snap())
+		if err != nil {
+			t.Fatalf("ListPlanTasks: %v", err)
+		}
+		if !reflect.DeepEqual(tasksByPlan[f.plan.ID], want) {
+			t.Fatalf("plan %d bulk tasks %+v != per-plan %+v", f.plan.ID, tasksByPlan[f.plan.ID], want)
+		}
 	}
 }

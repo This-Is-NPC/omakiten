@@ -94,6 +94,13 @@ type Repositories struct {
 	// nil, destructive flows still snapshot (best-effort).
 	Checkpointer app.Checkpointer
 
+	// Watermark probes the DB change watermark (PRAGMA data_version) so
+	// the realtime tick can skip a full reload on idle seconds. Optional —
+	// when nil the tick reloads every cadence (pre-watermark behaviour),
+	// so test fixtures that don't wire it keep working. Production wires
+	// *sqlite.Store here (it satisfies the port via a pinned connection).
+	Watermark app.DataVersionReader
+
 	// DispatchCommand invokes the root cobra command in-process and
 	// returns the JSON envelope it wrote to stdout. Notification actions
 	// rely on it to run CLI commands (e.g. "workflow orphans --confirm")
@@ -436,6 +443,24 @@ type Model struct {
 	// during the session. CLI-side cd-on-exit reads this after program.Run()
 	// returns so the parent shell wrapper can `cd` into the project.
 	lastProjectRoot string
+
+	// dataVersionBaselines stores the SQLite change watermark (PRAGMA
+	// data_version) per realtime reload domain. A scoped reload in one domain
+	// (for example the task activity view) must not consume another domain's
+	// pending board/bundle change. Map presence means the domain has an
+	// established baseline; zero is a valid SQLite value. Baselines advance only
+	// from applyRealtimeReload after that domain's payload has successfully
+	// folded into m.
+	dataVersionBaselines map[realtimeReloadKind]int64
+
+	// realtimeReloadGen is a per-domain monotonic generation counter incremented
+	// on the Update goroutine each time a changed-tick reload cmd is built. The
+	// value is stamped onto the realtimeReloadMsg the worker produces so
+	// applyRealtimeReload can recognise stale arrivals within the same domain.
+	// lastAppliedReloadGen tracks the newest generation already folded per domain;
+	// a high-gen activity reload must never make a lower-gen bundle reload stale.
+	realtimeReloadGen    map[realtimeReloadKind]uint64
+	lastAppliedReloadGen map[realtimeReloadKind]uint64
 
 	// events is the bounded row buffer rendered by the unified Logs
 	// inspector (umbrella #320, sub-task #325). Populated by
@@ -783,6 +808,53 @@ type Model struct {
 	// that affects the projection bumps the key; identical inputs
 	// short-circuit to the cached slice without re-running the DFS.
 	planNetworkRowsCache planNetworkRowsCacheEntry
+
+	// planNetworkBuildCache memoises the FULL planNetworkBuildData
+	// (rows + cross-blocker index + next-claimable id + the
+	// critical-path DFS), which the renderer used to recompute on
+	// every View(). Keyed on the same structural fingerprint as the
+	// row cache PLUS the dependency edge set (the critical-path DFS
+	// reads show.Dependencies, which the row-only key omits because the
+	// row skeleton does not depend on it). Identical inputs short-
+	// circuit to the cached build so the DFS runs once per state change
+	// rather than once per frame.
+	//
+	// Held behind a pointer so the value-receiver renderer
+	// (renderPlanNetwork, reached from View()) can persist the freshly
+	// built projection through the shared entry — the idle-tick render
+	// path has no pointer-receiver handler to warm it. Lazily allocated
+	// on first build.
+	planNetworkBuildCache *planNetworkBuildCacheEntry
+
+	// boardMutationEpoch is the local mutation counter the board-string
+	// memo keys on. It is bumped on every rebuildBoardCaches() call —
+	// which every inline m.refresh() and every realtime-reload board
+	// fold runs — so the epoch moves on same-connection self-writes
+	// that the data_version watermark deliberately does NOT move for.
+	// Keying the board memo on this epoch (NOT the watermark) is what
+	// stops a stale render from being served after a local edit.
+	boardMutationEpoch uint64
+
+	// boardStringCache memoises renderBoard()'s whole output string so a
+	// frame whose render inputs are unchanged reuses the prior string
+	// instead of re-walking every lane + card. Keyed on the local
+	// mutation epoch + the board cursor (colIdx/cardIdx), horizontal
+	// carousel offset, terminal width, move-mode flag, and the
+	// archived-toggle — the full set of inputs renderBoard reads.
+	//
+	// Held behind a pointer so the value-receiver render path
+	// (renderBoard, reached from View()) can write the freshly-rendered
+	// string back through the shared entry — there is no pointer-receiver
+	// handler on the idle-tick render path to warm it otherwise. The
+	// pointer is lazily allocated on first render.
+	boardStringCache *boardStringCacheEntry
+
+	// boardBadgeCounts holds the per-task badge-count maps the kanban
+	// card reads (dependency / comment / direct-child counts). Rebuilt
+	// once per rebuildBoardCaches() from the loaded slices so
+	// taskBoardBadges does O(1) map lookups instead of an O(n) scan per
+	// card per frame.
+	boardBadgeCounts boardBadgeCounts
 
 	// statsSummary caches the last-fetched metrics summary. statsPeriod
 	// holds the active filter ("7d", "30d", "all"); refreshed on view entry

@@ -79,7 +79,8 @@ func TestMigration021RecoversOrphanBucketIDsFromEvents(t *testing.T) {
 		   ('023_plans.sql'),
 		   ('024_search_index_plans.sql'),
 		   ('025_projects_cascade.sql'),
-		   ('033_drop_context_entries.sql')`,
+		   ('033_drop_context_entries.sql'),
+		   ('034_realtime_read_path_indexes.sql')`,
 		`INSERT INTO projects (id, slug, name, root_path) VALUES (1, 'p', 'P', '/p')`,
 		// Tasks pointing at SQL-era PKs (the broken state).
 		`INSERT INTO tasks (id, project_id, bucket_id, title, priority_id) VALUES

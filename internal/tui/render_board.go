@@ -305,7 +305,68 @@ func (m *Model) syncBoardColScroll() {
 	m.boardColOffset = scrollIntoView(m.boardColOffset, focused, n, cap)
 }
 
+// boardStringCacheEntry holds the last full board render plus the
+// fingerprint that produced it. valid stays false until the first render
+// so a fresh model never hands out a stale empty string.
+type boardStringCacheEntry struct {
+	valid bool
+	key   uint64
+	body  string
+}
+
+// renderBoard returns the kanban board string, served from the memo when
+// the render inputs are unchanged since the last frame. The cache is held
+// behind a pointer (m.boardStringCache) so this value-receiver path — the
+// one View() reaches on an idle realtime tick — can write the freshly
+// rendered string back through the shared entry.
+//
+// The memo key folds the LOCAL mutation epoch (bumped in
+// rebuildBoardCaches on every self-write, NOT the data_version watermark
+// which does not move on same-connection writes) with every other input
+// renderBoardUncached reads: the board cursor, the horizontal carousel
+// offset, terminal width, the move-mode flag, and the archived toggle.
+// Get the epoch wrong and a local edit would serve a stale board; the
+// epoch is precisely what moves on that write.
 func (m Model) renderBoard() string {
+	key := m.boardStringCacheKey()
+	if m.boardStringCache != nil && m.boardStringCache.valid && m.boardStringCache.key == key {
+		return m.boardStringCache.body
+	}
+	body := m.renderBoardUncached()
+	if m.boardStringCache != nil {
+		*m.boardStringCache = boardStringCacheEntry{valid: true, key: key, body: body}
+	}
+	return body
+}
+
+// boardStringCacheKey fingerprints every input renderBoardUncached reads.
+// The local mutation epoch covers all task/dependency/comment/workflow
+// state (it bumps whenever rebuildBoardCaches runs); the remaining fields
+// are the view-local cursor + geometry the epoch does not track.
+//
+// Geometry is BOTH axes: availableWidth drives column sizing/capacity and
+// boardViewportRows drives the per-lane vertical viewport. A vertical-only
+// resize (WindowSizeMsg moves m.height but width is unchanged) does NOT
+// bump the mutation epoch or invalidate the cache, so the height-derived
+// viewport must be folded in directly — otherwise the same key would serve
+// a board string sized for the old height, which can overshoot the screen
+// (see the sizing comment in renderBoardUncached). We fold the actual
+// boardViewportRows the render reads rather than raw m.height so the key
+// only moves when the value layout actually depends on changes.
+func (m Model) boardStringCacheKey() uint64 {
+	f := newFingerprint()
+	f.writeInt64(int64(m.boardMutationEpoch))
+	f.writeInt64(int64(m.colIdx))
+	f.writeInt64(int64(m.cardIdx))
+	f.writeInt64(int64(m.boardColOffset))
+	f.writeInt64(int64(m.availableWidth()))
+	f.writeInt64(int64(m.boardViewportRows()))
+	f.writeBool(m.moveMode)
+	f.writeBool(m.includeArchived)
+	return f.sum()
+}
+
+func (m Model) renderBoardUncached() string {
 	if len(m.workflow.Buckets) == 0 {
 		return m.renderPanel(m.t("tui.empty.board_no_buckets"))
 	}
@@ -431,16 +492,44 @@ func (m Model) taskBoardBadges(task domain.Task) []string {
 	if badge := m.priorityBadge(task.Priority); badge != "" {
 		badges = append(badges, badge)
 	}
-	if deps := m.dependencyCount(task.ID); deps > 0 {
+	if deps := m.boardDependencyCount(task.ID); deps > 0 {
 		badges = append(badges, m.styles.badgeBlocker.Render(fmt.Sprintf("%d %s", deps, plural(deps, m.t("tui.badge.blocker"), m.t("tui.badge.blockers")))))
 	}
-	if cmts := m.commentCount(task.ID); cmts > 0 {
+	if cmts := m.boardCommentCount(task.ID); cmts > 0 {
 		badges = append(badges, m.styles.badgeComment.Render(fmt.Sprintf("%d %s", cmts, plural(cmts, m.t("tui.badge.comment"), m.t("tui.badge.comments")))))
 	}
-	if subs := m.subtaskCount(task.ID); subs > 0 {
+	if subs := m.boardSubtaskCount(task.ID); subs > 0 {
 		badges = append(badges, m.styles.badgeSubtask.Render(fmt.Sprintf("%d %s", subs, plural(subs, m.t("tui.badge.subtask"), m.t("tui.badge.subtasks")))))
 	}
 	return badges
+}
+
+// boardDependencyCount / boardCommentCount / boardSubtaskCount read the
+// precomputed boardBadgeCounts maps when they are populated (the common
+// path: rebuildBoardCaches ran on the last refresh) and fall back to the
+// O(n) live scan when the maps are nil — keeping value-receiver render
+// paths and tests that never call rebuildBoardCaches correct. The map
+// build mirrors the scan bodies exactly, so the badge output is identical
+// either way; only the per-frame cost changes.
+func (m Model) boardDependencyCount(taskID int64) int {
+	if m.boardBadgeCounts.depByTask != nil {
+		return m.boardBadgeCounts.depByTask[taskID]
+	}
+	return m.dependencyCount(taskID)
+}
+
+func (m Model) boardCommentCount(taskID int64) int {
+	if m.boardBadgeCounts.commentByTask != nil {
+		return m.boardBadgeCounts.commentByTask[taskID]
+	}
+	return m.commentCount(taskID)
+}
+
+func (m Model) boardSubtaskCount(taskID int64) int {
+	if m.boardBadgeCounts.childByParent != nil {
+		return m.boardBadgeCounts.childByParent[taskID]
+	}
+	return m.subtaskCount(taskID)
 }
 
 func (m Model) renderEmptyBoardHint() string {
