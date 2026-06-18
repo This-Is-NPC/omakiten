@@ -91,10 +91,17 @@ OKT_CLI_LANG=en OKT_AGENT_LANG="English" OKT_PRESET=omakase OKT_HARNESSES=claude
 Supported tools: `claude-code`, `claude-desktop`, `codex`, `crush`, `github-copilot`, `opencode`.
 
 Both installers verify the downloaded release archive's SHA-256 against the
-goreleaser-published `checksums.txt` (fetched over HTTPS from the release host)
-**before** extracting or running it — the same gate every in-app `okt update`
-applies. A checksum mismatch aborts the install non-zero and leaves no binary
-on your PATH.
+goreleaser-published `checksums.txt` **before** extracting or running it — the
+same gate every in-app `okt update` applies. By default, the checksum trust root
+is pinned to `https://github.com/This-Is-NPC/omakiten/...` even when an artifact
+download mirror is configured for tests or private release infrastructure. A
+mirror can provide `checksums.txt` only with the explicit opt-in
+`OKT_ALLOW_MIRROR_CHECKSUM=1` plus the separate `OKT_CHECKSUM_BASE=<mirror>`
+override; enabling that means you trust the mirror for the checksum authority. A
+checksum mismatch or unavailable pinned checksum aborts the install non-zero and
+does not install or replace the binary in `INSTALL_DIR` (any binary already on
+your PATH from a prior install is left untouched, not removed). This model assumes TLS to the checksum origin;
+release signing / SLSA provenance is not implemented yet.
 
 ---
 
