@@ -112,3 +112,62 @@ func TestDataVersionAfterCloseIsSafe(t *testing.T) {
 		t.Fatalf("Close() = %v", err)
 	}
 }
+
+// TestDataVersionSelfHealsAfterProbeError proves the realtime-tick gate cannot
+// wedge permanently on a one-shot probe error. A first call pins the probe
+// connection; we then close that pinned connection out from under the Store to
+// simulate a poisoned/dead conn (driver.ErrBadConn, a cancelled-ctx casualty,
+// etc). The next DataVersion call MUST fail on the dead conn, then close+nil
+// versionConn so the call AFTER it re-pins a fresh connection and succeeds —
+// without the self-heal that re-pin never happens and every later probe
+// replays the broken connection forever.
+func TestDataVersionSelfHealsAfterProbeError(t *testing.T) {
+	ctx := context.Background()
+	store, err := Open(ctx, t.TempDir()+"/omakiten.db")
+	if err != nil {
+		t.Fatalf("Open() = %v", err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+
+	// First call pins the probe connection.
+	if _, err := store.DataVersion(ctx); err != nil {
+		t.Fatalf("DataVersion(pin) = %v", err)
+	}
+
+	// Poison the pinned connection out from under the Store. We hold versionMu
+	// to mirror the method's own guard and avoid racing the field; the close
+	// makes the next QueryRowContext on this conn fail.
+	store.versionMu.Lock()
+	if store.versionConn == nil {
+		store.versionMu.Unlock()
+		t.Fatalf("expected versionConn to be pinned after first DataVersion")
+	}
+	if err := store.versionConn.Close(); err != nil {
+		store.versionMu.Unlock()
+		t.Fatalf("closing pinned conn underneath = %v", err)
+	}
+	store.versionMu.Unlock()
+
+	// Probe on the dead connection must error AND self-heal (close+nil).
+	if _, err := store.DataVersion(ctx); err == nil {
+		t.Fatalf("DataVersion on poisoned conn unexpectedly succeeded")
+	}
+	store.versionMu.Lock()
+	if store.versionConn != nil {
+		store.versionMu.Unlock()
+		t.Fatalf("self-heal did not nil versionConn after probe error")
+	}
+	store.versionMu.Unlock()
+
+	// The very next call must re-pin a fresh connection and succeed — proving
+	// the gate recovers rather than wedging permanently.
+	if _, err := store.DataVersion(ctx); err != nil {
+		t.Fatalf("DataVersion did not re-pin after self-heal: %v", err)
+	}
+	store.versionMu.Lock()
+	repinned := store.versionConn != nil
+	store.versionMu.Unlock()
+	if !repinned {
+		t.Fatalf("expected a fresh versionConn pinned after recovery")
+	}
+}

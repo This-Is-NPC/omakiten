@@ -386,10 +386,18 @@ func OpenWithOptions(ctx context.Context, path string, opts Options) (*Store, er
 	// single live connection avoids "database is locked" surprises when both
 	// the TUI and the MCP server share one Store. Idle conn caps at 2 so the
 	// reader pool can warm up without holding extra fds open indefinitely.
-	// MaxOpenConns lowered from 4 → 2 because the TUI is read-mostly and the
-	// extra connections never carried real concurrency (single writer
-	// regardless) while costing extra fd / cache duplication.
-	db.SetMaxOpenConns(2)
+	// MaxOpenConns was originally lowered from 4 → 2 because the TUI is
+	// read-mostly and the extra connections never carried real concurrency
+	// (single writer regardless) while costing extra fd / cache duplication.
+	//
+	// It is now 3, not 2: DataVersion pins ONE connection out of the pool for
+	// the Store's lifetime (see the versionConn field comment). That pin is
+	// permanent, so with MaxOpenConns=2 only a single connection remained for
+	// everything else — and the same *Store is shared with the MCP server, so
+	// under concurrent TUI + MCP load that lone connection serialized all other
+	// work. Reserving 1 for the lifetime data_version pin and keeping 2 usable
+	// restores the pre-pin concurrency budget.
+	db.SetMaxOpenConns(3)
 	db.SetMaxIdleConns(2)
 
 	store := &Store{db: db}
@@ -455,6 +463,17 @@ func (s *Store) DataVersion(ctx context.Context) (int64, error) {
 
 	var version int64
 	if err := s.versionConn.QueryRowContext(ctx, "PRAGMA data_version").Scan(&version); err != nil {
+		// Self-heal: a probe error (driver.ErrBadConn, a closed connection, a
+		// cancelled ctx that poisoned the conn) leaves versionConn unusable.
+		// Close and nil it under the held versionMu so the NEXT call re-pins a
+		// fresh connection instead of replaying the broken one forever. Without
+		// this the realtime-tick gate would wedge permanently — every later
+		// probe reuses the dead conn, the gate falls back to always-reload, and
+		// the status line spams the error until process restart. Close runs
+		// exactly once before the nil, so there is no double-close, and the
+		// re-pin is serialized by the mutex this method already holds.
+		_ = s.versionConn.Close()
+		s.versionConn = nil
 		return 0, fmt.Errorf("read PRAGMA data_version: %w", err)
 	}
 	return version, nil
