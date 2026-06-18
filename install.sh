@@ -12,13 +12,23 @@ set -euo pipefail
 REPO="This-Is-NPC/omakiten"
 INSTALL_DIR="${INSTALL_DIR:-$HOME/.local/bin}"
 
-# Base hosts default to GitHub but are overridable so the hermetic
-# tamper-abort test (and any release mirror) can point the download +
-# checksum fetch at a local HTTPS endpoint without rewriting URL logic.
-# Production users never set these; the trust assumption (TLS to the
-# release host) is unchanged.
+# Base hosts default to GitHub but are overridable for release lookup and
+# artifact downloads so hermetic tests (and any release mirror) can point those
+# requests at a local endpoint without rewriting URL logic. Checksums are a
+# separate trust root: by default checksums.txt stays pinned to GitHub, and a
+# mirrored checksum host requires OKT_ALLOW_MIRROR_CHECKSUM=1 plus the separate
+# OKT_CHECKSUM_BASE override.
 GITHUB_API_BASE="${GITHUB_API_BASE:-https://api.github.com}"
 GITHUB_DL_BASE="${GITHUB_DL_BASE:-https://github.com}"
+CHECKSUM_BASE="https://github.com"
+
+if [ "${OKT_ALLOW_MIRROR_CHECKSUM:-}" = "1" ]; then
+  if [ -z "${OKT_CHECKSUM_BASE:-}" ]; then
+    echo "error: OKT_ALLOW_MIRROR_CHECKSUM=1 requires OKT_CHECKSUM_BASE to name the checksum mirror" >&2
+    exit 1
+  fi
+  CHECKSUM_BASE="${OKT_CHECKSUM_BASE%/}"
+fi
 
 get_latest_tag() {
   curl -fsSL "${GITHUB_API_BASE}/repos/${REPO}/releases/latest" |
@@ -66,15 +76,15 @@ sha256_of() {
 # very first okt binary a user runs is verified the same way every later
 # `okt update` is.
 #
-# Trust assumption: the canonical hash comes from the release asset
-# checksums.txt fetched over HTTPS from the release host (GitHub). We trust
-# the TLS connection to that host to deliver an authentic checksums.txt;
-# the archive is then pinned to that file. This closes the supply-chain gap
-# between bootstrap and the updater but is NOT a substitute for signing /
-# notarization / SLSA provenance (out of scope here).
+# Trust assumption: by default the canonical hash comes from checksums.txt
+# fetched over HTTPS from GitHub, independent of any artifact mirror override.
+# Mirrored checksums are allowed only via the explicit OKT_ALLOW_MIRROR_CHECKSUM
+# + OKT_CHECKSUM_BASE opt-in, which means the caller is choosing that checksum
+# trust root. This is NOT a substitute for signing / notarization / SLSA
+# provenance (out of scope here).
 verify_checksum() {
   local archive="$1" asset="$2" tag="$3" tmpdir="$4"
-  local sums_url="${GITHUB_DL_BASE}/${REPO}/releases/download/v${tag}/checksums.txt"
+  local sums_url="${CHECKSUM_BASE}/${REPO}/releases/download/v${tag}/checksums.txt"
   local sums="${tmpdir}/checksums.txt"
 
   echo "=> Verifying checksum against ${sums_url}"

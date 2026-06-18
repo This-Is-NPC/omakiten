@@ -6,9 +6,11 @@
 // in-app updater (internal/cli/update.go:362-383) actually holds.
 //
 // The harness is fully self-contained: a local httptest server stands in for
-// the GitHub release host (install.sh's GITHUB_API_BASE / GITHUB_DL_BASE are
-// pointed at it), the "okt" binary inside the archive is a trivial shell stub,
-// and HOME/INSTALL_DIR are temp dirs so nothing touches the host. No network.
+// the GitHub release host, the "okt" binary inside the archive is a trivial
+// shell stub, and HOME/INSTALL_DIR are temp dirs so nothing touches the host.
+// Tests that need mirrored checksums opt in explicitly with
+// OKT_ALLOW_MIRROR_CHECKSUM + OKT_CHECKSUM_BASE; the default trust-root test
+// proves GITHUB_DL_BASE alone cannot redirect checksums.
 package installscript
 
 import (
@@ -24,6 +26,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync/atomic"
 	"testing"
 )
 
@@ -118,14 +121,27 @@ func repoRoot(t *testing.T) string {
 	return filepath.Clean(filepath.Join(wd, "..", ".."))
 }
 
-// runInstall executes install.sh against the fake server and returns the
-// combined output, the install dir, and the command error (nil on exit 0).
+// runInstall executes install.sh against the fake server with the explicit
+// mirrored-checksum opt-in used by the positive and tamper harness paths.
 func runInstall(t *testing.T, srv *httptest.Server) (string, string, error) {
+	return runInstallEnv(t, srv, []string{
+		"OKT_ALLOW_MIRROR_CHECKSUM=1",
+		"OKT_CHECKSUM_BASE=" + srv.URL,
+	}, "")
+}
+
+// runInstallEnv executes install.sh against the fake server and returns the
+// combined output, the install dir, and the command error (nil on exit 0).
+func runInstallEnv(t *testing.T, srv *httptest.Server, extraEnv []string, pathPrefix string) (string, string, error) {
 	t.Helper()
 	root := repoRoot(t)
 	script := filepath.Join(root, "install.sh")
 	home := t.TempDir()
 	installDir := filepath.Join(t.TempDir(), "bin")
+	pathValue := os.Getenv("PATH")
+	if pathPrefix != "" {
+		pathValue = pathPrefix + string(os.PathListSeparator) + pathValue
+	}
 
 	cmd := exec.Command("bash", script)
 	cmd.Env = append(os.Environ(),
@@ -134,10 +150,88 @@ func runInstall(t *testing.T, srv *httptest.Server) (string, string, error) {
 		"GITHUB_API_BASE="+srv.URL,
 		"GITHUB_DL_BASE="+srv.URL,
 		"SHELL=/bin/bash",
-		"PATH="+os.Getenv("PATH"),
+		"PATH="+pathValue,
 	)
+	cmd.Env = append(cmd.Env, extraEnv...)
 	out, err := cmd.CombinedOutput()
 	return string(out), installDir, err
+}
+
+func curlBlocker(t *testing.T) (string, []string, string) {
+	t.Helper()
+	realCurl, err := exec.LookPath("curl")
+	if err != nil {
+		t.Skip("curl not available")
+	}
+	dir := t.TempDir()
+	logPath := filepath.Join(t.TempDir(), "curl.log")
+	script := fmt.Sprintf(`#!/bin/sh
+url=""
+for arg in "$@"; do
+  case "$arg" in
+    http://*|https://*) url="$arg" ;;
+  esac
+done
+printf '%%s\n' "$url" >> "$CURL_LOG"
+case "$url" in
+  https://github.com/This-Is-NPC/omakiten/releases/download/v%s/checksums.txt)
+    echo "blocked pinned checksum fetch for hermetic test: $url" >&2
+    exit 22
+    ;;
+esac
+exec "$REAL_CURL" "$@"
+`, fakeTag)
+	if err := os.WriteFile(filepath.Join(dir, "curl"), []byte(script), 0o755); err != nil {
+		t.Fatalf("write curl blocker: %v", err)
+	}
+	return dir, []string{"REAL_CURL=" + realCurl, "CURL_LOG=" + logPath}, logPath
+}
+
+func TestInstallSh_DownloadMirrorCannotRedirectChecksumByDefault(t *testing.T) {
+	if _, err := exec.LookPath("bash"); err != nil {
+		t.Skip("bash not available")
+	}
+	asset := scriptAsset(t)
+	archive := buildArchive(t)
+	sum := fmt.Sprintf("%x", sha256.Sum256(archive))
+	var checksumHits atomic.Int32
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/repos/This-Is-NPC/omakiten/releases/latest", func(w http.ResponseWriter, _ *http.Request) {
+		fmt.Fprintf(w, `{"tag_name": "v%s"}`, fakeTag)
+	})
+	dlPath := fmt.Sprintf("/This-Is-NPC/omakiten/releases/download/v%s/", fakeTag)
+	mux.HandleFunc(dlPath+asset, func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write(archive)
+	})
+	mux.HandleFunc(dlPath+"checksums.txt", func(w http.ResponseWriter, _ *http.Request) {
+		checksumHits.Add(1)
+		fmt.Fprintf(w, "%s  %s\n", sum, asset)
+	})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	pathPrefix, extraEnv, _ := curlBlocker(t)
+	out, installDir, err := runInstallEnv(t, srv, extraEnv, pathPrefix)
+
+	if err == nil {
+		t.Fatalf("expected non-zero exit when pinned checksum fetch is unavailable, got success.\noutput:\n%s", out)
+	}
+	pinnedURL := fmt.Sprintf("https://github.com/This-Is-NPC/omakiten/releases/download/v%s/checksums.txt", fakeTag)
+	if !strings.Contains(out, "Verifying checksum against "+pinnedURL) {
+		t.Fatalf("expected checksum verification to use pinned GitHub URL %s, got:\n%s", pinnedURL, out)
+	}
+	mirrorURL := fmt.Sprintf("%s/This-Is-NPC/omakiten/releases/download/v%s/checksums.txt", srv.URL, fakeTag)
+	if strings.Contains(out, mirrorURL) {
+		t.Fatalf("checksum URL used artifact mirror by default; output:\n%s", out)
+	}
+	if hits := checksumHits.Load(); hits != 0 {
+		t.Fatalf("artifact mirror served checksums.txt %d time(s); expected 0", hits)
+	}
+	if _, statErr := os.Stat(filepath.Join(installDir, "okt")); !os.IsNotExist(statErr) {
+		t.Errorf("binary must NOT be installed when pinned checksum fetch fails; stat err = %v", statErr)
+	}
+	t.Logf("default trust-root pin OK: exit=%v\n%s", err, out)
 }
 
 // TestInstallSh_TamperedArchive_AbortsNonZeroNoBinary is THE test: a tampered
