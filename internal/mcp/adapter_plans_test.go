@@ -3,7 +3,10 @@ package mcp
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"testing"
+
+	"omakiten/internal/domain"
 )
 
 // callPlanTool dispatches a plans.* tool via CallTool and returns the decoded
@@ -74,6 +77,42 @@ func TestAdapterPlansEditThroughCallTool(t *testing.T) {
 	})
 	if !isErr {
 		t.Fatalf("plans.edit(new_slug=other) should collide, got success: %v", collidePayload)
+	}
+}
+
+// TestAdapterPlansGoalBodyInputCapThroughCallTool is the MCP-boundary smoke for
+// the plan goal_body byte cap. It proves the adapter dispatch inherits the app
+// service/domain validation instead of accepting an oversized body.
+func TestAdapterPlansGoalBodyInputCapThroughCallTool(t *testing.T) {
+	ctx := context.Background()
+	service := newMCPTestService(t, ctx)
+	adapter := NewAdapter(service)
+
+	atCap := strings.Repeat("g", domain.MaxPlanGoalBodyBytes)
+	createPayload, isErr := callPlanTool(t, ctx, adapter, "plans.create", map[string]any{
+		"slug": "goal-cap", "name": "Goal cap", "goal_body": atCap,
+	})
+	if isErr {
+		t.Fatalf("plans.create(goal_body len==cap) IsError: %v", createPayload)
+	}
+	plan, _ := createPayload["plan"].(map[string]any)
+	if plan == nil || plan["goal_body"] != atCap {
+		t.Fatalf("plans.create goal_body at cap was altered: %#v", plan)
+	}
+
+	overCap := strings.Repeat("g", domain.MaxPlanGoalBodyBytes+1)
+	overCreate, isErr := callPlanTool(t, ctx, adapter, "plans.create", map[string]any{
+		"slug": "goal-over-cap", "name": "Goal over cap", "goal_body": overCap,
+	})
+	if !isErr || overCreate["code"] != string(domain.ErrValidation) {
+		t.Fatalf("plans.create(goal_body cap+1) = payload %v IsError %v, want validation error", overCreate, isErr)
+	}
+
+	overEdit, isErr := callPlanTool(t, ctx, adapter, "plans.edit", map[string]any{
+		"slug": "goal-cap", "goal_body": overCap,
+	})
+	if !isErr || overEdit["code"] != string(domain.ErrValidation) {
+		t.Fatalf("plans.edit(goal_body cap+1) = payload %v IsError %v, want validation error", overEdit, isErr)
 	}
 }
 

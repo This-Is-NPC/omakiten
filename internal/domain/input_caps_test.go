@@ -84,6 +84,31 @@ func TestValidateTaskDescriptionCap(t *testing.T) {
 	}
 }
 
+func TestValidatePlanGoalBodyCap(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name    string
+		bytes   int
+		wantErr bool
+	}{
+		{"at cap passes", MaxPlanGoalBodyBytes, false},
+		{"over cap rejects", MaxPlanGoalBodyBytes + 1, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			err := ValidatePlanGoalBody(strings.Repeat("a", tc.bytes))
+			if tc.wantErr {
+				assertValidationKind(t, err)
+				return
+			}
+			if err != nil {
+				t.Fatalf("ValidatePlanGoalBody(len=%d) error = %v, want nil", tc.bytes, err)
+			}
+		})
+	}
+}
+
 func TestValidateCommentBodyCap(t *testing.T) {
 	t.Parallel()
 	cases := []struct {
@@ -104,6 +129,56 @@ func TestValidateCommentBodyCap(t *testing.T) {
 			}
 			if err != nil {
 				t.Fatalf("ValidateCommentBody(len=%d) error = %v, want nil", tc.bytes, err)
+			}
+		})
+	}
+}
+
+func TestValidateCommentTitleCap(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name    string
+		runes   int
+		wantErr bool
+	}{
+		{"at cap passes", MaxCommentTitleRunes, false},
+		{"over cap rejects", MaxCommentTitleRunes + 1, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			err := ValidateCommentTitle(strings.Repeat("a", tc.runes))
+			if tc.wantErr {
+				assertValidationKind(t, err)
+				return
+			}
+			if err != nil {
+				t.Fatalf("ValidateCommentTitle(len=%d) error = %v, want nil", tc.runes, err)
+			}
+		})
+	}
+}
+
+func TestValidateCommentKindCap(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name    string
+		runes   int
+		wantErr bool
+	}{
+		{"at cap passes", MaxCommentKindRunes, false},
+		{"over cap rejects", MaxCommentKindRunes + 1, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			err := ValidateCommentKind(strings.Repeat("a", tc.runes))
+			if tc.wantErr {
+				assertValidationKind(t, err)
+				return
+			}
+			if err != nil {
+				t.Fatalf("ValidateCommentKind(len=%d) error = %v, want nil", tc.runes, err)
 			}
 		})
 	}

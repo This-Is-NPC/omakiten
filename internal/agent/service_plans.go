@@ -36,7 +36,7 @@ func (s *Service) CreatePlan(ctx context.Context, input CreatePlanInput) (Create
 
 // ListPlans returns every plan in the resolved project, oldest first.
 // GoalBody is stripped from each entry to keep payloads compact — the
-// goal body is full markdown and unbounded by design.
+// goal body is full markdown capped at the domain write boundary.
 func (s *Service) ListPlans(ctx context.Context, input ListPlansInput) (ListPlansResponse, error) {
 	project, err := s.resolveProject(ctx, input.ProjectSelector)
 	if err != nil {

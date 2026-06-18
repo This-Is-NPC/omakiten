@@ -16,18 +16,24 @@ import (
 // the agent layer is a separate concern (it shortens a stored body for
 // rendering); it does not enforce the write-side cap.
 //
-// Title is measured in runes (a human-facing one-line label, naturally
-// counted in characters). Description and comment body are measured in
-// bytes — they carry markdown that may be predominantly multi-byte, and
-// the storage / prompt-bloat risk we are bounding is byte-sized.
+// One-line labels are measured in runes (naturally counted in characters).
+// Long-form markdown is measured in bytes — it may be predominantly
+// multi-byte, and the storage / prompt-bloat risk we are bounding is
+// byte-sized.
 const (
 	// MaxTaskTitleRunes caps a task title at 512 runes.
 	MaxTaskTitleRunes = 512
 	// MaxTaskDescriptionBytes caps a task description at 64 KiB.
 	MaxTaskDescriptionBytes = 64 * 1024
+	// MaxPlanGoalBodyBytes caps a plan goal_body at 64 KiB.
+	MaxPlanGoalBodyBytes = 64 * 1024
 	// MaxCommentBodyBytes caps a comment body at 64 KiB, matching the
 	// description cap — both are long-form markdown fields.
 	MaxCommentBodyBytes = 64 * 1024
+	// MaxCommentTitleRunes caps a comment title at 512 runes.
+	MaxCommentTitleRunes = 512
+	// MaxCommentKindRunes caps a comment kind at 512 runes.
+	MaxCommentKindRunes = 512
 )
 
 // validateRuneCap rejects s when it exceeds max runes. field names the
@@ -65,7 +71,22 @@ func ValidateTaskDescription(description string) error {
 	return validateByteCap("task description", description, MaxTaskDescriptionBytes)
 }
 
+// ValidatePlanGoalBody enforces the plan goal_body byte cap on create/edit.
+func ValidatePlanGoalBody(goalBody string) error {
+	return validateByteCap("plan goal_body", goalBody, MaxPlanGoalBodyBytes)
+}
+
 // ValidateCommentBody enforces the comment body byte cap on the write path.
 func ValidateCommentBody(body string) error {
 	return validateByteCap("comment body", body, MaxCommentBodyBytes)
+}
+
+// ValidateCommentTitle enforces the comment title rune cap on the write path.
+func ValidateCommentTitle(title string) error {
+	return validateRuneCap("comment title", title, MaxCommentTitleRunes)
+}
+
+// ValidateCommentKind enforces the comment kind rune cap on the write path.
+func ValidateCommentKind(kind string) error {
+	return validateRuneCap("comment kind", kind, MaxCommentKindRunes)
 }

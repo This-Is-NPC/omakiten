@@ -125,6 +125,12 @@ func (s *CommentService) AddScoped(ctx context.Context, project domain.ProjectCo
 	if err = domain.ValidateCommentBody(w.Body); err != nil {
 		return
 	}
+	if err = domain.ValidateCommentTitle(w.Title); err != nil {
+		return
+	}
+	if err = domain.ValidateCommentKind(w.Kind); err != nil {
+		return
+	}
 	w.AuthorType = strings.TrimSpace(w.AuthorType)
 	if w.AuthorType == "" {
 		w.AuthorType = "human"
@@ -339,6 +345,16 @@ func (s *CommentService) EditScoped(ctx context.Context, project domain.ProjectC
 			return
 		}
 		edit.Body = &trimmed
+	}
+	if edit.Title != nil {
+		if err = domain.ValidateCommentTitle(*edit.Title); err != nil {
+			return
+		}
+	}
+	if edit.Kind != nil {
+		if err = domain.ValidateCommentKind(*edit.Kind); err != nil {
+			return
+		}
 	}
 
 	// Reject a no-op patch: an edit that changes nothing (no body, no

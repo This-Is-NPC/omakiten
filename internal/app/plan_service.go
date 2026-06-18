@@ -47,6 +47,9 @@ func (s *PlanService) Create(ctx context.Context, project domain.ProjectContext,
 
 	slug = strings.TrimSpace(slug)
 	name = strings.TrimSpace(name)
+	if err = domain.ValidatePlanGoalBody(goalBody); err != nil {
+		return
+	}
 	plan, err = s.repo.CreatePlan(ctx, project.ID, slug, name, goalBody)
 	return
 }
@@ -132,6 +135,9 @@ func (s *PlanService) UpdateGoalBody(ctx context.Context, project domain.Project
 		}
 		finish(status, errMsg)
 	}()
+	if err = domain.ValidatePlanGoalBody(goalBody); err != nil {
+		return
+	}
 	plan, err = s.repo.UpdatePlanGoalBody(ctx, project.ID, planID, goalBody)
 	return
 }
