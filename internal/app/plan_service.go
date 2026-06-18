@@ -363,10 +363,7 @@ func (s *PlanService) composeShow(ctx context.Context, project domain.ProjectCon
 		return PlanShow{}, err
 	}
 
-	final := ""
-	if s.snap != nil {
-		final = s.snap.Workflow().FinalBucketKey()
-	}
+	final := s.finalBucketKey()
 
 	tasksByWave := map[int64][]domain.PlanTaskRow{}
 	for _, t := range tasks {
@@ -377,15 +374,7 @@ func (s *PlanService) composeShow(ctx context.Context, project domain.ProjectCon
 	views := make([]PlanWaveView, 0, len(waves))
 	for _, w := range waves {
 		view := PlanWaveView{Wave: w, Tasks: tasksByWave[w.ID]}
-		for _, t := range view.Tasks {
-			if t.State == domain.TaskStateArchived {
-				continue
-			}
-			view.TotalCount++
-			if final != "" && t.BucketKey == final {
-				view.DoneCount++
-			}
-		}
+		view.DoneCount, view.TotalCount = countWaveTasks(view.Tasks, final)
 		views = append(views, view)
 		show.TotalCount += view.TotalCount
 		show.DoneCount += view.DoneCount
@@ -427,31 +416,102 @@ func (s *PlanService) ListRollups(ctx context.Context, project domain.ProjectCon
 		finish(status, errMsg)
 	}()
 
+	// Bulk hydration: three project-wide queries (plans + all waves + all
+	// tasks) folded in Go, replacing the former 1+3N loop of composeShow
+	// (which paid ListPlanWaves + ListPlanTasks + ListPlanTaskDependencies
+	// per plan). The dependency query composeShow runs is not needed here —
+	// PlanRollup carries no edges — so the rollup path drops to a constant
+	// three queries regardless of plan count. The per-plan fold reuses the
+	// same wave-aggregation rule as composeShow so output is byte-identical.
 	plans, err := s.repo.ListPlans(ctx, project.ID)
 	if err != nil {
 		return nil, err
 	}
+	wavesByPlan := map[int64][]domain.PlanWave{}
+	allWaves, err := s.repo.ListProjectPlanWaves(ctx, project.ID)
+	if err != nil {
+		return nil, err
+	}
+	for _, w := range allWaves {
+		wavesByPlan[w.PlanID] = append(wavesByPlan[w.PlanID], w)
+	}
+	tasksByPlan := map[int64][]domain.PlanTaskRow{}
+	allTasks, err := s.repo.ListProjectPlanTasks(ctx, project.ID, s.snap)
+	if err != nil {
+		return nil, err
+	}
+	for _, t := range allTasks {
+		tasksByPlan[t.PlanID] = append(tasksByPlan[t.PlanID], t.PlanTaskRow)
+	}
+
 	rollups = make([]PlanRollup, 0, len(plans))
 	for _, p := range plans {
-		show, err := s.composeShow(ctx, project, p)
-		if err != nil {
-			return nil, err
-		}
-		rollup := PlanRollup{
-			Plan:         show.Plan,
-			DoneCount:    show.DoneCount,
-			TotalCount:   show.TotalCount,
-			ActiveWaveID: show.ActiveWaveID,
-		}
-		if rollup.ActiveWaveID != 0 {
-			for _, v := range show.Waves {
-				if v.Wave.ID == rollup.ActiveWaveID {
-					rollup.ActiveWaveName = v.Wave.Name
-					break
-				}
-			}
-		}
-		rollups = append(rollups, rollup)
+		rollups = append(rollups, foldPlanRollup(p, wavesByPlan[p.ID], tasksByPlan[p.ID], s.finalBucketKey()))
 	}
 	return rollups, nil
+}
+
+// finalBucketKey resolves the workflow's final bucket key from the bound
+// snapshot, or "" when no snapshot is attached (DoneCount then stays 0, the
+// same degenerate contract Show documents).
+func (s *PlanService) finalBucketKey() string {
+	if s.snap == nil {
+		return ""
+	}
+	return s.snap.Workflow().FinalBucketKey()
+}
+
+// countWaveTasks returns (done, total) for one wave's tasks: archived tasks
+// are excluded from both, and a task counts toward done when its bucket is the
+// workflow's final bucket. finalBucketKey == "" (no bound snapshot) means done
+// is always 0. Shared by composeShow and foldPlanRollup so the Show and
+// ListRollups surfaces agree on the counts.
+func countWaveTasks(tasks []domain.PlanTaskRow, finalBucketKey string) (done, total int) {
+	for _, t := range tasks {
+		if t.State == domain.TaskStateArchived {
+			continue
+		}
+		total++
+		if finalBucketKey != "" && t.BucketKey == finalBucketKey {
+			done++
+		}
+	}
+	return done, total
+}
+
+// foldPlanRollup aggregates one plan's waves + tasks into a PlanRollup using
+// the identical done/total counting and active-wave selection rule as
+// composeShow, so ListRollups output matches the per-plan Show path exactly.
+// Extracted so both the bulk rollup fold and composeShow share the algorithm
+// rather than copy it.
+func foldPlanRollup(plan domain.Plan, waves []domain.PlanWave, tasks []domain.PlanTaskRow, finalBucketKey string) PlanRollup {
+	tasksByWave := map[int64][]domain.PlanTaskRow{}
+	for _, t := range tasks {
+		tasksByWave[t.WaveID] = append(tasksByWave[t.WaveID], t)
+	}
+
+	rollup := PlanRollup{Plan: plan}
+	type waveAgg struct {
+		id         int64
+		name       string
+		doneCount  int
+		totalCount int
+	}
+	aggs := make([]waveAgg, 0, len(waves))
+	for _, w := range waves {
+		agg := waveAgg{id: w.ID, name: w.Name}
+		agg.doneCount, agg.totalCount = countWaveTasks(tasksByWave[w.ID], finalBucketKey)
+		aggs = append(aggs, agg)
+		rollup.TotalCount += agg.totalCount
+		rollup.DoneCount += agg.doneCount
+	}
+
+	for _, a := range aggs {
+		if a.totalCount == 0 || a.doneCount < a.totalCount {
+			rollup.ActiveWaveID = a.id
+			rollup.ActiveWaveName = a.name
+			break
+		}
+	}
+	return rollup
 }

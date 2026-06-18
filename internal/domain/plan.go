@@ -56,3 +56,12 @@ type PlanTaskRow struct {
 	State      TaskState `json:"state"`
 	AssignedTo string    `json:"assigned_to,omitempty"`
 }
+
+// ProjectPlanTaskRow is a PlanTaskRow tagged with its owning plan id. The
+// project-wide bulk hydrators (ListProjectPlanWaves / ListProjectPlanTasks)
+// return one flat slice spanning every plan so the rollup fold can group by
+// PlanID in Go instead of paying one query round-trip per plan.
+type ProjectPlanTaskRow struct {
+	PlanID int64 `json:"plan_id"`
+	PlanTaskRow
+}
