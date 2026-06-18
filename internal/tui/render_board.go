@@ -343,6 +343,16 @@ func (m Model) renderBoard() string {
 // The local mutation epoch covers all task/dependency/comment/workflow
 // state (it bumps whenever rebuildBoardCaches runs); the remaining fields
 // are the view-local cursor + geometry the epoch does not track.
+//
+// Geometry is BOTH axes: availableWidth drives column sizing/capacity and
+// boardViewportRows drives the per-lane vertical viewport. A vertical-only
+// resize (WindowSizeMsg moves m.height but width is unchanged) does NOT
+// bump the mutation epoch or invalidate the cache, so the height-derived
+// viewport must be folded in directly — otherwise the same key would serve
+// a board string sized for the old height, which can overshoot the screen
+// (see the sizing comment in renderBoardUncached). We fold the actual
+// boardViewportRows the render reads rather than raw m.height so the key
+// only moves when the value layout actually depends on changes.
 func (m Model) boardStringCacheKey() uint64 {
 	f := newFingerprint()
 	f.writeInt64(int64(m.boardMutationEpoch))
@@ -350,6 +360,7 @@ func (m Model) boardStringCacheKey() uint64 {
 	f.writeInt64(int64(m.cardIdx))
 	f.writeInt64(int64(m.boardColOffset))
 	f.writeInt64(int64(m.availableWidth()))
+	f.writeInt64(int64(m.boardViewportRows()))
 	f.writeBool(m.moveMode)
 	f.writeBool(m.includeArchived)
 	return f.sum()

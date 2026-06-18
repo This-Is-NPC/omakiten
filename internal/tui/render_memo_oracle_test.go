@@ -158,6 +158,64 @@ func TestBoardStringMemoStaleAfterSelfWrite(t *testing.T) {
 	}
 }
 
+// TestBoardStringMemoInvalidatesOnVerticalResize is the F4 regression
+// oracle: a vertical-only resize (width unchanged, height changed) must
+// move the boardStringCacheKey and produce a fresh memoized render equal
+// to the from-scratch uncached render. renderBoardUncached sizes each
+// lane's vertical viewport via the height-dependent boardViewportRows, but
+// a WindowSizeMsg that only changes m.height bumps neither the mutation
+// epoch nor invalidates the cache — so without the height term in the key
+// the stale, taller-or-shorter board string would be served.
+func TestBoardStringMemoInvalidatesOnVerticalResize(t *testing.T) {
+	model := buildRefreshHotPathModel(t)
+	model.width = 120
+	model.height = 40
+	model.tasks = []domain.Task{
+		{ID: 1, Title: "Alpha", BucketKey: "backlog", Priority: domain.Priority(2)},
+		{ID: 2, Title: "Beta", BucketKey: "dev", Priority: domain.Priority(2)},
+		{ID: 3, Title: "Gamma", BucketKey: "dev", Priority: domain.Priority(2)},
+		{ID: 4, Title: "Delta", BucketKey: "dev", Priority: domain.Priority(2)},
+		{ID: 5, Title: "Epsilon", BucketKey: "dev", Priority: domain.Priority(2)},
+	}
+	model.rebuildBoardCaches()
+	model.colIdx = 1
+	model.cardIdx = 0
+
+	// Warm the memo at the tall height.
+	tall := model.renderBoard()
+	tallKey := model.boardStringCacheKey()
+	if !model.boardStringCache.valid || model.boardStringCache.key != tallKey {
+		t.Fatalf("first renderBoard did not warm the memo at the tall height")
+	}
+
+	// Vertical-only resize: width is unchanged, height shrinks. This is
+	// exactly what the WindowSizeMsg handler does to m.height. It must
+	// change the viewport-derived layout, hence the cache key.
+	model.height = 22
+	shortKey := model.boardStringCacheKey()
+	if shortKey == tallKey {
+		t.Fatalf("vertical resize did not move the board cache key " +
+			"(height term missing — stale board would overshoot the screen)")
+	}
+	// Sanity: the viewport dimension the render reads actually changed,
+	// so this is a meaningful resize, not a no-op.
+	if model.boardViewportRows() == 0 {
+		t.Fatalf("test setup: short height collapsed the viewport to 0")
+	}
+
+	// The post-resize memoized render must equal the from-scratch render.
+	short := model.renderBoard()
+	if short == tall {
+		t.Fatalf("board memo served the tall render after a vertical resize")
+	}
+	if model.boardStringCache.key != shortKey {
+		t.Fatalf("post-resize memo key = %d, want %d", model.boardStringCache.key, shortKey)
+	}
+	if fresh := model.renderBoardUncached(); short != fresh {
+		t.Fatalf("post-resize memoized board string != fresh uncached render")
+	}
+}
+
 // TestPlanNetworkFullBuildMemoEqualsFresh is the equals-fresh oracle for
 // the memoized full plan-network build (the critical-path DFS + cross-
 // blocker index + next-claimable peek). The memoized planNetworkFullBuild
