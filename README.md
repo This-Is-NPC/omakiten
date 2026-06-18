@@ -90,6 +90,12 @@ OKT_CLI_LANG=en OKT_AGENT_LANG="English" OKT_PRESET=omakase OKT_HARNESSES=claude
 
 Supported tools: `claude-code`, `claude-desktop`, `codex`, `crush`, `github-copilot`, `opencode`.
 
+Both installers verify the downloaded release archive's SHA-256 against the
+goreleaser-published `checksums.txt` (fetched over HTTPS from the release host)
+**before** extracting or running it — the same gate every in-app `okt update`
+applies. A checksum mismatch aborts the install non-zero and leaves no binary
+on your PATH.
+
 ---
 
 ## Your First Project
