@@ -57,6 +57,17 @@ type Checkpointer interface {
 	Checkpoint(ctx context.Context) error
 }
 
+// DataVersionReader exposes the SQLite `PRAGMA data_version` change
+// watermark the TUI's realtime tick probes to decide whether an external
+// write landed since the last tick. *sqlite.Store satisfies it via
+// DataVersion(ctx), which reads the pragma on a connection pinned out of
+// the pool for the store's lifetime (the pragma is per-connection, so a
+// pooled read would thrash). Optional collaborator — when nil the TUI
+// falls back to reloading every tick, preserving pre-watermark behaviour.
+type DataVersionReader interface {
+	DataVersion(ctx context.Context) (int64, error)
+}
+
 // EventRecorder is the narrow port ProjectService uses to emit the
 // project.removed audit event after a successful delete. *sqlite.Store
 // satisfies it via RecordEntityEvent.

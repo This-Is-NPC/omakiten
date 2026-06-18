@@ -94,6 +94,13 @@ type Repositories struct {
 	// nil, destructive flows still snapshot (best-effort).
 	Checkpointer app.Checkpointer
 
+	// Watermark probes the DB change watermark (PRAGMA data_version) so
+	// the realtime tick can skip a full reload on idle seconds. Optional —
+	// when nil the tick reloads every cadence (pre-watermark behaviour),
+	// so test fixtures that don't wire it keep working. Production wires
+	// *sqlite.Store here (it satisfies the port via a pinned connection).
+	Watermark app.DataVersionReader
+
 	// DispatchCommand invokes the root cobra command in-process and
 	// returns the JSON envelope it wrote to stdout. Notification actions
 	// rely on it to run CLI commands (e.g. "workflow orphans --confirm")
@@ -436,6 +443,23 @@ type Model struct {
 	// during the session. CLI-side cd-on-exit reads this after program.Run()
 	// returns so the parent shell wrapper can `cd` into the project.
 	lastProjectRoot string
+
+	// lastDataVersion is the SQLite change watermark (PRAGMA data_version)
+	// observed at the previous realtime tick. The tick re-probes
+	// repos.Watermark each second and only triggers the expensive reload
+	// (reloadBundleIfChanged + realtimeRefresh) when the watermark moved —
+	// an idle second (no external write) costs one cheap probe and skips
+	// the rebuild. Self-writes are exempt by design: they commit on the
+	// pool, not the pinned probe connection, AND repaint inline via the
+	// synchronous m.refresh() on the write path, so the watermark gate
+	// never starves them. Zero before the first probe; -1 has no special
+	// meaning, any value is just compared for equality.
+	lastDataVersion int64
+	// dataVersionSynced records whether lastDataVersion holds a real probe
+	// result yet. The first tick after launch always reloads (treat as
+	// changed) so the view reflects writes that landed between Open and
+	// the first tick; thereafter the equality compare gates reloads.
+	dataVersionSynced bool
 
 	// events is the bounded row buffer rendered by the unified Logs
 	// inspector (umbrella #320, sub-task #325). Populated by

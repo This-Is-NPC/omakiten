@@ -164,6 +164,21 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.palette.SetMaxResultRows(m.paletteResultRowsBudget())
 	case refreshTickMsg:
 		if m.shouldRealtimeRefresh() {
+			// Cheap change-probe gate: read the DB watermark (one
+			// PRAGMA data_version on a pinned connection) and skip the
+			// whole reload+rebuild when no external write landed since
+			// the last tick. The idle second — the common case while the
+			// user reads a live view — therefore costs exactly one probe
+			// query and zero Snapshot/ListRollups/board-rebuild calls.
+			// Self-writes are NOT gated here: they repaint inline via the
+			// synchronous m.refresh() on their own write path and the
+			// watermark deliberately does not move for them, so this gate
+			// never delays a self-write. The config-mtime gate inside
+			// reloadBundleIfChanged is untouched — it still runs whenever
+			// the watermark says the DB moved.
+			if !m.dataVersionChanged() {
+				return m, scheduleRefreshTick()
+			}
 			// Realtime tick is renderer-driven, not user-triggered, so
 			// every app-service call it spawns (`MetricsService.Summary`,
 			// `Logs.List`) bypasses the activity tracker. Otherwise the
@@ -420,6 +435,42 @@ func scheduleRefreshTick() tea.Cmd {
 	return tea.Tick(time.Second, func(t time.Time) tea.Msg {
 		return refreshTickMsg{}
 	})
+}
+
+// dataVersionChanged probes the DB change watermark and reports whether an
+// external write landed since the last tick. It updates m.lastDataVersion
+// in place so successive ticks compare against the freshest reading.
+//
+// Returns true (reload) in three cases so correctness never depends on the
+// probe: (a) no Watermark reader is wired — test fixtures and any composition
+// that omits it keep the pre-watermark reload-every-tick behaviour; (b) the
+// first probe of the session — the watermark is opaque, so the initial value
+// is not a baseline we can trust to mean "unchanged" relative to launch;
+// (c) the probe errors — a transient DB read failure must not silently freeze
+// the live view, so we fall back to reloading. Only an established baseline
+// that reads back equal yields false (skip the reload).
+func (m *Model) dataVersionChanged() bool {
+	if m.repos.Watermark == nil {
+		return true
+	}
+	version, err := m.repos.Watermark.DataVersion(m.ctx)
+	if err != nil {
+		// Surface the failure but treat the tick as changed so the reload
+		// still runs — never let a probe error wedge the live view.
+		m.status = err.Error()
+		m.dataVersionSynced = false
+		return true
+	}
+	if !m.dataVersionSynced {
+		m.lastDataVersion = version
+		m.dataVersionSynced = true
+		return true
+	}
+	if version == m.lastDataVersion {
+		return false
+	}
+	m.lastDataVersion = version
+	return true
 }
 
 func (m Model) shouldRealtimeRefresh() bool {

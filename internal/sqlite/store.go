@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 
 	_ "modernc.org/sqlite"
 
@@ -81,6 +82,19 @@ type Store struct {
 	// broadcast — production wires it from composition root, tests
 	// inherit a nil bus and silently skip the fan-out.
 	bus events.Bus
+
+	// versionMu guards the lazily-pinned change-probe connection below.
+	versionMu sync.Mutex
+	// versionConn is a dedicated connection pinned out of the pool for the
+	// Store's lifetime, used exclusively by DataVersion. PRAGMA data_version
+	// is per-connection: the counter only advances on a connection when
+	// ANOTHER connection (this process's pool or a separate process via the
+	// shared WAL) has committed since this connection last read. Reading it
+	// through the 2-connection pool (MaxOpenConns=2) would hand back a
+	// different physical connection across calls and thrash the counter, so
+	// the probe MUST hold one pinned connection. Opened lazily on first
+	// DataVersion call and released in Close.
+	versionConn *sql.Conn
 }
 
 // SetEventsRecentLimit installs the fallback row count Store.ListRecentEvents
@@ -402,7 +416,48 @@ func OpenWithOptions(ctx context.Context, path string, opts Options) (*Store, er
 }
 
 func (s *Store) Close() error {
+	s.versionMu.Lock()
+	if s.versionConn != nil {
+		// Best-effort: hand the pinned probe connection back to the pool
+		// before the pool itself closes. A Close error here would only mask
+		// the db.Close result below, and the OS reclaims the fd regardless.
+		_ = s.versionConn.Close()
+		s.versionConn = nil
+	}
+	s.versionMu.Unlock()
 	return s.db.Close()
+}
+
+// DataVersion returns the SQLite `PRAGMA data_version` watermark read on a
+// dedicated connection pinned out of the pool for the Store's lifetime. The
+// value is opaque and monotonic-per-connection: it changes whenever any OTHER
+// connection — this process's pool OR a separate process sharing the WAL —
+// commits a transaction since the pinned connection last read it. It does NOT
+// advance for writes committed on the pinned connection itself, but the probe
+// connection is read-only, so in practice every external commit (pool writes
+// and cross-process writes alike) moves it.
+//
+// Callers compare successive return values: an unchanged watermark means no
+// external write landed and an expensive reload can be skipped; a changed
+// watermark means the read model is stale. The pin is mandatory — see the
+// versionConn field comment for why a pooled read would thrash.
+func (s *Store) DataVersion(ctx context.Context) (int64, error) {
+	s.versionMu.Lock()
+	defer s.versionMu.Unlock()
+
+	if s.versionConn == nil {
+		conn, err := s.db.Conn(ctx)
+		if err != nil {
+			return 0, fmt.Errorf("pin data_version probe connection: %w", err)
+		}
+		s.versionConn = conn
+	}
+
+	var version int64
+	if err := s.versionConn.QueryRowContext(ctx, "PRAGMA data_version").Scan(&version); err != nil {
+		return 0, fmt.Errorf("read PRAGMA data_version: %w", err)
+	}
+	return version, nil
 }
 
 // Checkpoint forces every committed WAL frame to land in the main
