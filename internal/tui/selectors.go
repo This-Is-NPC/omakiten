@@ -220,6 +220,47 @@ func priorityAllowedFromTable(allowed map[string]struct{}, p domain.Priority, pr
 func (m *Model) rebuildBoardCaches() {
 	m.cachedTasksByBucket = buildTasksByBucket(m.tasks, priorityAllowSet(m.views.Board.Filter.Priority), m.priorities)
 	m.cachedTableView = buildTableView(m.tasks, m.views.Table, m.priorities)
+	m.boardBadgeCounts = buildBoardBadgeCounts(m.tasks, m.dependencies, m.comments)
+	// Bump the local mutation epoch so the board-string memo
+	// invalidates on this rebuild. Every inline m.refresh() and every
+	// realtime-reload board fold runs rebuildBoardCaches, so the epoch
+	// moves on self-writes the data_version watermark does not — that is
+	// the whole point of keying the memo on the epoch, not the watermark.
+	m.boardMutationEpoch++
+}
+
+// boardBadgeCounts holds the precomputed per-task counts the kanban
+// card surfaces as badges. Each map is built once per rebuildBoardCaches
+// from the already-loaded slices so the badge selector does O(1) lookups
+// instead of re-scanning m.dependencies / m.comments / m.tasks per card
+// per frame.
+type boardBadgeCounts struct {
+	depByTask     map[int64]int // dependency edges per dependent task id
+	commentByTask map[int64]int // comments per task id
+	childByParent map[int64]int // direct sub-task count per parent id
+}
+
+// buildBoardBadgeCounts walks each already-loaded slice exactly once to
+// produce the three count maps. Mirrors the bodies of dependencyCount /
+// commentCount / subtaskCount so the badge lookups stay byte-identical to
+// the old per-card scans — only the cost moves from O(cards·n) per frame
+// to O(n) per rebuild.
+func buildBoardBadgeCounts(tasks []domain.Task, deps []domain.TaskDependency, comments []domain.Comment) boardBadgeCounts {
+	depByTask := make(map[int64]int, len(deps))
+	for _, d := range deps {
+		depByTask[d.TaskID]++
+	}
+	commentByTask := make(map[int64]int, len(comments))
+	for _, c := range comments {
+		commentByTask[c.TaskID]++
+	}
+	childByParent := make(map[int64]int)
+	for _, t := range tasks {
+		if t.ParentID != nil {
+			childByParent[*t.ParentID]++
+		}
+	}
+	return boardBadgeCounts{depByTask: depByTask, commentByTask: commentByTask, childByParent: childByParent}
 }
 
 // invalidateBoardCaches drops the memoised board/table projections so

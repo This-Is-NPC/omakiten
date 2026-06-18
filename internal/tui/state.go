@@ -808,6 +808,53 @@ type Model struct {
 	// short-circuit to the cached slice without re-running the DFS.
 	planNetworkRowsCache planNetworkRowsCacheEntry
 
+	// planNetworkBuildCache memoises the FULL planNetworkBuildData
+	// (rows + cross-blocker index + next-claimable id + the
+	// critical-path DFS), which the renderer used to recompute on
+	// every View(). Keyed on the same structural fingerprint as the
+	// row cache PLUS the dependency edge set (the critical-path DFS
+	// reads show.Dependencies, which the row-only key omits because the
+	// row skeleton does not depend on it). Identical inputs short-
+	// circuit to the cached build so the DFS runs once per state change
+	// rather than once per frame.
+	//
+	// Held behind a pointer so the value-receiver renderer
+	// (renderPlanNetwork, reached from View()) can persist the freshly
+	// built projection through the shared entry — the idle-tick render
+	// path has no pointer-receiver handler to warm it. Lazily allocated
+	// on first build.
+	planNetworkBuildCache *planNetworkBuildCacheEntry
+
+	// boardMutationEpoch is the local mutation counter the board-string
+	// memo keys on. It is bumped on every rebuildBoardCaches() call —
+	// which every inline m.refresh() and every realtime-reload board
+	// fold runs — so the epoch moves on same-connection self-writes
+	// that the data_version watermark deliberately does NOT move for.
+	// Keying the board memo on this epoch (NOT the watermark) is what
+	// stops a stale render from being served after a local edit.
+	boardMutationEpoch uint64
+
+	// boardStringCache memoises renderBoard()'s whole output string so a
+	// frame whose render inputs are unchanged reuses the prior string
+	// instead of re-walking every lane + card. Keyed on the local
+	// mutation epoch + the board cursor (colIdx/cardIdx), horizontal
+	// carousel offset, terminal width, move-mode flag, and the
+	// archived-toggle — the full set of inputs renderBoard reads.
+	//
+	// Held behind a pointer so the value-receiver render path
+	// (renderBoard, reached from View()) can write the freshly-rendered
+	// string back through the shared entry — there is no pointer-receiver
+	// handler on the idle-tick render path to warm it otherwise. The
+	// pointer is lazily allocated on first render.
+	boardStringCache *boardStringCacheEntry
+
+	// boardBadgeCounts holds the per-task badge-count maps the kanban
+	// card reads (dependency / comment / direct-child counts). Rebuilt
+	// once per rebuildBoardCaches() from the loaded slices so
+	// taskBoardBadges does O(1) map lookups instead of an O(n) scan per
+	// card per frame.
+	boardBadgeCounts boardBadgeCounts
+
 	// statsSummary caches the last-fetched metrics summary. statsPeriod
 	// holds the active filter ("7d", "30d", "all"); refreshed on view entry
 	// and on period change via ←/→.

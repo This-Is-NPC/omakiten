@@ -78,18 +78,20 @@ func NewModel(ctx context.Context, project domain.ProjectContext, repos Reposito
 		// lipgloss.Style.Width(N) allocation only fires once per
 		// (kind, width) pair across the lifetime of the model. Inner
 		// maps lazily fill on first write per kind.
-		styleByKindWidth:     map[styleKind]map[int]lipgloss.Style{},
-		tokenCountCache:      map[uint64]int{},
-		subtasks:             cardlist.New(),
-		planNetwork:          cardlist.New(),
-		activityLines:        linelist.New(),
-		logsList:             linelist.New(),
-		tableList:            linelist.New(),
-		graphList:            linelist.New(),
-		graphCursor:          cursorwindow.New(0),
-		plansCursor:          cursorwindow.New(0),
-		planNetworkCursor:    cursorwindow.New(0),
-		settingsGeneralLines: linelist.New(),
+		styleByKindWidth:      map[styleKind]map[int]lipgloss.Style{},
+		boardStringCache:      &boardStringCacheEntry{},
+		planNetworkBuildCache: &planNetworkBuildCacheEntry{},
+		tokenCountCache:       map[uint64]int{},
+		subtasks:              cardlist.New(),
+		planNetwork:           cardlist.New(),
+		activityLines:         linelist.New(),
+		logsList:              linelist.New(),
+		tableList:             linelist.New(),
+		graphList:             linelist.New(),
+		graphCursor:           cursorwindow.New(0),
+		plansCursor:           cursorwindow.New(0),
+		planNetworkCursor:     cursorwindow.New(0),
+		settingsGeneralLines:  linelist.New(),
 	}
 	if reg, err := buildPaletteRegistry(repos); err == nil {
 		model.paletteRegistry = reg

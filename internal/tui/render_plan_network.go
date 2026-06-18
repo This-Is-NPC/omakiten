@@ -474,6 +474,61 @@ func (m Model) planNetworkBuildData(opts planNetworkBuildOpts) planNetworkBuild 
 	}
 }
 
+// planNetworkBuildCacheEntry memoises the FULL planNetworkBuildData
+// (rows + cross-blocker index + next-claimable id + critical-path DFS).
+// valid stays false until the first build so a fresh model never serves
+// a stale zero build.
+type planNetworkBuildCacheEntry struct {
+	valid bool
+	key   uint64
+	build planNetworkBuild
+}
+
+// planNetworkFullBuild returns the full plan-network projection the
+// renderer consumes — memoised so the critical-path DFS + the
+// next-claimable peek run once per state change instead of once per
+// View(). Value receiver: the cache lives behind a pointer
+// (m.planNetworkBuildCache) so the freshly built projection persists back
+// through the shared entry even though View() reaches here on a value
+// copy. The key extends the row-only fingerprint with the dependency edge
+// set, because the critical-path DFS reads show.Dependencies — an input
+// the row skeleton (and thus the row-only key) does not depend on.
+func (m Model) planNetworkFullBuild() planNetworkBuild {
+	key := m.planNetworkFullBuildKey()
+	if m.planNetworkBuildCache != nil && m.planNetworkBuildCache.valid && m.planNetworkBuildCache.key == key {
+		return m.planNetworkBuildCache.build
+	}
+	build := m.planNetworkBuildData(planNetworkBuildOpts{})
+	if m.planNetworkBuildCache != nil {
+		*m.planNetworkBuildCache = planNetworkBuildCacheEntry{valid: true, key: key, build: build}
+	}
+	return build
+}
+
+// planNetworkFullBuildKey fingerprints every input the full build reads:
+// the structural row inputs (via the shared row-key shape) PLUS the
+// dependency edges the critical-path DFS walks. The next-claimable peek
+// reads only the same plan id + task buckets already in the row key, so
+// no extra term is needed for it.
+func (m Model) planNetworkFullBuildKey() uint64 {
+	f := newFingerprint()
+	f.writeInt64(int64(m.planNetworkRowsCacheKey()))
+	for _, d := range m.planNetworkShow.Dependencies {
+		f.writeInt64(d.TaskID)
+		f.writeInt64(d.DependsOnTaskID)
+	}
+	return f.sum()
+}
+
+// invalidatePlanNetworkBuildCache drops the memoised full build. Called
+// from the same mutation seams that drop the row cache so a reload always
+// recomputes the DFS against the freshly-loaded dependencies.
+func (m *Model) invalidatePlanNetworkBuildCache() {
+	if m.planNetworkBuildCache != nil {
+		m.planNetworkBuildCache.valid = false
+	}
+}
+
 // planNetworkBuildRows is the row-only shim used by the input
 // handlers — they never need the auxiliary indices, only the row
 // slice for cursor clamps and kind checks. Skips the SQL peek + the
@@ -564,6 +619,11 @@ func (m Model) planNetworkRowsCacheKey() uint64 {
 // projection) still want a fresh build after they finish.
 func (m *Model) invalidatePlanNetworkRowsCache() {
 	m.planNetworkRowsCache.valid = false
+	// The full build (DFS + peek + cross-blockers) derives from the same
+	// projection, so drop it on the same seam — a reload whose refetched
+	// PlanShow fingerprints identically must still recompute against the
+	// freshly-loaded dependencies.
+	m.invalidatePlanNetworkBuildCache()
 }
 
 // planNetworkWaveRails records the rendered shape of one wave: tasks
@@ -873,7 +933,7 @@ func (m Model) renderPlanNetwork() string {
 		return m.renderPanel(header + "\n\n" + body)
 	}
 
-	build := m.planNetworkBuildData(planNetworkBuildOpts{})
+	build := m.planNetworkFullBuild()
 	rows := build.Rows
 	nextClaimableID := build.NextClaimableID
 
