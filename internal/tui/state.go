@@ -461,6 +461,17 @@ type Model struct {
 	// the first tick; thereafter the equality compare gates reloads.
 	dataVersionSynced bool
 
+	// realtimeReloadGen is a monotonic generation counter incremented on the
+	// Update goroutine each time a changed-tick reload cmd is built. The value
+	// is stamped onto the realtimeReloadMsg the worker produces so
+	// applyRealtimeReload can recognise stale arrivals: two reloads in flight
+	// (consecutive watermark-moving ticks + a slow worker) can complete out of
+	// order, and folding an older snapshot over a newer one would briefly
+	// regress the view. lastAppliedReloadGen tracks the newest generation
+	// already folded; any msg with an older generation is dropped (F3).
+	realtimeReloadGen    uint64
+	lastAppliedReloadGen uint64
+
 	// events is the bounded row buffer rendered by the unified Logs
 	// inspector (umbrella #320, sub-task #325). Populated by
 	// refreshActivityLogs from EventRepository.ListEvents with the
