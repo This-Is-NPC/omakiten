@@ -80,6 +80,11 @@ type Repositories struct {
 	ActivityLogs activity.ActivityLogRepository
 	Events       app.EventRepository
 	Metrics      *app.MetricsService
+	// Insights feeds the Stats › Insights sub-mode (the intelligence
+	// layer: stuck tasks, cycle time, WIP, guard hotspots, error loop,
+	// per-model contrast). Optional — when nil the Insights view shows an
+	// "unavailable" placeholder, exactly as Metrics does on stub fixtures.
+	Insights     *app.InsightsService
 	Orphans      app.OrphanRepository
 	Plans        app.PlanRepository
 	// Search powers the trick palette Search tab (#182). Optional —
@@ -862,6 +867,21 @@ type Model struct {
 	statsSummary domain.MetricsSummary
 	statsPeriod  string
 
+	// insights caches the last-fetched intelligence-layer reading for the
+	// Stats › Insights sub-mode. Refreshed on view entry and on the
+	// realtime tick (mirrors statsSummary). insightsLoaded gates the
+	// render so the very first frame after entry shows a "computing"
+	// placeholder rather than a misleading all-empty board.
+	insights       domain.Insights
+	insightsLoaded bool
+
+	// insightsLines owns the read-only scroll state for the Stats ›
+	// Insights body — offset-only (cursor pinned at -1), mirroring
+	// settingsGeneralLines. refreshInsightsLines rebuilds its lines +
+	// viewport before every ScrollBy so the clamp always sees the
+	// current body's bounds.
+	insightsLines linelist.Model
+
 	// help owns scroll state for the keybindings overlay; instantiated
 	// once and reused (the overlay is closed/reopened, not destroyed,
 	// so scroll state persists across toggles which feels right — users
@@ -1058,6 +1078,7 @@ const (
 	subPlans
 	subStatsGeneral
 	subStatsLogs
+	subStatsInsights
 	subSettingsGeneral
 	subSettingsLaws
 	subSettingsPersonas
@@ -1081,7 +1102,7 @@ var topOrder = []topID{topTasks, topStats, topSettings}
 // The sub strip is suppressed when the active top has only one sub.
 var subsByTop = map[topID][]subID{
 	topTasks:    {subBoard, subTable, subGraph, subPlans},
-	topStats:    {subStatsGeneral, subStatsLogs},
+	topStats:    {subStatsGeneral, subStatsLogs, subStatsInsights},
 	topSettings: {subSettingsGeneral, subSettingsLaws, subSettingsPersonas, subSettingsSkills, subSettingsTemplates, subSettingsTags, subSettingsGuards},
 }
 
@@ -1098,6 +1119,7 @@ var subLabels = map[subID]string{
 	subPlans:             "plans",
 	subStatsGeneral:      "general",
 	subStatsLogs:         "logs",
+	subStatsInsights:     "insights",
 	subSettingsGeneral:   "general",
 	subSettingsLaws:      "laws",
 	subSettingsPersonas:  "personas",

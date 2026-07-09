@@ -40,6 +40,7 @@ func TestToolsIncludePlannedSurface(t *testing.T) {
 		"solutions.add":       false,
 		"solutions.confirm":   false,
 		"metrics.summary":     false,
+		"insights.summary":    false,
 		"logs.list":           false,
 		"plans.edit":          false,
 		"plans.delete":        false,
@@ -208,6 +209,7 @@ func TestAdapterCallToolAllTools(t *testing.T) {
 		"solutions.add",
 		"solutions.confirm",
 		"metrics.summary",
+		"insights.summary",
 		"plans.create",
 		"plans.list",
 		"plans.show",
@@ -413,6 +415,151 @@ func TestAdapterSkillsToolsReadOnly(t *testing.T) {
 	}
 }
 
+// TestAdapterInsightsSummaryFrozenContract pins the consultivo insights.summary
+// surface: it dispatches read-only and returns the frozen, versioned output
+// contract. The response MUST carry schema_version (currently 2 — bumped by
+// task 1353's per-model partial-state gate), an explicit has_data flag on every
+// sub-report, and per-model rows that expose sample_size plus the partial-state
+// fields (partial / first_stamped_at). There is NO insights.* mutation tool —
+// the surface only reads.
+func TestAdapterInsightsSummaryFrozenContract(t *testing.T) {
+	ctx := context.Background()
+	service := newMCPTestService(t, ctx)
+	adapter := NewAdapter(service)
+
+	// No write path exists on the insights surface.
+	for _, name := range []string{"insights.record", "insights.refresh", "insights.move"} {
+		if _, err := adapter.CallTool(ctx, name, withModel(nil)); err == nil {
+			t.Fatalf("%s unexpectedly dispatched — insights must be read-only", name)
+		}
+	}
+
+	res, err := adapter.CallTool(ctx, "insights.summary", withModel(map[string]any{"stuck_days": 3}))
+	if err != nil {
+		t.Fatalf("CallTool(insights.summary) error = %v", err)
+	}
+	if res.IsError {
+		t.Fatalf("insights.summary error: %s", res.Content[0].Text)
+	}
+
+	var payload struct {
+		SchemaVersion int `json:"schema_version"`
+		Insights      struct {
+			StuckDays int  `json:"stuck_days"`
+			Stuck     struct{ HasData bool `json:"has_data"` } `json:"stuck"`
+			CycleTime struct{ HasData bool `json:"has_data"` } `json:"cycle_time"`
+			WIP       struct{ HasData bool `json:"has_data"` } `json:"wip"`
+			Guards    struct{ HasData bool `json:"has_data"` } `json:"guards"`
+			ErrorLoop struct{ HasData bool `json:"has_data"` } `json:"error_loop"`
+			PerModel  struct {
+				HasData bool `json:"has_data"`
+				Models  []struct {
+					AgentModel     string  `json:"agent_model"`
+					SampleSize     *int    `json:"sample_size"`
+					Partial        *bool   `json:"partial"`
+					FirstStampedAt *string `json:"first_stamped_at"`
+				} `json:"models"`
+			} `json:"per_model"`
+		} `json:"insights"`
+	}
+	if err := json.Unmarshal([]byte(res.Content[0].Text), &payload); err != nil {
+		t.Fatalf("insights.summary payload not JSON: %v / %s", err, res.Content[0].Text)
+	}
+	if payload.SchemaVersion != 2 {
+		t.Fatalf("insights.summary schema_version = %d, want 2 (frozen contract, v2 per-model gate)", payload.SchemaVersion)
+	}
+	if payload.Insights.StuckDays != 3 {
+		t.Fatalf("insights.summary echoed stuck_days = %d, want 3", payload.Insights.StuckDays)
+	}
+	// Per-model rows must carry sample_size and the partial-state fields — their
+	// presence (not value) is the frozen-contract guarantee, so they must decode
+	// even when zero/false.
+	for _, m := range payload.Insights.PerModel.Models {
+		if m.SampleSize == nil {
+			t.Fatalf("insights.summary per-model row %q is missing sample_size", m.AgentModel)
+		}
+		if m.Partial == nil {
+			t.Fatalf("insights.summary per-model row %q is missing partial", m.AgentModel)
+		}
+		if m.FirstStampedAt == nil {
+			t.Fatalf("insights.summary per-model row %q is missing first_stamped_at", m.AgentModel)
+		}
+	}
+}
+
+// TestAdapterInsightsSummaryScopesToResolvedProject pins the contextual-first
+// scope contract of insights.summary: with project_id omitted, the reading
+// scopes to the project the service's selector resolves (cwd) — never the
+// cross-project global view — and an explicit project_id still overrides the
+// resolved context. Regression for the leak where InsightsSummary resolved
+// the project but scoped by the raw input.ProjectID (default 0), so every
+// self-consult from inside a project root returned the global rollup.
+func TestAdapterInsightsSummaryScopesToResolvedProject(t *testing.T) {
+	ctx := context.Background()
+	store := snapstore.Open(t, filepath.Join(t.TempDir(), "omakiten.db"))
+	if err := store.ImportBundle(ctx, mcpTestBundle(t), "test.yaml", "hash"); err != nil {
+		t.Fatalf("ImportBundle() error = %v", err)
+	}
+	makeProject := func(slug string, tasks int) domain.Project {
+		t.Helper()
+		root := filepath.Join(t.TempDir(), slug)
+		if err := os.MkdirAll(root, 0o755); err != nil {
+			t.Fatalf("MkdirAll(%s) error = %v", slug, err)
+		}
+		project, err := store.UpsertProject(ctx, slug, slug, root)
+		if err != nil {
+			t.Fatalf("UpsertProject(%s) error = %v", slug, err)
+		}
+		for i := 0; i < tasks; i++ {
+			if _, err := store.CreateTask(ctx, project.ID, fmt.Sprintf("%s-%d", slug, i), "", domain.Priority(2), "backlog", nil, store.Snapshot()); err != nil {
+				t.Fatalf("CreateTask(%s-%d) error = %v", slug, i, err)
+			}
+		}
+		return project
+	}
+	projectA := makeProject("alpha", 1)
+	projectB := makeProject("bravo", 2)
+
+	svc := agent.NewService(store, agent.ProjectSelector{CWD: projectA.RootPath})
+	svc.SetSnapshot(store.Snapshot())
+	adapter := NewAdapter(svc)
+
+	wipTotal := func(args map[string]any) int {
+		t.Helper()
+		res, err := adapter.CallTool(ctx, "insights.summary", withModel(args))
+		if err != nil {
+			t.Fatalf("CallTool(insights.summary) error = %v", err)
+		}
+		if res.IsError {
+			t.Fatalf("insights.summary error: %s", res.Content[0].Text)
+		}
+		var payload struct {
+			Insights struct {
+				WIP struct {
+					Buckets []struct {
+						Count int `json:"count"`
+					} `json:"buckets"`
+				} `json:"wip"`
+			} `json:"insights"`
+		}
+		if err := json.Unmarshal([]byte(res.Content[0].Text), &payload); err != nil {
+			t.Fatalf("insights.summary payload not JSON: %v / %s", err, res.Content[0].Text)
+		}
+		total := 0
+		for _, b := range payload.Insights.WIP.Buckets {
+			total += b.Count
+		}
+		return total
+	}
+
+	if got := wipTotal(nil); got != 1 {
+		t.Fatalf("insights.summary contextual WIP total = %d, want 1 (alpha only — global rollup leaked)", got)
+	}
+	if got := wipTotal(map[string]any{"project_id": projectB.ID}); got != 2 {
+		t.Fatalf("insights.summary explicit project_id WIP total = %d, want 2 (bravo)", got)
+	}
+}
+
 func TestAdapterCallToolRequiresAgentModel(t *testing.T) {
 	ctx := context.Background()
 	service := newMCPTestService(t, ctx)
@@ -434,6 +581,42 @@ func TestAdapterCallToolRequiresAgentModel(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "_agent_model must be a non-empty string") {
 		t.Fatalf("CallTool error = %v, want non-empty validation", err)
+	}
+}
+
+// TestAdapterRejectsMalformedAgentModel pins the _agent_model hygiene gate:
+// the value is stamped into events verbatim and later rendered in a terminal
+// and grouped in per-model rosters, so an oversized or control-character
+// value is rejected at the choke point instead of stored.
+func TestAdapterRejectsMalformedAgentModel(t *testing.T) {
+	ctx := context.Background()
+	service := newMCPTestService(t, ctx)
+	adapter := NewAdapter(service)
+
+	// Over the 128-byte cap.
+	_, err := adapter.CallTool(ctx, "project.overview", map[string]any{"_agent_model": strings.Repeat("x", 129)})
+	if err == nil {
+		t.Fatal("CallTool(oversized _agent_model) error = nil, want validation_error")
+	}
+	if !strings.Contains(err.Error(), "exceeds 128 bytes") {
+		t.Fatalf("CallTool error = %v, want length-cap validation", err)
+	}
+
+	// Terminal escape / control bytes — C0, DEL, and the C1 block
+	// (U+009B = 8-bit CSI, U+009D = 8-bit OSC) must all be rejected.
+	for _, bad := range []string{"claude\x1b]0;pwn\x07", "model\nnewline", "model\x7f", "model\u009b31m", "model\u009d0;pwn"} {
+		_, err := adapter.CallTool(ctx, "project.overview", map[string]any{"_agent_model": bad})
+		if err == nil {
+			t.Fatalf("CallTool(_agent_model=%q) error = nil, want validation_error", bad)
+		}
+		if !strings.Contains(err.Error(), "control characters") {
+			t.Fatalf("CallTool(_agent_model=%q) error = %v, want control-character validation", bad, err)
+		}
+	}
+
+	// Boundary: exactly 128 printable bytes passes the gate.
+	if _, err := adapter.CallTool(ctx, "project.overview", map[string]any{"_agent_model": strings.Repeat("x", 128)}); err != nil {
+		t.Fatalf("CallTool(128-byte _agent_model) error = %v, want nil", err)
 	}
 }
 

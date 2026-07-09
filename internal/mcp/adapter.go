@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"unicode"
 
 	"omakiten/internal/activity"
 	"omakiten/internal/agent"
@@ -26,6 +27,13 @@ const (
 	agentSessionArgKey = "_agent_session_id"
 )
 
+// maxAgentModelBytes caps the accepted _agent_model length. The value is
+// stamped into events verbatim and later surfaces in GROUP BY rosters
+// (metrics.summary, insights.summary per-model) and in the TUI, so an
+// unbounded string would let a client mint arbitrarily large roster rows.
+// 128 bytes comfortably fits every real model identifier.
+const maxAgentModelBytes = 128
+
 const agentModelSchemaDescription = "AI model identifier invoking this tool (e.g. \"claude-opus-4-7\", \"claude-sonnet-4-6\", \"gpt-5\"). Required — the server rejects calls without it so /metrics.summary can benchmark per-model behaviour."
 
 const agentSessionSchemaDescription = "Optional session id correlating multiple tool calls from the same agent run. Stripped before tool-specific decoding."
@@ -45,6 +53,23 @@ func extractAgentAttribution(args map[string]any) (model, sessionID string, err 
 	if model == "" {
 		return "", "", domain.NewError(domain.ErrValidation,
 			"_agent_model must be a non-empty string (see tool inputSchema for usage).", nil)
+	}
+	// Cap and charset-check at the single choke point every tool call
+	// passes through: the value lands in events verbatim and is later
+	// rendered in a terminal, so control/escape bytes are rejected rather
+	// than stored. unicode.IsControl covers the full Cc category — C0
+	// (<0x20), DEL (0x7f), AND the C1 block (0x80–0x9F) whose U+009B/U+009D
+	// act as 8-bit CSI/OSC introducers on C1-honoring terminals; a
+	// C0/DEL-only check would let those through.
+	if len(model) > maxAgentModelBytes {
+		return "", "", domain.NewError(domain.ErrValidation,
+			"_agent_model exceeds 128 bytes; pass the plain model identifier.", nil)
+	}
+	for _, r := range model {
+		if unicode.IsControl(r) {
+			return "", "", domain.NewError(domain.ErrValidation,
+				"_agent_model must not contain control characters.", nil)
+		}
 	}
 	delete(args, agentModelArgKey)
 
@@ -252,6 +277,7 @@ func tools() []ToolDefinition {
 		{Name: "solutions.list_top", Description: "List the top N most-liked solutions globally (cross-project). Useful to surface validated fixes and audit recurring patterns. Likes are incremented only by solutions.confirm(success=true).", InputSchema: listTopSolutionsSchema()},
 		{Name: "templates.list", Description: "List every loaded template (slug, name, default kind, project scope, custom flag). Read-only; templates are authored by the user — the agent never modifies template bindings.", InputSchema: objectSchema(map[string]any{"kind": stringSchema("Optional default-kind filter (e.g. \"task\")"), "project": stringSchema("Optional project slug to scope project-bound templates"), "include_body": booleanSchema("Set true to include the template body in each entry; default omits it for compact responses")}, nil)},
 		{Name: "metrics.summary", Description: "Aggregate per-AI-model behaviour over a period. Each row carries a `buckets` map keyed by metric tag (`error_recorded`, `error_searched`, `solution_added`, `solution_liked`, `solution_failed`, `solution_top_viewed`) plus `like_rate`, `search_before_record_ratio`, and `session_correlated_sample`. Use to benchmark whether different agents research existing context before recording new errors. Requires that callers pass _agent_model on every tool call (now coercive).", InputSchema: objectSchema(map[string]any{"period": stringSchema("Time window: \"7d\", \"30d\" (default), or \"all\""), "project_id": integerSchema("Optional registered project id; omit for cross-project view")}, nil)},
+		{Name: "insights.summary", Description: "Read-only, consultivo: return the six today-insights for a project (stuck tasks, cycle-time bottleneck, WIP per bucket, guard-violation hotspots, the error loop, and a per-model contrast). The agent self-consults this surface to self-correct (reactive → proactive) — it NEVER moves a task, relaxes a guard, or gates a workflow transition. The output schema is frozen and versioned (`schema_version`, currently 2): a consumer can pin the shape and reject an unknown one. Every sub-report carries an explicit `has_data` flag (no silent zero — empty history is distinguished from a genuine zero reading), and per-model rows carry `sample_size` (the stamped-event count behind the row — the partial-state gate input; the dwell-interval count lives in `dwell_samples`). PRE-COMMITTED FALSIFIABLE HYPOTHESIS: exposing insights.summary to the agent makes guard-violations-per-task drop ≥30% over 2 weeks vs baseline (measured via the guard-hotspot insight).", InputSchema: objectSchema(map[string]any{"stuck_days": integerSchema("Optional staleness threshold (days) for the stuck-task scan; omit or 0 takes the service default (7)"), "project_id": integerSchema("Optional registered project id to pin explicitly; omit to scope to the project resolved from cwd (contextual default — global view only when no project resolves)")}, nil)},
 		{Name: "templates.show", Description: "Return one template by slug, including its full body. Read-only. Hard-rejects (validation_error) when the requested slug is a global template that is shadowed by a project-scoped override in the active project — the rejection's details name the active slug so callers can re-call directly.", InputSchema: showTemplateSchema()},
 		{Name: "skills.list", Description: "List every loaded skill (slug + name + description), ordered by slug. Bodies are omitted — call skills.get for one body. Read-only; skills are authored by the user and the agent never creates, edits, or deletes them through MCP.", InputSchema: objectSchema(map[string]any{}, nil)},
 		{Name: "skills.get", Description: "Return one skill by slug, including its full body. Read-only; there is no mutation counterpart. Rejects (validation_error) when the slug is unknown, naming the missing slug.", InputSchema: objectSchema(map[string]any{"slug": stringSchema("Skill slug")}, []string{"slug"})},
@@ -675,6 +701,12 @@ func (a *Adapter) dispatchTool(ctx context.Context, service *agent.Service, name
 		err = decodeArgs(args, &input)
 		if err == nil {
 			data, err = service.MetricsSummary(ctx, input)
+		}
+	case "insights.summary":
+		var input agent.InsightsSummaryInput
+		err = decodeArgs(args, &input)
+		if err == nil {
+			data, err = service.InsightsSummary(ctx, input)
 		}
 	case "plans.create":
 		var input agent.CreatePlanInput

@@ -69,6 +69,7 @@ type Repository interface {
 	app.TagRepository
 	app.ErrorRepository
 	app.MetricsRepository
+	app.InsightsRepository
 	app.OrphanRepository
 	app.SearchRepository
 	app.PlanRepository

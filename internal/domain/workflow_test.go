@@ -295,3 +295,72 @@ func TestProjectContextNarrows(t *testing.T) {
 		t.Fatalf("Context() = %+v, want %+v", got, want)
 	}
 }
+
+func TestInFlightBucketIDs(t *testing.T) {
+	bucket := func(id int64, pos int) Bucket { return Bucket{ID: id, Position: pos} }
+
+	tests := []struct {
+		name     string
+		buckets  []Bucket
+		wantIDs  []int64
+		wantOK   bool
+	}{
+		{
+			name:    "zero-value workflow is unknown",
+			buckets: nil,
+			wantIDs: nil,
+			wantOK:  false,
+		},
+		{
+			name:    "single bucket: known, no in-flight stage",
+			buckets: []Bucket{bucket(1, 1)},
+			wantIDs: []int64{},
+			wantOK:  true,
+		},
+		{
+			name:    "two buckets: known, no middle",
+			buckets: []Bucket{bucket(1, 1), bucket(4, 2)},
+			wantIDs: []int64{},
+			wantOK:  true,
+		},
+		{
+			name:    "canonical four buckets: dev+review in-flight",
+			buckets: []Bucket{bucket(1, 1), bucket(2, 2), bucket(3, 3), bucket(4, 4)},
+			wantIDs: []int64{2, 3},
+			wantOK:  true,
+		},
+		{
+			name:    "unordered positions: min/max by position not slice order",
+			buckets: []Bucket{bucket(3, 3), bucket(1, 1), bucket(4, 4), bucket(2, 2)},
+			wantIDs: []int64{3, 2}, // slice order preserved; ids 3 and 2 are the middle positions
+			wantOK:  true,
+		},
+		{
+			name:    "tied extreme positions collapse the in-flight set",
+			buckets: []Bucket{bucket(1, 1), bucket(2, 1), bucket(3, 1)},
+			wantIDs: []int64{}, // min==max==1, so every bucket is an extreme -> none in-flight
+			wantOK:  true,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			ids, ok := Workflow{Buckets: tc.buckets}.InFlightBucketIDs()
+			if ok != tc.wantOK {
+				t.Fatalf("ok = %v, want %v", ok, tc.wantOK)
+			}
+			if len(ids) != len(tc.wantIDs) {
+				t.Fatalf("ids = %v, want %v", ids, tc.wantIDs)
+			}
+			for i := range ids {
+				if ids[i] != tc.wantIDs[i] {
+					t.Fatalf("ids = %v, want %v", ids, tc.wantIDs)
+				}
+			}
+			// The zero-value case must return a nil slice (not empty) so the
+			// caller's nil-check distinguishes unknown from known-empty.
+			if !tc.wantOK && ids != nil {
+				t.Fatalf("unknown workflow must return nil ids, got %v", ids)
+			}
+		})
+	}
+}

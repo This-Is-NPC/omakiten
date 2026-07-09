@@ -2,12 +2,35 @@ package tui
 
 import (
 	"strings"
+	"unicode"
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 
 	"omakiten/internal/tui/components/gridtable"
 )
+
+// sanitizeTerminalText neutralises terminal escape and control sequences in
+// strings sourced from the events log (task titles, MCP-supplied agent_model
+// ids, guard rule/tag pairs, payload-derived bucket keys) before they reach
+// the operator's terminal. These values are attacker-influenceable through
+// the MCP surface, and truncateText's ansi.StringWidth counts escape
+// sequences as zero-width — an escape-laden string would pass the width
+// check verbatim and inject OSC/CSI into the TUI.
+//
+// ansi.Strip removes only ESC(0x1b)-introduced sequences; the rune filter
+// must therefore drop every Cc control — C0 (<0x20), DEL (0x7f), AND the C1
+// block (0x80–0x9F), whose U+009B/U+009D act as 8-bit CSI/OSC introducers on
+// C1-honoring terminals. unicode.IsControl covers exactly that set.
+func sanitizeTerminalText(s string) string {
+	s = ansi.Strip(s)
+	return strings.Map(func(r rune) rune {
+		if unicode.IsControl(r) {
+			return -1
+		}
+		return r
+	}, s)
+}
 
 func plural(n int, singular, plural string) string {
 	if n == 1 {
