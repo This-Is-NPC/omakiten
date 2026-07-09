@@ -182,6 +182,12 @@ func (m Model) renderHelp() string {
 			{"← →", m.t("tui.help.stats_general.cycle_period")},
 			{"r", m.t("tui.help.stats_general.refresh")},
 		}},
+		{"stats_insights", m.t("tui.help.stats_insights.title"), []binding{
+			{"r", m.t("tui.help.stats_insights.refresh")},
+			// Reuses the footer's translated "scroll" label — the binding is
+			// the shared read-only scroll vocabulary, no bespoke copy needed.
+			{"j k · pgup · pgdn · g G", m.t("tui.footer.scroll")},
+		}},
 	}
 
 	if !m.helpAll {
@@ -284,6 +290,8 @@ func (m Model) currentHelpTitles() []string {
 		return []string{"stats_logs"}
 	case m.sub == subStatsGeneral:
 		return []string{"stats_general"}
+	case m.sub == subStatsInsights:
+		return []string{"stats_insights"}
 	default:
 		return []string{"tasks_board"}
 	}

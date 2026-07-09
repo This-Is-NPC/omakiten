@@ -16,6 +16,42 @@ type Workflow struct {
 	Defaults *WorkflowDefaults `json:"defaults,omitempty"`
 }
 
+// InFlightBucketIDs returns the ids of the buckets strictly between the
+// first and last position — the stages where a task is actively being
+// worked and can therefore be "stuck" (the first bucket is not-started, the
+// last is terminal by runtime convention).
+//
+// ok reports whether the workflow was known well enough to answer: it is
+// false only when the workflow carries no buckets (an unwired/zero-value
+// Workflow). A known workflow returns ok=true even when the in-flight set is
+// empty — a 1- or 2-bucket preset genuinely has no middle stage — so the
+// caller can distinguish "workflow unknown, use a fallback" (ok=false) from
+// "workflow known, nothing is in-flight" (ok=true, empty). Collapsing those
+// two into a nil slice would silently apply the canonical dev/review
+// fallback to a non-canonical preset — the exact case the stuck-scan fix
+// targets.
+func (w Workflow) InFlightBucketIDs() (ids []int64, ok bool) {
+	if len(w.Buckets) == 0 {
+		return nil, false
+	}
+	minPos, maxPos := w.Buckets[0].Position, w.Buckets[0].Position
+	for _, b := range w.Buckets[1:] {
+		if b.Position < minPos {
+			minPos = b.Position
+		}
+		if b.Position > maxPos {
+			maxPos = b.Position
+		}
+	}
+	ids = make([]int64, 0, len(w.Buckets))
+	for _, b := range w.Buckets {
+		if b.Position != minPos && b.Position != maxPos {
+			ids = append(ids, b.ID)
+		}
+	}
+	return ids, true
+}
+
 // WorkflowDefaults is the policy fallback applied when a bucket does not
 // override the field. Task is the base; Comment, when nil, inherits from
 // Task field-by-field, mirroring the per-bucket inheritance rule.

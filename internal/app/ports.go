@@ -265,6 +265,18 @@ type MetricsRepository interface {
 	AgentMetricsSummary(ctx context.Context, period string, projectID int64) ([]domain.AgentMetrics, string, error)
 }
 
+// InsightsRepository computes the six today-insights on demand (no cache)
+// from the unified events log plus the errors/solutions tables. Used by the
+// InsightsService to feed the intelligence-layer view. projectID > 0 scopes
+// the task-shaped insights to one project; 0 returns the global view.
+// stuckDays parameterises the stuck-task staleness threshold (insight 1).
+// stuckBuckets names the in-flight bucket ids the stuck scan targets
+// (resolved from the active workflow via Workflow.InFlightBucketIDs);
+// empty falls back to the repository's canonical dev/review ids.
+type InsightsRepository interface {
+	Insights(ctx context.Context, projectID int64, stuckDays int, stuckBuckets []int64) (domain.Insights, error)
+}
+
 // SearchRepository exposes the unified FTS5 index that spans tasks,
 // comments, errors, solutions, plans, and notes. The adapter
 // implements ranking (BM25), snippet rendering, and the implicit

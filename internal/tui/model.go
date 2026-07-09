@@ -372,6 +372,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.handleStatsKey(msg)
 		case subStatsLogs:
 			m.handleLogsKey(msg)
+		case subStatsInsights:
+			m.handleInsightsKey(msg)
 		case subSettingsGeneral, subSettingsGuards:
 			if cmd := m.handleSettingsGeneralKey(msg); cmd != nil {
 				return m, cmd
@@ -663,6 +665,9 @@ func (m Model) currentReloadKinds() []realtimeReloadKind {
 	if m.top == topStats && m.sub == subStatsLogs {
 		return []realtimeReloadKind{realtimeReloadLogs}
 	}
+	if m.top == topStats && m.sub == subStatsInsights {
+		return []realtimeReloadKind{realtimeReloadInsights}
+	}
 	return []realtimeReloadKind{realtimeReloadBundle}
 }
 
@@ -732,6 +737,12 @@ func (m *Model) refreshAfterViewChangeCmd(prev navState) tea.Cmd {
 	}
 	if m.top == topStats && m.sub == subStatsGeneral {
 		if err := m.refreshStats(); err != nil {
+			m.status = err.Error()
+		}
+		return nil
+	}
+	if m.top == topStats && m.sub == subStatsInsights {
+		if err := m.refreshInsights(); err != nil {
 			m.status = err.Error()
 		}
 		return nil
@@ -893,6 +904,7 @@ const (
 	realtimeReloadPlanShow
 	realtimeReloadStats
 	realtimeReloadLogs
+	realtimeReloadInsights
 )
 
 // realtimeReloadMsg is the worker-to-main envelope for the changed-tick
@@ -959,6 +971,10 @@ type realtimeReloadMsg struct {
 	events      []domain.EventRow
 	eventCounts map[domain.EventCategory]int
 	logsValid   bool
+
+	// insights payload (kind == realtimeReloadInsights)
+	insights      domain.Insights
+	insightsValid bool
 }
 
 // realtimeRefreshCmd builds the off-thread changed-tick reload. It runs on the
@@ -1105,6 +1121,31 @@ func (m *Model) realtimeRefreshCmd(kind realtimeReloadKind, dataVersion int64, d
 			result.events = rows
 			result.eventCounts = counts
 			result.logsValid = true
+			return result
+		}
+		registerRealtimeReloadCmd(cmd)
+		return cmd
+	case realtimeReloadInsights:
+		// Stats › insights — the intelligence layer. Mirrors the stats
+		// path: bounded read, off-thread, packed into the msg; the apply
+		// folds it into m.insights on the Update goroutine.
+		if m.repos.Insights == nil {
+			return nil
+		}
+		stamp := newStamp()
+		insightsSvc := m.repos.Insights
+		projectID := project.ID
+		stuckBuckets := insightsStuckBuckets(m.workflow)
+		var cmd tea.Cmd
+		cmd = func() tea.Msg {
+			result := stamp(realtimeReloadMsg{kind: kind, cmdKey: reflect.ValueOf(cmd).Pointer()})
+			ins, err := insightsSvc.Today(ctx, project, projectID, 0, stuckBuckets)
+			if err != nil {
+				result.err = err
+				return result
+			}
+			result.insights = ins
+			result.insightsValid = true
 			return result
 		}
 		registerRealtimeReloadCmd(cmd)
@@ -1284,6 +1325,12 @@ func (m *Model) applyRealtimeReload(r realtimeReloadMsg) {
 			m.statsSummary = r.statsSummary
 			applied = true
 		}
+	case realtimeReloadInsights:
+		if r.insightsValid {
+			m.insights = r.insights
+			m.insightsLoaded = true
+			applied = true
+		}
 	case realtimeReloadLogs:
 		if r.logsValid {
 			rows := r.events
@@ -1325,6 +1372,9 @@ func (m *Model) refreshCurrentView() error {
 	}
 	if m.top == topStats && m.sub == subStatsGeneral {
 		return m.refreshStats()
+	}
+	if m.top == topStats && m.sub == subStatsInsights {
+		return m.refreshInsights()
 	}
 	return m.refreshPreservingTaskSelection()
 }
@@ -1443,6 +1493,44 @@ func (m *Model) refreshStats() error {
 		return err
 	}
 	m.statsSummary = summary
+	return nil
+}
+
+// insightsStuckBuckets resolves the in-flight bucket ids the stuck scan
+// should target from a workflow, translating InFlightBucketIDs' (ids, ok)
+// into the repository's tri-state stuckBuckets contract: an unresolved
+// workflow (ok=false) becomes nil so the repo applies its canonical
+// fallback; a resolved workflow (ok=true) passes its ids through as
+// authoritative — an empty-but-non-nil slice when the preset has no
+// in-flight stage, so the repo scans nothing instead of falling back.
+func insightsStuckBuckets(wf domain.Workflow) []int64 {
+	ids, ok := wf.InFlightBucketIDs()
+	if !ok {
+		return nil
+	}
+	if ids == nil {
+		// Preserve the authoritative-empty signal: a known workflow with no
+		// in-flight stage must not collapse to the nil "fallback" case.
+		return []int64{}
+	}
+	return ids
+}
+
+// refreshInsights re-fetches the intelligence-layer reading for the
+// Stats › Insights sub-mode. Mirrors refreshStats: a no-op when the
+// service is unwired (stub fixtures), and it never queries directly —
+// all six insights come from InsightsService.Today. stuckDays=0 takes
+// the service default (DefaultStuckDays).
+func (m *Model) refreshInsights() error {
+	if m.repos.Insights == nil {
+		return nil
+	}
+	ins, err := m.repos.Insights.Today(m.ctx, m.project, m.project.ID, 0, insightsStuckBuckets(m.workflow))
+	if err != nil {
+		return err
+	}
+	m.insights = ins
+	m.insightsLoaded = true
 	return nil
 }
 

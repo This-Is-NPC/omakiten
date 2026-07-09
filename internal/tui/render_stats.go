@@ -110,7 +110,7 @@ func (m Model) renderStatsModelPanel() string {
 			likePct = fmt.Sprintf("%.0f%%", am.LikeRate*100)
 		}
 		row := fmt.Sprintf("%-*s %*d %*d %*s %*d %*s",
-			modelW, truncateText(am.AgentModel, modelW),
+			modelW, truncateText(sanitizeTerminalText(am.AgentModel), modelW),
 			countW, am.Buckets[domain.MetricBucketErrorRecorded],
 			countW, am.Buckets[domain.MetricBucketErrorsResearched],
 			ratioW, searchPct,

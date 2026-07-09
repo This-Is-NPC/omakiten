@@ -156,6 +156,8 @@ func (m Model) renderCurrentView() string {
 		return m.renderStats()
 	case subStatsLogs:
 		return m.renderLogs()
+	case subStatsInsights:
+		return m.renderInsights()
 	case subSettingsGeneral:
 		return m.renderSettingsGeneral()
 	case subSettingsLaws:
@@ -632,6 +634,14 @@ func (m Model) footerTokens() []footerToken {
 		return []footerToken{
 			{key: "←/→", label: m.t("tui.footer.period_7d_30d_all"), primary: true},
 			{key: "r", label: m.t("tui.footer.refresh")},
+			{key: "tab", label: m.t("tui.footer.zones")},
+			{key: ",//", label: m.t("tui.footer.subs")},
+			m.helpToken(),
+		}
+	case m.sub == subStatsInsights:
+		return []footerToken{
+			{key: "r", label: m.t("tui.footer.refresh"), primary: true},
+			{key: "j/k", label: m.t("tui.footer.scroll")},
 			{key: "tab", label: m.t("tui.footer.zones")},
 			{key: ",//", label: m.t("tui.footer.subs")},
 			m.helpToken(),

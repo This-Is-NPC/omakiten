@@ -138,16 +138,28 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 	return nil
 }
 
+// insertTaskEvent is the single-source writer for entity_type='task' event
+// rows. Agent attribution (source/entrypoint/agent_model/agent_session_id) is
+// pulled from ctx HERE via agentAttribution — mirroring RecordEntityEvent — so
+// all five callers (RecordTaskEvent, MoveTask, the lifecycle transition,
+// orphan migration, txevent) stamp attribution by merely passing their
+// existing ctx. The stamping logic lives only in this function; callers never
+// thread model/session as parameters.
+//
+// Cutover note: there is NO historical backfill. task-event rows written
+// before this stamping landed keep agent_model / agent_session_id blank by
+// design; only rows inserted from here forward carry attribution.
 func insertTaskEvent(ctx context.Context, exec dbExecutor, projectID, taskID int64, eventType, body, payload string) (domain.Event, error) {
 	if payload == "" {
 		payload = "{}"
 	}
+	source, entrypoint, agentModel, agentSessionID := agentAttribution(ctx)
 	var event domain.Event
 	if err := exec.QueryRowContext(ctx, `
-INSERT INTO events(entity_type, entity_id, project_id, event_type, body, payload)
-VALUES ('task', ?, ?, ?, ?, ?)
+INSERT INTO events(entity_type, entity_id, project_id, event_type, body, payload, source, entrypoint, agent_model, agent_session_id)
+VALUES ('task', ?, ?, ?, ?, ?, ?, ?, ?, ?)
 RETURNING id, entity_type, entity_id, project_id, event_type, body, payload, created_at
-`, taskID, projectID, eventType, body, payload).Scan(
+`, taskID, projectID, eventType, body, payload, source, entrypoint, agentModel, agentSessionID).Scan(
 		&event.ID, &event.EntityType, &event.EntityID, &event.ProjectID,
 		&event.EventType, &event.Body, &event.Payload, &event.CreatedAt,
 	); err != nil {
