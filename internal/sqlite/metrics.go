@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"omakiten/internal/domain"
+	"omakiten/internal/sqlite/sqlutil"
 )
 
 // AgentMetricsSummary aggregates the domain events emitted by the
@@ -42,7 +43,7 @@ func (s *Store) AgentMetricsSummary(ctx context.Context, period string, projectI
 		inArgs[i] = def.Key
 	}
 	whereClauses := []string{
-		"agent_model != ''",
+		sqlutil.AgentAttributedFilter,
 		"event_type IN (" + strings.Join(inPlaceholders, ",") + ")",
 	}
 	args := append([]any{}, inArgs...)
@@ -62,7 +63,7 @@ func (s *Store) AgentMetricsSummary(ctx context.Context, period string, projectI
 	caseClauses := make([]string, len(metricDefs))
 	caseArgs := make([]any, len(metricDefs))
 	for i, def := range metricDefs {
-		caseClauses[i] = "  SUM(CASE WHEN event_type = ? THEN 1 ELSE 0 END)"
+		caseClauses[i] = "  " + sqlutil.ConditionalCount("event_type = ?")
 		caseArgs[i] = def.Key
 	}
 
@@ -146,7 +147,7 @@ func (s *Store) fillSearchBeforeRecord(ctx context.Context, models []domain.Agen
 	args := []any{recordedKey}
 	whereClauses := []string{
 		"r.event_type = ?",
-		"r.agent_model != ''",
+		sqlutil.AgentAttributedFilterFor("r"),
 		"r.agent_session_id IS NOT NULL AND r.agent_session_id != ''",
 	}
 	if periodClause != "" {
@@ -159,19 +160,24 @@ func (s *Store) fillSearchBeforeRecord(ctx context.Context, models []domain.Agen
 
 	where := strings.Join(whereClauses, " AND ")
 
-	query := `
-SELECT
-  r.agent_model,
-  COUNT(*),
-  SUM(
-    CASE WHEN EXISTS (
+	// The search-before-record tally is the same conditional-count idiom
+	// as the per-bucket counts above, but the predicate is a correlated
+	// EXISTS: "this record was preceded, in the same session, by a search
+	// within the 30-minute lookback". Built through sqlutil.ConditionalCount
+	// so it shares the metrics SELECT list's counting shape.
+	searchedBeforeRecord := sqlutil.ConditionalCount(`EXISTS (
       SELECT 1 FROM events s
       WHERE s.event_type = ?
         AND s.agent_session_id = r.agent_session_id
         AND s.id < r.id
         AND s.created_at >= datetime(r.created_at, '-30 minutes')
-    ) THEN 1 ELSE 0 END
-  )
+    )`)
+
+	query := `
+SELECT
+  r.agent_model,
+  COUNT(*),
+  ` + searchedBeforeRecord + `
 FROM events r
 WHERE ` + where + `
 GROUP BY r.agent_model
