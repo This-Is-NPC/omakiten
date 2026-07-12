@@ -1,6 +1,16 @@
 package token
 
-import "testing"
+import (
+	"errors"
+	"net/http"
+	"testing"
+)
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
+	return f(req)
+}
 
 func TestApproxCounter(t *testing.T) {
 	tests := []struct {
@@ -24,32 +34,23 @@ func TestApproxCounter(t *testing.T) {
 	}
 }
 
-func TestBPECounterReturnsPositiveCounts(t *testing.T) {
-	counter, err := NewBPECounter()
-	if err != nil {
-		t.Skipf("BPE encoding unavailable: %v", err)
-	}
+func TestNewCounterDoesNotAccessNetwork(t *testing.T) {
+	t.Setenv("TIKTOKEN_CACHE_DIR", t.TempDir())
 
-	if got := counter.Count(""); got != 0 {
-		t.Fatalf("BPECounter.Count(empty) = %d, want 0", got)
-	}
-	if got := counter.Count("   "); got != 0 {
-		t.Fatalf("BPECounter.Count(whitespace) = %d, want 0", got)
-	}
-	if got := counter.Count("hello world"); got <= 0 {
-		t.Fatalf("BPECounter.Count(hello world) = %d, want > 0", got)
-	}
-	long := counter.Count("the quick brown fox jumps over the lazy dog")
-	short := counter.Count("hi")
-	if long <= short {
-		t.Fatalf("BPECounter.Count(long) = %d, BPECounter.Count(short) = %d, want long > short", long, short)
-	}
-}
+	requests := 0
+	oldTransport := http.DefaultClient.Transport
+	http.DefaultClient.Transport = roundTripFunc(func(*http.Request) (*http.Response, error) {
+		requests++
+		return nil, errors.New("network access blocked by test")
+	})
+	t.Cleanup(func() { http.DefaultClient.Transport = oldTransport })
 
-func TestBPECounterFallsBackWhenEncodingMissing(t *testing.T) {
-	counter := BPECounter{}
-	if got := counter.Count("the quick brown fox"); got != 4 {
-		t.Fatalf("BPECounter{}.Count() = %d, want approximate fallback (4)", got)
+	counter := NewCounter()
+	if requests != 0 {
+		t.Fatalf("NewCounter() made %d HTTP request(s), want 0", requests)
+	}
+	if got := counter.Count("hello world"); got != 2 {
+		t.Fatalf("NewCounter().Count(hello world) = %d, want 2", got)
 	}
 }
 

@@ -11,7 +11,6 @@ require (
 	github.com/google/go-cmp v0.7.0
 	github.com/muesli/termenv v0.16.0
 	github.com/pelletier/go-toml/v2 v2.3.1
-	github.com/pkoukk/tiktoken-go v0.1.8
 	github.com/spf13/cobra v1.10.2
 	golang.org/x/term v0.43.0
 	gopkg.in/yaml.v3 v3.0.1
