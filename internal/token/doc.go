@@ -1,6 +1,4 @@
-// Package token counts approximate token usage for MCP responses and
-// agent-facing output. Two implementations: a tiktoken-backed BPE counter
-// (network bootstrap on first use; falls back to ApproxCounter on
-// failure) and the stdlib-only ApproxCounter (chars/4 heuristic). Same
-// Counter port so renderers swap between them based on config.
+// Package token provides deterministic local token estimates for MCP responses
+// and agent-facing output. Estimates use a standard-library word count so
+// callers never require network or filesystem bootstrap.
 package token

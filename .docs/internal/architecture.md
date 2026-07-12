@@ -11,7 +11,7 @@
 | ANSI helpers | `charmbracelet/x/ansi` | v0.11.6 (`go.mod`) |
 | Database | SQLite (pure Go) | v1.50.0 — `modernc.org/sqlite` (`go.mod`) |
 | YAML Parsing | `gopkg.in/yaml.v3` | v3.0.1 (`go.mod`) |
-| Token Counting | `tiktoken-go` | v0.1.8 (`go.mod`) |
+| Token Estimation | Standard-library word count | Built in |
 | Build / Task runner | mise | `.mise.toml` |
 | Linter | golangci-lint v2 | `.mise.toml`, `.golangci.yml` |
 | Vuln Scanner | govulncheck | `.mise.toml` |
@@ -30,7 +30,6 @@
 | `github.com/charmbracelet/x/ansi` | v0.11.6 | ANSI escape utilities used by TUI rendering |
 | `github.com/muesli/termenv` | v0.16.0 | Terminal color profile support via Charm stack |
 | `github.com/pelletier/go-toml/v2` | v2.3.1 | TOML editing for Codex MCP harness config |
-| `github.com/pkoukk/tiktoken-go` | v0.1.8 | OpenAI BPE token counting (`cl100k_base`) |
 | `github.com/google/uuid` | v1.6.0 | UUID generation (indirect, used by activity layer) |
 | `github.com/dustin/go-humanize` | v1.0.1 | Human-readable formatting in TUI |
 | `golang.org/x/term` | v0.43.0 | Terminal raw-mode + size detection (used by `internal/cli/setup_picker.go` during installer) |
@@ -54,7 +53,7 @@
 | `internal/mcp/` | MCP adapter: maps MCP tools/resources/prompts to `agent.Service` calls + JSON-RPC stdio server |
 | `internal/project/` | Active-project resolver (`--project-id`, `--project`, CWD precedence) |
 | `internal/output/` | JSON envelope formatting for machine-parseable CLI output |
-| `internal/token/` | Token estimation (BPE + word-count fallback) for context budgeting |
+| `internal/token/` | Deterministic local word-count estimation for context budgeting |
 | `internal/graph/` | Cycle detection for task dependency DAGs |
 | `internal/paths/` | Cross-platform config/data path resolution (XDG + `$OMAKITEN_HOME`) |
 | `internal/activity/` | Context-scoped observability: `activity.Track`, `WithRepository`, `WithSource` |
