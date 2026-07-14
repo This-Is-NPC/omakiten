@@ -2,6 +2,16 @@ code: sv
 name: Swedish
 native: Svenska
 keys:
+  cli.db.check.short: "Kontrollera integriteten för det enhetliga sökindexet"
+  cli.db.check.long: "Jämför FTS5-indexet med exakt fem fysiska källtyper: task, comment event, error, solution och plan."
+  cli.db.reindex.short: "Bygg om det enhetliga sökindexet atomärt"
+  cli.db.reindex.long: "Återskapa de kanoniska triggrarna och bygg om de fem fysiska källtyperna i en transaktion. Bekräftad destruktiv reparation skriver först en verifierad rullande backup av den fästa databasen."
+  cli.db.check.error.invalid: "integritetskontrollen av sökindexet misslyckades"
+  cli.db.reindex.warning.backup: "varning: verifierad backup före reparation skrevs till %s"
+  cli.db.reindex.flag.confirm: "bekräfta borttagning eller ersättning av indexerade data som avviker från de kanoniska källorna"
+  cli.db.reindex.error.confirm_required: "bekräftelse krävs; kör %s för att skapa en verifierad backup och reparera den fästa databasen"
+  cli.db.error.missing_fmt: "databasen finns inte: %s"
+  cli.db.error.not_file_fmt: "databassökvägen är inte en vanlig fil: %s"
   cli.root.short: "Tydliga checkpoints för AI-driven utveckling"
   cli.root.long: |-
     okt styr Omakiten från kommandoraden och TUI.

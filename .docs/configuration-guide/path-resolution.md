@@ -185,11 +185,11 @@ cp -a "$OMAKITEN_HOME/data" /backup/omakiten-data
 cp -a "$OMAKITEN_HOME/state" /backup/omakiten-state
 ```
 
-The DB file can be copied while `okt` is not running. For the product-supported snapshot path, use `okt db backup`; it performs an atomic file copy and is the only backup flow Omakiten wraps in CLI/TUI behavior today. There is no concurrent multi-writer story — the tool is single-user, single-process by design.
+The DB file can be copied directly only while every SQLite process is stopped and no WAL sidecar carries committed frames. For the product-supported live snapshot path, use `okt db backup`; it reads through SQLite and includes committed WAL frames without checkpointing the source.
 
 ### Rolling snapshots — `okt db backup`
 
-The in-binary `okt db backup` writes the live SQLite file to a timestamped snapshot under `$XDG_STATE_HOME/omakiten/backups/<utc-iso>.db` (defaults to `~/.local/state/omakiten/backups/`; under `$OMAKITEN_HOME`, `$OMAKITEN_HOME/state/backups/`). The copy is atomic (tmp + rename) and prunes older snapshots according to `config.backup.retention_count`:
+The in-binary `okt db backup` rejects symlink components in both source and destination paths, pins the selected source inode, creates missing destination parents one component at a time, and uses `VACUUM INTO` inside randomized same-parent staging. On Unix the directory/file are created `0700`/`0600`, SQLite binds staging through `/proc/self/fd` or `/dev/fd`, and the destination directory is fsynced. Windows mode bits are not treated as ACL confidentiality guarantees; the rooted creation APIs do not install or validate private DACLs, so deployment policy must provide private native ACL inheritance on the destination directory. Windows holds an identity-checked handle that allows SQLite read/write sharing but denies delete/rename throughout `VACUUM` and verification, flushes the staged file, and skips unsupported read-only-directory `FlushFileBuffers`, so file contents are flushed but directory-entry crash durability is not claimed. No-force publication uses atomic no-replace semantics. `--force` replaces regular files only after retaining the previous inode under a private descriptor-bound rollback link; cleanup or durability failure restores that exact inode and public name. Cleanup errors are surfaced. Rolling retention explicitly protects the newly returned path and uses basename tie-breaking for equal mtimes:
 
 ```yaml
 config:
@@ -197,7 +197,7 @@ config:
     retention_count: 5   # keep the 5 newest snapshots; 0 disables prune
 ```
 
-Every destructive command — `okt projects delete`, `okt update`, the TUI Home `d`+`d` confirm — runs the same routine before mutating state. Backup failure aborts the destructive flow with a coded error; the snapshot is the recovery artefact you reach for if the cascade went further than expected. `okt uninstall` does NOT auto-backup (uninstall removes user-owned data by intent); run `okt db backup` first if you want a snapshot to keep.
+Project deletion in the CLI and TUI holds a cross-process advisory lease on the backup directory across exact-generation snapshot creation, the SQLite cascade, and rooted retention pruning. The live Store compares `data_version` around the verified image and under `BEGIN IMMEDIATE`, so every row deleted after the writer lock exists in the retained image. Confirmed `okt db reindex` uses the same directory lease. Backup, lease, repeated-generation, or directory-identity failure aborts before destructive commit; the snapshot is the recovery artefact you reach for if a completed cascade went further than expected. `okt update` still uses the shared SQLite-aware backup service before swapping the executable. `okt uninstall` does NOT auto-backup (uninstall removes user-owned data by intent); run `okt db backup` first if you want a snapshot to keep.
 
 The strict snapshot filename pattern (`<yyyy-mm-dd>T<hh-mm-ss.nnnnnnnnn>Z.db`, with the nanosecond suffix optional for older files) means manual `.db` files you drop in the same directory are ignored by the prune pass — only files matching the pattern are rotated.
 

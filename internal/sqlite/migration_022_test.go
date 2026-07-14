@@ -23,7 +23,7 @@ func TestMigration022SearchIndexCreates(t *testing.T) {
 
 	var trigCount int
 	if err := store.db.QueryRow(
-		`SELECT COUNT(*) FROM sqlite_master WHERE type = 'trigger' AND name LIKE 'search_index_%'`,
+		`SELECT COUNT(*) FROM sqlite_master WHERE type = 'trigger' AND name GLOB 'search_index_*'`,
 	).Scan(&trigCount); err != nil {
 		t.Fatalf("count triggers: %v", err)
 	}

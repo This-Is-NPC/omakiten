@@ -42,6 +42,49 @@ func TestBackupService_Run_WritesSnapshotWithExpectedNameAndContent(t *testing.T
 	}
 }
 
+func TestBackupService_RunUsesInjectedContextAwareSnapshotWriter(t *testing.T) {
+	tmp := t.TempDir()
+	srcPath := filepath.Join(tmp, "omakiten.db")
+	if err := os.WriteFile(srcPath, []byte("source"), 0o600); err != nil {
+		t.Fatalf("write source: %v", err)
+	}
+	type contextKey string
+	ctx := context.WithValue(context.Background(), contextKey("marker"), "present")
+	called := false
+	svc := NewBackupService(BackupOptions{
+		SourcePath: srcPath,
+		DestDir:    filepath.Join(tmp, "backups"),
+		Now:        func() time.Time { return time.Date(2026, 5, 21, 14, 30, 45, 0, time.UTC) },
+		SnapshotWriter: func(gotCtx context.Context, sourcePath, destinationPath string) error {
+			called = true
+			if gotCtx.Value(contextKey("marker")) != "present" {
+				t.Fatal("snapshot writer did not receive Run context")
+			}
+			if sourcePath != srcPath {
+				t.Fatalf("snapshot writer source = %q, want %q", sourcePath, srcPath)
+			}
+			if info, err := os.Stat(filepath.Dir(destinationPath)); err != nil || !info.IsDir() {
+				t.Fatalf("BackupService did not prepare the leased destination directory: %v", err)
+			}
+			if err := os.MkdirAll(filepath.Dir(destinationPath), 0o700); err != nil {
+				return err
+			}
+			return AtomicCopyFile(sourcePath, destinationPath, destinationPath+".tmp")
+		},
+	})
+
+	path, err := svc.Run(ctx)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if !called {
+		t.Fatal("injected snapshot writer was not called")
+	}
+	if body, err := os.ReadFile(path); err != nil || string(body) != "source" {
+		t.Fatalf("injected snapshot output = %q, %v", body, err)
+	}
+}
+
 // TestBackupService_Run_NoCollisionWithinSameSecond pins two Run() calls
 // to the same wall-clock second with distinct nanosecond components and
 // asserts both snapshots survive on disk. The pre-fix filename used
@@ -213,6 +256,7 @@ func TestBackupService_PruneRespectsRetention(t *testing.T) {
 	if err != nil {
 		t.Fatalf("list dest: %v", err)
 	}
+	entries = matchingBackupEntries(entries)
 	if len(entries) != 5 {
 		names := make([]string, 0, len(entries))
 		for _, e := range entries {
@@ -228,6 +272,56 @@ func TestBackupService_PruneRespectsRetention(t *testing.T) {
 	for _, expected := range written[2:] {
 		if _, ok := survivors[expected]; !ok {
 			t.Fatalf("expected survivor %q not present; got %v", expected, survivors)
+		}
+	}
+}
+
+func TestBackupService_RunRetentionKeepsReturnedPathWithEqualMtimes(t *testing.T) {
+	tmp := t.TempDir()
+	sourcePath := filepath.Join(tmp, "source.db")
+	if err := os.WriteFile(sourcePath, []byte("new snapshot"), 0o600); err != nil {
+		t.Fatalf("write source: %v", err)
+	}
+	destDir := filepath.Join(tmp, "backups")
+	if err := os.Mkdir(destDir, 0o700); err != nil {
+		t.Fatalf("Mkdir backups: %v", err)
+	}
+	equalTime := time.Date(2026, 5, 21, 14, 30, 45, 0, time.UTC)
+	oldPaths := []string{
+		filepath.Join(destDir, "2026-05-21T14-30-43.000000000Z.db"),
+		filepath.Join(destDir, "2026-05-21T14-30-44.000000000Z.db"),
+	}
+	for _, path := range oldPaths {
+		if err := os.WriteFile(path, []byte("old"), 0o600); err != nil {
+			t.Fatalf("write old backup: %v", err)
+		}
+		if err := os.Chtimes(path, equalTime, equalTime); err != nil {
+			t.Fatalf("Chtimes old backup: %v", err)
+		}
+	}
+	svc := NewBackupService(BackupOptions{
+		SourcePath: sourcePath,
+		DestDir:    destDir,
+		Retention:  1,
+		Now:        func() time.Time { return equalTime },
+		SnapshotWriter: func(ctx context.Context, source, destination string) error {
+			if err := AtomicCopyFile(source, destination, destination+".tmp"); err != nil {
+				return err
+			}
+			return os.Chtimes(destination, equalTime, equalTime)
+		},
+	})
+
+	returnedPath, err := svc.Run(context.Background())
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if _, err := os.Stat(returnedPath); err != nil {
+		t.Fatalf("returned backup was pruned: %v", err)
+	}
+	for _, path := range oldPaths {
+		if _, err := os.Stat(path); !os.IsNotExist(err) {
+			t.Fatalf("older equal-mtime backup survived: %s (%v)", path, err)
 		}
 	}
 }
@@ -306,6 +400,7 @@ func TestBackupService_PruneNoOpWhenRetentionDisabled(t *testing.T) {
 			if err != nil {
 				t.Fatalf("list dest: %v", err)
 			}
+			entries = matchingBackupEntries(entries)
 			if len(entries) != 4 {
 				t.Fatalf("dest entries = %d, want 4 (retention=%d disables prune)", len(entries), retention)
 			}
@@ -330,4 +425,14 @@ func itoa(n int) string {
 		out = "-" + out
 	}
 	return out
+}
+
+func matchingBackupEntries(entries []os.DirEntry) []os.DirEntry {
+	matched := entries[:0]
+	for _, entry := range entries {
+		if backupFilenamePattern.MatchString(entry.Name()) {
+			matched = append(matched, entry)
+		}
+	}
+	return matched
 }

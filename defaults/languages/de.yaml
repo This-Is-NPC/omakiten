@@ -2,6 +2,16 @@ code: de
 name: German
 native: Deutsch
 keys:
+  cli.db.check.short: "Integrität des einheitlichen Suchindex prüfen"
+  cli.db.check.long: "Den FTS5-Index mit genau fünf physischen Quelltypen vergleichen: task, comment event, error, solution und plan."
+  cli.db.reindex.short: "Einheitlichen Suchindex atomar neu aufbauen"
+  cli.db.reindex.long: "Kanonische Trigger neu erstellen und die fünf physischen Quelltypen in einer Transaktion aufbauen. Eine bestätigte destruktive Reparatur schreibt zuerst ein verifiziertes rollierendes Backup der fixierten Datenbank."
+  cli.db.check.error.invalid: "Integritätsprüfung des Suchindex fehlgeschlagen"
+  cli.db.reindex.warning.backup: "Warnung: Verifiziertes Backup vor der Reparatur nach %s geschrieben"
+  cli.db.reindex.flag.confirm: "Entfernen oder Ersetzen indizierter Daten bestätigen, die von den kanonischen Quellen abweichen"
+  cli.db.reindex.error.confirm_required: "Bestätigung erforderlich; %s ausführen, um ein verifiziertes Backup zu erstellen und die fixierte Datenbank zu reparieren"
+  cli.db.error.missing_fmt: "Datenbank ist nicht vorhanden: %s"
+  cli.db.error.not_file_fmt: "Datenbankpfad ist keine reguläre Datei: %s"
   cli.root.short: "Meinungsstarke Checkpoints für KI-gesteuerte Entwicklung"
   cli.root.long: |-
     okt steuert Omakiten über Kommandozeile und TUI.

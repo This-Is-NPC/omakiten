@@ -2,6 +2,16 @@ code: jp
 name: Japanese
 native: 日本語
 keys:
+  cli.db.check.short: "統合検索インデックスの整合性を確認"
+  cli.db.check.long: "FTS5 インデックスを正確に5つの物理ソース型 task、comment event、error、solution、plan と比較します。"
+  cli.db.reindex.short: "統合検索インデックスをアトミックに再構築"
+  cli.db.reindex.long: "正規トリガーを再作成し、5つの物理ソース型を1つのトランザクションで再構築します。確認済みの破壊的修復では、固定されたデータベースの検証済みローリングバックアップを先に作成します。"
+  cli.db.check.error.invalid: "検索インデックスの整合性チェックに失敗しました"
+  cli.db.reindex.warning.backup: "警告: 修復前の検証済みバックアップを %s に書き込みました"
+  cli.db.reindex.flag.confirm: "正規ソースと異なるインデックス済みデータの削除または置換を確認"
+  cli.db.reindex.error.confirm_required: "確認が必要です。検証済みバックアップを作成して固定データベースを修復するには %s を実行してください"
+  cli.db.error.missing_fmt: "データベースが存在しません: %s"
+  cli.db.error.not_file_fmt: "データベースパスは通常のファイルではありません: %s"
   cli.root.short: "AI駆動開発のための明確なチェックポイント"
   cli.root.long: |-
     okt はコマンドラインと TUI から Omakiten を操作します。

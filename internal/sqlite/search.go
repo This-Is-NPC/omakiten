@@ -2,11 +2,12 @@ package sqlite
 
 import (
 	"context"
-	"fmt"
 	"strings"
 
 	"omakiten/internal/domain"
 )
+
+const searchResultLimit = 200
 
 // Search runs an FTS5 MATCH against the unified `search_index` virtual
 // table created by migration 022. Score is computed as `-bm25(...)` so
@@ -18,19 +19,18 @@ import (
 // LEFT JOIN against the live `tasks` table excludes archived rows.
 // Other entity types have no archive concept and bypass the JOIN.
 //
-// projectID == 0 disables the project filter (cross-project view).
-// limit clamps to a non-zero positive count; callers pass
-// app.SearchServiceLimit.
+// projectID == 0 disables the project filter (cross-project view). Results are
+// capped here so every app and internal repository caller shares one limit.
 //
 // An invalid FTS5 MATCH expression surfaces as a coded validation_error
 // so the agent layer can shape a friendly response without leaking SQL.
-func (s *Store) Search(ctx context.Context, query string, projectID int64, entityTypes []domain.SearchEntityType, limit int) ([]domain.SearchHit, error) {
-	if limit <= 0 {
-		return nil, fmt.Errorf("Search: limit must be > 0")
+func (s *Store) Search(ctx context.Context, query string, projectID int64, entityTypes []domain.SearchEntityType) ([]domain.SearchHit, error) {
+	query, err := domain.ValidateSearchQuery(query)
+	if err != nil {
+		return nil, err
 	}
-	query = strings.TrimSpace(query)
-	if query == "" {
-		return nil, domain.NewError(domain.ErrValidation, "query is required", nil)
+	if len(entityTypes) == 0 {
+		entityTypes = domain.AllSearchEntityTypes()
 	}
 
 	includeTask := includesTaskEntity(entityTypes)
@@ -72,24 +72,11 @@ func (s *Store) Search(ctx context.Context, query string, projectID int64, entit
 	}
 
 	b.WriteString(`ORDER BY score DESC LIMIT ?`)
-	args = append(args, limit)
+	args = append(args, searchResultLimit)
 
 	rows, err := s.db.QueryContext(ctx, b.String(), args...)
 	if err != nil {
-		// FTS5 surfaces query errors as either `fts5: syntax error
-		// near "..."` (the FTS5 module's own marker) or `unterminated
-		// string` (tokenizer-level). Match those tight markers only —
-		// avoid catching unrelated `SQL logic error` cases (e.g. an
-		// unexpected schema problem) and reporting them as user input
-		// errors.
-		msg := err.Error()
-		if strings.Contains(msg, "fts5:") || strings.Contains(msg, "unterminated string") {
-			return nil, domain.NewError(domain.ErrValidation, "invalid FTS5 query expression", map[string]any{
-				"query":  query,
-				"reason": msg,
-			})
-		}
-		return nil, err
+		return nil, classifyFTSQueryError(err)
 	}
 	defer func() { _ = rows.Close() }()
 
@@ -106,9 +93,20 @@ func (s *Store) Search(ctx context.Context, query string, projectID int64, entit
 	return out, rows.Err()
 }
 
+func classifyFTSQueryError(err error) error {
+	if err == nil {
+		return nil
+	}
+	msg := err.Error()
+	if strings.Contains(msg, "fts5:") || strings.Contains(msg, "unterminated string") {
+		return domain.NewError(domain.ErrValidation, "invalid FTS5 query expression", nil)
+	}
+	return err
+}
+
 // includesTaskEntity reports whether the implicit `tasks.state='active'`
-// filter must be applied. Empty filter ⇒ all entity types ⇒ task is in
-// scope. Non-empty filter ⇒ check the slice.
+// filter must be applied. Empty filter means all five entity types, so task
+// is in scope. Non-empty filter requires checking the slice.
 func includesTaskEntity(entityTypes []domain.SearchEntityType) bool {
 	if len(entityTypes) == 0 {
 		return true

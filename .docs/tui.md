@@ -29,6 +29,8 @@ Home is **outside** the regular zone cycle. `tab` / `1`–`3` never land on Home
 
 While Home is active the per-project nav strip is suppressed (Home reads as a chromeless surface). Once a project is selected, the user's last (zone, sub) is preserved across the swap so Home behaves as a project switcher rather than a session reset.
 
+Confirmed project deletion holds a cross-process backup-directory lease and writes a verified SQLite recovery image through the same pinned live `Store` connection that performs deletion, rather than reopening `DBPath`. The Store retries external generation changes before acquiring `BEGIN IMMEDIATE`; only an image matching the locked generation can proceed to the cascade. Snapshot, lease, repeated-churn, or pre-commit directory-identity failure aborts deletion and leaves the project intact. Retention runs through the pinned directory root after commit, and the final Home status includes the protected recovery path.
+
 ### Home keybindings
 
 | Key | Action |

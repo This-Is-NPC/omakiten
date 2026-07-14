@@ -1,6 +1,7 @@
 package app
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"io"
@@ -166,6 +167,49 @@ func TestProjectServiceDelete_BackupFailureAbortsDelete(t *testing.T) {
 	}
 	if _, err := store.FindProjectByID(ctx, project.ID); err != nil {
 		t.Fatalf("FindProjectByID after aborted delete error = %v, want project still present", err)
+	}
+}
+
+type completedAtomicProjectRepository struct {
+	ProjectRepository
+	backupPath string
+	calls      int
+}
+
+func (r *completedAtomicProjectRepository) DeleteProjectWithBackup(
+	context.Context,
+	int64,
+	func(context.Context, func(string) error) (string, error),
+	func(string) error,
+	func() error,
+) (string, error) {
+	r.calls++
+	return r.backupPath, nil
+}
+
+func TestProjectServiceDelete_LeaseReleaseFailureAfterCommitWarnsWithoutRetryableError(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	store, project := appTestStore(t, appTestBundle(t))
+	t.Cleanup(func() { _ = store.Close() })
+	releaseErr := errors.New("release failed after commit")
+	repo := &completedAtomicProjectRepository{ProjectRepository: store, backupPath: "/recovery.db"}
+	backup := &finalizationTestLeaser{lease: &finalizationTestLease{}, err: releaseErr}
+	events := &fakeEventRecorder{}
+	var warnings bytes.Buffer
+
+	result, err := NewProjectService(repo, backup, events).SetAuditWarnWriter(&warnings).Delete(ctx, project.ID, domain.ProjectDeleteCounters{})
+	if err != nil {
+		t.Fatalf("Delete() returned retryable error after committed mutation: %v", err)
+	}
+	if result.BackupPath != repo.backupPath || repo.calls != 1 {
+		t.Fatalf("committed delete = result:%+v repo calls:%d", result, repo.calls)
+	}
+	if !bytes.Contains(warnings.Bytes(), []byte(releaseErr.Error())) {
+		t.Fatalf("post-commit lease warning = %q, want %q", warnings.String(), releaseErr)
+	}
+	if len(events.calls) != 1 || events.calls[0].EventType != domain.EventTypeProjectRemoved {
+		t.Fatalf("post-commit audit events = %+v", events.calls)
 	}
 }
 

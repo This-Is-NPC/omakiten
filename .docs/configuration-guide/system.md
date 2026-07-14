@@ -258,7 +258,7 @@ config:
 |---|---|---|---|
 | `retention_count` | int | `>= 0` | Keeps the N newest snapshots in `StateDir()/backups`. Zero disables pruning so snapshots accumulate until managed externally. |
 
-For the snapshot filename pattern, atomic copy, and `mise run purge` interaction, see [path-resolution.md § backups](path-resolution.md#backups).
+For the SQLite-consistent snapshot path, filename pattern, atomic rename, and `mise run purge` interaction, see [path-resolution.md § backups](path-resolution.md#backups).
 
 ## `config.events`
 

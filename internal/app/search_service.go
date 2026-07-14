@@ -14,7 +14,7 @@ import (
 // against the closed set declared in domain.AllSearchEntityTypes,
 // trims the query, and delegates the heavy lifting (BM25 ranking,
 // snippet rendering, implicit task-state filter) to the adapter behind
-// SearchRepository. Empty `entityTypes` is treated as "all six".
+// SearchRepository. Empty `entityTypes` is treated as "all five".
 //
 // When the search covers errors (entity types include "error" or the
 // filter is empty), the service emits the `errors.researched` domain
@@ -23,21 +23,13 @@ import (
 type SearchService struct {
 	repo   SearchRepository
 	events EventRepository
-	limit  int
 }
 
-// SearchServiceLimit is the hard cap on rows returned per Search call.
-// FTS5 results scale with corpus size and MCP responses must stay
-// bounded; 200 is large enough for cross-entity browsing yet small
-// enough to fit comfortably in a single tool response.
-const SearchServiceLimit = 200
-
 // NewSearchService wires the service with the unified-index adapter
-// plus the event recorder used for metrics emission. The limit is fixed
-// (see SearchServiceLimit) because callers cannot shrink it usefully —
-// clients consume the ranked head of the list.
+// plus the event recorder used for metrics emission. SQLite owns the single
+// result cap so every repository caller receives the same bounded response.
 func NewSearchService(repo SearchRepository, events EventRepository) *SearchService {
-	return &SearchService{repo: repo, events: events, limit: SearchServiceLimit}
+	return &SearchService{repo: repo, events: events}
 }
 
 // Search runs the FTS5 query under the per-project (or cross-project)
@@ -45,9 +37,17 @@ func NewSearchService(repo SearchRepository, events EventRepository) *SearchServ
 // resolve the slug here; the agent layer translates project / project_id
 // into a domain.ProjectContext before calling in.
 func (s *SearchService) Search(ctx context.Context, project domain.ProjectContext, query string, entityTypes []string) (hits []domain.SearchHit, err error) {
+	cleanQuery, err := domain.ValidateSearchQuery(query)
+	if err != nil {
+		return nil, err
+	}
+	typed, err := normalizeEntityTypes(entityTypes)
+	if err != nil {
+		return nil, err
+	}
 	finish := activity.Track(ctx, "app.SearchService.Search", project, map[string]any{
-		"query":        query,
-		"entity_types": entityTypes,
+		"query":        cleanQuery,
+		"entity_types": entityTypeNames(typed),
 	})
 	defer func() {
 		status := "ok"
@@ -59,17 +59,7 @@ func (s *SearchService) Search(ctx context.Context, project domain.ProjectContex
 		finish(status, errMsg)
 	}()
 
-	cleanQuery := strings.TrimSpace(query)
-	if cleanQuery == "" {
-		err = domain.NewError(domain.ErrValidation, "query is required", nil)
-		return
-	}
-
-	typed, err := normalizeEntityTypes(entityTypes)
-	if err != nil {
-		return
-	}
-	hits, err = s.repo.Search(ctx, cleanQuery, project.ID, typed, s.limit)
+	hits, err = s.repo.Search(ctx, cleanQuery, project.ID, typed)
 	if err != nil {
 		return
 	}
@@ -89,7 +79,7 @@ func (s *SearchService) Search(ctx context.Context, project domain.ProjectContex
 
 // includesErrorEntity reports whether the filter set covers errors —
 // either via an explicit "error" entry or by being empty (which means
-// "all six entity types").
+// "all five entity types").
 func includesErrorEntity(types []domain.SearchEntityType) bool {
 	if len(types) == 0 {
 		return true
@@ -124,8 +114,9 @@ func normalizeEntityTypes(raw []string) ([]domain.SearchEntityType, error) {
 	if len(raw) == 0 {
 		return nil, nil
 	}
-	seen := map[domain.SearchEntityType]struct{}{}
-	out := make([]domain.SearchEntityType, 0, len(raw))
+	capacity := min(len(raw), len(domain.AllSearchEntityTypes()))
+	seen := make(map[domain.SearchEntityType]struct{}, capacity)
+	out := make([]domain.SearchEntityType, 0, capacity)
 	for _, v := range raw {
 		name := strings.TrimSpace(v)
 		if name == "" {
@@ -134,7 +125,7 @@ func normalizeEntityTypes(raw []string) ([]domain.SearchEntityType, error) {
 		if !domain.IsValidSearchEntityType(name) {
 			return nil, domain.NewError(domain.ErrValidation, "invalid entity_type", map[string]any{
 				"value":   name,
-				"allowed": []string{"task", "comment", "error", "solution", "plan", "note"},
+				"allowed": entityTypeNames(domain.AllSearchEntityTypes()),
 			})
 		}
 		t := domain.SearchEntityType(name)

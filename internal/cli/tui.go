@@ -113,7 +113,10 @@ func runTUI(ctx context.Context, opts *runtimeOptions, version string) error {
 		Plans:        rt.store,
 		Search:       app.NewSearchService(rt.store, rt.store),
 		Checkpointer: rt.store,
-		Watermark:    rt.store,
+		SnapshotWriter: func(snapshotCtx context.Context, _, destinationPath string) error {
+			return rt.store.Snapshot(snapshotCtx, destinationPath)
+		},
+		Watermark: rt.store,
 		DispatchCommand: func(ctx context.Context, args []string) ([]byte, error) {
 			cmd := NewRootCommand(version)
 			cmd.SetContext(ctx)

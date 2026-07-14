@@ -5,6 +5,7 @@ import (
 	"sort"
 	"strings"
 	"testing"
+	"unicode"
 
 	"omakiten/defaults"
 )
@@ -25,6 +26,11 @@ func TestBundledLanguagePacksHaveIdenticalKeySets(t *testing.T) {
 	entries, err := defaults.FS.ReadDir("languages")
 	if err != nil {
 		t.Fatalf("read bundled languages: %v", err)
+	}
+	for _, key := range []string{"cli.db.reindex.warning.backup", "cli.db.reindex.error.confirm_required"} {
+		if strings.Count(en.Keys[key], "%s") != 1 {
+			t.Errorf("English %s placeholder count = %d, want 1", key, strings.Count(en.Keys[key], "%s"))
+		}
 	}
 	for _, entry := range entries {
 		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".yaml") {
@@ -49,6 +55,74 @@ func TestBundledLanguagePacksHaveIdenticalKeySets(t *testing.T) {
 			t.Errorf("language pack %s has %d extra keys (first 5): %v", code, len(extra), firstN(extra, 5))
 		}
 	}
+}
+
+func TestBundledDBMaintenanceStringsAreTranslated(t *testing.T) {
+	t.Parallel()
+
+	keys := []string{
+		"cli.db.check.short",
+		"cli.db.check.long",
+		"cli.db.reindex.short",
+		"cli.db.reindex.long",
+		"cli.db.check.error.invalid",
+		"cli.db.reindex.warning.backup",
+		"cli.db.reindex.flag.confirm",
+		"cli.db.reindex.error.confirm_required",
+		"cli.db.error.missing_fmt",
+		"cli.db.error.not_file_fmt",
+	}
+	en := loadBundledLanguage(t, "en")
+	if !strings.Contains(en.Keys["cli.db.reindex.long"], "verified rolling backup") {
+		t.Error("English cli.db.reindex.long does not describe the verified pre-repair backup")
+	}
+	if !strings.Contains(en.Keys["cli.db.reindex.warning.backup"], "verified pre-repair backup") {
+		t.Error("English cli.db.reindex.warning.backup does not identify the verified backup path")
+	}
+	entries, err := defaults.FS.ReadDir("languages")
+	if err != nil {
+		t.Fatalf("read bundled languages: %v", err)
+	}
+	for _, entry := range entries {
+		if entry.IsDir() || entry.Name() == "en.yaml" || !strings.HasSuffix(entry.Name(), ".yaml") {
+			continue
+		}
+		code := strings.TrimSuffix(entry.Name(), ".yaml")
+		t.Run(code, func(t *testing.T) {
+			lang := loadBundledLanguage(t, code)
+			for _, key := range keys {
+				if lang.Keys[key] == en.Keys[key] {
+					t.Errorf("%s still copies the English value", key)
+				}
+				if substantiveLanguageText(lang.Keys[key]) == substantiveLanguageText(en.Keys[key]) {
+					t.Errorf("%s differs from English only by punctuation or spacing", key)
+				}
+				if strings.Count(lang.Keys[key], "%s") != strings.Count(en.Keys[key], "%s") {
+					t.Errorf("%s %%s placeholder count drifted", key)
+				}
+			}
+			for _, token := range []string{"FTS5", "task", "comment", "error", "solution", "plan"} {
+				if !strings.Contains(lang.Keys["cli.db.check.long"], token) {
+					t.Errorf("cli.db.check.long missing token %q", token)
+				}
+			}
+			for _, key := range []string{"cli.db.reindex.warning.backup", "cli.db.reindex.error.confirm_required"} {
+				if strings.Count(lang.Keys[key], "%s") != 1 {
+					t.Errorf("%s placeholder count = %d, want 1", key, strings.Count(lang.Keys[key], "%s"))
+				}
+			}
+		})
+	}
+}
+
+func substantiveLanguageText(value string) string {
+	var out strings.Builder
+	for _, r := range strings.ToLower(value) {
+		if unicode.IsLetter(r) || unicode.IsNumber(r) || r == '%' {
+			out.WriteRune(r)
+		}
+	}
+	return out.String()
 }
 
 func keySet(lang Language) map[string]struct{} {

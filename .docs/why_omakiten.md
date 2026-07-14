@@ -32,7 +32,7 @@ Omakiten is designed to solve that gap.
 - Source of truth: tasks, dependencies, workflow state, and context are stored locally and consistently.
 - Checkpoint: humans and agents can resume from a known state.
 - Guardrails: invalid workflow actions are blocked with clear errors. Per-bucket CRUD policy and operation guards apply to delete/archive too, not only to transitions.
-- Memory: a unified FTS5 `search` index covers tasks, comments, errors, solutions, plans, and notes across every project on the machine — agents stop re-discovering the same fix.
+- Memory: a unified FTS5 `search` index covers tasks, comments, errors, solutions, and plans across every project on the machine; project- and universal-scoped note-like content is indexed as comments, so agents stop re-discovering the same fix.
 - Speaks your language: 21 bundled CLI/TUI language packs; CLI and TUI share the install-time picker, agent-output language is chosen separately, and all three are switchable later (`okt config language set`).
 - Observable by design: every meaningful state change emits a typed domain event; a YAML hooks engine fires async actions and notification cards; `metrics.summary` benchmarks agent behaviour per model over a chosen window.
 - Token economy: agent-facing output is structured, compact, and predictable; responses are token-counted against a budget you set so callers stay within context limits.

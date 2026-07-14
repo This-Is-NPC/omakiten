@@ -2,6 +2,16 @@ code: tr
 name: Turkish
 native: Türkçe
 keys:
+  cli.db.check.short: "Birleşik arama dizininin bütünlüğünü denetle"
+  cli.db.check.long: "FTS5 dizinini tam olarak beş fiziksel kaynak türüyle karşılaştır: task, comment event, error, solution ve plan."
+  cli.db.reindex.short: "Birleşik arama dizinini atomik olarak yeniden oluştur"
+  cli.db.reindex.long: "Kanonik tetikleyicileri yeniden oluştur ve beş fiziksel kaynak türünü tek işlemde kur. Onaylı yıkıcı onarım önce sabitlenmiş veritabanının doğrulanmış dönen yedeğini yazar."
+  cli.db.check.error.invalid: "arama dizini bütünlük denetimi başarısız oldu"
+  cli.db.reindex.warning.backup: "uyarı: onarım öncesi doğrulanmış yedek %s konumuna yazıldı"
+  cli.db.reindex.flag.confirm: "kanonik kaynaklardan farklı dizinlenmiş kanıtların kaldırılmasını veya değiştirilmesini onayla"
+  cli.db.reindex.error.confirm_required: "onay gerekli; doğrulanmış yedek oluşturup sabitlenmiş veritabanını onarmak için %s çalıştır"
+  cli.db.error.missing_fmt: "veritabanı mevcut değil: %s"
+  cli.db.error.not_file_fmt: "veritabanı yolu normal bir dosya değil: %s"
   cli.root.short: "AI destekli geliştirme için kararlı checkpoint'ler"
   cli.root.long: |-
     okt, Omakiten'i komut satırından ve TUI üzerinden yönetir.

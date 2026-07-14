@@ -8,6 +8,7 @@ import (
 	"omakiten/internal/app"
 	"omakiten/internal/config"
 	"omakiten/internal/paths"
+	"omakiten/internal/sqlite"
 )
 
 // buildCLIBackupService is the single composition-root for every CLI
@@ -40,9 +41,10 @@ func buildCLIBackupService(cmd *cobra.Command, opts *runtimeOptions, dbPath stri
 	stderr := cmd.ErrOrStderr()
 	warnFormat := opts.t("cli.db.backup.prune_warn_fmt")
 	svc := app.NewBackupService(app.BackupOptions{
-		SourcePath: dbPath,
-		DestDir:    destDir,
-		Retention:  retention,
+		SourcePath:     dbPath,
+		DestDir:        destDir,
+		Retention:      retention,
+		SnapshotWriter: sqlite.SnapshotDatabase,
 		PruneWarn: func(pruneErr error) {
 			fmt.Fprintf(stderr, warnFormat+"\n", pruneErr.Error())
 		},

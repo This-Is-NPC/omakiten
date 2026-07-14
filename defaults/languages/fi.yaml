@@ -2,6 +2,16 @@ code: fi
 name: Finnish
 native: Suomi
 keys:
+  cli.db.check.short: "Tarkista yhtenäisen hakuindeksin eheys"
+  cli.db.check.long: "Vertaa FTS5-indeksiä täsmälleen viiteen fyysiseen lähdetyyppiin: task, comment event, error, solution ja plan."
+  cli.db.reindex.short: "Rakenna yhtenäinen hakuindeksi atomisesti uudelleen"
+  cli.db.reindex.long: "Luo kanoniset triggerit uudelleen ja rakenna viisi fyysistä lähdetyyppiä yhdessä transaktiossa. Vahvistettu tuhoava korjaus kirjoittaa ensin varmennetun kiertävän varmuuskopion kiinnitetystä tietokannasta."
+  cli.db.check.error.invalid: "hakuindeksin eheystarkistus epäonnistui"
+  cli.db.reindex.warning.backup: "varoitus: varmennettu korjausta edeltävä varmuuskopio kirjoitettu kohteeseen %s"
+  cli.db.reindex.flag.confirm: "vahvista kanonisista lähteistä poikkeavan indeksoidun tiedon poisto tai korvaaminen"
+  cli.db.reindex.error.confirm_required: "vahvistus vaaditaan; suorita %s luodaksesi varmennetun varmuuskopion ja korjataksesi kiinnitetyn tietokannan"
+  cli.db.error.missing_fmt: "tietokantaa ei ole olemassa: %s"
+  cli.db.error.not_file_fmt: "tietokannan polku ei ole tavallinen tiedosto: %s"
   cli.root.short: "Mielipiteelliset tarkistuspisteet AI-vetoiseen kehitykseen"
   cli.root.long: |-
     okt ohjaa Omakitenia komentoriviltä ja TUI:sta.

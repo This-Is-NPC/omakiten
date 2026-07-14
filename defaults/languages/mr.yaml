@@ -2,6 +2,16 @@ code: mr
 name: Marathi
 native: मराठी
 keys:
+  cli.db.check.short: "एकत्रित search index ची अखंडता तपासा"
+  cli.db.check.long: "FTS5 index ची तुलना नेमक्या पाच physical source types शी करा: task, comment event, error, solution आणि plan."
+  cli.db.reindex.short: "एकत्रित search index atomically पुन्हा तयार करा"
+  cli.db.reindex.long: "canonical triggers पुन्हा तयार करा आणि पाच physical source types एका transaction मध्ये rebuild करा. Confirmed destructive repair प्रथम pinned database चा verified rolling backup लिहितो."
+  cli.db.check.error.invalid: "search index integrity check अयशस्वी झाली"
+  cli.db.reindex.warning.backup: "इशारा: verified pre-repair backup %s येथे लिहिला"
+  cli.db.reindex.flag.confirm: "canonical sources पेक्षा भिन्न indexed evidence काढण्याची किंवा बदलण्याची पुष्टी करा"
+  cli.db.reindex.error.confirm_required: "पुष्टी आवश्यक; verified backup तयार करून pinned database repair करण्यासाठी %s चालवा"
+  cli.db.error.missing_fmt: "database अस्तित्वात नाही: %s"
+  cli.db.error.not_file_fmt: "database path ही regular file नाही: %s"
   cli.root.short: "AI-चालित विकासासाठी ओपिनियनेटेड चेकपॉइंट"
   cli.root.long: |-
     okt कमांड लाइन आणि TUI मधून Omakiten चालवते.

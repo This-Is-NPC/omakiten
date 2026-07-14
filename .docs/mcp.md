@@ -72,7 +72,7 @@ Resolves each `okt-*` prompt through the running agent service (using your activ
 
 ## Tools
 
-The full surface is the source of truth in `internal/mcp/adapter.go::Tools` (the public entry; the inner `tools()` returns the literal table). Currently 59 tools, grouped below.
+The ordered registry in `internal/mcp/tool_registry.go` is the authoritative source for tool names, descriptions, input-schema factories, and handlers; `internal/mcp/adapter.go::Tools` renders its public definitions. Prompt argument metadata remains separate in `promptArguments`. Currently 59 tools, grouped below.
 
 ### Required `_agent_model` on every call
 
@@ -131,7 +131,7 @@ System-internal entry points (`ReadResource`) bypass the coercive check and writ
 | Tool | Purpose |
 |---|---|
 | `comments.add` | Adds a scope-aware human or agent comment. `scope` is `"task"` (default — requires `task_id`), `"project"` (requires no `task_id`), or `"universal"` (cross-project — no `task_id`). Optional note-like fields `title`, `kind` (free string, e.g. `"handoff"`/`"recap"`/`"standup"`), and `pinned`, plus optional tag attachment and `template_slug` body merge. |
-| `comments.list` | With no extra filters, lists the named task's comments (task-scoped default). Add filters to query the handoff log: `scope` (`task`/`project`/`universal`), `kind`, `tag`, `pinned` (pinned-only), `query` (FTS5 over body + title), and `since` (time-window floor — Go duration `24h`/`30m` or N-day shorthand `7d`). |
+| `comments.list` | With no extra filters, lists the named task's comments (task-scoped default). Add filters to query the handoff log: `scope` (`task`/`project`/`universal`), `kind`, `tag`, `pinned` (pinned-only), `query` (FTS5 over body + title, capped at 4096 UTF-8 bytes and 256 lexical terms/operators), and `since` (time-window floor — Go duration `24h`/`30m` or N-day shorthand `7d`). |
 | `comments.edit` | Tri-state PATCH of a comment. Every field is optional — `body`, `title`, `kind`, `pinned` are all omittable (omit = unchanged), so a metadata-only edit needs no body; supply at least one of `body`/`title`/`kind`/`pinned`/`tags` (no-op calls are rejected). A non-null `body` must be non-empty (rewrite-only, can't blank it). The submitted `tags` set replaces all existing tags. Scope-aware guard: task scope resolves bucket `permissions.comment.edit` (inherits `permissions.task.edit` when no comment block is declared); project/universal scope resolves the task-less workflow defaults `defaults.comment.{project,universal}.edit`. |
 | `comments.delete` | Hard-deletes a comment; scope-agnostic. Scope-aware guard: `permissions.comment.delete` for task scope (same inheritance rule), `defaults.comment.{project,universal}.delete` for project/universal scope. Requires `confirmed=true`. |
 | `task_activity.list` | Unified chronological feed for a task (comments + system events such as `task.created`, `task.moved`, `task.completed`, `task.archived`, `task.unarchived`, `task.migrated`, `task.removed`, `task.assigned`, `task.unassigned`, `comment.edited`, `comment.removed`); supports `order=asc\|desc`. |
@@ -175,7 +175,7 @@ System-internal entry points (`ReadResource`) bypass the coercive check and writ
 
 | Tool | Purpose |
 |---|---|
-| `search` | Full-text search across `task`, `comment`, `error`, `solution`, `plan`, and `note` entities using SQLite FTS5. Required `query` is an FTS5 MATCH expression (phrase, prefix*, NEAR, AND/OR/NOT — see [sqlite.org/fts5.html](https://sqlite.org/fts5.html)). Optional `entity_types` restricts the kinds returned (omit or pass an empty list to cover all six). Optional `project` / `project_id` scopes the index to one project; omit both for the cross-project view. Archived tasks (`state='archived'`) are filtered out automatically. Each hit ships `entity_type`, `id`, `score` (negated BM25 so higher is better), `snippet` (matching content with `<mark>…</mark>` highlights), and `project_id`. Capped at 200 hits per call. |
+| `search` | Full-text search across `task`, `comment`, `error`, `solution`, and `plan` entities using SQLite FTS5. Required `query` is an FTS5 MATCH expression (phrase, prefix*, NEAR, AND/OR/NOT — see [sqlite.org/fts5.html](https://sqlite.org/fts5.html)), capped at 4096 UTF-8 bytes and 256 lexical terms/operators before telemetry or SQLite execution. Optional `entity_types` restricts the kinds returned (omit or pass an empty list to cover all five). Project- and universal-scoped note-like content is indexed and returned as `comment`; `note` is not an entity type. Optional `project` / `project_id` scopes the index to one project; omit both for the cross-project view. Archived tasks (`state='archived'`) are filtered out automatically. Each hit ships `entity_type`, `id`, `score` (negated BM25 so higher is better), `snippet` (matching content with `<mark>…</mark>` highlights), and `project_id`. Capped at 200 hits per call. |
 
 ### Templates (read-only)
 

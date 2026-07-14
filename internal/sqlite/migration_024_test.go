@@ -15,7 +15,7 @@ func TestMigration024PlanFTSBackfillAndTriggers(t *testing.T) {
 		t.Fatalf("CreatePlan: %v", err)
 	}
 
-	hits, err := store.Search(ctx, "bravo", project.ID, []domain.SearchEntityType{domain.SearchEntityPlan}, 10)
+	hits, err := store.Search(ctx, "bravo", project.ID, []domain.SearchEntityType{domain.SearchEntityPlan})
 	if err != nil {
 		t.Fatalf("Search(bravo): %v", err)
 	}
@@ -27,7 +27,7 @@ func TestMigration024PlanFTSBackfillAndTriggers(t *testing.T) {
 	if _, err := store.db.ExecContext(ctx, `DELETE FROM plans WHERE id = ?`, plan.ID); err != nil {
 		t.Fatalf("DELETE plan: %v", err)
 	}
-	hits, err = store.Search(ctx, "bravo", project.ID, []domain.SearchEntityType{domain.SearchEntityPlan}, 10)
+	hits, err = store.Search(ctx, "bravo", project.ID, []domain.SearchEntityType{domain.SearchEntityPlan})
 	if err != nil {
 		t.Fatalf("Search(bravo) post-delete: %v", err)
 	}
@@ -53,14 +53,14 @@ func TestMigration024PlanFTSUpdateRebuildsIndex(t *testing.T) {
 	}
 
 	// Old body should no longer hit; new body must.
-	hitsOld, err := store.Search(ctx, "first", project.ID, []domain.SearchEntityType{domain.SearchEntityPlan}, 5)
+	hitsOld, err := store.Search(ctx, "first", project.ID, []domain.SearchEntityType{domain.SearchEntityPlan})
 	if err != nil {
 		t.Fatalf("Search(first): %v", err)
 	}
 	if len(hitsOld) != 0 {
 		t.Fatalf("Search(first) post-update = %+v, want empty (AU trigger should drop stale row)", hitsOld)
 	}
-	hitsNew, err := store.Search(ctx, "delta", project.ID, []domain.SearchEntityType{domain.SearchEntityPlan}, 5)
+	hitsNew, err := store.Search(ctx, "delta", project.ID, []domain.SearchEntityType{domain.SearchEntityPlan})
 	if err != nil {
 		t.Fatalf("Search(delta): %v", err)
 	}

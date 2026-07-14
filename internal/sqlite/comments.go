@@ -175,6 +175,13 @@ func (s *Store) ListComments(ctx context.Context, projectID, taskID int64) ([]do
 // columns; Tag joins event_tags; Search runs an FTS5 MATCH against the unified
 // search_index (which indexes body+title for comment rows, migration 032).
 func (s *Store) QueryComments(ctx context.Context, filter domain.CommentFilter) ([]domain.Comment, error) {
+	if filter.Search != "" {
+		query, err := domain.ValidateSearchQuery(filter.Search)
+		if err != nil {
+			return nil, err
+		}
+		filter.Search = query
+	}
 	var b strings.Builder
 	b.WriteString("SELECT " + commentSelectColumnsE + " FROM events e")
 
@@ -244,7 +251,11 @@ func (s *Store) QueryComments(ctx context.Context, filter domain.CommentFilter) 
 	b.WriteString(" WHERE " + strings.Join(conds, " AND "))
 	b.WriteString(" ORDER BY e.created_at, e.id")
 
-	return s.queryCommentRows(ctx, b.String(), args)
+	comments, err := s.queryCommentRows(ctx, b.String(), args)
+	if filter.Search != "" {
+		err = classifyFTSQueryError(err)
+	}
+	return comments, err
 }
 
 // queryCommentRows runs a comment SELECT built on commentSelectColumns, scans

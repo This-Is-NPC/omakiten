@@ -2,6 +2,16 @@ code: no
 name: Norwegian
 native: Norsk
 keys:
+  cli.db.check.short: "Kontroller integriteten til den samlede søkeindeksen"
+  cli.db.check.long: "Sammenlign FTS5-indeksen med nøyaktig fem fysiske kildetyper: task, comment event, error, solution og plan."
+  cli.db.reindex.short: "Bygg den samlede søkeindeksen atomisk på nytt"
+  cli.db.reindex.long: "Opprett de kanoniske triggerne på nytt og bygg de fem fysiske kildetypene i én transaksjon. Bekreftet destruktiv reparasjon skriver først en verifisert rullerende sikkerhetskopi av den festede databasen."
+  cli.db.check.error.invalid: "integritetskontroll av søkeindeksen mislyktes"
+  cli.db.reindex.warning.backup: "advarsel: verifisert sikkerhetskopi før reparasjon skrevet til %s"
+  cli.db.reindex.flag.confirm: "bekreft fjerning eller erstatning av indekserte data som avviker fra de kanoniske kildene"
+  cli.db.reindex.error.confirm_required: "bekreftelse kreves; kjør %s for å lage en verifisert sikkerhetskopi og reparere den festede databasen"
+  cli.db.error.missing_fmt: "databasen finnes ikke: %s"
+  cli.db.error.not_file_fmt: "databasebanen er ikke en vanlig fil: %s"
   cli.root.short: "Velmente sjekkpunkter for AI-drevet utvikling"
   cli.root.long: |-
     okt driver Omakiten fra kommandolinjen og TUI.

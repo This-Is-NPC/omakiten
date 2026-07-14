@@ -3,7 +3,9 @@ package sqlite
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"strings"
 	"testing"
 
 	"omakiten/internal/domain"
@@ -508,6 +510,31 @@ func TestQueryComments(t *testing.T) {
 				t.Fatalf("QueryComments(%+v) len = %d, want %d (%+v)", tc.filter, len(got), tc.want, got)
 			}
 		})
+	}
+}
+
+func TestQueryCommentsRejectsInvalidUTF8AtSharedFTSBoundary(t *testing.T) {
+	t.Parallel()
+
+	store := openTestStore(t)
+	_, err := store.QueryComments(context.Background(), domain.CommentFilter{Search: string([]byte{'v', 0xff})})
+	var coded *domain.CodedError
+	if !errors.As(err, &coded) || coded.Code != domain.ErrValidation || coded.Message != "search query exceeds limits" {
+		t.Fatalf("QueryComments error = %v, want stable shared-cap validation", err)
+	}
+}
+
+func TestQueryCommentsClassifiesMalformedFTSSyntaxWithoutDriverText(t *testing.T) {
+	t.Parallel()
+
+	store := openTestStore(t)
+	_, err := store.QueryComments(context.Background(), domain.CommentFilter{Search: `"unterminated`})
+	var coded *domain.CodedError
+	if !errors.As(err, &coded) || coded.Code != domain.ErrValidation || coded.Message != "invalid FTS5 query expression" {
+		t.Fatalf("QueryComments malformed FTS error = %v", err)
+	}
+	if strings.Contains(err.Error(), "unterminated string") || len(coded.Details) != 0 {
+		t.Fatalf("QueryComments exposed raw FTS driver text: %+v", coded)
 	}
 }
 

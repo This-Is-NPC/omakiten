@@ -59,6 +59,13 @@ func kitCacheSizeKB() int {
 // affected code paths skip work or error out rather than masking the gap.
 type Store struct {
 	db *sql.DB
+	// maintenanceConn pins explicit database-maintenance operations to the
+	// physical connection opened and identity-checked by OpenSearchMaintenance.
+	// Normal stores leave these fields zero and continue using the pool.
+	maintenanceMu       sync.Mutex
+	maintenanceConn     *sql.Conn
+	maintenancePath     string
+	maintenanceIdentity os.FileInfo
 
 	// busyTimeoutMs is the resolved PRAGMA busy_timeout in milliseconds —
 	// the value Open applied to the first pool connection plus any later
@@ -287,6 +294,151 @@ func Open(ctx context.Context, path string) (*Store, error) {
 	return OpenWithOptions(ctx, path, Options{})
 }
 
+// OpenSearchMaintenance opens a current Omakiten database for explicit search
+// diagnostics without running migrations or changing persistent journal
+// settings. It rejects symlinks in every existing path component and verifies
+// the opened file still has the identity observed before sql.Open.
+func OpenSearchMaintenance(ctx context.Context, path string) (*Store, error) {
+	return openSearchMaintenance(ctx, path, nil)
+}
+
+func openSearchMaintenance(ctx context.Context, path string, afterOpen func()) (*Store, error) {
+	absolutePath, before, err := validateMaintenancePath(path)
+	if err != nil {
+		return nil, err
+	}
+	busyTimeout := kitBusyTimeoutMs()
+	uri := sqliteFileURI(absolutePath, "mode=rw")
+	dsn := uri + "&_pragma=foreign_keys(1)" + fmt.Sprintf("&_pragma=busy_timeout(%d)", busyTimeout)
+	db, err := sql.Open("sqlite", dsn)
+	if err != nil {
+		return nil, maintenanceValidationError("database could not be opened")
+	}
+	store := &Store{db: db, busyTimeoutMs: busyTimeout}
+	db.SetMaxOpenConns(3)
+	db.SetMaxIdleConns(2)
+	closeWith := func(err error) (*Store, error) {
+		_ = store.Close()
+		return nil, err
+	}
+	maintenanceConn, err := db.Conn(ctx)
+	if err != nil {
+		return closeWith(maintenanceValidationError("database connection could not be pinned"))
+	}
+	store.maintenanceConn = maintenanceConn
+	store.maintenancePath = absolutePath
+	store.maintenanceIdentity = before
+	if err := maintenanceConn.PingContext(ctx); err != nil {
+		return closeWith(maintenanceValidationError("database could not be opened read-write"))
+	}
+	if afterOpen != nil {
+		afterOpen()
+	}
+	_, after, err := validateMaintenancePath(absolutePath)
+	if err != nil || !os.SameFile(before, after) {
+		return closeWith(maintenanceValidationError("database file changed while opening"))
+	}
+	var selectedPath string
+	if err := maintenanceConn.QueryRowContext(ctx, `SELECT file FROM pragma_database_list WHERE name = 'main'`).Scan(&selectedPath); err != nil {
+		return closeWith(maintenanceValidationError("database identity could not be verified"))
+	}
+	_, selected, err := validateMaintenancePath(selectedPath)
+	if err != nil || !os.SameFile(before, selected) {
+		return closeWith(maintenanceValidationError("opened database identity does not match requested file"))
+	}
+	if err := verifyCurrentOmakitenSchema(ctx, maintenanceConn); err != nil {
+		return closeWith(err)
+	}
+	return store, nil
+}
+
+func validateMaintenancePath(path string) (string, os.FileInfo, error) {
+	absolutePath, err := filepath.Abs(path)
+	if err != nil {
+		return "", nil, maintenanceValidationError("database path is invalid")
+	}
+	current := filepath.Clean(absolutePath)
+	components := []string{current}
+	for {
+		parent := filepath.Dir(current)
+		if parent == current {
+			break
+		}
+		components = append(components, parent)
+		current = parent
+	}
+	var leaf os.FileInfo
+	for index := len(components) - 1; index >= 0; index-- {
+		info, err := os.Lstat(components[index])
+		if err != nil {
+			return "", nil, maintenanceValidationError("database path is unavailable")
+		}
+		if info.Mode()&os.ModeSymlink != 0 {
+			return "", nil, maintenanceValidationError("database path contains a symlink component")
+		}
+		if index == 0 {
+			leaf = info
+		}
+	}
+	if leaf == nil || !leaf.Mode().IsRegular() {
+		return "", nil, maintenanceValidationError("database path must be a regular file")
+	}
+	return absolutePath, leaf, nil
+}
+
+func maintenanceValidationError(reason string) error {
+	return domain.NewError(domain.ErrValidation, "database is not a current compatible Omakiten database", map[string]any{
+		"reason": reason,
+	})
+}
+
+type schemaQueryer interface {
+	QueryContext(context.Context, string, ...any) (*sql.Rows, error)
+	QueryRowContext(context.Context, string, ...any) *sql.Row
+}
+
+func verifyCurrentOmakitenSchema(ctx context.Context, db schemaQueryer) error {
+	requiredTables := []string{"schema_migrations", "projects", "tasks", "events", "errors", "solutions", "plans", "search_index"}
+	for _, name := range requiredTables {
+		var count int
+		if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = ?`, name).Scan(&count); err != nil || count != 1 {
+			return maintenanceValidationError("required Omakiten schema objects are missing")
+		}
+	}
+	entries, err := migrations.FS.ReadDir(".")
+	if err != nil {
+		return maintenanceValidationError("embedded migration catalog is unavailable")
+	}
+	expected := make(map[string]struct{})
+	for _, entry := range entries {
+		if !entry.IsDir() && strings.HasSuffix(entry.Name(), ".sql") {
+			expected[entry.Name()] = struct{}{}
+		}
+	}
+	rows, err := db.QueryContext(ctx, `SELECT version FROM schema_migrations`)
+	if err != nil {
+		return maintenanceValidationError("migration history is unreadable")
+	}
+	defer func() { _ = rows.Close() }()
+	seen := make(map[string]struct{})
+	for rows.Next() {
+		var version string
+		if err := rows.Scan(&version); err != nil {
+			return maintenanceValidationError("migration history is unreadable")
+		}
+		seen[version] = struct{}{}
+	}
+	if err := rows.Err(); err != nil || len(seen) != len(expected) {
+		return maintenanceValidationError("database schema version is incompatible")
+	}
+	for version := range expected {
+		if _, ok := seen[version]; !ok {
+			return maintenanceValidationError("database schema version is incompatible")
+		}
+	}
+	return nil
+}
+
 // dsnWithPragmas appends modernc.org/sqlite's `_pragma=...` query params to
 // a database path so the per-connection PRAGMAs are applied on EVERY
 // connection the driver opens (modernc runs `_pragma` directives in its
@@ -344,6 +496,10 @@ func dsnWithPragmas(path string, busyTimeoutMs, cacheSizeKB, mmapSizeBytes int) 
 // back to the kit canonical so test paths don't have to load YAML
 // just to open a Store.
 func OpenWithOptions(ctx context.Context, path string, opts Options) (*Store, error) {
+	return openWithOptions(ctx, path, opts)
+}
+
+func openWithOptions(ctx context.Context, path string, opts Options) (*Store, error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return nil, err
 	}
@@ -424,6 +580,12 @@ func OpenWithOptions(ctx context.Context, path string, opts Options) (*Store, er
 }
 
 func (s *Store) Close() error {
+	s.maintenanceMu.Lock()
+	if s.maintenanceConn != nil {
+		_ = s.maintenanceConn.Close()
+		s.maintenanceConn = nil
+	}
+	s.maintenanceMu.Unlock()
 	s.versionMu.Lock()
 	if s.versionConn != nil {
 		// Best-effort: hand the pinned probe connection back to the pool
@@ -479,18 +641,15 @@ func (s *Store) DataVersion(ctx context.Context) (int64, error) {
 	return version, nil
 }
 
-// Checkpoint forces every committed WAL frame to land in the main
-// database file via `PRAGMA wal_checkpoint(TRUNCATE)`. Callers that
-// snapshot the .db file (BackupService) invoke this before the copy
-// so the snapshot reflects every committed transaction this process
-// wrote — without the checkpoint the WAL sidecar carries the latest
-// rows and the .db copy misses them.
+// Checkpoint forces every committed WAL frame to land in the main database
+// file via `PRAGMA wal_checkpoint(TRUNCATE)`. It remains available for legacy
+// callers using a generic file-copy snapshot writer; SQLite-aware snapshots use
+// VACUUM INTO and include committed WAL frames without checkpointing.
 //
 // TRUNCATE mode merges the WAL into the main file and resets the WAL
 // to size zero. Returns the underlying SQLite error untouched so the
 // caller can decide how to react; the destructive flows treat
-// checkpoint failure as best-effort (logged via auditWarn) rather
-// than abort because the snapshot still captures the on-disk state.
+// checkpoint failure as best-effort (logged via auditWarn).
 //
 // Cross-process WAL frames written by another `okt` process holding a
 // connection to the same DB cannot be guaranteed to land — SQLite may
@@ -498,8 +657,12 @@ func (s *Store) DataVersion(ctx context.Context) (int64, error) {
 // here is "every commit from THIS process lands in main"; concurrent
 // writers from another process remain a best-effort case.
 func (s *Store) Checkpoint(ctx context.Context) error {
-	if _, err := s.db.ExecContext(ctx, "PRAGMA wal_checkpoint(TRUNCATE)"); err != nil {
-		return err
+	var busy, logged, checkpointed int
+	if err := s.db.QueryRowContext(ctx, "PRAGMA wal_checkpoint(TRUNCATE)").Scan(&busy, &logged, &checkpointed); err != nil {
+		return fmt.Errorf("wal_checkpoint query: %w", err)
+	}
+	if busy != 0 || checkpointed < logged {
+		return fmt.Errorf("wal_checkpoint incomplete: busy=%d logged=%d checkpointed=%d", busy, logged, checkpointed)
 	}
 	return nil
 }
