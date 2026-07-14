@@ -411,7 +411,7 @@ Each level adds one or more layers of discipline without removing the previous o
 
 ## Notes and handoff loop
 
-Sitting alongside the bucket cycle, a small set of atomic commands carry knowledge between sessions and across projects. They are wired into every preset (`omakase`, `izakaya`, `kaiseki`, `shokunin`) and read or write through the **scope-aware comment model** — there is no separate notes entity. A "note" is just a comment whose `scope` is `project` or `universal` (rather than `task`), optionally carrying a `title`, a free-form `kind` (`handoff`, `recap`, …), and a `pinned` flag. The same `events` table and FTS5 search index back both task comments and these project/global notes.
+Sitting alongside the bucket cycle, a small set of atomic commands carry knowledge between sessions and across projects. They are wired into every preset (`omakase`, `izakaya`, `kaiseki`, `shokunin`) and read or write through the **scope-aware comment model** — there is no separate notes entity. A "note" is just a comment whose `scope` is `project` or `universal` (rather than `task`), optionally carrying a `title`, a free-form `kind` (`handoff`, `recap`, …), and a `pinned` flag. The same `events` table and FTS5 search index back task comments and these project/global notes; every one is physically indexed as `comment`.
 
 ### The commands
 

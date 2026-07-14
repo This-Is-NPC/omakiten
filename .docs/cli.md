@@ -254,7 +254,7 @@ okt assign 42                       # clear (recovery)
 Comments are scope-aware: `--scope task` (default) hangs the comment off a task, `--scope project` off the project (no `TASK_ID`), and `--scope universal` is cross-project (no `TASK_ID`, NULL `project_id`). All four subcommands have full parity with the `comments.*` MCP tools.
 
 - `okt comment add [TASK_ID] -b BODY` — `--body` / `-b` is required. Task scope needs the `TASK_ID` arg; project/universal scopes must omit it. Flags: `--scope` (`task`|`project`|`universal`), `--kind` (free string, e.g. `handoff`/`recap`/`standup`), `--title`, `--pinned`, `--author` (defaults to `human`; other value `agent`), and `--tag` / `-T` (repeatable, kebab-case-normalized — `-T resume -T deployment-notes`).
-- `okt comment list [TASK_ID]` — a bare `TASK_ID` with no other flag lists that task's comments in chronological order (legacy task-scoped path). Adding any filter switches to the query surface: `--scope` (`task`|`project`|`universal`), `--kind`, `--tag` / `-T`, `--pinned` (pinned-only), `--query` (FTS5 over body + title), `--since` (window floor — Go duration `24h`/`30m` or N-day shorthand `7d`), and `--comment-id` (fetch exactly one comment by id, any scope, ignoring the project filter).
+- `okt comment list [TASK_ID]` — a bare `TASK_ID` with no other flag lists that task's comments in chronological order (legacy task-scoped path). Adding any filter switches to the query surface: `--scope` (`task`|`project`|`universal`), `--kind`, `--tag` / `-T`, `--pinned` (pinned-only), `--query` (FTS5 over body + title, capped at 4096 UTF-8 bytes and 256 lexical terms/operators), `--since` (window floor — Go duration `24h`/`30m` or N-day shorthand `7d`), and `--comment-id` (fetch exactly one comment by id when it belongs to the resolved project; universal comments remain cross-project).
 - `okt comment edit COMMENT_ID [-b BODY] [--title …] [--kind …] [--pinned] [-T …]` — tri-state PATCH: `--body` is **optional**; omitting it leaves the stored body untouched (a metadata-only edit), and a supplied body must be non-empty (you can rewrite but not blank it). `--title`/`--kind`/`--pinned` are only applied when their flag is explicitly set, so a body-only edit never wipes them. At least one of `--body`/`--title`/`--kind`/`--pinned`/`--tag` is required. The submitted `--tag` set **replaces** the old one entirely. Scope-aware guard: task scope resolves bucket `permissions.comment.edit` (inherits `permissions.task.edit` when no comment block is declared); project/universal scope resolves the task-less workflow defaults `defaults.comment.{project,universal}.edit`. Emits `comment.edited`.
 - `okt comment delete COMMENT_ID --confirm` — scope-agnostic. Subject to the same scope-aware policy (`permissions.comment.delete` for task scope, `defaults.comment.{project,universal}.delete` for project/universal). Emits `comment.removed` with the body snapshot. Refuses to run without `--confirm`.
 
@@ -491,8 +491,8 @@ Hard-deletes a registered project and **every dependent row** — irreversible a
 Sequence:
 
 1. Resolves the project and tallies the cascade counters (tasks, comments, plans, tag attachments, activity log entries).
-2. Writes a recovery snapshot to the rolling backups directory (same store as [`okt db backup`](#okt-db-backup---out-path---force)). **A backup failure aborts the delete before anything is touched.**
-3. Cascade-deletes every dependent DB row.
+2. Acquires the backup directory's cross-process advisory lease and writes a verified recovery snapshot through the same pinned SQLite connection used for deletion. `data_version` is checked before/after the image and again under `BEGIN IMMEDIATE`; an external commit discards the candidate and retries up to three times. **Backup, lease, or repeated-generation failure aborts the delete before anything is touched.**
+3. Under the writer lock, cascade-deletes every dependent DB row, commits, and identity-safely prunes retention through the pinned backup-directory root. The retained image is therefore the exact generation deleted.
 
 Filesystem state under `<root_path>/.omakiten/` is preserved — only DB rows are removed, so the project can be re-registered with `okt init` afterwards.
 
@@ -513,7 +513,7 @@ To recover, restore the printed backup over the live `omakiten.db` (see [Databas
 
 ### `okt db backup [--out PATH] [--force]`
 
-`internal/cli/db.go`. Writes a rolling snapshot of the resolved SQLite database with an atomic file copy (`tmp` + rename). Default destination is `$XDG_STATE_HOME/omakiten/backups/<timestamp>.db` (or `~/.local/state/omakiten/backups/`; under `$OMAKITEN_HOME`, `$OMAKITEN_HOME/state/backups/`). `--out` writes an exact destination path, creates parent directories with `0700`, skips retention pruning, and refuses common system roots such as `/etc` and `/usr`. `--force` allows an explicit `--out` path to overwrite an existing file.
+`internal/cli/db.go`. Writes a transactionally consistent standalone SQLite snapshot of the resolved database. Both rolling and `--out` modes pin and identity-check the source connection, reject source/destination symlink components, and use `VACUUM INTO`, so every committed WAL frame is included even when another reader pins the WAL; the source is not checkpointed or mutated. Snapshot code creates destination parents component-by-component, stages from the first byte in a randomized private directory/file, verifies with `quick_check`, flushes the file, and publishes atomically. On Unix those objects are created with `0700`/`0600`, SQLite uses a descriptor-relative staging path, and the destination directory is fsynced. Windows POSIX mode bits are not an ACL confidentiality guarantee: the rooted creation APIs do not install or validate private DACLs, so deployment policy must provide private native ACL inheritance on the destination directory. Windows holds an identity-checked read/write sharing handle that denies stage deletion/rename throughout `VACUUM` and verification, flushes the staged file, and deliberately does not claim directory-entry crash durability because flushing the read-only directory handle is unsupported. Default/no-force publication never replaces an existing path; `--force` retains the old destination under a private descriptor-bound rollback link until cleanup and durability checks succeed, and restores that exact inode on a post-publication failure. `--force` accepts only an existing regular non-symlink file. Staging cleanup errors are joined into the returned failure. Default destination is `$XDG_STATE_HOME/omakiten/backups/<timestamp>.db` (or `~/.local/state/omakiten/backups/`; under `$OMAKITEN_HOME`, `$OMAKITEN_HOME/state/backups/`). `--out` writes an exact destination path and skips retention pruning.
 
 The default JSON payload is `{path, pruned:true, retention}`. With `--out`, the payload is `{path, pruned:false}`.
 
@@ -524,6 +524,28 @@ okt db backup --out /mnt/external/omakiten-latest.db --force
 ```
 
 Restoring is a manual operation today: stop any running `okt mcp serve` / `okt tui`, move the backup file in over the live `omakiten.db`, and restart. No `okt db restore` ships intentionally — restores are rare, destructive, and best done with eyes-on.
+
+### `okt db check`
+
+Checks the unified FTS5 index against exactly five physical source types: **task**, **comment event** (`events.event_type='comment'`), **error**, **solution**, and **plan**. The metadata-only JSON report includes source/index totals; per-type missing, orphaned, unsupported, malformed-metadata, duplicate, content-mismatched, and project-mismatched rows; canonical-trigger drift; and FTS5's internal integrity result. Counts are complete, while each issue's `details` sample is capped at 100 and carries `truncated`. Unsupported type text and unexpected trigger names are never returned; unsupported rows use a fixed safe label and triggers expose only an unexpected count plus canonical missing/stale names.
+
+A healthy report exits zero. An unhealthy report exits non-zero with stable code `search_index_invalid` and the complete bounded report at `details.report`. The command honors global `--db`, does not load the config bundle, rejects a symlink in any existing database-path component, and refuses missing, foreign, or old-schema databases without creating, migrating, indexing, or changing their journal mode.
+
+```sh
+okt db check
+okt --db /srv/omakiten.db db check
+```
+
+### `okt db reindex`
+
+Atomically drops unexpected/stale search triggers, recreates the canonical 16-trigger set, resets FTS5 internals, and rebuilds the same five physical source types. A pinned connection holds `BEGIN IMMEDIATE`; rebuild and mandatory post-check share that transaction, and commit happens only when the after report is healthy. WAL readers keep seeing the previous committed index throughout.
+
+Run `okt db check` first. If it reports existing indexed evidence that repair would discard or replace (orphaned, unsupported, malformed, duplicate, content-mismatched, or project-mismatched rows), retry with the exact path-bound command reported by reindex, such as **`okt --db '/srv/Omakiten Data/omakiten.db' db reindex --confirm`**. The refusal contains `requires_confirmation`, `database_path`, display-only `retry_command`, structured non-shell `retry_args`, and the bounded report. `OpenSearchMaintenance` pins one verified physical SQLite connection for check, backup, and repair. Confirmed repair holds the backup directory's cross-process advisory lease across snapshot, mutation, and rooted retention pruning, and compares that connection's `data_version` before/after the verified backup and again after acquiring `BEGIN IMMEDIATE`. An external commit discards the candidate image and retries up to three times; repair proceeds only when the retained backup represents the exact generation locked for mutation. Backup/identity failure or repeated generation churn aborts without discarding evidence. Successful destructive output includes the retained `backup_path`, and identity-safe retention pruning explicitly protects that path even when mtimes tie. Reconstructive-only repair stays backup-free.
+
+```sh
+okt db check
+okt --db /path/to/omakiten.db db reindex --confirm
+```
 
 ---
 
@@ -647,7 +669,7 @@ okt mcp setup --harness opencode --dry-run
 okt mcp serve   # invoked by the harness, not by hand
 ```
 
-`okt mcp call search` is the CLI handle for the unified FTS5 surface (`internal/app/search_service.go`); it returns BM25-ranked hits with `<mark>...</mark>` snippets across tasks, comments, errors, solutions, plans, and notes. Pass `entity_types: []` (or omit the key) for an all-six sweep — the legacy `errors.search` MCP tool was retired alongside it.
+`okt mcp call search` is the CLI handle for the unified FTS5 surface (`internal/app/search_service.go`); it returns BM25-ranked hits with `<mark>...</mark>` snippets across tasks, comments, errors, solutions, and plans. Pass `entity_types: []` (or omit the key) for an all-five sweep. Project- and universal-scoped note-like content is returned as `comment`, not as a separate entity type. The legacy `errors.search` MCP tool was retired alongside it.
 
 The full set of MCP tools, resources, and prompts is documented in `.docs/mcp.md`.
 
@@ -661,7 +683,7 @@ Complete map of every `okt` command and flag. Brief by design — run `okt <comm
 
 ### `okt add`
 
-Create a task in the active project  
+Create a task in the active project
 `okt add [flags]`
 
 | Flag | Short | Type | Description |
@@ -673,21 +695,21 @@ Create a task in the active project
 
 ### `okt archive`
 
-Archive a task (state=archived, moves into the workflow's final bucket)  
+Archive a task (state=archived, moves into the workflow's final bucket)
 `okt archive TASK_ID [flags]`
 
 _No flags beyond globals._
 
 ### `okt assign`
 
-Sets tasks.assigned_to to the supplied WHO and emits task.assigned. Pass an empty WHO (or omit it) to clear the column and emit task.unassigned — the recovery path for a task whose claiming agent crashed without finishing. Manual moves out of dev also clear assigned_to automatically.  
+Sets tasks.assigned_to to the supplied WHO and emits task.assigned. Pass an empty WHO (or omit it) to clear the column and emit task.unassigned — the recovery path for a task whose claiming agent crashed without finishing. Manual moves out of dev also clear assigned_to automatically.
 `okt assign TASK_ID [WHO] [flags]`
 
 _No flags beyond globals._
 
 ### `okt comment add`
 
-Add a task comment  
+Add a task comment
 `okt comment add [TASK_ID] [flags]`
 
 | Flag | Short | Type | Description |
@@ -702,7 +724,7 @@ Add a task comment
 
 ### `okt comment delete`
 
-Hard-delete a comment (subject to bucket policy)  
+Hard-delete a comment (subject to bucket policy)
 `okt comment delete COMMENT_ID [flags]`
 
 | Flag | Short | Type | Description |
@@ -711,7 +733,7 @@ Hard-delete a comment (subject to bucket policy)
 
 ### `okt comment edit`
 
-Edit a comment body and replace its tags (subject to bucket policy)  
+Edit a comment body and replace its tags (subject to bucket policy)
 `okt comment edit COMMENT_ID [flags]`
 
 | Flag | Short | Type | Description |
@@ -724,7 +746,7 @@ Edit a comment body and replace its tags (subject to bucket policy)
 
 ### `okt comment list`
 
-List task comments  
+List task comments
 `okt comment list [TASK_ID] [flags]`
 
 | Flag | Short | Type | Description |
@@ -732,7 +754,7 @@ List task comments
 | `--comment-id` |  | int | fetch a single comment by its id |
 | `--kind` |  | string | filter by comment kind |
 | `--pinned` |  |  | only pinned comments |
-| `--query` |  | string | FTS5 MATCH expression run against body and title |
+| `--query` |  | string | FTS5 MATCH expression run against body and title; maximum 4096 UTF-8 bytes and 256 lexical terms/operators |
 | `--scope` |  | string | filter by scope: task, project, or universal |
 | `--since` |  | string | time window floor (Go duration like 24h/30m or N-day shorthand like 7d) |
 | `--tag` | `-T` | string | filter by tag name |
@@ -746,7 +768,7 @@ Compare two YAML config sources and emit one entry per divergent leaf. Each oper
 - `local:<path>` — the active yaml inside `<path>/.omakiten/`.
 - `<path/to/file.yaml>` — any yaml file on disk.
 
-Output entries carry `op=added|removed|changed` plus the relevant side values. Maps descend recursively; lists and scalars compare by deep equality.  
+Output entries carry `op=added|removed|changed` plus the relevant side values. Maps descend recursively; lists and scalars compare by deep equality.
 `okt config diff <left> <right> [flags]`
 
 _No flags beyond globals._
@@ -768,7 +790,7 @@ Behaviour matrix:
 - Tampered shipped files -> preserved unless `--force`.
 - `--force` -> re-copies every embedded shipped file (skills, laws, personas, templates, themes, notifications, every preset yaml); `custom/` subtrees are never touched.
 
-Language selection: `--cli-lang`, `--tui-lang`, and `--agent-lang` skip the interactive prompts for each surface and write the value directly into the seeded `omakiten.yaml` languages block. `--cli-lang` and `--tui-lang` must match a bundled language code (`en`, `pt-br`, ...); `--agent-lang` is free-form. When no flag is supplied, init prompts on the TTY or leaves the surface at its default when stdin is non-interactive.  
+Language selection: `--cli-lang`, `--tui-lang`, and `--agent-lang` skip the interactive prompts for each surface and write the value directly into the seeded `omakiten.yaml` languages block. `--cli-lang` and `--tui-lang` must match a bundled language code (`en`, `pt-br`, ...); `--agent-lang` is free-form. When no flag is supplied, init prompts on the TTY or leaves the surface at its default when stdin is non-interactive.
 `okt config init [flags]`
 
 | Flag | Short | Type | Description |
@@ -782,7 +804,7 @@ Language selection: `--cli-lang`, `--tui-lang`, and `--agent-lang` skip the inte
 
 ### `okt config language reset`
 
-Remove the languages block from the active omakiten.yaml (defaults apply)  
+Remove the languages block from the active omakiten.yaml (defaults apply)
 `okt config language reset [flags]`
 
 | Flag | Short | Type | Description |
@@ -791,7 +813,7 @@ Remove the languages block from the active omakiten.yaml (defaults apply)
 
 ### `okt config language set`
 
-Examples: okt config language set --cli pt-br okt config language set --tui en --agent "Português (Brasil)" okt config language set --agent "" --global At least one of --cli, --tui, or --agent must be provided. --cli and --tui validate against the language codes discovered under languages/. --agent accepts any non-empty string (or "" to clear). --global pins the write to the user-global omakiten.yaml.  
+Examples: okt config language set --cli pt-br okt config language set --tui en --agent "Português (Brasil)" okt config language set --agent "" --global At least one of --cli, --tui, or --agent must be provided. --cli and --tui validate against the language codes discovered under languages/. --agent accepts any non-empty string (or "" to clear). --global pins the write to the user-global omakiten.yaml.
 `okt config language set [flags]`
 
 | Flag | Short | Type | Description |
@@ -803,21 +825,21 @@ Examples: okt config language set --cli pt-br okt config language set --tui en -
 
 ### `okt config language show`
 
-Print the active language settings and the discovered language packs  
+Print the active language settings and the discovered language packs
 `okt config language show [flags]`
 
 _No flags beyond globals._
 
 ### `okt config refresh-defaults`
 
-Refresh shipped default files without running setup. Preserves `custom/` subtrees and `config/.active`; removes stale managed files outside `custom/`; refuses unsafe non-install roots and managed top-level symlink directories.  
+Refresh shipped default files without running setup. Preserves `custom/` subtrees and `config/.active`; removes stale managed files outside `custom/`; refuses unsafe non-install roots and managed top-level symlink directories.
 `okt config refresh-defaults [flags]`
 
 _No flags beyond globals._
 
 ### `okt config path`
 
-Print the install root that owns the chosen scope's config layer  
+Print the install root that owns the chosen scope's config layer
 `okt config path [flags]`
 
 | Flag | Short | Type | Description |
@@ -826,14 +848,14 @@ Print the install root that owns the chosen scope's config layer
 
 ### `okt config presets`
 
-List official workflow presets  
+List official workflow presets
 `okt config presets [flags]`
 
 _No flags beyond globals._
 
 ### `okt config show`
 
-Print the raw active yaml for the chosen scope  
+Print the raw active yaml for the chosen scope
 `okt config show [flags]`
 
 | Flag | Short | Type | Description |
@@ -842,7 +864,7 @@ Print the raw active yaml for the chosen scope
 
 ### `okt config validate`
 
-Validate an omakiten.yaml file  
+Validate an omakiten.yaml file
 `okt config validate [path] [flags]`
 
 | Flag | Short | Type | Description |
@@ -851,7 +873,7 @@ Validate an omakiten.yaml file
 
 ### `okt config why`
 
-Walk the active config (or a chosen layer) by dotted YAML key and report {key, value, path, source}. Without --layer the resolver picks the install that the runtime would use: the discovered .omakiten/ when present, otherwise the user-global ConfigRoot. The standalone model means there is no merge, so a value at any key comes from exactly one install. --layer pins the lookup to "global" or "local" so callers can verify a specific layer rather than the resolved one (e.g. "is this set in the user-global install even though my repo overrides it locally").  
+Walk the active config (or a chosen layer) by dotted YAML key and report {key, value, path, source}. Without --layer the resolver picks the install that the runtime would use: the discovered .omakiten/ when present, otherwise the user-global ConfigRoot. The standalone model means there is no merge, so a value at any key comes from exactly one install. --layer pins the lookup to "global" or "local" so callers can verify a specific layer rather than the resolved one (e.g. "is this set in the user-global install even though my repo overrides it locally").
 `okt config why <key> [flags]`
 
 | Flag | Short | Type | Description |
@@ -860,7 +882,7 @@ Walk the active config (or a chosen layer) by dotted YAML key and report {key, v
 
 ### `okt db backup`
 
-Copy the active SQLite database to a timestamped snapshot under $XDG_STATE_HOME/omakiten/backups/ (default ~/.local/state/omakiten/backups/) and prune older snapshots according to settings.backup.retention_count. The copy is atomic: the destination only appears once the body has been written and renamed into place. A previous partial copy never survives a failure. --out pins the snapshot path explicitly (parent directories are created as needed). When --out is supplied the retention prune pass is skipped — the user owns the rotation policy outside the default state directory.  
+Write a transactionally consistent, source-identity-checked SQLite snapshot to $XDG_STATE_HOME/omakiten/backups/ (default ~/.local/state/omakiten/backups/) and prune older snapshots according to settings.backup.retention_count. Committed WAL frames are included through SQLite's online snapshot path. Private randomized staging uses mode 0700/0600 on Unix; Windows confidentiality requires deployment-managed private ACL inheritance and the identity-checked stage is held against rename/delete through verification. Destination parents reject symlinks; no-force publication never replaces an existing path; --force replaces regular files only and restores the exact prior inode on post-publication failure. Staging is removed on failure or cancellation. Retention always protects the path just returned and uses basename ordering to break equal-mtime ties. --out pins the snapshot path explicitly and skips retention pruning.
 `okt db backup [flags]`
 
 | Flag | Short | Type | Description |
@@ -868,9 +890,25 @@ Copy the active SQLite database to a timestamped snapshot under $XDG_STATE_HOME/
 | `--force` |  |  | overwrite the target file when --out points at an existing path |
 | `--out` | `-o` | string | write the snapshot to this explicit file path (skips retention prune) |
 
+### `okt db check`
+
+Compare the FTS5 index with exactly five physical source types: task, comment event, error, solution, and plan.
+`okt db check [flags]`
+
+_No flags beyond globals._
+
+### `okt db reindex`
+
+Recreate canonical triggers and rebuild the five physical source types. Confirmed destructive repair first writes a verified rolling backup of the pinned database.
+`okt db reindex [flags]`
+
+| Flag | Short | Type | Description |
+|---|---|---|---|
+| `--confirm` |  | bool | confirm removal or replacement of indexed evidence that differs from canonical sources |
+
 ### `okt delete`
 
-Hard-delete a task (cascade) — subject to bucket policy and operations.delete.guards  
+Hard-delete a task (cascade) — subject to bucket policy and operations.delete.guards
 `okt delete TASK_ID [flags]`
 
 | Flag | Short | Type | Description |
@@ -879,7 +917,7 @@ Hard-delete a task (cascade) — subject to bucket policy and operations.delete.
 
 ### `okt depend add`
 
-Add a task dependency  
+Add a task dependency
 `okt depend add TASK_ID --on DEPENDS_ON_TASK_ID [flags]`
 
 | Flag | Short | Type | Description |
@@ -888,14 +926,14 @@ Add a task dependency
 
 ### `okt depend list`
 
-List dependencies for a task  
+List dependencies for a task
 `okt depend list TASK_ID [flags]`
 
 _No flags beyond globals._
 
 ### `okt depend remove`
 
-Remove a task dependency  
+Remove a task dependency
 `okt depend remove TASK_ID --on DEPENDS_ON_TASK_ID [flags]`
 
 | Flag | Short | Type | Description |
@@ -904,7 +942,7 @@ Remove a task dependency
 
 ### `okt edit`
 
-Edit a task in the active project  
+Edit a task in the active project
 `okt edit TASK_ID [flags]`
 
 | Flag | Short | Type | Description |
@@ -917,7 +955,7 @@ Edit a task in the active project
 
 ### `okt init`
 
-Register the current project in the global database  
+Register the current project in the global database
 `okt init [flags]`
 
 | Flag | Short | Type | Description |
@@ -936,7 +974,7 @@ Register the current project in the global database
 
 ### `okt law add`
 
-Add a law (writes laws/<slug>.md and opens $EDITOR if body omitted)  
+Add a law (writes laws/<slug>.md and opens $EDITOR if body omitted)
 `okt law add [flags]`
 
 | Flag | Short | Type | Description |
@@ -951,7 +989,7 @@ Add a law (writes laws/<slug>.md and opens $EDITOR if body omitted)
 
 ### `okt law edit`
 
-Edit a law (opens $EDITOR by default; flags override frontmatter/body)  
+Edit a law (opens $EDITOR by default; flags override frontmatter/body)
 `okt law edit SLUG [flags]`
 
 | Flag | Short | Type | Description |
@@ -963,7 +1001,7 @@ Edit a law (opens $EDITOR by default; flags override frontmatter/body)
 
 ### `okt law list`
 
-List active laws (filterable by scope/project/persona)  
+List active laws (filterable by scope/project/persona)
 `okt law list [flags]`
 
 | Flag | Short | Type | Description |
@@ -973,21 +1011,21 @@ List active laws (filterable by scope/project/persona)
 
 ### `okt law remove`
 
-Remove a law (deletes file + prunes refs)  
+Remove a law (deletes file + prunes refs)
 `okt law remove SLUG [flags]`
 
 _No flags beyond globals._
 
 ### `okt law show`
 
-Show a law (frontmatter + body)  
+Show a law (frontmatter + body)
 `okt law show SLUG [flags]`
 
 _No flags beyond globals._
 
 ### `okt list`
 
-List tasks from the active project  
+List tasks from the active project
 `okt list [flags]`
 
 | Flag | Short | Type | Description |
@@ -997,7 +1035,7 @@ List tasks from the active project
 
 ### `okt logs`
 
-okt logs reads the unified events table through the same path the TUI Logs inspector uses. The default window is the last Snapshot.LogsWindowDays() days for the active project, all categories included. Categories (match the TUI filter chips): task, comment, plan, tag-dep, guard, audit, hook, tool_call, trick, domain. Pass `all` to clear the filter explicitly. Output is a JSON envelope; each row carries the 5-field shape (time · event_type · entity · author · summary) where `summary` is the canonical SummarizeEvent string used by the TUI inspector.  
+okt logs reads the unified events table through the same path the TUI Logs inspector uses. The default window is the last Snapshot.LogsWindowDays() days for the active project, all categories included. Categories (match the TUI filter chips): task, comment, plan, tag-dep, guard, audit, hook, tool_call, trick, domain. Pass `all` to clear the filter explicitly. Output is a JSON envelope; each row carries the 5-field shape (time · event_type · entity · author · summary) where `summary` is the canonical SummarizeEvent string used by the TUI inspector.
 `okt logs [flags]`
 
 | Flag | Short | Type | Description |
@@ -1008,7 +1046,7 @@ okt logs reads the unified events table through the same path the TUI Logs inspe
 
 ### `okt mcp call`
 
-Call an Omakiten MCP tool with a JSON input object  
+Call an Omakiten MCP tool with a JSON input object
 `okt mcp call TOOL_NAME [flags]`
 
 | Flag | Short | Type | Description |
@@ -1017,7 +1055,7 @@ Call an Omakiten MCP tool with a JSON input object
 
 ### `okt mcp prompts`
 
-Render resolved okt-* prompt markdown to stdout  
+Render resolved okt-* prompt markdown to stdout
 `okt mcp prompts [name] [flags]`
 
 | Flag | Short | Type | Description |
@@ -1026,14 +1064,14 @@ Render resolved okt-* prompt markdown to stdout
 
 ### `okt mcp serve`
 
-Run the Omakiten MCP stdio server  
+Run the Omakiten MCP stdio server
 `okt mcp serve [flags]`
 
 _No flags beyond globals._
 
 ### `okt mcp setup`
 
-Writes the Omakiten MCP server configuration to the harness config file (e.g. Claude Desktop or OpenCode).  
+Writes the Omakiten MCP server configuration to the harness config file (e.g. Claude Desktop or OpenCode).
 Security note: `--command` is persisted as the executable command the AI harness will run. Use a trusted absolute binary path, prefer the harness default `--config-path` plus `--dry-run`, avoid privileged or system config paths, and treat `--force` as replacing existing executable harness configuration.
 `okt mcp setup [flags]`
 
@@ -1047,14 +1085,14 @@ Security note: `--command` is persisted as the executable command the AI harness
 
 ### `okt mcp tools`
 
-List Omakiten MCP tool definitions  
+List Omakiten MCP tool definitions
 `okt mcp tools [flags]`
 
 _No flags beyond globals._
 
 ### `okt move`
 
-Move a task through an allowed workflow transition  
+Move a task through an allowed workflow transition
 `okt move TASK_ID --to BUCKET [flags]`
 
 | Flag | Short | Type | Description |
@@ -1063,7 +1101,7 @@ Move a task through an allowed workflow transition
 
 ### `okt persona add`
 
-Add a persona (writes personas/<slug>.md and opens $EDITOR)  
+Add a persona (writes personas/<slug>.md and opens $EDITOR)
 `okt persona add [flags]`
 
 | Flag | Short | Type | Description |
@@ -1077,7 +1115,7 @@ Add a persona (writes personas/<slug>.md and opens $EDITOR)
 
 ### `okt persona edit`
 
-Edit a persona (opens $EDITOR by default; flags override)  
+Edit a persona (opens $EDITOR by default; flags override)
 `okt persona edit SLUG [flags]`
 
 | Flag | Short | Type | Description |
@@ -1090,42 +1128,42 @@ Edit a persona (opens $EDITOR by default; flags override)
 
 ### `okt persona list`
 
-List active personas  
+List active personas
 `okt persona list [flags]`
 
 _No flags beyond globals._
 
 ### `okt persona remove`
 
-Remove a persona (deletes file + prunes refs)  
+Remove a persona (deletes file + prunes refs)
 `okt persona remove SLUG [flags]`
 
 _No flags beyond globals._
 
 ### `okt persona show`
 
-Show a persona (frontmatter + body + skill refs)  
+Show a persona (frontmatter + body + skill refs)
 `okt persona show SLUG [flags]`
 
 _No flags beyond globals._
 
 ### `okt plan assign`
 
-Attach an existing task to a (plan, wave)  
+Attach an existing task to a (plan, wave)
 `okt plan assign SLUG WAVE_ID TASK_ID [flags]`
 
 _No flags beyond globals._
 
 ### `okt plan claim`
 
-Atomically claim the next unblocked task in the plan's active wave (requires OMAKITEN_AGENT_MODEL)  
+Atomically claim the next unblocked task in the plan's active wave (requires OMAKITEN_AGENT_MODEL)
 `okt plan claim SLUG [flags]`
 
 _No flags beyond globals._
 
 ### `okt plan create`
 
-Create a plan in the active project  
+Create a plan in the active project
 `okt plan create SLUG --name NAME [flags]`
 
 | Flag | Short | Type | Description |
@@ -1135,7 +1173,7 @@ Create a plan in the active project
 
 ### `okt plan delete`
 
-Hard-delete a plan (waves cascade; member tasks survive detached)  
+Hard-delete a plan (waves cascade; member tasks survive detached)
 `okt plan delete SLUG [flags]`
 
 | Flag | Short | Type | Description |
@@ -1144,7 +1182,7 @@ Hard-delete a plan (waves cascade; member tasks survive detached)
 
 ### `okt plan edit`
 
-Edit a plan's name, slug, status, and/or goal body  
+Edit a plan's name, slug, status, and/or goal body
 `okt plan edit SLUG [flags]`
 
 | Flag | Short | Type | Description |
@@ -1156,28 +1194,28 @@ Edit a plan's name, slug, status, and/or goal body
 
 ### `okt plan list`
 
-List plans in the active project  
+List plans in the active project
 `okt plan list [flags]`
 
 _No flags beyond globals._
 
 ### `okt plan show`
 
-Show a plan with its waves, tasks per wave, and done/total counts  
+Show a plan with its waves, tasks per wave, and done/total counts
 `okt plan show SLUG [flags]`
 
 _No flags beyond globals._
 
 ### `okt plan unassign`
 
-Detach a task from its plan (clears plan and wave)  
+Detach a task from its plan (clears plan and wave)
 `okt plan unassign TASK_ID [flags]`
 
 _No flags beyond globals._
 
 ### `okt plan wave-add`
 
-Append a wave to a plan (auto-position) or insert at --position  
+Append a wave to a plan (auto-position) or insert at --position
 `okt plan wave-add SLUG NAME [flags]`
 
 | Flag | Short | Type | Description |
@@ -1186,7 +1224,7 @@ Append a wave to a plan (auto-position) or insert at --position
 
 ### `okt plan wave-remove`
 
-Remove a wave from a plan (its tasks survive with wave cleared)  
+Remove a wave from a plan (its tasks survive with wave cleared)
 `okt plan wave-remove WAVE_ID [flags]`
 
 | Flag | Short | Type | Description |
@@ -1195,21 +1233,21 @@ Remove a wave from a plan (its tasks survive with wave cleared)
 
 ### `okt plan wave-rename`
 
-Rename a wave  
+Rename a wave
 `okt plan wave-rename WAVE_ID NAME [flags]`
 
 _No flags beyond globals._
 
 ### `okt plan wave-reorder`
 
-Move a wave to a new 1-based position (swaps on collision)  
+Move a wave to a new 1-based position (swaps on collision)
 `okt plan wave-reorder WAVE_ID POSITION [flags]`
 
 _No flags beyond globals._
 
 ### `okt projects delete`
 
-Resolve the project by numeric id or slug, write a recovery snapshot to the rolling backups directory, then cascade-delete every dependent row. The preview counters cover tasks, comments, plans, tag attachments, and activity log entries. Backup failure aborts the delete before anything is touched. Filesystem state under <root_path>/.omakiten/ is preserved — only DB rows are removed. Without --yes the command prints counters and prompts for confirmation; piping without --yes errors out instead of blocking on stdin. Use --yes only in automation after validating the target and capturing the JSON `backup_path`; it skips the human counter review.  
+Resolve the project by numeric id or slug, write a recovery snapshot to the rolling backups directory, then cascade-delete every dependent row. The preview counters cover tasks, comments, plans, tag attachments, and activity log entries. Backup failure aborts the delete before anything is touched. Filesystem state under <root_path>/.omakiten/ is preserved — only DB rows are removed. Without --yes the command prints counters and prompts for confirmation; piping without --yes errors out instead of blocking on stdin. Use --yes only in automation after validating the target and capturing the JSON `backup_path`; it skips the human counter review.
 `okt projects delete <id-or-slug> [flags]`
 
 | Flag | Short | Type | Description |
@@ -1218,7 +1256,7 @@ Resolve the project by numeric id or slug, write a recovery snapshot to the roll
 
 ### `okt setup`
 
-okt setup is the post-install picker the curl|bash installer drops you into. It walks language selection (CLI / TUI / agent-output), preset selection, and MCP-harness configuration in a single bubbletea program, then writes the okt() shell-rc wrapper. Re-run with --update to revisit choices. Headless / non-interactive shells skip every screen the matching env var fills: OKT_CLI_LANG, OKT_TUI_LANG, OKT_AGENT_LANG, OKT_PRESET, OKT_HARNESSES.  
+okt setup is the post-install picker the curl|bash installer drops you into. It walks language selection (CLI / TUI / agent-output), preset selection, and MCP-harness configuration in a single bubbletea program, then writes the okt() shell-rc wrapper. Re-run with --update to revisit choices. Headless / non-interactive shells skip every screen the matching env var fills: OKT_CLI_LANG, OKT_TUI_LANG, OKT_AGENT_LANG, OKT_PRESET, OKT_HARNESSES.
 `okt setup [flags]`
 
 | Flag | Short | Type | Description |
@@ -1234,7 +1272,7 @@ okt setup is the post-install picker the curl|bash installer drops you into. It 
 
 ### `okt skill add`
 
-Add a skill (writes skills/<slug>.md and opens $EDITOR)  
+Add a skill (writes skills/<slug>.md and opens $EDITOR)
 `okt skill add [flags]`
 
 | Flag | Short | Type | Description |
@@ -1246,7 +1284,7 @@ Add a skill (writes skills/<slug>.md and opens $EDITOR)
 
 ### `okt skill edit`
 
-Edit a skill (opens $EDITOR by default; flags override frontmatter)  
+Edit a skill (opens $EDITOR by default; flags override frontmatter)
 `okt skill edit SLUG [flags]`
 
 | Flag | Short | Type | Description |
@@ -1257,42 +1295,42 @@ Edit a skill (opens $EDITOR by default; flags override frontmatter)
 
 ### `okt skill list`
 
-List active skills  
+List active skills
 `okt skill list [flags]`
 
 _No flags beyond globals._
 
 ### `okt skill remove`
 
-Remove a skill (deletes file + prunes refs)  
+Remove a skill (deletes file + prunes refs)
 `okt skill remove SLUG [flags]`
 
 _No flags beyond globals._
 
 ### `okt skill show`
 
-Show a skill (frontmatter + body)  
+Show a skill (frontmatter + body)
 `okt skill show SLUG [flags]`
 
 _No flags beyond globals._
 
 ### `okt tui`
 
-Open the terminal UI  
+Open the terminal UI
 `okt tui [flags]`
 
 _No flags beyond globals._
 
 ### `okt unarchive`
 
-Restore an archived task (state=active)  
+Restore an archived task (state=active)
 `okt unarchive TASK_ID [flags]`
 
 _No flags beyond globals._
 
 ### `okt uninstall`
 
-Remove the binary the installer wrote to $INSTALL_DIR (defaults to ~/.local/bin on POSIX and %LOCALAPPDATA%\Programs\okt on Windows) and strip the okt() wrapper block from every rc/profile target. Local state is preserved unless explicitly opted-out via --purge-data (SQLite DB under $XDG_DATA_HOME/omakiten) or --purge-config (active yaml profile + entity folders under $XDG_CONFIG_HOME/omakiten). --purge is shorthand for both. Without flags on a TTY the picker shows what would be deleted with sizes and asks per purge target. --yes skips the picker entirely. No automatic backup. Run `okt db backup` first if you want a snapshot of the SQLite DB before purging — uninstall removes user-owned data by intent, so the safety net is opt-in via the standalone backup command.  
+Remove the binary the installer wrote to $INSTALL_DIR (defaults to ~/.local/bin on POSIX and %LOCALAPPDATA%\Programs\okt on Windows) and strip the okt() wrapper block from every rc/profile target. Local state is preserved unless explicitly opted-out via --purge-data (SQLite DB under $XDG_DATA_HOME/omakiten) or --purge-config (active yaml profile + entity folders under $XDG_CONFIG_HOME/omakiten). --purge is shorthand for both. Without flags on a TTY the picker shows what would be deleted with sizes and asks per purge target. --yes skips the picker entirely. No automatic backup. Run `okt db backup` first if you want a snapshot of the SQLite DB before purging — uninstall removes user-owned data by intent, so the safety net is opt-in via the standalone backup command.
 `okt uninstall [flags]`
 
 | Flag | Short | Type | Description |
@@ -1304,7 +1342,7 @@ Remove the binary the installer wrote to $INSTALL_DIR (defaults to ~/.local/bin 
 
 ### `okt update`
 
-Detect the running binary's path (os.Executable), query the GitHub releases API for the latest tag, download the matching asset, atomically replace the binary on disk, then refresh shipped defaults from the new binary. The current process exits after the swap; the next invocation runs the new version. --check prints `current=<v> latest=<v> action=<noop|upgrade>` and exits 0 without writing. --yes skips the confirmation prompt for non-interactive callers. --skip-defaults updates only the binary.  
+Detect the running binary's path (os.Executable), query the GitHub releases API for the latest tag, download the matching asset, atomically replace the binary on disk, then refresh shipped defaults from the new binary. The current process exits after the swap; the next invocation runs the new version. --check prints `current=<v> latest=<v> action=<noop|upgrade>` and exits 0 without writing. --yes skips the confirmation prompt for non-interactive callers. --skip-defaults updates only the binary.
 `okt update [flags]`
 
 | Flag | Short | Type | Description |
@@ -1315,7 +1353,7 @@ Detect the running binary's path (os.Executable), query the GitHub releases API 
 
 ### `okt workflow orphans`
 
-Tasks that pointed to a workflow bucket which no longer exists after a preset switch or omakiten.yaml edit are orphans. By default this command prints the migration plan (which tasks would rebind to which bucket) and exits non-zero so nothing is mutated. Pass --confirm to apply the rebind. Each migrated task emits a task.migrated event with from/to/reason payload. --dry-run is equivalent to running without --confirm.  
+Tasks that pointed to a workflow bucket which no longer exists after a preset switch or omakiten.yaml edit are orphans. By default this command prints the migration plan (which tasks would rebind to which bucket) and exits non-zero so nothing is mutated. Pass --confirm to apply the rebind. Each migrated task emits a task.migrated event with from/to/reason payload. --dry-run is equivalent to running without --confirm.
 `okt workflow orphans [flags]`
 
 | Flag | Short | Type | Description |
@@ -1325,7 +1363,7 @@ Tasks that pointed to a workflow bucket which no longer exists after a preset sw
 
 ### `okt workflow show`
 
-Show the active workflow  
+Show the active workflow
 `okt workflow show [flags]`
 
 _No flags beyond globals._

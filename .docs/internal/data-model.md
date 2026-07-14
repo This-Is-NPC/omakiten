@@ -404,6 +404,22 @@ The cross-project exceptions (errors, solutions, global tag list, template catal
 
 The driver is pure Go (`modernc.org/sqlite`), so the binary builds without CGo.
 
+## Search-index integrity and repair
+
+The unified contentful FTS5 table has exactly five canonical physical source types:
+
+| Index type | Physical source | Canonical content | Project routing |
+|---|---|---|---|
+| `task` | `tasks` | `title + description` | `tasks.project_id` |
+| `comment` | `events` where `event_type='comment'` | `body + title` | `COALESCE(events.project_id, 0)` |
+| `error` | `errors` | `description + context` | `COALESCE(errors.project_id, 0)` |
+| `solution` | `solutions` joined to `errors` | `description + steps` | owning error's project, or `0` |
+| `plan` | `plans` | `name + goal_body` | `plans.project_id` |
+
+Retired `note` rows and every other type are unsupported index-only/orphan state; they are not canonical sources. Metadata must use SQLite storage classes `text` for `entity_type` and `integer` for `entity_id` / `project_id`; NULL, numeric text, and other mixed classes are malformed drift. `Store.CheckSearchIndex` materializes the five-source projection and sanitized FTS metadata into connection-local TEMP state and reads trigger definitions inside the same deferred read transaction, preserving one logical WAL snapshot while ordinary writers commit. Both row sets are indexed on `(entity_type, entity_id)` for indexed joins/aggregations. After committing the read phase, the same pinned connection runs FTS5's mandatory internal `integrity-check` in its own short autocommit phase and recomputes report health. Counts are complete SQL aggregates; each per-type issue detail sample is capped at 100 with `truncated`. Unsupported types collapse to a fixed label, and trigger drift exposes only an unexpected count plus canonical missing/stale names; no source/indexed text or arbitrary metadata identifiers are exposed.
+
+`OpenSearchMaintenance` pins the verified physical connection for its lifetime. Confirmed destructive reindex compares `PRAGMA data_version` before/after each candidate backup and once more under `BEGIN IMMEDIATE`; mismatches delete that candidate and retry up to three times. The retained backup therefore represents the exact generation entering the in-transaction destructive-policy check. Only then does reindex replace literal-prefix triggers, rebuild FTS5, insert the canonical projection, and run the mandatory post-check before commit. Repeated external commits, backup failure, identity replacement, SQL failure, unhealthy post-check, cancellation, or lock timeout abort without discarding evidence. Missing-only, trigger-only, and canonical internal rebuilds are detected under the writer lock and remain backup-free. WAL readers see the prior committed index until commit. Integrity issue totals and their bounded per-partition samples come from one windowed SQL evaluation, preserving complete counts while returning at most 100 details for each issue/type partition.
+
 ## Transactional event emission
 
 Every storage mutation that also writes the `events` log goes through `txMutateAndEmit[T]` (`internal/sqlite/txevent.go:100`), which owns the canonical `BeginTx → mutate → emit → Commit → publish` lifecycle. Callers describe one cycle by populating a `TxMutation[T]` literal (`internal/sqlite/txevent.go:41`): `Scope` picks `insertEntityEvent` vs `insertTaskEvent`, `Mutate` runs the persistence write inside the helper's transaction, `Payload` builds the JSON column after the mutation has produced the post-`RETURNING` row, `EntityID` / `Body` derive event columns from the same value, and `ShouldLog` optionally gates the row insert (synthetic broadcast still fires).
