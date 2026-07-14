@@ -1,6 +1,8 @@
 package cli
 
 import (
+	"context"
+	"database/sql"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -8,22 +10,78 @@ import (
 	"testing"
 )
 
-func TestDBBackupCommand_DefaultPathAndOutOverride(t *testing.T) {
-	tmp := t.TempDir()
-	dbPath := filepath.Join(tmp, "omakiten.db")
-	configPath := filepath.Join(tmp, "config", "omakase.yaml")
-	projectRoot := filepath.Join(tmp, "project")
-	if err := os.MkdirAll(projectRoot, 0o755); err != nil {
-		t.Fatalf("MkdirAll(projectRoot) error = %v", err)
+func TestDBBackupIncludesPinnedCommittedWALFrames(t *testing.T) {
+	for _, mode := range []string{"rolling", "out"} {
+		t.Run(mode, func(t *testing.T) {
+			ctx := context.Background()
+			fixture := newCLIDBFixture(t, "omakiten.db")
+			tmp, dbPath, configPath := fixture.root, fixture.dbPath, fixture.configPath
+
+			db, err := sql.Open("sqlite", dbPath)
+			if err != nil {
+				t.Fatalf("sql.Open: %v", err)
+			}
+			defer func() { _ = db.Close() }()
+			db.SetMaxOpenConns(3)
+			if _, err := db.ExecContext(ctx, `PRAGMA journal_mode = WAL`); err != nil {
+				t.Fatalf("enable WAL: %v", err)
+			}
+			if _, err := db.ExecContext(ctx, `PRAGMA wal_autocheckpoint = 0`); err != nil {
+				t.Fatalf("disable autocheckpoint: %v", err)
+			}
+			if _, err := db.ExecContext(ctx, `PRAGMA wal_checkpoint(TRUNCATE)`); err != nil {
+				t.Fatalf("baseline checkpoint: %v", err)
+			}
+			reader, err := db.Conn(ctx)
+			if err != nil {
+				t.Fatalf("reader conn: %v", err)
+			}
+			defer func() { _ = reader.Close() }()
+			if _, err := reader.ExecContext(ctx, `BEGIN`); err != nil {
+				t.Fatalf("reader BEGIN: %v", err)
+			}
+			defer func() { _, _ = reader.ExecContext(context.Background(), `ROLLBACK`) }()
+			var baseline int
+			if err := reader.QueryRowContext(ctx, `SELECT COUNT(*) FROM tasks`).Scan(&baseline); err != nil {
+				t.Fatalf("reader baseline: %v", err)
+			}
+			if _, err := db.ExecContext(ctx, `INSERT INTO tasks(project_id, bucket_id, title, description, priority_id, state) VALUES (1, 1, 'committed wal backup row', '', 2, 'active')`); err != nil {
+				t.Fatalf("insert committed WAL row: %v", err)
+			}
+
+			args := []string{"db", "backup"}
+			if mode == "out" {
+				args = append(args, "--out", filepath.Join(tmp, "manual", "snapshot.db"))
+			}
+			output := runCLI(t, dbPath, configPath, args...)
+			var envelope struct {
+				Data struct {
+					Path string `json:"path"`
+				} `json:"data"`
+			}
+			if err := json.Unmarshal([]byte(output), &envelope); err != nil {
+				t.Fatalf("json.Unmarshal: %v", err)
+			}
+			snapshot, err := sql.Open("sqlite", envelope.Data.Path)
+			if err != nil {
+				t.Fatalf("open backup: %v", err)
+			}
+			defer func() { _ = snapshot.Close() }()
+			var count int
+			if err := snapshot.QueryRowContext(ctx, `SELECT COUNT(*) FROM tasks WHERE title = 'committed wal backup row'`).Scan(&count); err != nil {
+				t.Fatalf("query backup: %v", err)
+			}
+			if count != 1 {
+				t.Fatalf("committed WAL rows in %s backup = %d, want 1", mode, count)
+			}
+		})
 	}
-	t.Chdir(projectRoot)
+}
 
-	// Init seeds the DB + config so the snapshot has a real source to
-	// copy from and the bundle exists for retention resolution.
-	runCLI(t, dbPath, configPath, "init", "--name", "Project", "--slug", "project")
-
+func TestDBBackupCommand_DefaultPathAndOutOverride(t *testing.T) {
+	fixture := newCLIDBFixture(t, "omakiten.db")
+	tmp, dbPath, configPath := fixture.root, fixture.dbPath, fixture.configPath
 	stateRoot := filepath.Join(tmp, "state")
-	t.Setenv("XDG_STATE_HOME", stateRoot)
 
 	output := runCLI(t, dbPath, configPath, "db", "backup")
 	var envelope map[string]any
@@ -71,15 +129,9 @@ func TestDBBackupCommand_DefaultPathAndOutOverride(t *testing.T) {
 }
 
 func TestDBBackupCommand_SourceMissingFails(t *testing.T) {
-	tmp := t.TempDir()
-	dbPath := filepath.Join(tmp, "no-such.db")
-	configPath := filepath.Join(tmp, "config", "omakase.yaml")
-	t.Setenv("XDG_STATE_HOME", filepath.Join(tmp, "state"))
+	fixture := newCLIDBFixture(t, "no-such.db")
+	dbPath, configPath := fixture.dbPath, fixture.configPath
 
-	// init writes the config under configPath but uses dbPath as the
-	// requested DB — the DB file is created by init, so remove it
-	// afterward to simulate a missing source for the backup attempt.
-	runCLI(t, dbPath, configPath, "init", "--name", "Project", "--slug", "project")
 	if err := os.Remove(dbPath); err != nil {
 		t.Fatalf("remove db: %v", err)
 	}

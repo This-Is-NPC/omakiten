@@ -10,8 +10,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"omakiten/internal/app"
 	"omakiten/internal/domain"
+	"omakiten/internal/sqlite"
 )
 
 // forbiddenBackupOutRoots are the absolute path prefixes the `db backup
@@ -52,10 +52,9 @@ func newDBBackupCommand(opts *runtimeOptions) *cobra.Command {
 	return cmd
 }
 
-// runDBBackup wires the BackupService against the resolved DB and
-// config paths. The store is intentionally left unopened — the snapshot
-// is a plain file copy and opening a sibling SQLite handle here would
-// race with a concurrent TUI write. The bundle is loaded via
+// runDBBackup wires the BackupService against the resolved DB and config
+// paths. SQLite's online snapshot mechanism includes committed WAL frames
+// without checkpointing or mutating the source. The bundle is loaded via
 // buildCLIBackupService so the retention knob threads through without a
 // runtime/cache spin-up; the standalone command runs in soft-strict
 // mode so a partially-migrated config does not block recovery.
@@ -96,14 +95,11 @@ func runDBBackup(ctx context.Context, cmd *cobra.Command, opts *runtimeOptions, 
 				return nil, fmt.Errorf("backup --out stat: %w", statErr)
 			}
 		}
-		if err := os.MkdirAll(filepath.Dir(finalPath), 0o700); err != nil {
-			return nil, fmt.Errorf("backup --out parent: %w", err)
+		snapshot := sqlite.SnapshotDatabase
+		if force {
+			snapshot = sqlite.SnapshotDatabaseReplace
 		}
-		if _, err := os.Stat(dbPath); err != nil {
-			return nil, fmt.Errorf("backup source: %w", err)
-		}
-		tmp := finalPath + ".tmp"
-		if err := app.AtomicCopyFile(dbPath, finalPath, tmp); err != nil {
+		if err := snapshot(ctx, dbPath, finalPath); err != nil {
 			return nil, err
 		}
 		fmt.Fprintf(cmd.ErrOrStderr(), opts.t("cli.db.backup.success_fmt")+"\n", finalPath)
