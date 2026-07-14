@@ -84,20 +84,23 @@ type Repositories struct {
 	// layer: stuck tasks, cycle time, WIP, guard hotspots, error loop,
 	// per-model contrast). Optional — when nil the Insights view shows an
 	// "unavailable" placeholder, exactly as Metrics does on stub fixtures.
-	Insights     *app.InsightsService
-	Orphans      app.OrphanRepository
-	Plans        app.PlanRepository
+	Insights *app.InsightsService
+	Orphans  app.OrphanRepository
+	Plans    app.PlanRepository
 	// Search powers the trick palette Search tab (#182). Optional —
 	// when nil, palette.SearchMsg surfaces a "search not wired" status
 	// inline so the rest of the palette (Tricks tab + Ctrl+K
 	// open/close) stays usable on test fixtures that do not need the
 	// FTS5 path.
 	Search *app.SearchService
-	// Checkpointer is invoked right before a destructive snapshot
-	// (project delete) so the live SQLite WAL frames land in the
-	// main .db file the BackupService will copy. Optional — when
-	// nil, destructive flows still snapshot (best-effort).
+	// Checkpointer retains the TUI's legacy pre-snapshot WAL checkpoint for its
+	// generic BackupService writer. Optional — when nil, destructive flows still
+	// invoke their configured snapshot writer.
 	Checkpointer app.Checkpointer
+	// SnapshotWriter supplies the online database snapshot implementation used
+	// by destructive Home actions. Production injects SQLite's WAL-consistent
+	// writer; nil preserves the generic app default for lightweight tests.
+	SnapshotWriter app.SnapshotWriter
 
 	// Watermark probes the DB change watermark (PRAGMA data_version) so
 	// the realtime tick can skip a full reload on idle seconds. Optional —

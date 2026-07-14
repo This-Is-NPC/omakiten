@@ -47,6 +47,12 @@ type busyCheckpointer struct {
 	calls int
 }
 
+// legacyProjectRepository deliberately hides optional adapter capabilities so
+// tests can keep exercising ProjectService's fake/non-SQLite fallback path.
+type legacyProjectRepository struct {
+	app.ProjectRepository
+}
+
 func (b *busyCheckpointer) Checkpoint(context.Context) error {
 	b.calls++
 	return b.err
@@ -567,7 +573,7 @@ func TestHomeProjectDeleteSurfacesAuditWarn(t *testing.T) {
 
 	model, err := NewModel(ctx, domain.ProjectContext{}, Repositories{
 		Tasks:        store,
-		Projects:     store,
+		Projects:     &legacyProjectRepository{ProjectRepository: store},
 		Cache:        runtimecache.Install(0, store.Snapshot()),
 		Workflow:     app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot()),
 		Comments:     store,
@@ -630,7 +636,7 @@ func TestHomeProjectDeleteAuditWarnSurvivesBackupFailure(t *testing.T) {
 
 	model, err := NewModel(ctx, domain.ProjectContext{}, Repositories{
 		Tasks:        store,
-		Projects:     store,
+		Projects:     &legacyProjectRepository{ProjectRepository: store},
 		Cache:        runtimecache.Install(0, store.Snapshot()),
 		Workflow:     app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot()),
 		Comments:     store,
@@ -711,7 +717,7 @@ func TestHomeProjectDeleteOverlayPathSurfacesAuditWarn(t *testing.T) {
 
 	model, err := NewModel(ctx, domain.ProjectContext{}, Repositories{
 		Tasks:        store,
-		Projects:     store,
+		Projects:     &legacyProjectRepository{ProjectRepository: store},
 		Cache:        runtimecache.Install(0, store.Snapshot()),
 		Workflow:     app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot()),
 		Comments:     store,

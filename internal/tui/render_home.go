@@ -508,7 +508,7 @@ func (m *Model) armOrConfirmHomeProjectDelete(project domain.Project) tea.Cmd {
 // "cancel") clears the pending state without side effects. Returns
 // the tea.Cmd that drives the (asynchronous) delete so the bubbletea
 // runtime can schedule the IO off the Update goroutine — the
-// destructive flow's checkpoint + backup + cascade transaction can
+// destructive flow's leased snapshot + cascade transaction can
 // take seconds on contended SQLite handles, and running it inline in
 // Update freezes the entire TUI render loop until it returns.
 func (m *Model) handleHomeProjectDeleteAction(action notification.ActionMsg) tea.Cmd {
@@ -534,8 +534,8 @@ func (m *Model) handleHomeProjectDeleteAction(action notification.ActionMsg) tea
 
 // homeProjectDeleteResultMsg carries the outcome of the asynchronous
 // ProjectService.Delete invocation back to the bubbletea Update loop.
-// The destructive sequence (checkpoint → backup file copy → cascade
-// transaction → audit emission) can block for seconds on contended
+// The destructive sequence (backup-directory lease → exact-generation
+// snapshot → cascade transaction → rooted prune → audit emission) can block for seconds on contended
 // SQLite handles, so executeHomeProjectDelete returns a tea.Cmd that
 // runs the work off the Update goroutine and emits this message once
 // the call returns. Update folds the result into m.status + reloads
@@ -552,14 +552,14 @@ type homeProjectDeleteResultMsg struct {
 // returns the tea.Cmd that runs it asynchronously. Synchronous prep
 // (backup service construction + degraded-path counter re-query)
 // stays on the Update goroutine because both touch m.repos directly;
-// the long-running steps (checkpoint, file copy, transaction) move
+// the long-running steps (lease, snapshot, transaction, prune) move
 // inside the returned Cmd so the bubbletea render loop keeps
 // drawing while ProjectService.Delete runs.
 //
 // auditWarn is captured into a local buffer (never stderr — the
 // bubbletea alt-screen lives on stdout and stderr writes leak under
-// the render). Anything the service logs (checkpoint failure, audit
-// emission failure, payload marshal failure) lands on m.status via
+// the render). Anything the service logs (legacy checkpoint failure,
+// lease-release failure, audit emission failure, payload marshal failure) lands on m.status via
 // the result handler so the operator still sees the discrepancy
 // without a corrupted draw frame.
 func (m *Model) executeHomeProjectDelete(project domain.Project, counters domain.ProjectDeleteCounters) tea.Cmd {
@@ -636,9 +636,7 @@ func (m *Model) handleHomeProjectDeleteResult(msg homeProjectDeleteResultMsg) {
 // drainAuditString appends any audit-warning lines captured in audit
 // to status, joined with " · " so the single-line status surface
 // stays intact. ProjectService.Delete writes each warning via
-// fmt.Fprintf with a "\n" terminator, and a single Delete can emit
-// up to three (checkpoint failure, payload marshal failure, audit
-// emission failure). Splitting on "\n" folds the multi-line buffer
+// fmt.Fprintf with a "\n" terminator. Splitting on "\n" folds the multi-line buffer
 // onto one status row instead of letting embedded newlines fracture
 // the bubbletea render. No-op when audit is empty.
 func drainAuditString(status *string, audit string) {
@@ -681,10 +679,11 @@ func (m *Model) buildHomeBackupService(pruneWarn func(error)) (app.BackupRunner,
 		retention = snap.Settings().Backup.RetentionCount
 	}
 	return app.NewBackupService(app.BackupOptions{
-		SourcePath: m.repos.DBPath,
-		DestDir:    destDir,
-		Retention:  retention,
-		PruneWarn:  pruneWarn,
+		SourcePath:     m.repos.DBPath,
+		DestDir:        destDir,
+		Retention:      retention,
+		PruneWarn:      pruneWarn,
+		SnapshotWriter: m.repos.SnapshotWriter,
 	}), nil
 }
 

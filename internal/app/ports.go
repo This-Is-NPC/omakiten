@@ -47,12 +47,47 @@ type BackupRunner interface {
 	Run(ctx context.Context) (string, error)
 }
 
-// Checkpointer is the narrow port destructive flows invoke right
-// before BackupService.Run so the on-disk .db file reflects every
-// committed WAL frame from this process. *sqlite.Store satisfies it
-// via Checkpoint(ctx). Optional collaborator — ProjectService skips
-// the checkpoint when nil, matching the standalone `okt db backup`
-// flow that has no live store handle to checkpoint.
+// RecoveryLease exposes only the image operations needed during destruction;
+// the app finalizer retains standalone-write and pruning ownership.
+type RecoveryLease interface {
+	WriteSnapshot(ctx context.Context, write func(destinationPath string) error) (string, error)
+	Discard(path string) error
+	Validate() error
+}
+
+// BackupLease is the full app-owned lease; operations receive RecoveryLease.
+type BackupLease interface {
+	RecoveryLease
+	Write(ctx context.Context) (string, error)
+	PruneRetaining(path string) error
+	PruneFailedRetaining(path string) error
+}
+
+// BackupLeaser serializes snapshot creation, destructive mutation, and
+// retention across processes. *BackupService implements this port; lightweight
+// fakes may implement only BackupRunner and continue through the legacy path.
+type BackupLeaser interface {
+	WithLease(ctx context.Context, run func(BackupLease) error) error
+}
+
+// AtomicProjectDeleteRepository combines an exact-generation backup with the
+// project cascade on one pinned repository connection. Function callbacks keep
+// the port adapter-neutral: SQLite supplies its connection-bound snapshot
+// writer while the app-owned backup lease supplies publication and cleanup.
+type AtomicProjectDeleteRepository interface {
+	DeleteProjectWithBackup(
+		ctx context.Context,
+		projectID int64,
+		createBackup func(context.Context, func(destinationPath string) error) (string, error),
+		discardBackup func(string) error,
+		validateLease func() error,
+	) (backupPath string, err error)
+}
+
+// Checkpointer is the narrow compatibility port destructive flows may invoke
+// before BackupService.Run. It keeps generic file-copy writers compatible with
+// WAL mode; SQLite-aware snapshot writers include WAL frames without it.
+// *sqlite.Store satisfies the port via Checkpoint(ctx).
 type Checkpointer interface {
 	Checkpoint(ctx context.Context) error
 }

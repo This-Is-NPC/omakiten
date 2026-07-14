@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"path/filepath"
 	"strings"
 
@@ -164,6 +165,103 @@ func (s *Store) DeleteProject(ctx context.Context, projectID int64) error {
 		return domain.NewError(domain.ErrProjectNotFound, "project not found", map[string]any{"project_id": projectID})
 	}
 	return tx.Commit()
+}
+
+type projectDeleteBackupHooks struct {
+	Generation   exactGenerationHooks
+	BeforeCommit func(attempt int) error
+	AfterConnect func(*sql.Conn)
+	Rollback     func(context.Context, *sql.Conn) error
+}
+
+// DeleteProjectWithBackup retains an exact image of the generation it deletes.
+// One pinned live connection reads data_version around the verified snapshot,
+// acquires BEGIN IMMEDIATE, and reads the watermark again under the writer lock.
+// Any external commit in either interval discards the candidate and retries.
+func (s *Store) DeleteProjectWithBackup(
+	ctx context.Context,
+	projectID int64,
+	createBackup func(context.Context, func(destinationPath string) error) (string, error),
+	discardBackup func(string) error,
+	validateLease func() error,
+) (string, error) {
+	return s.deleteProjectWithBackup(ctx, projectID, createBackup, discardBackup, validateLease, projectDeleteBackupHooks{})
+}
+
+func (s *Store) deleteProjectWithBackup(
+	ctx context.Context,
+	projectID int64,
+	createBackup func(context.Context, func(destinationPath string) error) (string, error),
+	discardBackup func(string) error,
+	validateLease func() error,
+	hooks projectDeleteBackupHooks,
+) (string, error) {
+	if createBackup == nil || discardBackup == nil || validateLease == nil {
+		return "", errors.New("atomic project delete requires backup create, discard, and lease validation callbacks")
+	}
+	conn, err := s.db.Conn(ctx)
+	if err != nil {
+		return "", fmt.Errorf("pin project-delete connection: %w", err)
+	}
+	defer func() { _ = conn.Close() }()
+	if hooks.AfterConnect != nil {
+		hooks.AfterConnect(conn)
+	}
+	transaction := transactionControl{
+		invalidate: func() {
+			invalidateSQLiteConn(conn)
+		},
+		rollbackLabel: "roll back project delete",
+	}
+	if hooks.Rollback != nil {
+		transaction.rollback = func(rollbackCtx context.Context, _ sqliteTransaction) error {
+			return hooks.Rollback(rollbackCtx, conn)
+		}
+	}
+	backupPath, attempt, err := prepareExactGeneration(ctx, conn, projectDeleteExactGenerationPolicy, exactGenerationConfig{
+		create:  createBackup,
+		discard: discardBackup,
+		snapshot: func(snapshotCtx context.Context, destinationPath string) error {
+			return snapshotWithExecutor(snapshotCtx, conn, destinationPath, false, snapshotHooks{})
+		},
+		beforeSnapshot: validateLease,
+		afterSnapshot:  validateLease,
+		hooks:          hooks.Generation,
+		transaction:    transaction,
+	})
+	if err != nil {
+		return backupPath, err
+	}
+
+	// From this point onward a destructive statement has been attempted.
+	// Preserve backupPath on every error even when rollback succeeds.
+	if _, err := conn.ExecContext(ctx, `DELETE FROM events WHERE project_id = ?`, projectID); err != nil {
+		return backupPath, errors.Join(err, rollbackTransactionControlled(ctx, conn, transaction))
+	}
+	res, err := conn.ExecContext(ctx, `DELETE FROM projects WHERE id = ?`, projectID)
+	if err != nil {
+		return backupPath, errors.Join(err, rollbackTransactionControlled(ctx, conn, transaction))
+	}
+	rows, err := res.RowsAffected()
+	if err != nil {
+		return backupPath, errors.Join(err, rollbackTransactionControlled(ctx, conn, transaction))
+	}
+	if rows == 0 {
+		notFound := domain.NewError(domain.ErrProjectNotFound, "project not found", map[string]any{"project_id": projectID})
+		return backupPath, errors.Join(notFound, rollbackTransactionControlled(ctx, conn, transaction))
+	}
+	if hooks.BeforeCommit != nil {
+		if err := hooks.BeforeCommit(attempt); err != nil {
+			return backupPath, errors.Join(err, rollbackTransactionControlled(ctx, conn, transaction))
+		}
+	}
+	if err := validateLease(); err != nil {
+		return backupPath, errors.Join(err, rollbackTransactionControlled(ctx, conn, transaction))
+	}
+	if _, err := conn.ExecContext(ctx, "COMMIT"); err != nil {
+		return backupPath, errors.Join(err, rollbackTransactionControlled(ctx, conn, transaction))
+	}
+	return backupPath, nil
 }
 
 func pathWithinRoot(path, root string) bool {

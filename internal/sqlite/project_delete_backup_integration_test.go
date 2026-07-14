@@ -10,22 +10,29 @@ import (
 	"omakiten/internal/domain"
 )
 
+type projectDeleteEventRecorder struct {
+	eventType string
+	calls     int
+}
+
+func (r *projectDeleteEventRecorder) RecordEntityEvent(_ context.Context, _ string, _ int64, _ int64, eventType string, _ string) error {
+	r.calls++
+	r.eventType = eventType
+	return nil
+}
+
 // TestProjectDeleteSnapshotsRealWALData closes the integration gap the
 // fake-ledger checkpoint tests left open (comment 7959 info row 5):
 // the in-process fake checkpointer + fake backup runner can pin call
 // order but cannot prove that WAL frames committed from this process
-// actually land in the .db file BackupService copies.
+// actually land in the .db file BackupService's generic writer copies.
 //
-// This test wires the real *sqlite.Store as Checkpointer, the real
-// *app.BackupService as BackupRunner, and runs the full
-// ProjectService.Delete cascade against a fresh DB. Tasks are inserted
-// through the store's normal write path (the inserts hit the WAL
-// sidecar in WAL mode), then ProjectService.Delete fires its
-// `PRAGMA wal_checkpoint(TRUNCATE)` before BackupService.Run copies
-// the .db file. We re-open the resulting snapshot as a fresh *sql.DB
-// and assert the task rows survived the round-trip — proving that
-// committed-but-uncheckpointed WAL data really does end up in the
-// backup, not just in some ordering ledger.
+// This test wires the real *sqlite.Store and *app.BackupService, then runs the
+// full atomic ProjectService.Delete cascade against a fresh DB. Tasks are
+// inserted through the store's normal write path (the inserts hit the WAL
+// sidecar in WAL mode). The production atomic port creates the recovery image
+// through its pinned live connection without relying on a checkpoint. Reopening
+// the image proves committed WAL data is retained before the cascade commits.
 func TestProjectDeleteSnapshotsRealWALData(t *testing.T) {
 	ctx := context.Background()
 	dbPath := t.TempDir() + "/live.db"
@@ -58,7 +65,8 @@ func TestProjectDeleteSnapshotsRealWALData(t *testing.T) {
 		t.Fatalf("pre-delete counters.Tasks = %d, want %d", counters.Tasks, taskCount)
 	}
 
-	svc := app.NewProjectService(store, backup, store).
+	events := &projectDeleteEventRecorder{}
+	svc := app.NewProjectService(store, backup, events).
 		WithCheckpointer(store).
 		SetAuditWarnWriter(io.Discard)
 	result, err := svc.Delete(ctx, project.ID, counters)
@@ -73,12 +81,12 @@ func TestProjectDeleteSnapshotsRealWALData(t *testing.T) {
 	if _, err := store.FindProjectByID(ctx, project.ID); err == nil {
 		t.Fatalf("project still present in live store after delete")
 	}
+	if events.calls != 1 || events.eventType != domain.EventTypeProjectRemoved {
+		t.Fatalf("post-commit audit calls = %d type=%q", events.calls, events.eventType)
+	}
 
-	// Snapshot: re-open as a fresh *sql.DB and assert the task rows
-	// survived the WAL → main → backup → fresh-handle round-trip.
-	// Without the checkpoint, the inserts could sit only in the WAL
-	// sidecar at the moment of copy and the snapshot would see zero
-	// rows.
+	// Snapshot: re-open as a fresh *sql.DB and assert the task rows survived
+	// the WAL → connection-bound snapshot → fresh-handle round-trip.
 	snap, err := sql.Open("sqlite", result.BackupPath)
 	if err != nil {
 		t.Fatalf("open backup as sql.DB: %v", err)

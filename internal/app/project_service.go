@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -50,12 +51,10 @@ func (s *ProjectService) SetAuditWarnWriter(w io.Writer) *ProjectService {
 	return s
 }
 
-// WithCheckpointer attaches a Checkpointer the service invokes
-// immediately before BackupService.Run, so the on-disk .db copy
-// reflects every committed WAL frame from this process. Returns the
-// service for fluent wiring. Pass nil from callers that have no live
-// store handle (e.g. the standalone CLI flows that only compose
-// BackupService directly).
+// WithCheckpointer attaches the legacy pre-snapshot checkpoint used by callers
+// whose BackupService retains the generic file-copy writer. SQLite-aware CLI
+// composition injects an online snapshot writer and does not depend on this
+// checkpoint for WAL consistency. Returns the service for fluent wiring.
 func (s *ProjectService) WithCheckpointer(c Checkpointer) *ProjectService {
 	s.checkpointer = c
 	return s
@@ -102,21 +101,23 @@ func (s *ProjectService) Init(ctx context.Context, name, slug, rootPath string) 
 // is the project.removed row that landed in the audit log after the
 // commit.
 type ProjectDeleteResult struct {
-	Project    domain.Project              `json:"project"`
+	Project    domain.Project               `json:"project"`
 	Counters   domain.ProjectDeleteCounters `json:"counters"`
-	BackupPath string                      `json:"backup_path"`
-	EventType  string                      `json:"event_type"`
+	BackupPath string                       `json:"backup_path"`
+	EventType  string                       `json:"event_type"`
 }
 
-// Delete hard-deletes a project after writing a recovery snapshot.
-// Sequence:
+// Delete hard-deletes a project after writing a recovery snapshot. Production
+// SQLite composition selects AtomicProjectDeleteRepository + BackupLeaser: one
+// cross-process directory lease spans an exact-generation, connection-bound
+// snapshot, BEGIN IMMEDIATE cascade, commit, and rooted retention pass. Fakes
+// and non-SQLite repositories retain the legacy sequence:
 //
 //  1. Resolve the project (load slug/name for the payload + error
 //     reporting).
-//  2. Checkpoint the live WAL (best-effort, when a Checkpointer was
-//     attached) so committed frames from this process land in the
-//     main .db file the snapshot copies. Checkpoint failure is logged
-//     via auditWarn and the flow continues.
+//  2. Checkpoint the live WAL (best-effort, when a legacy Checkpointer was
+//     attached). SQLite-aware snapshot writers include committed WAL frames
+//     independently. Checkpoint failure is logged via auditWarn.
 //  3. Run BackupService — backup failure aborts before any rows are
 //     touched. The user retries once the underlying issue is fixed.
 //  4. Cascade-delete via the repository (events for the project come
@@ -145,12 +146,27 @@ func (s *ProjectService) Delete(ctx context.Context, projectID int64, counters d
 		return ProjectDeleteResult{}, err
 	}
 
-	// Checkpoint the WAL before the snapshot so every committed
-	// transaction from this process lands in the main .db file the
-	// BackupService will copy. Best-effort — a checkpoint failure
-	// (typically SQLITE_BUSY under concurrent writers) is logged and
-	// the snapshot continues; the file copy still reflects the
-	// on-disk DB+WAL pair at that instant.
+	if atomicRepo, ok := s.repo.(AtomicProjectDeleteRepository); ok {
+		if backupLeaser, ok := s.backup.(BackupLeaser); ok {
+			backupPath, err := s.deleteAtomic(ctx, atomicRepo, backupLeaser, projectID)
+			if err != nil {
+				return ProjectDeleteResult{}, err
+			}
+			if s.events != nil {
+				s.recordProjectRemoved(ctx, project, counters, backupPath)
+			}
+			return ProjectDeleteResult{
+				Project:    project,
+				Counters:   counters,
+				BackupPath: backupPath,
+				EventType:  domain.EventTypeProjectRemoved,
+			}, nil
+		}
+	}
+
+	// Retain the legacy checkpoint ordering for generic file-copy writers.
+	// SQLite-aware writers remain consistent when this best-effort checkpoint
+	// is busy because they read the database and WAL through SQLite itself.
 	if s.checkpointer != nil {
 		if cerr := s.checkpointer.Checkpoint(ctx); cerr != nil {
 			fmt.Fprintf(s.auditWarn, "warning: wal_checkpoint before backup failed for project_id=%d: %s\n", projectID, cerr.Error())
@@ -176,6 +192,41 @@ func (s *ProjectService) Delete(ctx context.Context, projectID int64, counters d
 		BackupPath: backupPath,
 		EventType:  domain.EventTypeProjectRemoved,
 	}, nil
+}
+
+func (s *ProjectService) deleteAtomic(
+	ctx context.Context,
+	repo AtomicProjectDeleteRepository,
+	backup BackupLeaser,
+	projectID int64,
+) (string, error) {
+	operation, leaseErr := RunLeasedDestructiveOperation(ctx, backup, func(lease RecoveryLease) DestructiveOperationResult {
+		backupPath, operationErr := repo.DeleteProjectWithBackup(
+			ctx,
+			projectID,
+			lease.WriteSnapshot,
+			lease.Discard,
+			lease.Validate,
+		)
+		return DestructiveOperationResult{
+			BackupPath:        backupPath,
+			MutationCompleted: operationErr == nil,
+			Err:               operationErr,
+		}
+	})
+	if !operation.MutationCompleted {
+		if operation.Err != nil {
+			return operation.BackupPath, fmt.Errorf("atomic backup and project delete: %w", errors.Join(operation.Err, leaseErr))
+		}
+		return "", fmt.Errorf("acquire project-delete backup lease: %w", leaseErr)
+	}
+	if leaseErr != nil {
+		// The delete committed before lease release failed. Reporting the
+		// operation as failed would invite an unsafe retry, so preserve success
+		// and surface the release discrepancy through the existing audit channel.
+		fmt.Fprintf(s.auditWarn, "warning: backup lease release failed after project delete committed for project_id=%d: %s\n", projectID, leaseErr.Error())
+	}
+	return operation.BackupPath, nil
 }
 
 // recordProjectRemoved marshals the project.removed payload and writes
