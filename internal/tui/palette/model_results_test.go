@@ -50,6 +50,27 @@ func TestSetResultsStoresHitsAndResetsCursor(t *testing.T) {
 	}
 }
 
+func TestRenderResultListShowsFivePhysicalSearchTypes(t *testing.T) {
+	entityTypes := domain.AllSearchEntityTypes()
+	if len(entityTypes) != 5 {
+		t.Fatalf("AllSearchEntityTypes() len = %d, want 5", len(entityTypes))
+	}
+	hits := make([]domain.SearchHit, len(entityTypes))
+	for i, entityType := range entityTypes {
+		hits[i] = domain.SearchHit{EntityType: entityType, ID: int64(i + 1), Snippet: "match"}
+	}
+
+	view := seedSearchModel(hits).View()
+	for _, entityType := range entityTypes {
+		if !strings.Contains(view, string(entityType)) {
+			t.Errorf("result list missing entity type %q; view=\n%s", entityType, view)
+		}
+	}
+	if strings.Contains(view, " note ") {
+		t.Fatalf("result list contains retired note type; view=\n%s", view)
+	}
+}
+
 func TestClearResultsResetsState(t *testing.T) {
 	m := NewModel()
 	m.SetResults(fakeHits(3))

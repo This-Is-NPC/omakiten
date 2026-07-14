@@ -1,5 +1,11 @@
 package domain
 
+import (
+	"strings"
+	"unicode"
+	"unicode/utf8"
+)
+
 // SearchEntityType labels a row inside the unified FTS5 `search_index`.
 // The values mirror the source tables the index syncs from; any other
 // value is rejected at the service boundary so the SQL filter only sees
@@ -12,8 +18,56 @@ const (
 	SearchEntityError    SearchEntityType = "error"
 	SearchEntitySolution SearchEntityType = "solution"
 	SearchEntityPlan     SearchEntityType = "plan"
-	SearchEntityNote     SearchEntityType = "note"
+
+	// SearchQueryMaxBytes and SearchQueryMaxTokens bound work before a query
+	// reaches telemetry or SQLite's FTS5 parser. Bytes bound storage and copy
+	// cost; lexical tokens bound parser/expression amplification.
+	SearchQueryMaxBytes  = 4096
+	SearchQueryMaxTokens = 256
 )
+
+// ValidateSearchQuery trims and bounds one FTS5 MATCH expression. All app and
+// repository entry points use this validator so internal callers cannot bypass
+// the same CPU/storage limits enforced for MCP requests.
+func ValidateSearchQuery(query string) (string, error) {
+	query = strings.TrimSpace(query)
+	if query == "" {
+		return "", NewError(ErrValidation, "query is required", nil)
+	}
+	if len(query) > SearchQueryMaxBytes || !utf8.ValidString(query) {
+		return "", searchQueryLimitError()
+	}
+	if searchQueryLexicalTokens(query) > SearchQueryMaxTokens {
+		return "", searchQueryLimitError()
+	}
+	return query, nil
+}
+
+func searchQueryLimitError() error {
+	return NewError(ErrValidation, "search query exceeds limits", map[string]any{
+		"max_bytes":  SearchQueryMaxBytes,
+		"max_tokens": SearchQueryMaxTokens,
+	})
+}
+
+func searchQueryLexicalTokens(query string) int {
+	tokens := 0
+	inWord := false
+	for _, value := range query {
+		if unicode.IsLetter(value) || unicode.IsDigit(value) || value == '_' {
+			if !inWord {
+				tokens++
+				inWord = true
+			}
+			continue
+		}
+		inWord = false
+		if !unicode.IsSpace(value) && value != '\'' && value != '"' && value != '`' {
+			tokens++
+		}
+	}
+	return tokens
+}
 
 // AllSearchEntityTypes is the canonical set of entity types the FTS5
 // index covers. Callers passing an empty `entity_types` list inherit
@@ -25,7 +79,6 @@ func AllSearchEntityTypes() []SearchEntityType {
 		SearchEntityError,
 		SearchEntitySolution,
 		SearchEntityPlan,
-		SearchEntityNote,
 	}
 }
 
@@ -33,7 +86,7 @@ func AllSearchEntityTypes() []SearchEntityType {
 // of the indexed entity types.
 func IsValidSearchEntityType(value string) bool {
 	switch SearchEntityType(value) {
-	case SearchEntityTask, SearchEntityComment, SearchEntityError, SearchEntitySolution, SearchEntityPlan, SearchEntityNote:
+	case SearchEntityTask, SearchEntityComment, SearchEntityError, SearchEntitySolution, SearchEntityPlan:
 		return true
 	}
 	return false

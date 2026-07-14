@@ -2,6 +2,8 @@ package app
 
 import (
 	"context"
+	"errors"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -33,6 +35,27 @@ func TestSearchServiceRejectsUnknownEntityType(t *testing.T) {
 		t.Fatal("Search(banana) error = nil")
 	}
 	assertCodedError(t, err, domain.ErrValidation)
+}
+
+func TestSearchServiceRejectsRetiredNoteEntityType(t *testing.T) {
+	ctx := context.Background()
+	store, project := appTestStore(t, appTestBundle(t))
+	defer func() { _ = store.Close() }()
+
+	svc := NewSearchService(store, store)
+	_, err := svc.Search(ctx, project.Context(), "handoff", []string{"note"})
+	if err == nil {
+		t.Fatal("Search(note) error = nil")
+	}
+
+	var coded *domain.CodedError
+	if !errors.As(err, &coded) || coded.Code != domain.ErrValidation {
+		t.Fatalf("Search(note) error = %v, want validation_error", err)
+	}
+	want := []string{"task", "comment", "error", "solution", "plan"}
+	if got := coded.Details["allowed"]; !reflect.DeepEqual(got, want) {
+		t.Fatalf("Search(note) allowed = %#v, want %#v", got, want)
+	}
 }
 
 func TestSearchServiceEmitsErrorsResearchedForErrorScope(t *testing.T) {

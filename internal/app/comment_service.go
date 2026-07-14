@@ -209,6 +209,12 @@ func (s *CommentService) enforceCommentCreatePermission(ctx context.Context, pro
 // untouched; callers set ProjectID explicitly to scope or leave it 0 for the
 // cross-project view.
 func (s *CommentService) Query(ctx context.Context, project domain.ProjectContext, filter domain.CommentFilter) (comments []domain.Comment, err error) {
+	if filter.Search != "" {
+		filter.Search, err = domain.ValidateSearchQuery(filter.Search)
+		if err != nil {
+			return nil, err
+		}
+	}
 	finish := activity.Track(ctx, "app.CommentService.Query", project, map[string]any{"scope": filter.Scope, "kind": filter.Kind})
 	defer func() {
 		status := "ok"

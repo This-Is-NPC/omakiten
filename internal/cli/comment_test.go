@@ -2,6 +2,7 @@ package cli
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -122,6 +123,14 @@ func TestCLICommentListFilters(t *testing.T) {
 	byID := runCLI(t, dbPath, configPath, "comment", "list", "--comment-id", pinnedID)
 	if !strings.Contains(byID, `"body":"pinned recap"`) || strings.Contains(byID, `"body":"unpinned note"`) {
 		t.Fatalf("--comment-id list output = %s", byID)
+	}
+}
+
+func TestCLICommentListMalformedFTSIsStableValidation(t *testing.T) {
+	dbPath, configPath := commentTestEnv(t)
+	envelope := runCLIExpectError(t, dbPath, configPath, "validation_error", "comment", "list", "--query", `"unterminated`)
+	if envelope["msg"] != "invalid FTS5 query expression" || strings.Contains(fmt.Sprint(envelope), "unterminated string") {
+		t.Fatalf("malformed comment query envelope exposed driver text: %v", envelope)
 	}
 }
 
