@@ -198,11 +198,15 @@ type ContentItem struct {
 }
 
 func Tools() []ToolDefinition {
-	defs := tools()
-	for i := range defs {
-		defs[i].InputSchema = withAgentAttribution(defs[i].InputSchema)
+	definitions := make([]ToolDefinition, 0, len(registeredTools.ordered))
+	for _, registration := range registeredTools.ordered {
+		definitions = append(definitions, ToolDefinition{
+			Name:        registration.name,
+			Description: registration.description,
+			InputSchema: withAgentAttribution(registration.schema()),
+		})
 	}
-	return defs
+	return definitions
 }
 
 // withAgentAttribution mutates an InputSchema in place to declare the
@@ -237,70 +241,6 @@ func containsString(haystack []string, needle string) bool {
 		}
 	}
 	return false
-}
-
-func tools() []ToolDefinition {
-	return []ToolDefinition{
-		{Name: "project.overview", Description: "Return active project identity, workflow awareness, pending count, and next-step prompt.", InputSchema: selectorSchema()},
-		{Name: "project.resume", Description: "Return project distribution, likely next work, blocked work, dependencies, and workflow state.", InputSchema: selectorSchema()},
-		{Name: "project.edit", Description: "Update the active project's description, persisting it to the projects.description column and emitting project.updated when the value changes. Returns the refreshed project DTO with the new description.", InputSchema: editProjectSchema()},
-		{Name: "tasks.continue", Description: "Load a project-owned task with dependencies, comments, and workflow bucket. Set include_workflow=false on subsequent calls in a session where the workflow shape was already loaded by /okt to save tokens.", InputSchema: objectSchema(map[string]any{"task_id": integerSchema("Task id to continue"), "include_workflow": booleanSchema("Optional override for config.mcp.include_workflow_in_continue. Pass false to skip the workflow block when /okt already loaded it.")}, []string{"task_id"})},
-		{Name: "tasks.list", Description: "List active project tasks, optionally filtered by workflow bucket and/or parent. The parent_id filter is tri-state: omit for no filter (every task), pass null for roots only (parent_id IS NULL), or pass a task id for that parent's direct children.", InputSchema: objectSchema(map[string]any{"bucket_key": stringSchema("Optional workflow bucket key"), "parent_id": nullableIntegerSchema("Optional tri-state parent filter: omit for no filter; pass null for roots only (parent_id IS NULL); pass a task id for direct children of that id.")}, nil)},
-		{Name: "tasks.create_intent", Description: "Create a task intent after checking for similar or related project tasks and requiring confirmation when needed.", InputSchema: createTaskSchema()},
-		{Name: "tasks.create", Description: "Create a task directly through Omakiten's shared task service.", InputSchema: createTaskSchema()},
-		{Name: "tasks.move", Description: "Move a task through an allowed workflow transition.", InputSchema: objectSchema(map[string]any{"task_id": integerSchema("Task id"), "bucket_key": stringSchema("Target bucket key")}, []string{"task_id", "bucket_key"})},
-		{Name: "tasks.edit", Description: "Edit a task's title, description, priority, and/or parent_id. Provide at least one of the optional fields; the service rejects no-op calls. Subject to bucket policy (permissions.task.edit) — the default kit allows edits only in the planning bucket. Bucket moves go through tasks.move so the activity log distinguishes the two intents. The parent_id field is tri-state: omit to leave parent_id untouched, pass null to clear (re-root the task), or pass a task id to re-parent (anti-cycle is enforced — naming a descendant fails with the conflicting ancestor surfaced).", InputSchema: objectSchema(map[string]any{"task_id": integerSchema("Task id"), "title": stringSchema("Optional new title"), "description": stringSchema("Optional new description"), "priority": stringSchema("Optional priority label resolved against config.priorities (e.g. \"low\", \"normal\", \"high\")"), "parent_id": nullableIntegerSchema("Optional tri-state re-parent: omit to leave parent_id alone; pass null to clear (becomes a root); pass a task id to re-parent with anti-cycle enforcement.")}, []string{"task_id"})},
-		{Name: "tasks.delete", Description: "Hard-delete a task with cascade (comments, tags, dependencies, events). Subject to bucket policy (permissions.task.delete) and operations.delete.guards.", InputSchema: objectSchema(map[string]any{"task_id": integerSchema("Task id"), "confirmed": booleanSchema("Required true to actually delete the task")}, []string{"task_id"})},
-		{Name: "tasks.archive", Description: "Archive a task (state=archived) and move it into the workflow's final bucket. Bypasses bucket policy and transition guards but respects operations.archive.guards.", InputSchema: objectSchema(map[string]any{"task_id": integerSchema("Task id")}, []string{"task_id"})},
-		{Name: "tasks.unarchive", Description: "Restore an archived task to active state, leaving its current bucket intact. Respects operations.unarchive.guards if declared.", InputSchema: objectSchema(map[string]any{"task_id": integerSchema("Task id")}, []string{"task_id"})},
-		{Name: "comments.add", Description: "Add a scope-aware human or agent comment. scope selects where it hangs: task (default; requires task_id), project (requires no task_id), or universal (cross-project; no task_id). Optional note-like fields kind/title/pinned and tag names (normalized to kebab-case); body may be pre-filled from a loaded template.", InputSchema: objectSchema(map[string]any{"task_id": integerSchema("Task id (required when scope=task; must be omitted for project/universal)"), "scope": stringSchema("Comment scope: task (default), project, or universal"), "body": stringSchema("Comment body"), "title": stringSchema("Optional title for the comment"), "kind": stringSchema("Optional comment kind (e.g. \"handoff\", \"recap\", \"standup\")"), "pinned": booleanSchema("Optional; pin the comment to the cover sheet"), "author_type": stringSchema("human or agent"), "tags": arrayStringSchema("Optional tag names to attach to this comment (e.g. [\"resume\", \"deployment-notes\"])"), "template_slug": stringSchema("Optional slug of a loaded template; when set, the template body is merged into the comment (user content first, template appended).")}, []string{"body"})},
-		{Name: "comments.list", Description: "List comments. With no extra filters this lists the named task's comments (task-scoped, default). Pass comment_id to fetch exactly one comment by id (get-by-id, any scope). Add scope/kind/tag/pinned/query/since to query the filterable handoff log: scope (task|project|universal), kind, tag, pinned (pinned-only), query (FTS5 over body+title), and since (time-window floor, e.g. \"24h\", \"7d\").", InputSchema: objectSchema(map[string]any{"task_id": integerSchema("Task id; narrows task-scoped rows"), "comment_id": integerSchema("Comment id; returns exactly that comment (any scope), ignoring the project filter"), "scope": stringSchema("Optional scope filter: task, project, or universal"), "kind": stringSchema("Optional comment kind filter"), "tag": stringSchema("Optional tag-name filter"), "pinned": booleanSchema("Optional; return only pinned comments"), "query": stringSchema("Optional FTS5 MATCH expression over comment body and title"), "since": stringSchema("Optional time-window floor (Go duration \"24h\"/\"30m\" or N-day shorthand \"7d\")")}, nil)},
-		{Name: "comments.edit", Description: "Edit a comment's body and/or its title/kind/pinned flag, and replace its tags. Every field is a partial update (PATCH semantics): provide at least one of body/title/kind/pinned/tags; the service rejects no-op calls. Omit body to leave it unchanged (metadata-only edit) — a non-null body must be non-empty (you can rewrite but not blank it). Subject to bucket policy (permissions.comment.edit, inherited from permissions.task when not declared).", InputSchema: objectSchema(map[string]any{"comment_id": integerSchema("Comment id"), "body": stringSchema("Optional new comment body; omit to leave the body unchanged. A non-null value must be non-empty."), "title": stringSchema("Optional new title"), "kind": stringSchema("Optional new comment kind"), "pinned": booleanSchema("Optional; set the pinned flag"), "tags": arrayStringSchema("Optional tag names; replaces all existing tags on the comment")}, []string{"comment_id"})},
-		{Name: "comments.delete", Description: "Hard-delete a comment. Subject to bucket policy (permissions.comment.delete, inherited from permissions.task when not declared).", InputSchema: objectSchema(map[string]any{"comment_id": integerSchema("Comment id"), "confirmed": booleanSchema("Required true to actually delete the comment")}, []string{"comment_id"})},
-		{Name: "task_activity.list", Description: "Return the unified activity feed for a task: comments and system events (task.created, task.moved, task.completed) ordered chronologically.", InputSchema: objectSchema(map[string]any{"task_id": integerSchema("Task id"), "order": stringSchema("Sort order: 'asc' (chronological, default) or 'desc' (newest first)")}, []string{"task_id"})},
-		{Name: "logs.list", Description: "Generic Logs inspector over the unified events log. Returns every event_type — task lifecycle, comments, plans, guards, hooks, tool calls (CLI/MCP/TUI), tricks, audits, and domain bookkeeping — each row carrying a rendered `summary` string so the agent does not have to parse the payload JSON. Default scope is the active project over the configured window (config.views.logs.window_days, 30 days by default). Pass `categories=[\"tool_call\"]` to reproduce the legacy activity-log filter; pass `since=\"24h\"` to narrow the window. Allowed categories: task, comment, plan, tag-dep, guard, audit, hook, tool_call, trick, domain.", InputSchema: logsListSchema()},
-		{Name: "dependencies.add", Description: "Add a project-scoped task dependency with cycle prevention.", InputSchema: dependencySchema(false)},
-		{Name: "dependencies.remove", Description: "Remove a task dependency after explicit confirmation.", InputSchema: dependencySchema(true)},
-		{Name: "dependencies.list", Description: "List dependencies for one task or all active project tasks.", InputSchema: objectSchema(map[string]any{"task_id": integerSchema("Optional task id; omit or set 0 for all")}, nil)},
-		{Name: "workflow.show", Description: "Show the active workflow buckets and allowed transitions.", InputSchema: selectorSchema()},
-		{Name: "orphans.migrate", Description: "Detect tasks whose bucket was deactivated by a workflow swap and rebind them to the active workflow (matching key when preserved, first bucket otherwise). First call without confirmed=true returns a preview report plus a Confirmation block listing every affected task; retry with confirmed=true to apply the rebind. Empty preview short-circuits to a no-op.", InputSchema: objectSchema(map[string]any{"confirmed": booleanSchema("Required true to apply the rebind; first call returns a preview with affected tasks.")}, nil)},
-		{Name: "progress.record", Description: "Record material agent progress through task edits, a progress comment, and optional workflow movement.", InputSchema: progressSchema()},
-		{Name: "tags.add", Description: "Add a reusable tag to a task or project. The tag name is normalized to kebab-case and deduplicated automatically.", InputSchema: tagMutationSchema(false)},
-		{Name: "tags.remove", Description: "Remove a tag from a task or project after explicit confirmation.", InputSchema: tagMutationSchema(true)},
-		{Name: "tags.list", Description: "List tags for a specific task or project.", InputSchema: tagListSchema()},
-		{Name: "tags.list_all", Description: "List all tags across all projects with usage counts.", InputSchema: objectSchema(map[string]any{}, nil)},
-		{Name: "tags.merge", Description: "Merge a source tag into a target tag, reassigning all references and deleting the source.", InputSchema: objectSchema(map[string]any{"source_tag_id": integerSchema("Source tag id to merge from (will be deleted)"), "target_tag_id": integerSchema("Target tag id to merge into (canonical)")}, []string{"source_tag_id", "target_tag_id"})},
-		{Name: "errors.record", Description: "Record an error encountered during development with optional context and tags. Errors and their solutions are visible cross-project so the agent can reuse prior fixes.", InputSchema: recordErrorSchema()},
-		{Name: "search", Description: "Full-text search across tasks, comments, errors, solutions, plans, and notes using SQLite FTS5. Returns BM25-ranked hits with snippets (<mark>...</mark> highlights). Optional `entity_types` filter restricts the indexed kinds; omit `project`/`project_id` for a cross-project view. Archived tasks are filtered out automatically. Replaces the legacy `errors.search` tool — equivalent call: search(query, entity_types=[\"error\"]).", InputSchema: searchSchema()},
-		{Name: "solutions.add", Description: "Attach a candidate solution to an error. Multiple solutions per error are supported.", InputSchema: addSolutionSchema()},
-		{Name: "solutions.confirm", Description: "Confirm whether a solution worked. success=true marks it as the recommended fix and increments its like counter; success=false marks it as known-bad so the agent does not retry it without new context.", InputSchema: confirmSolutionSchema()},
-		{Name: "solutions.list_top", Description: "List the top N most-liked solutions globally (cross-project). Useful to surface validated fixes and audit recurring patterns. Likes are incremented only by solutions.confirm(success=true).", InputSchema: listTopSolutionsSchema()},
-		{Name: "templates.list", Description: "List every loaded template (slug, name, default kind, project scope, custom flag). Read-only; templates are authored by the user — the agent never modifies template bindings.", InputSchema: objectSchema(map[string]any{"kind": stringSchema("Optional default-kind filter (e.g. \"task\")"), "project": stringSchema("Optional project slug to scope project-bound templates"), "include_body": booleanSchema("Set true to include the template body in each entry; default omits it for compact responses")}, nil)},
-		{Name: "metrics.summary", Description: "Aggregate per-AI-model behaviour over a period. Each row carries a `buckets` map keyed by metric tag (`error_recorded`, `error_searched`, `solution_added`, `solution_liked`, `solution_failed`, `solution_top_viewed`) plus `like_rate`, `search_before_record_ratio`, and `session_correlated_sample`. Use to benchmark whether different agents research existing context before recording new errors. Requires that callers pass _agent_model on every tool call (now coercive).", InputSchema: objectSchema(map[string]any{"period": stringSchema("Time window: \"7d\", \"30d\" (default), or \"all\""), "project_id": integerSchema("Optional registered project id; omit for cross-project view")}, nil)},
-		{Name: "insights.summary", Description: "Read-only, consultivo: return the six today-insights for a project (stuck tasks, cycle-time bottleneck, WIP per bucket, guard-violation hotspots, the error loop, and a per-model contrast). The agent self-consults this surface to self-correct (reactive → proactive) — it NEVER moves a task, relaxes a guard, or gates a workflow transition. The output schema is frozen and versioned (`schema_version`, currently 2): a consumer can pin the shape and reject an unknown one. Every sub-report carries an explicit `has_data` flag (no silent zero — empty history is distinguished from a genuine zero reading), and per-model rows carry `sample_size` (the stamped-event count behind the row — the partial-state gate input; the dwell-interval count lives in `dwell_samples`). PRE-COMMITTED FALSIFIABLE HYPOTHESIS: exposing insights.summary to the agent makes guard-violations-per-task drop ≥30% over 2 weeks vs baseline (measured via the guard-hotspot insight).", InputSchema: objectSchema(map[string]any{"stuck_days": integerSchema("Optional staleness threshold (days) for the stuck-task scan; omit or 0 takes the service default (7)"), "project_id": integerSchema("Optional registered project id to pin explicitly; omit to scope to the project resolved from cwd (contextual default — global view only when no project resolves)")}, nil)},
-		{Name: "templates.show", Description: "Return one template by slug, including its full body. Read-only. Hard-rejects (validation_error) when the requested slug is a global template that is shadowed by a project-scoped override in the active project — the rejection's details name the active slug so callers can re-call directly.", InputSchema: showTemplateSchema()},
-		{Name: "skills.list", Description: "List every loaded skill (slug + name + description), ordered by slug. Bodies are omitted — call skills.get for one body. Read-only; skills are authored by the user and the agent never creates, edits, or deletes them through MCP.", InputSchema: objectSchema(map[string]any{}, nil)},
-		{Name: "skills.get", Description: "Return one skill by slug, including its full body. Read-only; there is no mutation counterpart. Rejects (validation_error) when the slug is unknown, naming the missing slug.", InputSchema: objectSchema(map[string]any{"slug": stringSchema("Skill slug")}, []string{"slug"})},
-		{Name: "personas.list", Description: "List every persona wired in the active config personas: block (slug + name + description), ordered by slug. Bodies and expanded references are omitted — call personas.get for one persona with laws and skills expanded inline. Read-only.", InputSchema: objectSchema(map[string]any{}, nil)},
-		{Name: "personas.get", Description: "Return one active-config persona by slug, including its body and every explicitly referenced law and skill expanded inline with full bodies. Read-only. Rejects (validation_error) when the slug is unknown or a referenced law/skill is missing.", InputSchema: objectSchema(map[string]any{"slug": stringSchema("Persona slug")}, []string{"slug"})},
-		{Name: "laws.list", Description: "List every loaded law (slug + name + severity + scope), ordered by slug. Bodies are omitted — call laws.get for one body. Read-only.", InputSchema: objectSchema(map[string]any{}, nil)},
-		{Name: "laws.get", Description: "Return one law by slug, including its full body. Read-only. Rejects (validation_error) when the slug is unknown, naming the missing slug.", InputSchema: objectSchema(map[string]any{"slug": stringSchema("Law slug")}, []string{"slug"})},
-		{Name: "plans.create", Description: "Create a WBS-style plan that groups child tasks in ordered waves. Slug must be unique within the project; goal_body is markdown describing the plan's intent and acceptance criteria. Emits plan.created.", InputSchema: objectSchema(map[string]any{"slug": stringSchema("Plan slug (kebab-case recommended); unique per project"), "name": stringSchema("Human-readable plan name"), "goal_body": stringSchema("Optional markdown body describing the plan goal and acceptance criteria")}, []string{"slug", "name"})},
-		{Name: "plans.list", Description: "List every plan in the active project, ordered by creation. Goal bodies are omitted from list entries — call plans.show to fetch one with its full body.", InputSchema: selectorSchema()},
-		{Name: "plans.show", Description: "Return one plan with its waves, tasks per wave, per-wave and overall done/total counts, integer percent, and the active wave id (lowest-position wave with pending work). Archived tasks are filtered out of the counts but stay in the wave's tasks list.", InputSchema: objectSchema(map[string]any{"slug": stringSchema("Plan slug")}, []string{"slug"})},
-		{Name: "plans.add_wave", Description: "Append a wave to a plan (position=0 auto-assigns after the current highest position; explicit position>0 inserts at that slot and rejects on collision). Identify the plan by slug or plan_id; supply at least one. Emits plan.wave_added.", InputSchema: objectSchema(map[string]any{"slug": stringSchema("Plan slug (alternative to plan_id)"), "plan_id": integerSchema("Plan id (alternative to slug)"), "name": stringSchema("Wave name (human-readable)"), "position": integerSchema("Optional 1-based wave position; omit or 0 to append after the current highest")}, []string{"name"})},
-		{Name: "plans.assign_task", Description: "Attach an existing task to a (plan, wave). Identify the plan by slug or plan_id; supply at least one. Cross-plan / cross-project wave references are rejected.", InputSchema: objectSchema(map[string]any{"task_id": integerSchema("Task id to attach"), "slug": stringSchema("Plan slug (alternative to plan_id)"), "plan_id": integerSchema("Plan id (alternative to slug)"), "wave_id": integerSchema("Wave id; must belong to the named plan")}, []string{"task_id", "wave_id"})},
-		{Name: "plans.claim_next", Description: "Atomically reserve the next claimable task in the plan's active wave (lowest-position wave with pending tasks). Claimable means active, unassigned, and still in the workflow's first bucket. Stamps tasks.assigned_to with the caller's _agent_model and emits task.assigned; the bucket is not moved, so callers must use tasks.move separately once preset guards are satisfied. Returns claimed=false (no task) when every wave is fully done or no unassigned first-bucket task remains in the active wave. Concurrency-safe via BEGIN IMMEDIATE on a pinned connection.", InputSchema: objectSchema(map[string]any{"slug": stringSchema("Plan slug (alternative to plan_id)"), "plan_id": integerSchema("Plan id (alternative to slug)")}, nil)},
-		{Name: "plans.continue", Description: "Agent-tailored projection of a plan: returns the same aggregate plans.show emits (full plan + waves + done/total + active wave) plus a non-mutating preview of the task plans.claim_next would reserve next. Use before plans.claim_next so an agent can inspect goal_body, the wave layout, and the candidate task before committing to a claim.", InputSchema: objectSchema(map[string]any{"slug": stringSchema("Plan slug")}, []string{"slug"})},
-		{Name: "plans.edit", Description: "Edit a plan's name, slug, status, and/or goal_body. Identify the plan by slug or plan_id; supply at least one editable field. status accepts active / done / abandoned (abandoned co-emits plan.abandoned); a new_slug collision rejects with plan_slug_conflict. Emits plan.edited with the per-field diff (and plan.goal_edited when goal_body changes).", InputSchema: objectSchema(map[string]any{"slug": stringSchema("Plan slug to identify the plan (alternative to plan_id)"), "plan_id": integerSchema("Plan id (alternative to slug)"), "name": stringSchema("Optional new plan name"), "new_slug": stringSchema("Optional new plan slug; must stay unique within the project"), "status": stringSchema("Optional new status: active, done, or abandoned"), "goal_body": stringSchema("Optional new markdown goal body")}, nil)},
-		{Name: "plans.delete", Description: "Hard-delete a plan. Its waves cascade-delete and member tasks are detached (plan_id / wave_id cleared) but otherwise survive. Identify the plan by slug or plan_id. First call without confirmed=true returns a Confirmation block; retry with confirmed=true to apply. Emits plan.deleted.", InputSchema: objectSchema(map[string]any{"slug": stringSchema("Plan slug (alternative to plan_id)"), "plan_id": integerSchema("Plan id (alternative to slug)"), "confirmed": booleanSchema("Required true to actually delete the plan")}, nil)},
-		{Name: "plans.remove_wave", Description: "Delete a wave from a plan. Its tasks survive with wave_id cleared (plan_id intact, so they stay in the plan but unscheduled). First call without confirmed=true returns a Confirmation block; retry with confirmed=true to apply. Emits plan.wave_removed.", InputSchema: objectSchema(map[string]any{"wave_id": integerSchema("Wave id to delete"), "confirmed": booleanSchema("Required true to actually remove the wave")}, []string{"wave_id"})},
-		{Name: "plans.rename_wave", Description: "Rename a wave. The new name must be non-blank and differ from the current name. Emits plan.wave_renamed.", InputSchema: objectSchema(map[string]any{"wave_id": integerSchema("Wave id to rename"), "name": stringSchema("New wave name")}, []string{"wave_id", "name"})},
-		{Name: "plans.reorder_wave", Description: "Move a wave to a new 1-based position within its plan. A collision with an occupied slot swaps the two waves. Emits plan.wave_reordered.", InputSchema: objectSchema(map[string]any{"wave_id": integerSchema("Wave id to move"), "position": integerSchema("New 1-based position")}, []string{"wave_id", "position"})},
-		{Name: "plans.unassign", Description: "Detach a task from its plan, clearing both plan_id and wave_id (full detach; the task becomes a standalone work item again). A task already unattached is a no-op. Emits plan.task_unassigned.", InputSchema: objectSchema(map[string]any{"task_id": integerSchema("Task id to detach")}, []string{"task_id"})},
-		{Name: "commands.list", Description: "List every agent-callable okt-* command (slug + entity-sourced description + arguments), mirroring the prompts/list surface. Use to discover the playbook catalog from the tool-list when no human is present to type a slash command (loop / subagent / Workflow), then fetch one with commands.resolve.", InputSchema: objectSchema(map[string]any{}, nil)},
-		{Name: "commands.resolve", Description: "Resolve an okt-* command to its composed playbook markdown (persona + invocation args + skills + laws + templates) via the same path the /mcp__omakiten__okt-* slash prompt uses — byte-identical output. This is the agent-callable twin of the prompt surface: it lets a loop / subagent / Workflow run a playbook (okt-audit, okt-run, okt-task-*, …) without a human typing the slash. Render-only; mutates nothing — the agent reads the returned markdown and acts.", InputSchema: commandResolveSchema()},
-	}
 }
 
 func Resources() []ResourceDefinition {
@@ -445,363 +385,11 @@ func (a *Adapter) dispatchTool(ctx context.Context, service *agent.Service, name
 		ctx = activity.WithRepository(ctx, a.repo)
 	}
 
-	var data any
-	var err error
-	switch name {
-	case "project.overview":
-		var input agent.OverviewInput
-		err = decodeArgs(args, &input)
-		if err == nil {
-			data, err = service.Overview(ctx, input)
-		}
-	case "project.resume":
-		var input agent.ResumeProjectInput
-		err = decodeArgs(args, &input)
-		if err == nil {
-			data, err = service.ResumeProject(ctx, input)
-		}
-	case "project.edit":
-		var input agent.EditProjectInput
-		err = decodeArgs(args, &input)
-		if err == nil {
-			data, err = service.EditProject(ctx, input)
-		}
-	case "tasks.continue":
-		var input agent.ContinueTaskInput
-		err = decodeArgs(args, &input)
-		if err == nil {
-			data, err = service.ContinueTask(ctx, input)
-		}
-	case "tasks.list":
-		var input agent.ListTasksInput
-		err = decodeArgs(args, &input)
-		if err == nil {
-			data, err = service.ListTasks(ctx, input)
-		}
-	case "tasks.create_intent":
-		var input agent.CreateTaskInput
-		err = decodeArgs(args, &input)
-		if err == nil {
-			data, err = service.CreateTaskIntent(ctx, input)
-		}
-	case "tasks.create":
-		var input agent.CreateTaskInput
-		err = decodeArgs(args, &input)
-		if err == nil {
-			data, err = service.CreateTask(ctx, input)
-		}
-	case "tasks.move":
-		var input agent.MoveTaskInput
-		err = decodeArgs(args, &input)
-		if err == nil {
-			data, err = service.MoveTask(ctx, input)
-		}
-	case "tasks.edit":
-		var input agent.EditTaskInput
-		err = decodeArgs(args, &input)
-		if err == nil {
-			data, err = service.EditTask(ctx, input)
-		}
-	case "tasks.delete":
-		var input agent.DeleteTaskInput
-		err = decodeArgs(args, &input)
-		if err == nil {
-			data, err = service.DeleteTask(ctx, input)
-		}
-	case "tasks.archive":
-		var input agent.ArchiveTaskInput
-		err = decodeArgs(args, &input)
-		if err == nil {
-			data, err = service.ArchiveTask(ctx, input)
-		}
-	case "tasks.unarchive":
-		var input agent.ArchiveTaskInput
-		err = decodeArgs(args, &input)
-		if err == nil {
-			data, err = service.UnarchiveTask(ctx, input)
-		}
-	case "comments.add":
-		var input agent.AddCommentInput
-		err = decodeArgs(args, &input)
-		if err == nil {
-			data, err = service.AddComment(ctx, input)
-		}
-	case "comments.list":
-		var input agent.ListCommentsInput
-		err = decodeArgs(args, &input)
-		if err == nil {
-			data, err = service.ListComments(ctx, input)
-		}
-	case "comments.edit":
-		var input agent.EditCommentInput
-		err = decodeArgs(args, &input)
-		if err == nil {
-			data, err = service.EditComment(ctx, input)
-		}
-	case "comments.delete":
-		var input agent.DeleteCommentInput
-		err = decodeArgs(args, &input)
-		if err == nil {
-			data, err = service.DeleteComment(ctx, input)
-		}
-	case "task_activity.list":
-		var input agent.ListTaskActivityInput
-		err = decodeArgs(args, &input)
-		if err == nil {
-			data, err = service.ListTaskActivity(ctx, input)
-		}
-	case "logs.list":
-		var input agent.ListLogsInput
-		err = decodeArgs(args, &input)
-		if err == nil {
-			data, err = service.ListLogs(ctx, input)
-		}
-	case "dependencies.add":
-		var input agent.AddDependencyInput
-		err = decodeArgs(args, &input)
-		if err == nil {
-			data, err = service.AddDependency(ctx, input)
-		}
-	case "dependencies.remove":
-		var input agent.RemoveDependencyInput
-		err = decodeArgs(args, &input)
-		if err == nil {
-			data, err = service.RemoveDependency(ctx, input)
-		}
-	case "dependencies.list":
-		var input agent.ListDependenciesInput
-		err = decodeArgs(args, &input)
-		if err == nil {
-			data, err = service.ListDependencies(ctx, input)
-		}
-	case "workflow.show":
-		var input agent.WorkflowInput
-		err = decodeArgs(args, &input)
-		if err == nil {
-			data, err = service.ShowWorkflow(ctx, input)
-		}
-	case "orphans.migrate":
-		var input agent.MigrateOrphansInput
-		err = decodeArgs(args, &input)
-		if err == nil {
-			data, err = service.MigrateOrphans(ctx, input)
-		}
-	case "progress.record":
-		var input agent.RecordProgressInput
-		err = decodeArgs(args, &input)
-		if err == nil {
-			data, err = service.RecordProgress(ctx, input)
-		}
-	case "tags.add":
-		var input agent.AddTagInput
-		err = decodeArgs(args, &input)
-		if err == nil {
-			data, err = service.AddTag(ctx, input)
-		}
-	case "tags.remove":
-		var input agent.RemoveTagInput
-		err = decodeArgs(args, &input)
-		if err == nil {
-			data, err = service.RemoveTag(ctx, input)
-		}
-	case "tags.list":
-		var input agent.ListTagsInput
-		err = decodeArgs(args, &input)
-		if err == nil {
-			data, err = service.ListTags(ctx, input)
-		}
-	case "tags.list_all":
-		data, err = service.ListAllTags(ctx)
-	case "tags.merge":
-		var input agent.MergeTagsInput
-		err = decodeArgs(args, &input)
-		if err == nil {
-			data, err = service.MergeTags(ctx, input)
-		}
-	case "errors.record":
-		var input agent.RecordErrorInput
-		err = decodeArgs(args, &input)
-		if err == nil {
-			data, err = service.RecordError(ctx, input)
-		}
-	case "search":
-		var input agent.SearchInput
-		err = decodeArgs(args, &input)
-		if err == nil {
-			data, err = service.Search(ctx, input)
-		}
-	case "solutions.add":
-		var input agent.AddSolutionInput
-		err = decodeArgs(args, &input)
-		if err == nil {
-			data, err = service.AddSolution(ctx, input)
-		}
-	case "solutions.confirm":
-		var input agent.ConfirmSolutionInput
-		err = decodeArgs(args, &input)
-		if err == nil {
-			data, err = service.ConfirmSolution(ctx, input)
-		}
-	case "solutions.list_top":
-		var input agent.ListTopSolutionsInput
-		err = decodeArgs(args, &input)
-		if err == nil {
-			data, err = service.ListTopSolutions(ctx, input)
-		}
-	case "templates.list":
-		var input agent.ListTemplatesInput
-		err = decodeArgs(args, &input)
-		if err == nil {
-			data, err = service.ListTemplates(ctx, input)
-		}
-	case "templates.show":
-		var input agent.ShowTemplateInput
-		err = decodeArgs(args, &input)
-		if err == nil {
-			data, err = service.ShowTemplate(ctx, input)
-		}
-	case "skills.list":
-		var input agent.ListSkillsInput
-		err = decodeArgs(args, &input)
-		if err == nil {
-			data, err = service.ListSkills(ctx, input)
-		}
-	case "skills.get":
-		var input agent.ShowSkillInput
-		err = decodeArgs(args, &input)
-		if err == nil {
-			data, err = service.ShowSkill(ctx, input)
-		}
-	case "personas.list":
-		var input agent.ListPersonasInput
-		err = decodeArgs(args, &input)
-		if err == nil {
-			data, err = service.ListPersonas(ctx, input)
-		}
-	case "personas.get":
-		var input agent.ShowPersonaInput
-		err = decodeArgs(args, &input)
-		if err == nil {
-			data, err = service.ShowPersona(ctx, input)
-		}
-	case "laws.list":
-		var input agent.ListLawsInput
-		err = decodeArgs(args, &input)
-		if err == nil {
-			data, err = service.ListLaws(ctx, input)
-		}
-	case "laws.get":
-		var input agent.ShowLawInput
-		err = decodeArgs(args, &input)
-		if err == nil {
-			data, err = service.ShowLaw(ctx, input)
-		}
-	case "metrics.summary":
-		var input agent.MetricsSummaryInput
-		err = decodeArgs(args, &input)
-		if err == nil {
-			data, err = service.MetricsSummary(ctx, input)
-		}
-	case "insights.summary":
-		var input agent.InsightsSummaryInput
-		err = decodeArgs(args, &input)
-		if err == nil {
-			data, err = service.InsightsSummary(ctx, input)
-		}
-	case "plans.create":
-		var input agent.CreatePlanInput
-		err = decodeArgs(args, &input)
-		if err == nil {
-			data, err = service.CreatePlan(ctx, input)
-		}
-	case "plans.list":
-		var input agent.ListPlansInput
-		err = decodeArgs(args, &input)
-		if err == nil {
-			data, err = service.ListPlans(ctx, input)
-		}
-	case "plans.show":
-		var input agent.ShowPlanInput
-		err = decodeArgs(args, &input)
-		if err == nil {
-			data, err = service.ShowPlan(ctx, input)
-		}
-	case "plans.add_wave":
-		var input agent.AddPlanWaveInput
-		err = decodeArgs(args, &input)
-		if err == nil {
-			data, err = service.AddPlanWave(ctx, input)
-		}
-	case "plans.assign_task":
-		var input agent.AssignPlanTaskInput
-		err = decodeArgs(args, &input)
-		if err == nil {
-			data, err = service.AssignPlanTask(ctx, input)
-		}
-	case "plans.claim_next":
-		var input agent.ClaimNextPlanTaskInput
-		err = decodeArgs(args, &input)
-		if err == nil {
-			data, err = service.ClaimNextPlanTask(ctx, input)
-		}
-	case "plans.continue":
-		var input agent.ContinuePlanInput
-		err = decodeArgs(args, &input)
-		if err == nil {
-			data, err = service.ContinuePlan(ctx, input)
-		}
-	case "plans.edit":
-		var input agent.EditPlanInput
-		err = decodeArgs(args, &input)
-		if err == nil {
-			data, err = service.EditPlan(ctx, input)
-		}
-	case "plans.delete":
-		var input agent.DeletePlanInput
-		err = decodeArgs(args, &input)
-		if err == nil {
-			data, err = service.DeletePlan(ctx, input)
-		}
-	case "plans.remove_wave":
-		var input agent.RemovePlanWaveInput
-		err = decodeArgs(args, &input)
-		if err == nil {
-			data, err = service.RemovePlanWave(ctx, input)
-		}
-	case "plans.rename_wave":
-		var input agent.RenamePlanWaveInput
-		err = decodeArgs(args, &input)
-		if err == nil {
-			data, err = service.RenamePlanWave(ctx, input)
-		}
-	case "plans.reorder_wave":
-		var input agent.ReorderPlanWaveInput
-		err = decodeArgs(args, &input)
-		if err == nil {
-			data, err = service.ReorderPlanWave(ctx, input)
-		}
-	case "plans.unassign":
-		var input agent.UnassignPlanTaskInput
-		err = decodeArgs(args, &input)
-		if err == nil {
-			data, err = service.UnassignPlanTask(ctx, input)
-		}
-	case "commands.resolve":
-		// Returns the composed playbook markdown as RAW text — not JSON —
-		// so it stays byte-identical to the prompt path (GetPrompt ships the
-		// same resolved.Markdown). Early return bypasses resultFromData,
-		// which would JSON-escape the markdown and break the cache contract.
-		return resolveCommandTool(ctx, service, args)
-	case "commands.list":
-		data = a.Prompts()
-	default:
+	handler, ok := registeredTools.handlers[name]
+	if !ok {
 		return ToolResult{}, fmt.Errorf("unknown MCP tool %q", name)
 	}
-
-	if err != nil {
-		return resultFromData(agent.FailureFromError(err), true)
-	}
-	return resultFromData(data, false)
+	return handler(a, ctx, service, args)
 }
 
 func (a *Adapter) ReadResource(ctx context.Context, uri string) (ToolResult, error) {
@@ -1022,6 +610,14 @@ func stringSchema(description string) map[string]any {
 	return map[string]any{"type": "string", "description": description}
 }
 
+func ftsQuerySchema() map[string]any {
+	return map[string]any{
+		"type":        "string",
+		"maxLength":   domain.SearchQueryMaxBytes,
+		"description": "FTS5 MATCH expression over indexed text. Maximum 4096 UTF-8 bytes and 256 lexical terms/operators.",
+	}
+}
+
 func integerSchema(description string) map[string]any {
 	return map[string]any{"type": "integer", "description": description}
 }
@@ -1054,8 +650,8 @@ func recordErrorSchema() map[string]any {
 
 func searchSchema() map[string]any {
 	props := selectorProperties()
-	props["query"] = stringSchema("FTS5 MATCH expression — phrase, prefix*, NEAR, AND/OR/NOT supported (see sqlite.org/fts5.html). Required.")
-	props["entity_types"] = arrayStringSchema("Optional restriction to a subset of entity types. Allowed: task, comment, error, solution, plan, note. Empty or omitted indexes all six.")
+	props["query"] = ftsQuerySchema()
+	props["entity_types"] = arrayStringSchema("Optional restriction to a subset of entity types. Allowed: task, comment, error, solution, plan. Empty or omitted indexes all five.")
 	return objectSchema(props, []string{"query"})
 }
 

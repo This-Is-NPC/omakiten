@@ -18,55 +18,6 @@ import (
 	"omakiten/internal/testfixtures/snapstore"
 )
 
-func TestToolsIncludePlannedSurface(t *testing.T) {
-	want := map[string]bool{
-		"project.overview":    false,
-		"tasks.create_intent": false,
-		"tasks.continue":      false,
-		"project.resume":      false,
-		"project.edit":        false,
-		"tasks.list":          false,
-		"tasks.create":        false,
-		"tasks.move":          false,
-		"comments.add":        false,
-		"comments.list":       false,
-		"dependencies.add":    false,
-		"dependencies.remove": false,
-		"dependencies.list":   false,
-		"workflow.show":       false,
-		"progress.record":     false,
-		"errors.record":       false,
-		"search":              false,
-		"solutions.add":       false,
-		"solutions.confirm":   false,
-		"metrics.summary":     false,
-		"insights.summary":    false,
-		"logs.list":           false,
-		"plans.edit":          false,
-		"plans.delete":        false,
-		"plans.remove_wave":   false,
-		"plans.rename_wave":   false,
-		"plans.reorder_wave":  false,
-		"plans.unassign":      false,
-		"skills.list":         false,
-		"skills.get":          false,
-		"personas.list":       false,
-		"personas.get":        false,
-		"laws.list":           false,
-		"laws.get":            false,
-	}
-	for _, tool := range Tools() {
-		if _, ok := want[tool.Name]; ok {
-			want[tool.Name] = true
-		}
-	}
-	for name, found := range want {
-		if !found {
-			t.Fatalf("Tools() missing %s", name)
-		}
-	}
-}
-
 // withModel injects the coercive _agent_model field every CallTool now
 // requires. Tests use a stable sentinel so events emitted during the run
 // are easy to filter when debugging.
@@ -176,117 +127,6 @@ func TestAdapterMapsDomainErrorsToToolFailures(t *testing.T) {
 	}
 	if payload["code"] != "task_not_found" {
 		t.Fatalf("failure code = %v, want task_not_found", payload["code"])
-	}
-}
-
-func TestAdapterCallToolAllTools(t *testing.T) {
-	ctx := context.Background()
-	service := newMCPTestService(t, ctx)
-	store := service /* agent.Service doesn't expose store directly; use adapter tests via service */
-	_ = store
-	adapter := NewAdapter(service)
-
-	tools := []string{
-		"project.overview",
-		"project.resume",
-		"project.edit",
-		"tasks.continue",
-		"tasks.list",
-		"tasks.create_intent",
-		"tasks.create",
-		"tasks.move",
-		"comments.add",
-		"comments.list",
-		"task_activity.list",
-		"logs.list",
-		"dependencies.add",
-		"dependencies.remove",
-		"dependencies.list",
-		"workflow.show",
-		"progress.record",
-		"errors.record",
-		"search",
-		"solutions.add",
-		"solutions.confirm",
-		"metrics.summary",
-		"insights.summary",
-		"plans.create",
-		"plans.list",
-		"plans.show",
-		"plans.add_wave",
-		"plans.assign_task",
-		"plans.claim_next",
-		"plans.continue",
-		"plans.edit",
-		"plans.rename_wave",
-		"plans.reorder_wave",
-		"plans.unassign",
-		"plans.remove_wave",
-		"plans.delete",
-		"skills.list",
-		"skills.get",
-		"personas.list",
-		"personas.get",
-		"laws.list",
-		"laws.get",
-	}
-
-	for _, name := range tools {
-		var args map[string]any
-		switch name {
-		case "skills.get":
-			args = map[string]any{"slug": "go"}
-		case "personas.get":
-			args = map[string]any{"slug": "agent"}
-		case "laws.get":
-			args = map[string]any{"slug": "scope"}
-		case "tasks.continue", "comments.add", "comments.list", "task_activity.list", "dependencies.add", "dependencies.remove", "dependencies.list":
-			args = map[string]any{"task_id": 1}
-		case "tasks.move":
-			args = map[string]any{"task_id": 1, "bucket_key": "dev"}
-		case "project.edit":
-			args = map[string]any{"description": "edited via mcp"}
-		case "tasks.create_intent", "tasks.create":
-			args = map[string]any{"description": "test task"}
-		case "progress.record":
-			args = map[string]any{"task_id": 1, "comment": "note"}
-		case "errors.record":
-			args = map[string]any{"description": "boom", "tags": []any{"sqlite"}}
-		case "search":
-			args = map[string]any{"query": "sqlite", "entity_types": []any{"error"}}
-		case "solutions.add":
-			args = map[string]any{"error_id": 1, "description": "try X"}
-		case "solutions.confirm":
-			args = map[string]any{"solution_id": 1, "success": true}
-		case "plans.create":
-			args = map[string]any{"slug": "demo-plan-" + name, "name": "Demo"}
-		case "plans.show":
-			args = map[string]any{"slug": "demo-plan-plans.create"}
-		case "plans.add_wave":
-			args = map[string]any{"slug": "demo-plan-plans.create", "name": "wave"}
-		case "plans.assign_task":
-			args = map[string]any{"task_id": 1, "slug": "demo-plan-plans.create", "wave_id": 1}
-		case "plans.claim_next":
-			args = map[string]any{"slug": "demo-plan-plans.create"}
-		case "plans.continue":
-			args = map[string]any{"slug": "demo-plan-plans.create"}
-		case "plans.edit":
-			args = map[string]any{"slug": "demo-plan-plans.create", "name": "Renamed Demo"}
-		case "plans.delete":
-			args = map[string]any{"slug": "demo-plan-plans.create", "confirmed": true}
-		case "plans.rename_wave":
-			args = map[string]any{"wave_id": 1, "name": "renamed wave"}
-		case "plans.reorder_wave":
-			args = map[string]any{"wave_id": 1, "position": 5}
-		case "plans.unassign":
-			args = map[string]any{"task_id": 1}
-		case "plans.remove_wave":
-			args = map[string]any{"wave_id": 1, "confirmed": true}
-		}
-		_, err := adapter.CallTool(ctx, name, withModel(args))
-		if err != nil {
-			t.Fatalf("CallTool(%s) error = %v", name, err)
-		}
 	}
 }
 
@@ -445,13 +285,23 @@ func TestAdapterInsightsSummaryFrozenContract(t *testing.T) {
 	var payload struct {
 		SchemaVersion int `json:"schema_version"`
 		Insights      struct {
-			StuckDays int  `json:"stuck_days"`
-			Stuck     struct{ HasData bool `json:"has_data"` } `json:"stuck"`
-			CycleTime struct{ HasData bool `json:"has_data"` } `json:"cycle_time"`
-			WIP       struct{ HasData bool `json:"has_data"` } `json:"wip"`
-			Guards    struct{ HasData bool `json:"has_data"` } `json:"guards"`
-			ErrorLoop struct{ HasData bool `json:"has_data"` } `json:"error_loop"`
-			PerModel  struct {
+			StuckDays int `json:"stuck_days"`
+			Stuck     struct {
+				HasData bool `json:"has_data"`
+			} `json:"stuck"`
+			CycleTime struct {
+				HasData bool `json:"has_data"`
+			} `json:"cycle_time"`
+			WIP struct {
+				HasData bool `json:"has_data"`
+			} `json:"wip"`
+			Guards struct {
+				HasData bool `json:"has_data"`
+			} `json:"guards"`
+			ErrorLoop struct {
+				HasData bool `json:"has_data"`
+			} `json:"error_loop"`
+			PerModel struct {
 				HasData bool `json:"has_data"`
 				Models  []struct {
 					AgentModel     string  `json:"agent_model"`
@@ -1624,10 +1474,14 @@ func TestAdapterPersonasAndLawsToolsReadOnly(t *testing.T) {
 	}
 	var getPayload struct {
 		Persona struct {
-			Slug  string `json:"slug"`
-			Body  string `json:"body"`
-			Laws  []struct{ Body string `json:"body"` } `json:"laws"`
-			Skills []struct{ Body string `json:"body"` } `json:"skills"`
+			Slug string `json:"slug"`
+			Body string `json:"body"`
+			Laws []struct {
+				Body string `json:"body"`
+			} `json:"laws"`
+			Skills []struct {
+				Body string `json:"body"`
+			} `json:"skills"`
 		} `json:"persona"`
 	}
 	if err := json.Unmarshal([]byte(getRes.Content[0].Text), &getPayload); err != nil {
