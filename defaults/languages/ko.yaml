@@ -2,6 +2,16 @@ code: ko
 name: Korean
 native: 한국어
 keys:
+  cli.db.check.short: "통합 검색 인덱스 무결성 검사"
+  cli.db.check.long: "FTS5 인덱스를 정확히 다섯 가지 물리적 소스 유형 task, comment event, error, solution, plan과 비교합니다."
+  cli.db.reindex.short: "통합 검색 인덱스를 원자적으로 재구축"
+  cli.db.reindex.long: "표준 트리거를 다시 만들고 다섯 물리적 소스 유형을 하나의 트랜잭션에서 재구축합니다. 확인된 파괴적 복구는 고정된 데이터베이스의 검증된 순환 백업을 먼저 작성합니다."
+  cli.db.check.error.invalid: "검색 인덱스 무결성 검사 실패"
+  cli.db.reindex.warning.backup: "경고: 복구 전 검증된 백업을 %s에 작성했습니다"
+  cli.db.reindex.flag.confirm: "표준 소스와 다른 인덱스 데이터의 제거 또는 대체 확인"
+  cli.db.reindex.error.confirm_required: "확인이 필요합니다. 검증된 백업을 만들고 고정된 데이터베이스를 복구하려면 %s을 실행하세요"
+  cli.db.error.missing_fmt: "데이터베이스가 없습니다: %s"
+  cli.db.error.not_file_fmt: "데이터베이스 경로가 일반 파일이 아닙니다: %s"
   cli.root.short: "AI 주도 개발을 위한 의견 있는 체크포인트"
   cli.root.long: |-
     okt는 명령줄과 TUI에서 Omakiten을 구동합니다.

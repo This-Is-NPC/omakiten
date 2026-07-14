@@ -2,6 +2,16 @@ code: da
 name: Danish
 native: Dansk
 keys:
+  cli.db.check.short: "Kontrollér integriteten af det samlede søgeindeks"
+  cli.db.check.long: "Sammenlign FTS5-indekset med præcis fem fysiske kildetyper: task, comment event, error, solution og plan."
+  cli.db.reindex.short: "Genopbyg det samlede søgeindeks atomisk"
+  cli.db.reindex.long: "Genskab de kanoniske triggere og genopbyg de fem fysiske kildetyper i én transaktion. Bekræftet destruktiv reparation skriver først en verificeret rullende backup af den fastlåste database."
+  cli.db.check.error.invalid: "integritetskontrol af søgeindekset mislykkedes"
+  cli.db.reindex.warning.backup: "advarsel: verificeret backup før reparation skrevet til %s"
+  cli.db.reindex.flag.confirm: "bekræft fjernelse eller erstatning af indekserede data, der afviger fra de kanoniske kilder"
+  cli.db.reindex.error.confirm_required: "bekræftelse kræves; kør %s for at oprette en verificeret backup og reparere den fastlåste database"
+  cli.db.error.missing_fmt: "databasen findes ikke: %s"
+  cli.db.error.not_file_fmt: "databasestien er ikke en almindelig fil: %s"
   cli.root.short: "Holdningsbestemte checkpoints til AI-drevet udvikling"
   cli.root.long: |-
     okt styrer Omakiten fra kommandolinjen og TUI.

@@ -174,11 +174,11 @@ func (err *SnapshotPublicationError) Unwrap() error {
 // Normal stores acquire one connection from the live pool; maintenance stores
 // reuse their identity-verified pinned connection.
 func (s *Store) Snapshot(ctx context.Context, destinationPath string) error {
-	conn, err := s.db.Conn(ctx)
+	conn, release, err := s.acquireSearchMaintenanceConn(ctx)
 	if err != nil {
 		return err
 	}
-	defer func() { _ = conn.Close() }()
+	defer release()
 	return snapshotWithExecutor(ctx, conn, destinationPath, false, snapshotHooks{})
 }
 

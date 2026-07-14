@@ -2,6 +2,16 @@ code: nl
 name: Dutch
 native: Nederlands
 keys:
+  cli.db.check.short: "Integriteit van de uniforme zoekindex controleren"
+  cli.db.check.long: "Vergelijk de FTS5-index met precies vijf fysieke brontypen: task, comment event, error, solution en plan."
+  cli.db.reindex.short: "De uniforme zoekindex atomair opnieuw opbouwen"
+  cli.db.reindex.long: "Maak de canonieke triggers opnieuw en bouw de vijf fysieke brontypen in één transactie op. Bevestigd destructief herstel schrijft eerst een geverifieerde roterende back-up van de vastgezette database."
+  cli.db.check.error.invalid: "integriteitscontrole van de zoekindex mislukt"
+  cli.db.reindex.warning.backup: "waarschuwing: geverifieerde back-up vóór herstel geschreven naar %s"
+  cli.db.reindex.flag.confirm: "verwijdering of vervanging bevestigen van geïndexeerde gegevens die afwijken van de canonieke bronnen"
+  cli.db.reindex.error.confirm_required: "bevestiging vereist; voer %s uit om een geverifieerde back-up te maken en de vastgezette database te herstellen"
+  cli.db.error.missing_fmt: "database bestaat niet: %s"
+  cli.db.error.not_file_fmt: "databasepad is geen normaal bestand: %s"
   cli.root.short: "Eigenzinnige checkpoints voor AI-gestuurde ontwikkeling"
   cli.root.long: |-
     okt bedient Omakiten vanaf de command line en de TUI.

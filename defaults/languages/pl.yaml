@@ -2,6 +2,16 @@ code: pl
 name: Polish
 native: Polski
 keys:
+  cli.db.check.short: "Sprawdź integralność ujednoliconego indeksu wyszukiwania"
+  cli.db.check.long: "Porównaj indeks FTS5 z dokładnie pięcioma fizycznymi typami źródeł: task, comment event, error, solution i plan."
+  cli.db.reindex.short: "Atomowo przebuduj ujednolicony indeks wyszukiwania"
+  cli.db.reindex.long: "Utwórz ponownie kanoniczne wyzwalacze i przebuduj pięć fizycznych typów źródeł w jednej transakcji. Potwierdzona destrukcyjna naprawa najpierw zapisuje zweryfikowaną kopię rotacyjną przypiętej bazy."
+  cli.db.check.error.invalid: "kontrola integralności indeksu wyszukiwania nie powiodła się"
+  cli.db.reindex.warning.backup: "ostrzeżenie: zweryfikowaną kopię przed naprawą zapisano w %s"
+  cli.db.reindex.flag.confirm: "potwierdź usunięcie lub zastąpienie zindeksowanych danych różniących się od źródeł kanonicznych"
+  cli.db.reindex.error.confirm_required: "wymagane potwierdzenie; uruchom %s, aby utworzyć zweryfikowaną kopię i naprawić przypiętą bazę"
+  cli.db.error.missing_fmt: "baza danych nie istnieje: %s"
+  cli.db.error.not_file_fmt: "ścieżka bazy danych nie jest zwykłym plikiem: %s"
   cli.root.short: "Stanowcze punkty kontrolne dla rozwoju kierowanego przez AI"
   cli.root.long: |-
     okt steruje Omakiten z linii poleceń i TUI.

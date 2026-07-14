@@ -2,6 +2,16 @@ code: en
 name: English
 native: English
 keys:
+  cli.db.check.short: "Check unified search-index integrity"
+  cli.db.check.long: "Compare the FTS5 index with exactly five physical source types: task, comment event, error, solution, and plan."
+  cli.db.reindex.short: "Atomically rebuild the unified search index"
+  cli.db.reindex.long: "Recreate canonical triggers and rebuild the five physical source types in one transaction. Confirmed destructive repair first writes a verified rolling backup of the pinned database."
+  cli.db.check.error.invalid: "search index integrity check failed"
+  cli.db.reindex.warning.backup: "warning: verified pre-repair backup written to %s"
+  cli.db.reindex.flag.confirm: "confirm removal or replacement of indexed evidence that differs from canonical sources"
+  cli.db.reindex.error.confirm_required: "confirmation required; run %s to create a verified backup and repair the pinned database"
+  cli.db.error.missing_fmt: "database does not exist: %s"
+  cli.db.error.not_file_fmt: "database path is not a regular file: %s"
   cli.root.short: "Opinionated checkpoints for AI-driven development"
   cli.root.long: |-
     okt drives Omakiten from the command line and TUI.
@@ -81,13 +91,14 @@ keys:
   cli.db.short: "Database lifecycle utilities (backup, snapshot, restore — sysadmin ops)"
   cli.db.backup.short: "Write a snapshot of the live SQLite database to the rolling backups directory"
   cli.db.backup.long: |-
-    Copy the active SQLite database to a timestamped snapshot under
+    Write a transactionally consistent SQLite snapshot under
     $XDG_STATE_HOME/omakiten/backups/ (default ~/.local/state/omakiten/backups/)
     and prune older snapshots according to settings.backup.retention_count.
 
-    The copy is atomic: the destination only appears once the body has
-    been written and renamed into place. A previous partial copy never
-    survives a failure.
+    Committed WAL frames are included through SQLite's online snapshot
+    path. The destination appears only after verification, fsync, and
+    atomic rename; partial temporary files are removed on failure or
+    cancellation.
 
     --out pins the snapshot path explicitly (parent directories are
     created as needed). When --out is supplied the retention prune

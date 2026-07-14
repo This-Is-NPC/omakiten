@@ -2,6 +2,16 @@ code: fr
 name: French
 native: Français
 keys:
+  cli.db.check.short: "Vérifier l’intégrité de l’index de recherche unifié"
+  cli.db.check.long: "Comparer l’index FTS5 à exactement cinq types de sources physiques : task, comment event, error, solution et plan."
+  cli.db.reindex.short: "Reconstruire atomiquement l’index de recherche unifié"
+  cli.db.reindex.long: "Recréer les déclencheurs canoniques et reconstruire les cinq types de sources physiques dans une transaction. Une réparation destructive confirmée écrit d’abord une sauvegarde tournante vérifiée de la base épinglée."
+  cli.db.check.error.invalid: "échec du contrôle d’intégrité de l’index de recherche"
+  cli.db.reindex.warning.backup: "avertissement : sauvegarde vérifiée avant réparation écrite dans %s"
+  cli.db.reindex.flag.confirm: "confirmer la suppression ou le remplacement des données indexées différentes des sources canoniques"
+  cli.db.reindex.error.confirm_required: "confirmation requise ; exécutez %s pour créer une sauvegarde vérifiée et réparer la base épinglée"
+  cli.db.error.missing_fmt: "la base de données n’existe pas : %s"
+  cli.db.error.not_file_fmt: "le chemin de la base de données n’est pas un fichier ordinaire : %s"
   cli.root.short: "Checkpoints opinionnés pour le développement piloté par IA"
   cli.root.long: |-
     okt pilote Omakiten depuis la ligne de commande et la TUI.

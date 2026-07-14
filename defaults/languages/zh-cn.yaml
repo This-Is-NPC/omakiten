@@ -2,6 +2,16 @@ code: zh-cn
 name: Simplified Chinese
 native: 简体中文
 keys:
+  cli.db.check.short: "检查统一搜索索引的完整性"
+  cli.db.check.long: "将 FTS5 索引与且仅与五种物理来源类型比较：task、comment event、error、solution 和 plan。"
+  cli.db.reindex.short: "以原子方式重建统一搜索索引"
+  cli.db.reindex.long: "在一个事务中重新创建规范触发器并重建五种物理来源类型。确认的破坏性修复会先为固定的数据库写入经过验证的滚动备份。"
+  cli.db.check.error.invalid: "搜索索引完整性检查失败"
+  cli.db.reindex.warning.backup: "警告：修复前的已验证备份已写入 %s"
+  cli.db.reindex.flag.confirm: "确认删除或替换与规范来源不同的索引证据"
+  cli.db.reindex.error.confirm_required: "需要确认；请运行 %s 以创建已验证备份并修复固定的数据库"
+  cli.db.error.missing_fmt: "数据库不存在：%s"
+  cli.db.error.not_file_fmt: "数据库路径不是普通文件：%s"
   cli.root.short: "AI 驱动开发的强观点检查点"
   cli.root.long: |-
     okt 通过命令行和 TUI 驱动 Omakiten。

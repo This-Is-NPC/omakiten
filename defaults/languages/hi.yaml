@@ -2,6 +2,16 @@ code: hi
 name: Hindi
 native: हिन्दी
 keys:
+  cli.db.check.short: "एकीकृत search index की अखंडता जाँचें"
+  cli.db.check.long: "FTS5 index की तुलना ठीक पाँच physical source types से करें: task, comment event, error, solution और plan."
+  cli.db.reindex.short: "एकीकृत search index को atomically फिर से बनाएँ"
+  cli.db.reindex.long: "canonical triggers को फिर बनाएँ और पाँच physical source types को एक transaction में rebuild करें। Confirmed destructive repair पहले pinned database का verified rolling backup लिखता है।"
+  cli.db.check.error.invalid: "search index integrity check विफल रही"
+  cli.db.reindex.warning.backup: "चेतावनी: verified pre-repair backup %s पर लिखा गया"
+  cli.db.reindex.flag.confirm: "canonical sources से अलग indexed evidence हटाने या बदलने की पुष्टि करें"
+  cli.db.reindex.error.confirm_required: "पुष्टि आवश्यक है; verified backup बनाने और pinned database repair करने के लिए %s चलाएँ"
+  cli.db.error.missing_fmt: "database मौजूद नहीं है: %s"
+  cli.db.error.not_file_fmt: "database path एक regular file नहीं है: %s"
   cli.root.short: "AI-संचालित विकास के लिए ओपिनियनेटेड चेकपॉइंट"
   cli.root.long: |-
     okt कमांड लाइन और TUI से Omakiten को चलाता है।

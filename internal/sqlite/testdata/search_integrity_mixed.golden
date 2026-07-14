@@ -1,0 +1,303 @@
+{
+  "healthy": false,
+  "source_total": 4,
+  "index_total": 7,
+  "types": [
+    {
+      "entity_type": "task",
+      "source_total": 4,
+      "index_total": 6,
+      "missing": {
+        "count": 1,
+        "details": [
+          {
+            "entity_type": "task",
+            "entity_id": 1,
+            "project_id": 1
+          }
+        ],
+        "truncated": false
+      },
+      "orphaned": {
+        "count": 1,
+        "details": [
+          {
+            "entity_type": "task",
+            "entity_id": 8000,
+            "project_id": 1
+          }
+        ],
+        "truncated": false
+      },
+      "unsupported": {
+        "count": 0,
+        "details": [],
+        "truncated": false
+      },
+      "malformed": {
+        "count": 1,
+        "details": [
+          {
+            "entity_type": "task",
+            "entity_id": 0,
+            "project_id": 1,
+            "entity_type_storage": "text",
+            "entity_id_storage": "text",
+            "project_id_storage": "integer"
+          }
+        ],
+        "truncated": false
+      },
+      "duplicates": {
+        "count": 1,
+        "details": [
+          {
+            "entity_type": "task",
+            "entity_id": 2,
+            "index_count": 2
+          }
+        ],
+        "truncated": false
+      },
+      "content_mismatched": {
+        "count": 1,
+        "details": [
+          {
+            "entity_type": "task",
+            "entity_id": 3,
+            "project_id": 1
+          }
+        ],
+        "truncated": false
+      },
+      "project_mismatched": {
+        "count": 1,
+        "details": [
+          {
+            "entity_type": "task",
+            "entity_id": 4,
+            "source_project_id": 1,
+            "indexed_project_id": 2
+          }
+        ],
+        "truncated": false
+      }
+    },
+    {
+      "entity_type": "comment",
+      "source_total": 0,
+      "index_total": 0,
+      "missing": {
+        "count": 0,
+        "details": [],
+        "truncated": false
+      },
+      "orphaned": {
+        "count": 0,
+        "details": [],
+        "truncated": false
+      },
+      "unsupported": {
+        "count": 0,
+        "details": [],
+        "truncated": false
+      },
+      "malformed": {
+        "count": 0,
+        "details": [],
+        "truncated": false
+      },
+      "duplicates": {
+        "count": 0,
+        "details": [],
+        "truncated": false
+      },
+      "content_mismatched": {
+        "count": 0,
+        "details": [],
+        "truncated": false
+      },
+      "project_mismatched": {
+        "count": 0,
+        "details": [],
+        "truncated": false
+      }
+    },
+    {
+      "entity_type": "error",
+      "source_total": 0,
+      "index_total": 0,
+      "missing": {
+        "count": 0,
+        "details": [],
+        "truncated": false
+      },
+      "orphaned": {
+        "count": 0,
+        "details": [],
+        "truncated": false
+      },
+      "unsupported": {
+        "count": 0,
+        "details": [],
+        "truncated": false
+      },
+      "malformed": {
+        "count": 0,
+        "details": [],
+        "truncated": false
+      },
+      "duplicates": {
+        "count": 0,
+        "details": [],
+        "truncated": false
+      },
+      "content_mismatched": {
+        "count": 0,
+        "details": [],
+        "truncated": false
+      },
+      "project_mismatched": {
+        "count": 0,
+        "details": [],
+        "truncated": false
+      }
+    },
+    {
+      "entity_type": "solution",
+      "source_total": 0,
+      "index_total": 0,
+      "missing": {
+        "count": 0,
+        "details": [],
+        "truncated": false
+      },
+      "orphaned": {
+        "count": 0,
+        "details": [],
+        "truncated": false
+      },
+      "unsupported": {
+        "count": 0,
+        "details": [],
+        "truncated": false
+      },
+      "malformed": {
+        "count": 0,
+        "details": [],
+        "truncated": false
+      },
+      "duplicates": {
+        "count": 0,
+        "details": [],
+        "truncated": false
+      },
+      "content_mismatched": {
+        "count": 0,
+        "details": [],
+        "truncated": false
+      },
+      "project_mismatched": {
+        "count": 0,
+        "details": [],
+        "truncated": false
+      }
+    },
+    {
+      "entity_type": "plan",
+      "source_total": 0,
+      "index_total": 0,
+      "missing": {
+        "count": 0,
+        "details": [],
+        "truncated": false
+      },
+      "orphaned": {
+        "count": 0,
+        "details": [],
+        "truncated": false
+      },
+      "unsupported": {
+        "count": 0,
+        "details": [],
+        "truncated": false
+      },
+      "malformed": {
+        "count": 0,
+        "details": [],
+        "truncated": false
+      },
+      "duplicates": {
+        "count": 0,
+        "details": [],
+        "truncated": false
+      },
+      "content_mismatched": {
+        "count": 0,
+        "details": [],
+        "truncated": false
+      },
+      "project_mismatched": {
+        "count": 0,
+        "details": [],
+        "truncated": false
+      }
+    },
+    {
+      "entity_type": "\u003cunsupported\u003e",
+      "source_total": 0,
+      "index_total": 1,
+      "missing": {
+        "count": 0,
+        "details": [],
+        "truncated": false
+      },
+      "orphaned": {
+        "count": 0,
+        "details": [],
+        "truncated": false
+      },
+      "unsupported": {
+        "count": 1,
+        "details": [
+          {
+            "entity_type": "\u003cunsupported\u003e",
+            "entity_id": 7000,
+            "project_id": 1
+          }
+        ],
+        "truncated": false
+      },
+      "malformed": {
+        "count": 0,
+        "details": [],
+        "truncated": false
+      },
+      "duplicates": {
+        "count": 0,
+        "details": [],
+        "truncated": false
+      },
+      "content_mismatched": {
+        "count": 0,
+        "details": [],
+        "truncated": false
+      },
+      "project_mismatched": {
+        "count": 0,
+        "details": [],
+        "truncated": false
+      }
+    }
+  ],
+  "triggers": {
+    "expected_count": 16,
+    "actual_count": 16,
+    "unexpected_count": 0,
+    "missing": [],
+    "stale": []
+  },
+  "fts5": {
+    "ok": true
+  }
+}

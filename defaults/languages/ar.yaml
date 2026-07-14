@@ -2,6 +2,16 @@ code: ar
 name: Arabic
 native: العربية
 keys:
+  cli.db.check.short: "تحقّق من سلامة فهرس البحث الموحّد"
+  cli.db.check.long: "قارن فهرس FTS5 بخمسة أنواع مصادر فعلية بالضبط: task وcomment event وerror وsolution وplan."
+  cli.db.reindex.short: "أعد بناء فهرس البحث الموحّد ذريًا"
+  cli.db.reindex.long: "أعد إنشاء المشغلات القياسية وابنِ أنواع المصادر الفعلية الخمسة في معاملة واحدة. يكتب الإصلاح التدميري المؤكد أولاً نسخة احتياطية دورية موثقة من قاعدة البيانات المثبتة."
+  cli.db.check.error.invalid: "فشل فحص سلامة فهرس البحث"
+  cli.db.reindex.warning.backup: "تحذير: كُتبت نسخة احتياطية موثقة قبل الإصلاح إلى %s"
+  cli.db.reindex.flag.confirm: "تأكيد إزالة أو استبدال الأدلة المفهرسة التي تختلف عن المصادر القياسية"
+  cli.db.reindex.error.confirm_required: "التأكيد مطلوب؛ شغّل %s لإنشاء نسخة احتياطية موثقة وإصلاح قاعدة البيانات المثبتة"
+  cli.db.error.missing_fmt: "قاعدة البيانات غير موجودة: %s"
+  cli.db.error.not_file_fmt: "مسار قاعدة البيانات ليس ملفًا عاديًا: %s"
   cli.root.short: "نقاط تحقّق ذات رأي للتطوير المدفوع بالذكاء الاصطناعي"
   cli.root.long: |-
     okt يُشغّل Omakiten من سطر الأوامر وواجهة TUI.
