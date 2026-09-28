@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 # Deterministic focused tests for the portable ignored Go coverage checker.
 set -euo pipefail
-repo=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
-checker=(go run "$repo/scripts/check-coverage.go")
+source "$(dirname "${BASH_SOURCE[0]}")/lib/workspace.sh"
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
+go build -o "$tmp/check-coverage" "$repo_root/scripts/check-coverage.go"
+checker=("$tmp/check-coverage")
 source="$tmp/seed.go"
 profile="$tmp/coverage.out"
 summary="$tmp/coverage.func"

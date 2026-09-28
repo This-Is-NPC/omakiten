@@ -172,12 +172,21 @@ func TestInstallerAssuranceWorkflowCoversRequiredPlatformsAndCosign(t *testing.T
 		t.Errorf("Windows Cosign step = %#v", windowsCosign)
 	}
 	unixTests := requireStep(t, job, "Run installer and release assurance tests")
-	if unixTests.If != "runner.os != 'Windows'" || unixTests.Shell != "bash" || strings.TrimSpace(unixTests.Run) != "OKT_REQUIRE_REAL_COSIGN=1 go test ./internal/installscript ./internal/releasemeta ./internal/releaseverify" {
+	if unixTests.If != "runner.os != 'Windows'" || unixTests.Shell != "bash" || strings.TrimSpace(unixTests.Run) != "OKT_REQUIRE_REAL_COSIGN=1 OKT_REQUIRE_PWSH=1 go test ./internal/installscript ./internal/installer ./internal/releasemeta ./internal/releaseverify" {
 		t.Errorf("Unix assurance command = %#v", unixTests)
 	}
 	windowsTests := requireStep(t, job, "Run Windows-native installer assurance tests")
-	for _, line := range []string{`$env:OKT_REQUIRE_REAL_COSIGN = "1"`, `go test ./internal/installscript -run 'TestRealCosignOfflinePositivePath|TestInstallerSemVerParity/powershell'`} {
+	for _, line := range []string{`$env:OKT_REQUIRE_REAL_COSIGN = "1"`, `$env:OKT_REQUIRE_PWSH = "1"`, `go test ./internal/installscript -run 'TestRealCosignOfflinePositivePath|TestInstallerSemVerParity/powershell'`, `go test ./internal/installer -run '^TestWrapperBootstrapUninstallRoundTrip$/powershell'`} {
 		assertExactLine(t, windowsTests.Run, line)
+	}
+}
+
+func TestInstallerAssurancePinsPowerShell(t *testing.T) {
+	t.Parallel()
+	workflow := readWorkflow(t, "assurance.yml")
+	powershell := requireStep(t, workflow.Jobs["installer-assurance"], "Install pinned PowerShell")
+	if powershell.Uses != "jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c" || powershell.With["version"] != "2026.9.12" || powershell.With["install_args"] != "powershell" {
+		t.Errorf("PowerShell must use the project toolchain: %#v", powershell)
 	}
 }
 
@@ -196,15 +205,11 @@ func TestInstallerAssuranceWorkflowRequiresPinnedShellCheck(t *testing.T) {
 		t.Errorf("shellcheck checkout is not commit-pinned: %q", checkout.Uses)
 	}
 	install := requireStep(t, job, "Install pinned ShellCheck")
-	for _, exact := range []string{
-		`version="0.11.0"`,
-		`archive="shellcheck-v${version}.linux.x86_64.tar.xz"`,
-		`echo "8c3be12b05d5c177a04c29e3c78ce89ac86f1595681cab149b65b97c4e227198  ${archive}" | sha256sum -c -`,
-	} {
-		assertExactLine(t, install.Run, exact)
+	if install.Uses != "jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c" || install.With["version"] != "2026.9.12" || install.With["install_args"] != "shellcheck" {
+		t.Errorf("ShellCheck must use the project toolchain: %#v", install)
 	}
 	check := requireStep(t, job, "Run ShellCheck")
-	if check.Shell != "bash" || strings.TrimSpace(check.Run) != "shellcheck install.sh scripts/release-installer-gate.sh" {
+	if check.Shell != "bash" || strings.TrimSpace(check.Run) != "scripts/check-scripts.sh" {
 		t.Errorf("mandatory ShellCheck command = %#v", check)
 	}
 }
@@ -273,7 +278,7 @@ func assertInstallerGateContract(t *testing.T) {
 	for _, required := range []string{
 		`GITHUB_DL_BASE="http://127.0.0.1:`,
 		`OKT_INSTALLER_TEST_LIBRARY=1`,
-		`source "$root/install.sh"`,
+		`source "$repo_root/install.sh"`,
 		`verify_release_strict "$dist/$asset" "$asset" "$version"`,
 		`. (Join-Path $env:OKT_GATE_ROOT "install.ps1")`,
 		`Invoke-StrictVerification -Cosign $cosign`,

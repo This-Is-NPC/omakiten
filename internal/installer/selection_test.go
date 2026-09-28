@@ -7,12 +7,7 @@ import (
 	"github.com/google/go-cmp/cmp"
 )
 
-// TestParseHarnessSelection_ShellParity walks the same input shapes
-// scripts/installer_select_test.sh exercises against install.sh's
-// parse_harness_selection. Every row asserts both the harness slice
-// and the SelectionStatus so the bash → Go port stays observably
-// identical from a downstream caller's perspective.
-func TestParseHarnessSelection_ShellParity(t *testing.T) {
+func TestParseHarnessSelection(t *testing.T) {
 	cases := []struct {
 		name     string
 		raw      string

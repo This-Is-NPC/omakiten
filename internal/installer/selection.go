@@ -9,12 +9,7 @@ import (
 	"omakiten/internal/config"
 )
 
-// SelectionStatus mirrors the four exit codes the bash
-// parse_harness_selection emits to drive the install.sh retry loop.
-// Mapping is intentionally 1:1 so the new Go path and the legacy shell
-// path can share scripts/installer_select_test.sh expectations: both
-// the new code and the old code recognise the same four shapes of
-// user input.
+// SelectionStatus distinguishes valid, invalid, skipped, and empty selections.
 //
 //	StatusOK      — at least one valid entry parsed (rc 0)
 //	StatusInvalid — every token failed to parse (rc 1)
@@ -62,8 +57,7 @@ func SupportedPresets() []string {
 // `OKT_PRESET = "omakase"` default in the dev:install task.
 const DefaultPreset = "omakase"
 
-// ParseHarnessSelection mirrors install.sh's parse_harness_selection.
-// raw is a free-form string of harness numbers and/or names separated
+// ParseHarnessSelection parses harness numbers and names separated
 // by comma / whitespace / newlines; the returned slice carries the
 // canonical names in the order they were specified, and Status reports
 // which of the four exit shapes applied. Unknown tokens are collected
@@ -72,14 +66,11 @@ const DefaultPreset = "omakase"
 //
 // Numeric tokens are 1-based and resolved against SupportedHarnesses().
 // Out-of-range numerics and unknown names contribute a warning but do
-// not abort the parse — a valid token still produces StatusOK alongside
-// the warning, matching the bash behaviour where "1,bogus" yields one
-// harness on stdout plus a stderr warning.
+// not abort the parse; a valid token still produces StatusOK with warnings.
 //
 // The "0" / "skip" / "none" sentinel (case-insensitive) wins over every
 // other token in the same input — even one valid entry — and produces
-// StatusSkip with an empty slice. install.sh's contract treats this as
-// "user explicitly chose to wire up nothing".
+// StatusSkip with an empty slice.
 func ParseHarnessSelection(raw string) (harnesses []string, status SelectionStatus, warnings []string) {
 	supported := SupportedHarnesses()
 	tokens := splitSelectionTokens(raw)
@@ -87,9 +78,7 @@ func ParseHarnessSelection(raw string) (harnesses []string, status SelectionStat
 		return nil, StatusEmpty, nil
 	}
 
-	// First pass: detect the skip sentinel. install.sh exits with rc=2
-	// the moment it sees "0"/"skip"/"none", so any matching token wins
-	// over earlier valid entries in the same input ("1,0" → skip).
+	// Skip sentinels win over every other token in the same selection.
 	for _, tok := range tokens {
 		if isSkipSentinel(tok) {
 			return nil, StatusSkip, nil

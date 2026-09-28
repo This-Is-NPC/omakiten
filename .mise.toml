@@ -1,14 +1,12 @@
 [tools]
 go = "1.25.13"
-golangci-lint = "latest"
-"go:golang.org/x/vuln/cmd/govulncheck" = "latest"
+golangci-lint = "2.12.2"
+"go:golang.org/x/vuln/cmd/govulncheck" = "1.7.0"
+gh = "2.101.0"
+shellcheck = "0.11.0"
 goreleaser = "2.17.0"
 cosign = "3.1.1"
-# PowerShell 7 is a test dependency, not a runtime one: internal/installscript
-# runs install.ps1 for real (`pwsh -File install.ps1`) against hermetic release
-# fixtures. Without it those strict-mode cases skip, and install.ps1's
-# verify-before-extract gate would be covered by source parity alone.
-powershell = "7.6.3"
+powershell = "7.6.4"
 
 [env]
 GOCACHE = "{{config_root}}/.tmp/cache/go-build"
@@ -20,21 +18,11 @@ run = "scripts/format.sh"
 
 [tasks."fmt:check"]
 description = "Fail if Go source directories are not gofmt-clean (CI gate)"
-# Paired with TestGofmtBoundary in internal/arch. Both are wired into `check`
-# on purpose: this step runs the real gofmt binary and fails in seconds, before
-# the multi-minute test suite; the Go test rides `go test ./...` so it still
-# fires for a contributor who never invokes mise, and it survives the case
-# where a compile error takes the arch package down — which is exactly when
-# formatting drift would otherwise slip in unnoticed.
 run = "scripts/format.sh --check"
 
 [tasks.test]
 description = "Run Go tests once and enforce aggregate coverage"
-# OKT_ENFORCE_SCROLL_BOUNDARY activates the W11-D arch gate: rejects
-# direct `*Scroll =` mutations in internal/tui/render_*.go so new
-# viewport surfaces stay routed through cardlist / linelist
-# components instead of re-inventing scroll-sync inline.
-env = { OKT_ENFORCE_SCROLL_BOUNDARY = "1" }
+env = { OKT_ENFORCE_SCROLL_BOUNDARY = "1", OKT_REQUIRE_PWSH = "1" }
 run = "scripts/test.sh"
 
 [tasks.build]
@@ -51,19 +39,17 @@ depends = ["build"]
 run = "scripts/install-local.sh"
 
 [tasks."install:silent"]
-description = "Non-interactive variant of install — defaults to en/en/en + omakase preset, skips MCP harnesses. Use for fast repeat installs while iterating on the picker."
+description = "Install locally with English, the omakase preset, and no MCP harnesses"
 depends = ["build"]
 run = "scripts/install-local.sh --silent"
 
 [tasks."dev:sync"]
 description = "Mirror defaults/ into dev_env/ aggressively (overwrite root, leave custom/)"
-run = '''
-mkdir -p dev_env
-"$PWD/scripts/sync-defaults.sh" "$PWD/dev_env"
-'''
+run = "scripts/sync-defaults.sh dev_env"
 
 [tasks."dev:install"]
 description = "Simulate a fresh omakiten install into dev_env/ — sync defaults, reset dev-only custom overlays, then pin .active to a stock preset"
+confirm = "Reset custom development overlays under dev_env/?"
 env = { OMAKITEN_HOME = "dev_env", OKT_PRESET = "omakase", OKT_CLI_LANG = "en", OKT_TUI_LANG = "en", OKT_AGENT_LANG = "en", OKT_HARNESSES = "0" }
 depends = ["dev:sync", "build"]
 run = "scripts/dev-install.sh"
@@ -85,100 +71,65 @@ run = "scripts/install-mcp.sh opencode"
 
 [tasks.uninstall]
 description = "Remove the locally installed okt binary and shell wrapper without deleting config or data"
+confirm = "Remove the locally installed okt binary and shell wrapper?"
 run = "scripts/uninstall-local.sh"
 
 [tasks.purge]
 description = "Remove Omakiten user config and data created by the production-like install"
-run = '''
-if [ -z "${HOME:-}" ]; then
-  printf 'HOME is not set\n' >&2
-  exit 1
-fi
-rm -rf "$HOME/.config/omakiten" "$HOME/.local/share/omakiten"
-'''
+confirm = "Remove Omakiten user configuration and databases?"
+run = "scripts/purge-local.sh"
 
 [tasks.tui]
 description = "Start the Omakiten TUI with local dev state under dev_env/"
 env = { OMAKITEN_HOME = "dev_env" }
-# raw = true keeps the TUI attached to the real /dev/tty. mise only honours
-# raw for a task it runs directly — pulling one through a `depends` graph
-# demotes it to captured/prefixed output with no controlling terminal, which
-# is why the old `depends = ["dev:install"]` form failed with
-# "could not open a new TTY". So this task has NO depends; instead it runs the
-# dev_env prep itself via a nested `mise run dev:install` (captured, fine) and
-# then execs the TUI in the raw shell that owns the TTY.
 raw = true
-run = '''
-mise run dev:install
-go run ./cmd/okt --config "$PWD/dev_env/config/omakase.yaml" init --name Omakiten --slug omakiten --root "$PWD" >/dev/null
-go run ./cmd/okt --config "$PWD/dev_env/config/omakase.yaml" --project omakiten tui
-'''
+run = "scripts/tui.sh"
 
 [tasks."tui:bare"]
-description = "Open the TUI against existing dev_env/ state — skips dev:install so a previously-set preset / pre-seeded data survives. Use after seeding fixtures (e.g. the plans showcase script)."
+description = "Open the TUI while preserving the existing development preset and data"
 env = { OMAKITEN_HOME = "dev_env" }
 raw = true
-run = '''
-active="$(tr -d '\r\n' < "$PWD/dev_env/config/.active")"
-case "$active" in
-  ""|"."|".."|*/*|*\\*)
-    printf 'dev_env/config/.active is invalid: %s\n' "$active" >&2
-    exit 1
-    ;;
-esac
-config="$PWD/dev_env/config/$active"
-if [ -f "$PWD/dev_env/config/custom/$active" ] && [ ! -L "$PWD/dev_env/config/custom/$active" ]; then
-  config="$PWD/dev_env/config/custom/$active"
-elif [ ! -f "$config" ] || [ -L "$config" ]; then
-  printf 'active dev config is missing or unsafe: %s\n' "$config" >&2
-  exit 1
-fi
-go run ./cmd/okt --config "$config" --project omakiten tui
-'''
+run = "scripts/tui.sh --bare"
 
 [tasks.gallery]
 description = "Browse the shared TUI components one at a time (dev-only, not shipped in the okt binary)"
-# raw = true for the same reason `tui` needs it: the gallery is a Bubble Tea
-# program and needs the real /dev/tty.
 raw = true
-run = "go run ./cmd/okt-gallery"
+run = "scripts/gallery.sh"
 
 [tasks."gallery:dump"]
 description = "Render every TUI component variant to stdout — no TTY, so it pipes to a file and diffs across a refactor"
-run = "go run ./cmd/okt-gallery -dump"
+run = "scripts/gallery.sh -dump"
 
 [tasks."mcp:prompts"]
 description = "Render every okt-* MCP prompt's resolved markdown to stdout against the dev defaults"
 env = { OMAKITEN_HOME = "dev_env" }
 depends = ["dev:sync"]
-# Pin --config to the canonical omakase preset so the task is immune to stale
-# state under dev_env/config/.active or dev_env/config/custom/ left over from
-# prior runs. dev:sync refreshes the preset before this step.
-run = "go run ./cmd/okt --config dev_env/config/omakase.yaml init --name Omakiten --slug omakiten >/dev/null && go run ./cmd/okt --config dev_env/config/omakase.yaml --project omakiten mcp prompts"
+run = "scripts/mcp-prompts.sh"
 
 [tasks.lint]
 description = "Run Go linter"
-run = "golangci-lint run"
+run = "scripts/lint.sh"
 
 [tasks.vuln]
 description = "Run Go vulnerability scan"
-run = "govulncheck ./..."
+run = "scripts/vuln.sh"
 
 [tasks."docs:refresh"]
 description = "Remove legacy generated docs artifacts and validate the current .docs/ tree"
-run = "go run ./cmd/okt-docs-refresh --root ."
+run = "scripts/docs.sh"
 
 [tasks."docs:check"]
 description = "Fail if legacy docs-refresh artifacts are present (CI gate)"
-run = "go run ./cmd/okt-docs-refresh --root . --check"
+run = "scripts/docs.sh --check"
 
 [tasks."claim-benchmark:freshness"]
 description = "Check whether the manual ClaimNext benchmark reference still matches its source and runtime inputs"
-run = "OKT_CHECK_CLAIM_BENCH_FRESHNESS=1 go test ./internal/mcp -run '^TestClaimNextCeilingReferenceFreshness$' -count=1"
+env = { OKT_CHECK_CLAIM_BENCH_FRESHNESS = "1" }
+run = "scripts/claim-benchmark-freshness.sh"
 
 [tasks.check]
 description = "Run the full verification suite"
-depends = ["fmt:check", "test", "lint", "vuln", "docs:check", "workspace:check"]
+depends = ["fmt:check", "test", "lint", "vuln", "docs:check", "workspace:check", "scripts:check"]
 
 [tasks."workspace:check"]
 description = "Reject generated artifacts outside .tmp/ and persistent local-state directories"
@@ -196,3 +147,41 @@ arg "<package>" help="Go package to profile"
 flag "--bench <pattern>" default="." help="Benchmark regular expression"
 """
 run = "scripts/test-profile.sh"
+
+[tasks."scripts:check"]
+description = "Check shell syntax and portability across tracked shell scripts"
+run = "scripts/check-scripts.sh"
+
+[tasks."test:coverage-checker"]
+description = "Run focused coverage-checker grammar, freshness, and boundary fixtures"
+run = "scripts/check-coverage_test.sh"
+
+[tasks."test:installer"]
+description = "Run setup selection, wrapper, and installer assurance tests"
+env = { OKT_REQUIRE_PWSH = "1" }
+run = "scripts/test-installer.sh"
+
+[tasks."language:new"]
+description = "Scaffold a bundled language pack from the English baseline"
+usage = '''
+arg "<code>" help="Lowercase language code, optionally with a region suffix"
+arg "<native>" help="Native language name"
+arg "<name>" help="English language name"
+'''
+run = "scripts/new-language-pack.sh"
+
+[tasks."local-check"]
+description = "Check a clean HEAD and report its merge-gate status to GitHub"
+usage = '''
+flag "--sha <sha>" help="Commit to check; must resolve to the current HEAD"
+flag "--dry-run" help="Print planned operations without running checks or posting"
+'''
+run = "scripts/local-check.sh"
+
+[tasks."release:installer-gate"]
+description = "Verify signed release files through both production installers"
+usage = '''
+arg "<tag>" help="Release tag with its v prefix"
+arg "<dist>" help="Directory containing the signed release files"
+'''
+run = "scripts/release-installer-gate.sh"

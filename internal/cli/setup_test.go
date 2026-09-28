@@ -3,6 +3,7 @@ package cli
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -218,5 +219,59 @@ func TestCLISetupHeadless_SkipWrapper(t *testing.T) {
 	got := readFile(t, bashrc)
 	if strings.Contains(got, "okt wrapper") {
 		t.Fatalf("--skip-wrapper still wrote to bashrc: %s", got)
+	}
+}
+
+func TestCLISetupHeadless_Selections(t *testing.T) {
+	cases := map[string]struct {
+		harnesses, preset, cli, tui string
+		wantHarnesses               []string
+		wantPreset, wantTUI         string
+	}{
+		"harness names":   {"claude-code,opencode", "omakase", "en", "en", []string{"claude-code", "opencode"}, "omakase", "en"},
+		"harness indexes": {"1,3", "omakase", "en", "en", []string{"claude-code", "opencode"}, "omakase", "en"},
+		"skip harnesses":  {"0", "omakase", "en", "en", nil, "omakase", "en"},
+		"named preset":    {"0", "izakaya", "en", "en", nil, "izakaya", "en"},
+		"unknown preset":  {"0", "bogus", "en", "en", nil, "omakase", "en"},
+		"languages":       {"0", "omakase", "pt-br", "pt-br", nil, "omakase", "pt-br"},
+		"TUI mirrors CLI": {"0", "omakase", "en", "", nil, "omakase", "en"},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			root := t.TempDir()
+			t.Setenv("HOME", root)
+			t.Setenv("USERPROFILE", root)
+			t.Setenv("OMAKITEN_HOME", filepath.Join(root, "config-root"))
+			t.Setenv("XDG_CONFIG_HOME", "")
+			t.Setenv("OKT_CLI_LANG", tc.cli)
+			t.Setenv("OKT_TUI_LANG", tc.tui)
+			t.Setenv("OKT_AGENT_LANG", "en")
+			t.Setenv("OKT_PRESET", tc.preset)
+			t.Setenv("OKT_HARNESSES", tc.harnesses)
+			t.Chdir(root)
+			out := runCLI(t, filepath.Join(root, "omakiten.db"), "", "setup", "--skip-wrapper", "--skip-harnesses")
+			data := decodeEnvelope(t, out)["data"].(map[string]any)
+			assertSetupSelections(t, data, tc.wantHarnesses, tc.wantPreset, tc.cli, tc.wantTUI)
+		})
+	}
+}
+
+func assertSetupSelections(t *testing.T, data map[string]any, wantHarnesses []string, wantPreset, cli, tui string) {
+	t.Helper()
+	var harnesses []string
+	if planned, ok := data["harnesses_planned"].([]any); ok {
+		for _, value := range planned {
+			harnesses = append(harnesses, value.(string))
+		}
+	}
+	if !slices.Equal(harnesses, wantHarnesses) {
+		t.Fatalf("planned harnesses = %v, want %v", harnesses, wantHarnesses)
+	}
+	if got := data["preset"].(map[string]any)["name"]; got != wantPreset {
+		t.Fatalf("preset = %v, want %s", got, wantPreset)
+	}
+	languages := data["languages"].(map[string]any)
+	if languages["cli"] != cli || languages["tui"] != tui {
+		t.Fatalf("languages = %v, want cli=%s tui=%s", languages, cli, tui)
 	}
 }

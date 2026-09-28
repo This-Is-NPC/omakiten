@@ -3,4 +3,4 @@ set -euo pipefail
 source "$(dirname "${BASH_SOURCE[0]}")/lib/workspace.sh"
 
 : "${HOME:?HOME is not set}"
-.tmp/build/okt mcp setup --harness "${1:?missing harness}" --force
+rm -rf "$HOME/.config/omakiten" "$HOME/.local/share/omakiten"
