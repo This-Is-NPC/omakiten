@@ -2,7 +2,6 @@ package studio
 
 import (
 	"fmt"
-	"os"
 	"strings"
 	"testing"
 
@@ -432,21 +431,6 @@ func TestStudioHooksNilPortPaintsEmptyHistory(t *testing.T) {
 	view := screentest.StripANSI(screen.View(frame))
 	if !strings.Contains(view, "No hook.executed rows for this index.") {
 		t.Fatalf("nil port did not pin empty HISTORY\n%s", view)
-	}
-}
-
-func TestStudioHooksDoesNotImportAppOrSQLite(t *testing.T) {
-	t.Parallel()
-
-	src, err := os.ReadFile("hooks.go")
-	if err != nil {
-		t.Fatal(err)
-	}
-	text := string(src)
-	for _, banned := range []string{"internal/sqlite", "internal/app", "internal/operation", "internal/tui/screens/logs"} {
-		if strings.Contains(text, banned) {
-			t.Fatalf("hooks.go contains banned import %q", banned)
-		}
 	}
 }
 

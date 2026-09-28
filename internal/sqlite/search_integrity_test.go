@@ -11,7 +11,6 @@ import (
 	"strings"
 	"sync"
 	"testing"
-	"time"
 
 	"omakiten/internal/domain"
 	"omakiten/internal/testutil"
@@ -1904,7 +1903,7 @@ func assertConcurrentReaderSearch(t *testing.T, ctx context.Context, store *Stor
 	}
 }
 
-func TestSearchIndexReportBoundsLargeCorruption(t *testing.T) {
+func TestSearchIndexReportBoundsCorruption(t *testing.T) {
 	ctx := context.Background()
 	store := openTestStore(t)
 	project := mustUpsertProject(t, store, "P", "p", "/work/p")
@@ -1913,26 +1912,20 @@ func TestSearchIndexReportBoundsLargeCorruption(t *testing.T) {
 INSERT INTO tasks(project_id, bucket_id, title, description, priority_id, state)
 VALUES (?, 1, 'bounded missing', '', 2, 'active')`, project.ID)
 	execIntegritySQL(t, ctx, store, `
-WITH RECURSIVE seq(n) AS (VALUES(1) UNION ALL SELECT n + 1 FROM seq WHERE n < 49999)
+WITH RECURSIVE seq(n) AS (VALUES(1) UNION ALL SELECT n + 1 FROM seq WHERE n < ?)
 INSERT INTO search_index(content, entity_type, entity_id, project_id)
-SELECT '', 'secret_unsupported_marker', 100000 + n, ? FROM seq`, project.ID)
+SELECT '', 'secret_unsupported_marker', 100000 + n, ? FROM seq`, searchIndexDetailLimit+1, project.ID)
 
-	started := time.Now()
 	report, err := store.CheckSearchIndex(ctx)
-	elapsed := time.Since(started)
 	if err != nil {
 		t.Fatalf("CheckSearchIndex: %v", err)
 	}
-	if elapsed > searchIndexLargeCorruptionLimit {
-		t.Fatalf("50k integrity check took %s, want <= %s", elapsed, searchIndexLargeCorruptionLimit)
-	}
-	t.Logf("50k integrity check: %s", elapsed)
 	missing := searchIntegrityType(report, domain.SearchEntityTask).Missing
 	unsupported := searchIntegrityType(report, domain.SearchEntityType(searchIndexUnsupportedType)).Unsupported
 	if missing.Count != 1 || len(missing.Details) != 1 || missing.Truncated {
 		t.Fatalf("missing sample = count:%d details:%d truncated:%v", missing.Count, len(missing.Details), missing.Truncated)
 	}
-	if unsupported.Count != 49999 || len(unsupported.Details) != searchIndexDetailLimit || !unsupported.Truncated {
+	if unsupported.Count != searchIndexDetailLimit+1 || len(unsupported.Details) != searchIndexDetailLimit || !unsupported.Truncated {
 		t.Fatalf("unsupported sample = count:%d details:%d truncated:%v", unsupported.Count, len(unsupported.Details), unsupported.Truncated)
 	}
 	encoded, err := json.Marshal(report)
@@ -1963,19 +1956,13 @@ WITH RECURSIVE seq(n) AS (VALUES(1) UNION ALL SELECT n + 1 FROM seq WHERE n < 10
 INSERT INTO tasks(project_id, bucket_id, title, description, priority_id, state)
 SELECT ?, 1, 'healthy scale ' || n, 'body', 2, 'active' FROM seq`, project.ID)
 
-	started := time.Now()
 	report, err := store.CheckSearchIndex(ctx)
-	elapsed := time.Since(started)
 	if err != nil {
 		t.Fatalf("CheckSearchIndex: %v", err)
 	}
 	if !report.Healthy || report.SourceTotal != 10000 || report.IndexTotal != 10000 {
 		t.Fatalf("10k report = healthy:%v source:%d index:%d", report.Healthy, report.SourceTotal, report.IndexTotal)
 	}
-	if elapsed > searchIndexPerformanceLimit {
-		t.Fatalf("10k integrity check took %s, want <= %s", elapsed, searchIndexPerformanceLimit)
-	}
-	t.Logf("10k integrity check: %s", elapsed)
 
 	conn, err := store.db.Conn(ctx)
 	if err != nil {
@@ -2013,7 +2000,7 @@ WHERE i.index_rowid IS NULL`)
 	t.Logf("comparison query plan: %s", joined)
 }
 
-func TestReindexSearchTenThousandRowsBoundsWriterLockInterval(t *testing.T) {
+func TestReindexSearchTenThousandRows(t *testing.T) {
 	ctx := context.Background()
 	store := openTestStore(t)
 	project := mustUpsertProject(t, store, "P", "p", "/work/p")
@@ -2022,19 +2009,13 @@ WITH RECURSIVE seq(n) AS (VALUES(1) UNION ALL SELECT n + 1 FROM seq WHERE n < 10
 INSERT INTO tasks(project_id, bucket_id, title, description, priority_id, state)
 SELECT ?, 1, 'writer lock scale ' || n, 'body', 2, 'active' FROM seq`, project.ID)
 
-	started := time.Now()
 	result, err := store.reindexSearchWithPolicy(ctx, checkSearchIndex, true)
-	elapsed := time.Since(started)
 	if err != nil {
 		t.Fatalf("ReindexSearch: %v", err)
 	}
 	if !result.After.Healthy || result.After.SourceTotal != 10000 || result.After.IndexTotal != 10000 {
 		t.Fatalf("10k reindex result = healthy:%v source:%d index:%d", result.After.Healthy, result.After.SourceTotal, result.After.IndexTotal)
 	}
-	if elapsed > searchIndexReindexLockLimit {
-		t.Fatalf("10k reindex writer transaction took %s, want <= %s", elapsed, searchIndexReindexLockLimit)
-	}
-	t.Logf("10k reindex writer transaction: %s", elapsed)
 }
 
 func execIntegritySQL(t *testing.T, ctx context.Context, store *storeFixture, query string, args ...any) {

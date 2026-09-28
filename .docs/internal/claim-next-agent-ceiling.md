@@ -56,8 +56,6 @@ The ceiling is the **largest contiguous error-free level**. If no level failed a
 OKT_CLAIM_BENCH_LEVELS=1,2,4,8,16,32,64,128 OKT_CLAIM_BENCH_WARMUPS=3 OKT_CLAIM_BENCH_BURSTS=30 OKT_CLAIM_BENCH_INVOCATIONS=5 OKT_CLAIM_BENCH_BOUNDARY_BURSTS=100 OKT_CLAIM_BENCH_OUT=.docs/internal/claim-next-agent-ceiling-reference.json go test ./internal/mcp -run '^$' -bench '^BenchmarkClaimNextAgentCeiling$' -benchtime=1x -count=1
 ```
 
-That exact string is what `claimBenchmarkReproductionCommand` emits and what the committed JSON carries in `reproduction_command`, so the two can never drift — `TestClaimNextCeilingReproductionCommand` pins it.
-
 Add `-timeout=12h` when you actually run it. The full protocol can exceed Go's default 10-minute test timeout, which would kill it mid-sweep.
 
 `-benchtime=1x` is load-bearing: `BenchmarkClaimNextAgentCeiling` is a protocol runner, not a microbenchmark, and fails fast if Go asks it to iterate. Drop `OKT_CLAIM_BENCH_OUT` to run the protocol without overwriting the committed reference.

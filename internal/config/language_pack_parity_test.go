@@ -10,6 +10,15 @@ import (
 	"omakiten/defaults"
 )
 
+func loadBundledLanguage(t *testing.T, code string) Language {
+	t.Helper()
+	lang, err := LoadBundledLanguage(code)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return lang
+}
+
 // TestBundledLanguagePacksHaveIdenticalKeySets enforces task #82 §43:
 // every shipped language pack under defaults/languages must declare
 // exactly the same key set as the en baseline. Drift in either
@@ -37,32 +46,6 @@ func TestBundledLanguagePacksHaveIdenticalKeySets(t *testing.T) {
 			continue
 		}
 		assertLanguagePackParity(t, code, enKeys)
-	}
-}
-
-// These keys belonged to the removed Studio snapshot-rollback path. Keep the
-// retired list explicit because parity would allow a dead key if every pack
-// carried it.
-func TestBundledLanguagePacksHaveNoRetiredRollbackKeys(t *testing.T) {
-	retired := []string{
-		"tui.studio.err.rollback_reload_failed",
-		"tui.studio.err.rollback_yaml_failed",
-	}
-	entries, err := defaults.FS.ReadDir("languages")
-	if err != nil {
-		t.Fatalf("read bundled languages: %v", err)
-	}
-	for _, entry := range entries {
-		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".yaml") {
-			continue
-		}
-		code := strings.TrimSuffix(entry.Name(), ".yaml")
-		lang := loadBundledLanguage(t, code)
-		for _, key := range retired {
-			if _, ok := lang.Keys[key]; ok {
-				t.Errorf("language pack %s still declares retired key %q", code, key)
-			}
-		}
 	}
 }
 

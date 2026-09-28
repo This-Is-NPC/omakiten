@@ -312,8 +312,7 @@ func resolveEffectiveLaws(slugs []string, disabled map[string]struct{}, laws map
 // from the title-case of the slug), optional default kind, optional
 // description. The fetch hint (`templates.show <slug>`) is NOT emitted as a
 // trailing footer; instead, every templates-bound command must surface the
-// hint via its action text or its persona body. This is enforced by
-// `TestTemplateBoundCommandsCarryFetchHint`.
+// hint via its action text or its persona body.
 func renderCommandMarkdown(resp contract.ResolveCommandResponse) string {
 	r := markdownRenderer{}
 	r.writePersona(resp.Persona)

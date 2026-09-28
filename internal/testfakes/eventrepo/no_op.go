@@ -2,17 +2,7 @@
 // in-tree tests that need to satisfy the interface but do not exercise
 // the events surface.
 //
-// Tests either swap a NoOp wholesale where every method should return
-// the zero value, or embed it into a wrapper struct and override only
-// the methods that carry assertions. Either way, adding a new method
-// to app.EventRepository only requires updating NoOp here — the
-// embedders inherit the new no-op default automatically.
-//
-// This file deliberately avoids importing internal/app: the package is
-// consumed by tests inside internal/app itself, and a direct import
-// would form a cycle. The compile-time check that NoOp satisfies
-// app.EventRepository lives in no_op_test.go (external test package),
-// which is the canonical place to pin the contract.
+// Tests embed NoOp and override the methods they exercise.
 package eventrepo
 
 import (

@@ -1,9 +1,6 @@
 package arch
 
 import (
-	"os"
-	"path/filepath"
-	"strconv"
 	"strings"
 	"testing"
 )
@@ -27,40 +24,6 @@ func (s boundaryScan) covered(prefix string) int {
 		}
 	}
 	return count
-}
-
-func itoa(n int) string { return strconv.Itoa(n) }
-func walkGoSources(repo, subdir string, includeTests bool, include func(rel string) bool, inspect func(rel string, data []byte)) error {
-	root := filepath.Join(repo, subdir)
-	return filepath.WalkDir(root, func(p string, entry os.DirEntry, walkErr error) error {
-		if walkErr != nil {
-			return walkErr
-		}
-		if entry.IsDir() {
-			return nil
-		}
-		name := entry.Name()
-		if !strings.HasSuffix(name, ".go") {
-			return nil
-		}
-		if !includeTests && strings.HasSuffix(name, "_test.go") {
-			return nil
-		}
-		relative, err := filepath.Rel(repo, p)
-		if err != nil {
-			return err
-		}
-		rel := filepath.ToSlash(relative)
-		if !include(rel) {
-			return nil
-		}
-		data, err := os.ReadFile(p)
-		if err != nil {
-			return err
-		}
-		inspect(rel, data)
-		return nil
-	})
 }
 
 func repoRootOrFail(t *testing.T) string {

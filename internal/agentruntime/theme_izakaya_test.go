@@ -57,7 +57,7 @@ func TestIzakayaBuilderIdentityRenders(t *testing.T) {
 	}
 
 	// Skills render bullet-with-body.
-	assertBulletWithBody(t, "okt-task-implement", resp)
+	assertCommandSkills(t, "okt-task-implement", resp)
 
 	// Template bound with JIT fetch hint.
 	if len(resp.Templates) == 0 {
@@ -128,7 +128,7 @@ func assertIzakayaRepresentative(t *testing.T, ctx context.Context, rt *Runtime,
 	if !strings.Contains(resp.Markdown, "## Laws\n") || len(resp.Laws) == 0 {
 		t.Fatalf("%s missing Laws floor:\n%s", tc.command, resp.Markdown)
 	}
-	assertBulletWithBody(t, tc.command, resp)
+	assertCommandSkills(t, tc.command, resp)
 	if tc.law != "" && !lawPresent(resp.Laws, tc.law) {
 		t.Fatalf("%s missing expected law %q; laws = %v", tc.command, tc.law, lawSlugs(resp.Laws))
 	}
@@ -167,7 +167,7 @@ func assertIzakayaNoteSlot(t *testing.T, ctx context.Context, rt *Runtime, name 
 	if !hasSkill(resp.Skills, noteSkills) {
 		t.Fatalf("%s resolved no #359 note skill; skills = %v", name, skillSlugs(resp.Skills))
 	}
-	assertBulletWithBody(t, name, resp)
+	assertCommandSkills(t, name, resp)
 }
 
 func hasSkill(skills []contract.SkillInfo, want map[string]struct{}) bool {
@@ -180,34 +180,3 @@ func hasSkill(skills []contract.SkillInfo, want map[string]struct{}) bool {
 }
 
 // --- helpers ---
-
-func assertBulletWithBody(t *testing.T, name string, resp contract.ResolveCommandResponse) {
-	t.Helper()
-	if len(resp.Skills) == 0 {
-		t.Fatalf("%s resolved with no skills — command-level subset not wired", name)
-	}
-	if !strings.Contains(resp.Markdown, "## Skills\n") {
-		t.Fatalf("%s missing Skills section despite %d skills:\n%s", name, len(resp.Skills), resp.Markdown)
-	}
-	for _, sk := range resp.Skills {
-		label := sk.Name
-		if label == "" {
-			label = sk.Slug
-		}
-		body := strings.TrimSpace(sk.Body)
-		if body == "" {
-			body = strings.TrimSpace(sk.Description)
-		}
-		if body == "" {
-			t.Fatalf("%s skill %q renders as a bare name bullet — bullet-with-body requires a body", name, label)
-		}
-		head := body
-		if idx := strings.IndexByte(head, '\n'); idx >= 0 {
-			head = head[:idx]
-		}
-		wantBullet := "- **" + label + "** — " + head
-		if !strings.Contains(resp.Markdown, wantBullet) {
-			t.Fatalf("%s skill %q did not render bullet-with-body (expected %q):\n%s", name, label, wantBullet, resp.Markdown)
-		}
-	}
-}

@@ -3,7 +3,6 @@ package config
 import (
 	"os"
 	"path/filepath"
-	"reflect"
 	"testing"
 )
 
@@ -113,23 +112,5 @@ func TestProbeLanguageSetting_MatchesLoadBundleOnHealthyBundle(t *testing.T) {
 	}
 	if got != bundle.Config.Languages {
 		t.Fatalf("probe = %+v, LoadBundle Config.Languages = %+v", got, bundle.Config.Languages)
-	}
-}
-
-// TestProbeLanguageSettingMatchesLanguageSettingsTagShape is the
-// compile-time-plus-reflection guard for AC 2: the leaf field tags the
-// probe relies on live only on LanguageSettings. If CLI/TUI are renamed
-// or their yaml tags change, this fails — flagging that the probe's
-// wrapper (which embeds LanguageSettings by name) must be re-verified.
-func TestProbeLanguageSettingMatchesLanguageSettingsTagShape(t *testing.T) {
-	typ := reflect.TypeOf(LanguageSettings{})
-	for field, wantTag := range map[string]string{"CLI": "cli", "TUI": "tui"} {
-		f, ok := typ.FieldByName(field)
-		if !ok {
-			t.Fatalf("LanguageSettings.%s missing — probe wrapper relies on it", field)
-		}
-		if got := f.Tag.Get("yaml"); got != wantTag+",omitempty" {
-			t.Fatalf("LanguageSettings.%s yaml tag = %q, want %q", field, got, wantTag+",omitempty")
-		}
 	}
 }

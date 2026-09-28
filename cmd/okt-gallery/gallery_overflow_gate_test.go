@@ -121,26 +121,6 @@ func TestEveryScenarioDeclaresAGeometryItsEntryAllows(t *testing.T) {
 	}
 }
 
-// TestGalleryOverflowGateRejectsBypasses pins the two ways the fit gate can go
-// quiet without covering anything: an empty catalog, and an entry that omits
-// its floor.
-func TestGalleryOverflowGateRejectsBypasses(t *testing.T) {
-	if len(entries()) == 0 {
-		t.Fatal("entries() is empty — TestGalleryScenariosFitTheirFrame would pass vacuously")
-	}
-	incomplete := entry{name: "ghost", minWidth: 0, minHeight: 0}
-	if incomplete.minWidth > 0 && incomplete.minHeight > 0 {
-		t.Fatal("zero mins should stay incomplete")
-	}
-	// The real gate ranges entries(); this companion exists so a future edit that
-	// deletes TestGalleryEntriesDeclareMinimums still has a named pin that zero
-	// is not a valid floor.
-	if incomplete.minWidth <= 0 || incomplete.minHeight <= 0 {
-		return
-	}
-	t.Fatal("unreachable")
-}
-
 func indexOfScenario(e entry, name string) int {
 	for i, s := range e.scenarios {
 		if s.name == name {

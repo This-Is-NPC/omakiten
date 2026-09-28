@@ -330,7 +330,7 @@ Not every entity body trafega in the prompt. The renderer pre-loads what the age
 
 **Entity get expansion:** when an entity is fetched via a `*.get` / `*.show` catalog tool, the server expands inline every entity explicitly referenced on that row (for example `personas.get` inlines referenced laws and skills with bodies). Broken references reject with `validation_error` naming the missing slug.
 
-The fetch hint for templates lives in the bound playbook skill body or the bound persona's body — not as a generic footer — so the prompt only mentions `templates.show` for commands that actually need it. `internal/agentruntime.TestTemplateBoundCommandsCarryFetchHint` enforces that contract: every `okt-*` prompt with bound templates must surface the hint somewhere in its rendered Markdown.
+The fetch hint for templates lives in the bound playbook skill body or the bound persona's body — not as a generic footer — so the prompt only mentions `templates.show` for commands that actually need it.
 
 This follows Anthropic's just-in-time context engineering principle: ship lightweight identifiers, let the agent fetch payloads on demand. The `template-fidelity` law remains pre-loaded (it is a constraint that must shape the fetch when it happens), but the body the constraint applies to lives behind a tool call.
 
