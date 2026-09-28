@@ -1,23 +1,11 @@
 #!/usr/bin/env bash
-# pre-push — gate `git push` on `mise run check` and refresh the
-# `local-check` commit status that `master` branch protection requires.
-#
-# Because `git push` uploads the commit AFTER this hook returns, the
-# script runs the check synchronously (so a red check aborts the push)
-# and then background-posts the status once GitHub can see the SHA.
-#
-# Enable for this clone with:
-#   git config core.hooksPath scripts/hooks
-#
-# Skip with OKT_SKIP_LOCAL_CHECK=1 (e.g. release-please bot pushes).
-
 set -euo pipefail
+source "$(dirname "${BASH_SOURCE[0]}")/../lib/workspace.sh"
 
 if [[ "${OKT_SKIP_LOCAL_CHECK:-0}" == 1 ]]; then
   exit 0
 fi
 
-repo_root="$(git rev-parse --show-toplevel)"
 script="$repo_root/scripts/local-check.sh"
 if [[ ! -x "$script" ]]; then
   printf 'pre-push: %s missing or not executable\n' "$script" >&2
@@ -25,9 +13,9 @@ if [[ ! -x "$script" ]]; then
 fi
 
 zero="0000000000000000000000000000000000000000"
-while read -r local_ref local_sha remote_ref remote_sha; do
+while read -r _ local_sha _ _; do
   if [[ "$local_sha" == "$zero" ]]; then
     continue
   fi
-  OKT_LOCAL_CHECK_SHA="$local_sha" "$script" --pre-push
+  OKT_LOCAL_CHECK_SHA="$local_sha" mise exec -- "$script" --pre-push
 done
