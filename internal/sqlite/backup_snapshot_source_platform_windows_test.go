@@ -28,7 +28,7 @@ func TestWindowsSnapshotSourcePinRejectsNestedReparseAncestor(t *testing.T) {
 	if err := os.WriteFile(database, nil, 0o600); err != nil {
 		t.Fatalf("WriteFile: %v", err)
 	}
-	if _, err := pinSnapshotSource(database); err == nil {
+	if _, _, _, _, _, err := pinSnapshotSource(database); err == nil {
 		t.Fatal("pinSnapshotSource accepted a nested reparse ancestor")
 	} else if err := SnapshotDatabase(context.Background(), database, filepath.Join(root, "out.db")); err == nil {
 		t.Fatal("SnapshotDatabase accepted a nested reparse source ancestor")
@@ -51,7 +51,7 @@ func TestWindowsSnapshotSourcePinRejectsReparseSidecars(t *testing.T) {
 	if err := os.Symlink(realSidecar, database+"-wal"); err != nil {
 		t.Skipf("symlink creation unavailable: %v", err)
 	}
-	if _, err := pinSnapshotSource(database); err == nil {
+	if _, _, _, _, _, err := pinSnapshotSource(database); err == nil {
 		t.Fatal("pinSnapshotSource accepted a reparse sidecar")
 	} else if errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("pinSnapshotSource returned raw not-exist error: %v", err)

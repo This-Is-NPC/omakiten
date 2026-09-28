@@ -8,7 +8,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"unsafe"
 
 	"golang.org/x/sys/windows"
 )
@@ -147,14 +146,9 @@ func openSnapshotSourceTarget(path string) (*os.File, error) {
 }
 
 func validateSnapshotSourceHandle(file *os.File, directory bool) error {
-	var tag windowsFileAttributeTagInfo
-	err := windows.GetFileInformationByHandleEx(
-		windows.Handle(file.Fd()),
-		windows.FileAttributeTagInfo,
-		(*byte)(unsafe.Pointer(&tag)),
-		uint32(unsafe.Sizeof(tag)),
-	)
-	if err != nil || tag.ReparseTag != 0 {
+	var attributes windows.ByHandleFileInformation
+	err := windows.GetFileInformationByHandle(windows.Handle(file.Fd()), &attributes)
+	if err != nil || attributes.FileAttributes&windows.FILE_ATTRIBUTE_REPARSE_POINT != 0 {
 		return errors.New("snapshot source path contains a reparse point")
 	}
 	info, err := file.Stat()
