@@ -247,7 +247,7 @@ config:
 
 ## `config.backup`
 
-Tunes rolling database snapshots written by `okt db backup` and destructive flows that call `app.BackupService` before mutating state.
+Tunes rolling database snapshots written by `okt db backup` and destructive flows that call `recovery.BackupService` before mutating state.
 
 ```yaml
 config:
@@ -301,7 +301,13 @@ config:
 
 Retention is configured only through `config.events.retention`; unset layers inherit from the active kit.
 
-Domain event names live in `internal/domain/event.go::KnownEventTypes` — that file is the source of truth for what's emittable. For action contracts that consume events, see [hooks.md](hooks.md).
+Logging, broadcast, recent-row limits and automatic retention are resolved per
+project. Loading a repository-local bundle cannot change another project's event
+policy. Orphan maintenance is store-wide and uses the default bundle's policy.
+
+Event names and metadata come from the active bundle's `config.events.definitions`.
+`config.BuildEventRegistry` prepares an immutable registry for each project. For
+action contracts that consume events, see [hooks.md](hooks.md).
 
 ### `config.events.orphan_sweep` — orphan-event reconciliation
 

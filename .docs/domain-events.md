@@ -15,7 +15,7 @@ This page documents the project-scoped events.
 ## `project.updated`
 
 Fires when a project's mutable metadata is rewritten through the
-canonical service layer (`agent.Service.EditProject`). Today the only
+canonical service layer (`operation.Service.EditProject`). Today the only
 mutable field is the `description` column, whose write path was
 restored here after previously lacking a service write path.
 

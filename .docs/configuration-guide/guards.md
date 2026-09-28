@@ -273,7 +273,7 @@ The pattern: forward transitions carry an evidence-gathering guard (a tag-anchor
 All guard violations use the `guard_violation` coded error (`internal/domain/errors.go:23`). Consumers:
 
 - **CLI**: returns the failure JSON envelope (`internal/output/json.go`) with `code: "guard_violation"` and exit code `1`.
-- **MCP / agent**: `internal/agent/errors.go` wraps it with next-step guidance via `guidanceForCode`.
+- **MCP / agent**: `internal/operation/errors.go` wraps it with next-step guidance via `guidanceForCode`.
 - **TUI**: surfaces the message + hint inline in the move flow (`internal/tui/render_task.go`).
 
 Because the move never persists when a guard fails, no `task.moved` event is recorded. The current bucket is preserved.
