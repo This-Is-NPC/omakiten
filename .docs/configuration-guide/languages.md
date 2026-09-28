@@ -143,14 +143,14 @@ This guide is for **bundled** packs (shipped inside the binary). Custom packs ar
 
 ## Scaffolding helper
 
-`scripts/new-language-pack.sh <code> <native> <name>` copies `defaults/languages/en.yaml` to `defaults/languages/<code>.yaml` with:
+`mise run language:new <code> <native> <name>` copies `defaults/languages/en.yaml` to `defaults/languages/<code>.yaml` with:
 
 - the three header fields swapped to your inputs,
 - a `# TODO(translate): <key>` line comment above every translated value.
 
 ```sh
 # scaffold an Italian pack
-scripts/new-language-pack.sh it Italiano Italian
+mise run language:new it Italiano Italian
 ```
 
 The English value is preserved on every line, so the parity test stays green from the first commit. Translate values incrementally; remove each `# TODO(translate)` marker as you go. The companion test (`internal/config/language_pack_scaffold_test.go::TestNewLanguagePackScript`) exercises the script against a throwaway `zz-test` code on every `go test ./internal/config` run, so the scaffold contract cannot silently regress.
@@ -177,12 +177,12 @@ go run ./cmd/okt tui
 
 Step 3 fails loudly with `--%s %q is not a loaded language code` if the file is malformed or the loader rejected it; the parity test would have caught most of those already.
 
-`scripts/sync-defaults.sh` includes `languages` in its sync loop, so `mise run install` refreshes the bundled packs in the user-global install on every dev run.
+`mise run install` uses the shared defaults-sync script to refresh bundled packs while preserving `custom/`. Managed symlinks are rejected so synchronization cannot write through them into another directory.
 
 ## Worked example — adding Vietnamese
 
 ```sh
-scripts/new-language-pack.sh vi "Tiếng Việt" Vietnamese
+mise run language:new vi "Tiếng Việt" Vietnamese
 # → defaults/languages/vi.yaml created with TODO markers on every value.
 
 # Translate as much as you can. Commit per logical surface (CLI / TUI / notifications)
