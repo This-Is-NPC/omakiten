@@ -72,10 +72,14 @@ jobs:
           [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path ./install.ps1), [ref]$null, [ref]$errors) > $null
           if ($errors.Count) { $errors | ForEach-Object { Write-Error $_ }; exit 1 }
 
-      - name: Run Windows-native config safe I/O tests
+      - name: Run Windows-native filesystem safety tests
         if: runner.os == 'Windows'
         shell: pwsh
-        run: go test ./internal/config -run '^TestWindows' -count=1
+        run: |
+          go test ./internal/config -run '^TestWindows' -count=1
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          go test ./internal/sqlite -run '^TestWindowsSnapshot' -count=1
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
   cross-build:
     strategy:
