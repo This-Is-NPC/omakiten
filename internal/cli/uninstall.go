@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -277,7 +278,7 @@ func (m uninstallPickerModel) View() string {
 		b = append(b, "", lipgloss.NewStyle().Bold(true).Render(t("cli.uninstall.picker.warn")))
 	}
 	b = append(b, "", m.styles.hint.Render(t("cli.uninstall.picker.hint")), "")
-	return joinLines(b)
+	return strings.Join(b, "\n") + "\n"
 }
 
 func formatStep(m uninstallPickerModel, step uninstallStep, box, label string) string {
@@ -294,14 +295,6 @@ func checkbox(on bool) string {
 		return "[x]"
 	}
 	return "[ ]"
-}
-
-func joinLines(lines []string) string {
-	out := ""
-	for _, l := range lines {
-		out += l + "\n"
-	}
-	return out
 }
 
 // runUninstallPicker drives the bubbletea program when the headless

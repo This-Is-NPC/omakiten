@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -114,7 +115,7 @@ func resolveWhyLayer(opts *runtimeOptions, key string, parts []string, layer str
 		// Missing local install is a "not_set" answer rather than a
 		// hard error so callers can ask the question safely.
 		var coded *domain.CodedError
-		if layer == "local" && asCoded(err, &coded) && coded.Code == domain.ErrValidation {
+		if layer == "local" && errors.As(err, &coded) && coded.Code == domain.ErrValidation {
 			return map[string]any{"key": key, "source": "not_set", "layer": layer}, nil
 		}
 		return nil, err
@@ -166,29 +167,6 @@ func resolveWhyDiscovered(opts *runtimeOptions, key string, parts []string) (any
 		return map[string]any{"key": key, "source": "not_set"}, nil
 	}
 	return map[string]any{"key": key, "value": value, "source": "global", "path": path}, nil
-}
-
-func asCoded(err error, out **domain.CodedError) bool {
-	var coded *domain.CodedError
-	for cur := err; cur != nil; cur = unwrap(cur) {
-		if c, ok := cur.(*domain.CodedError); ok {
-			coded = c
-			break
-		}
-	}
-	if coded == nil {
-		return false
-	}
-	*out = coded
-	return true
-}
-
-func unwrap(err error) error {
-	type unwrapper interface{ Unwrap() error }
-	if u, ok := err.(unwrapper); ok {
-		return u.Unwrap()
-	}
-	return nil
 }
 
 func resolveDiffSource(opts *runtimeOptions, spec string) (string, error) {
