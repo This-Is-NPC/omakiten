@@ -1451,7 +1451,7 @@ keys:
   cli.update.err.signature_verification_failed_fmt: "falha na verificação de assinatura da release: %s; binário inalterado"
   cli.update.err.downgrade_blocked_fmt: "a release %s não é mais recente que a instalada %s; downgrade recusado"
   cli.update.err.unsigned_release_fmt: "a release %s está no corte de releases assinadas %s ou antes dele; reinstale a primeira release assinada com um instalador verificado"
-  cli.tui.err.config_validation_failed_fmt: "health check de config falhou (%d erros, primeiro: %s); para investigar a causa rode `okt config validate`"
+  cli.tui.err.config_validation_failed_fmt: "config health check failed (%d errors, first: %s); inspect the reported path and follow details.errors[].hint"
   # Remediation hint copy (#367) — %s slot carries the suggested command literal.
   cli.config.validate.remediation.missing_shipped_file: "Restaure os arquivos padrão embarcados: %s — sua subárvore custom/ é preservada; faça backup de edições diretas em arquivos shipped primeiro."
   cli.config.validate.remediation.embedded_default_drift: "Atualize os padrões embarcados que o binário em execução espera: %s — sua subárvore custom/ não é tocada."
@@ -1459,6 +1459,7 @@ keys:
   cli.config.validate.remediation.invalid_value: "Corrija o valor inválido: %s — abra o arquivo no caminho citado e ajuste o campo."
   cli.config.validate.remediation.missing_required_key: "Adicione a chave obrigatória ausente: %s — abra o arquivo no caminho citado e insira a entrada descrita no erro."
   cli.config.validate.remediation.theme_not_found: "Escolha um tema que o runtime consegue resolver: %s — abra o arquivo e defina config.theme.active para um dos slugs disponíveis."
+  cli.config.validate.remediation.validation: "Inspect and correct the reported configuration: %s"
   # Plans — TUI plan list + network diagram + goal editor.
   tui.plans.list.empty: "Sem plans ainda. Crie um com `okt plan create <slug> --name \"...\"`."
   tui.plans.list.header: "SLUG             STATUS    FEITO/TOTAL  %    NOME ‹WAVE ATIVA›"

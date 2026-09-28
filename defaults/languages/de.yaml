@@ -1459,7 +1459,7 @@ keys:
   cli.update.err.signature_verification_failed_fmt: "Signaturprüfung der Release fehlgeschlagen: %s; Binary unverändert"
   cli.update.err.downgrade_blocked_fmt: "Release %s ist nicht neuer als die installierte %s; Downgrade abgelehnt"
   cli.update.err.unsigned_release_fmt: "Release %s liegt auf oder vor der Grenze signierter Releases %s; installieren Sie die erste signierte Release mit einem geprüften Installer neu"
-  cli.tui.err.config_validation_failed_fmt: "Config-Health-Check fehlgeschlagen (%d Fehler, erster: %s); zur Ursachenanalyse `okt config validate` ausführen"
+  cli.tui.err.config_validation_failed_fmt: "config health check failed (%d errors, first: %s); inspect the reported path and follow details.errors[].hint"
   # Remediation hint copy (#367) — %s slot carries the suggested command literal.
   cli.config.validate.remediation.missing_shipped_file: "Stellt die mitgelieferten Standarddateien wieder her: %s — euer custom/-Teilbaum bleibt erhalten; sichert direkte Änderungen an shipped-Dateien zuerst."
   cli.config.validate.remediation.embedded_default_drift: "Aktualisiert die eingebetteten Defaults, die das laufende Binary erwartet: %s — euer custom/-Teilbaum bleibt unangetastet."
@@ -1467,6 +1467,7 @@ keys:
   cli.config.validate.remediation.invalid_value: "Behebt den ungültigen Wert: %s — öffnet die Datei am genannten Pfad und passt das Feld an."
   cli.config.validate.remediation.missing_required_key: "Fügt den fehlenden Pflicht-Key hinzu: %s — öffnet die Datei am genannten Pfad und fügt den im Fehler beschriebenen Eintrag ein."
   cli.config.validate.remediation.theme_not_found: "Wählt ein Theme, das die Runtime auflösen kann: %s — öffnet die Datei und setzt config.theme.active auf einen der verfügbaren Slugs."
+  cli.config.validate.remediation.validation: "Inspect and correct the reported configuration: %s"
   # Plans — TUI plan list + network diagram + goal editor.
   tui.plans.list.empty: "Noch keine plans. Erstelle einen mit `okt plan create <slug> --name \"...\"`."
   tui.plans.list.header: "SLUG             STATUS    FERTIG/GESAMT  %  NAME ‹AKTIVE WAVE›"

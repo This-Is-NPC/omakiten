@@ -38,23 +38,14 @@ func shellQuoteArg(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", "'\"'\"'") + "'"
 }
 
-// healthCheckRemediations maps a validator error kind to the
-// instructional command the user runs to repair the bundle. Every
-// entry is read-only relative to user-owned files: the catalogue must
-// never expand to include commands that mutate the user's config
-// without their explicit invocation (#365 AC 9 / AC 10).
-//
-// `okt config refresh-defaults` overwrites shipped files only; user-owned
-// `<kind>/custom/` subtrees and config/.active stay untouched (verified by
-// internal/config/default_files_test.go).
-var healthCheckRemediations = map[string]string{
-	"missing_shipped_file":   updateDefaultsManualCommand,
-	"embedded_default_drift": updateDefaultsManualCommand,
-	"unknown_schema_key":     "okt config edit <path>",
-	"invalid_value":          "okt config edit <path>",
-	"missing_required_key":   "okt config edit <path>",
-	"theme_not_found":        "okt config edit <path>",
-	"validation":             "okt config edit <path>",
+// validationRepairCommand selects an explicit repair for the reported file.
+func validationRepairCommand(path, kind string) string {
+	switch kind {
+	case "missing_shipped_file", "embedded_default_drift":
+		return updateDefaultsManualCommandForConfig(path)
+	default:
+		return "${EDITOR:-vi} " + shellQuoteArg(path)
+	}
 }
 
 // classifyValidationError maps a single LoadBundle / ValidateBundle
@@ -66,8 +57,7 @@ var healthCheckRemediations = map[string]string{
 // Matching is intentionally permissive (substring, lower-case) so a
 // validator copy refresh does not silently demote every error to
 // `validation`. The default branch keeps the catalogue exhaustive: any
-// classifier output without a matching healthCheckRemediations entry
-// is a contract bug, not a user-facing fallback.
+// classifier output selects a concrete repair for the reported path.
 func classifyValidationError(err error) string {
 	if err == nil {
 		return ""
@@ -84,7 +74,7 @@ func classifyValidationError(err error) string {
 		return "missing_required_key"
 	case strings.Contains(msg, "active theme"):
 		return "theme_not_found"
-	case strings.Contains(msg, "unknown") && (strings.Contains(msg, "key") || strings.Contains(msg, "field")):
+	case (strings.Contains(msg, "unknown") && (strings.Contains(msg, "key") || strings.Contains(msg, "field"))) || strings.Contains(msg, "not found in type"):
 		return "unknown_schema_key"
 	case strings.Contains(msg, "must be") || strings.Contains(msg, "cannot be") || strings.Contains(msg, "between"):
 		return "invalid_value"
@@ -110,7 +100,7 @@ func classifyValidationError(err error) string {
 // cannot invent new ones (`law: no-assumptions`).
 func buildValidateFailureDetails(path string, err error, warnings []string) map[string]any {
 	kind := classifyValidationError(err)
-	command := healthCheckRemediations[kind]
+	command := validationRepairCommand(path, kind)
 	hint := fmt.Sprintf(t("cli.config.validate.remediation."+kind), command)
 	return map[string]any{
 		"path": path,

@@ -1450,7 +1450,7 @@ keys:
   cli.update.err.signature_verification_failed_fmt: "verifiering av release-signatur misslyckades: %s; binary oförändrad"
   cli.update.err.downgrade_blocked_fmt: "release %s är inte nyare än den installerade %s; nedgradering nekad"
   cli.update.err.unsigned_release_fmt: "release %s ligger på eller före gränsen för signerade releaser %s; installera om den första signerade releasen med ett verifierat installationsprogram"
-  cli.tui.err.config_validation_failed_fmt: "config-hälsokontroll misslyckades (%d fel, första: %s); kör `okt config validate` för att undersöka orsaken"
+  cli.tui.err.config_validation_failed_fmt: "config health check failed (%d errors, first: %s); inspect the reported path and follow details.errors[].hint"
   # Remediation hint copy (#367) — %s slot carries the suggested command literal.
   cli.config.validate.remediation.missing_shipped_file: "Restore the shipped default files: %s — your custom/ subtree is preserved; back up direct edits to shipped files first."
   cli.config.validate.remediation.embedded_default_drift: "Refresh the embedded defaults the running binary expects: %s — your custom/ subtree stays untouched."
@@ -1458,6 +1458,7 @@ keys:
   cli.config.validate.remediation.invalid_value: "Fix the invalid value: %s — open the file at the cited path and adjust the field."
   cli.config.validate.remediation.missing_required_key: "Add the missing required key: %s — open the file at the cited path and insert the entry described in the error."
   cli.config.validate.remediation.theme_not_found: "Pick a theme the runtime can resolve: %s — open the file and set config.theme.active to one of the available slugs."
+  cli.config.validate.remediation.validation: "Inspect and correct the reported configuration: %s"
   # Plans — TUI plan list + network diagram + goal editor.
   tui.plans.list.empty: "Inga plans ännu. Skapa ett med `okt plan create <slug> --name \"...\"`."
   tui.plans.list.header: "SLUG             STATUS    KLAR/TOTALT   %    NAMN ‹AKTIV WAVE›"
