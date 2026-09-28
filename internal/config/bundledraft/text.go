@@ -1,6 +1,8 @@
 package bundledraft
 
-import "fmt"
+import (
+	"fmt"
+)
 
 // Text resolves an i18n catalog key to operator-facing copy. Nil means use the
 // English fallback at each call site — domain tests assert that fallback, and

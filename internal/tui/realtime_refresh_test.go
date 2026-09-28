@@ -125,9 +125,9 @@ func findRealtimeReloadCmd(cmd tea.Cmd) tea.Cmd {
 // state newly permitted by this change; every edit/overlay/modal state must
 // still suppress the tick so a passive reload never lands on top of an input.
 func TestShouldRealtimeRefreshGate(t *testing.T) {
-	// Zero-value Model is a live board (top 0 != topHome, modeNormal,
+	// Zero-value Model is a live board (top 0 != screenhost.TopHome, modeNormal,
 	// no overlays) — the baseline that must refresh.
-	base := func() Model { return Model{} }
+	base := func() Model { return Model{navigation: screenhost.TasksBoard} }
 
 	if !base().shouldRealtimeRefresh() {
 		t.Fatal("baseline board view: shouldRealtimeRefresh() = false, want true")
@@ -165,7 +165,7 @@ func TestShouldRealtimeRefreshGate(t *testing.T) {
 			m.boardScreen = m.boardScreen.Update(m.screenFrame(), tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'m'}}).Screen.(board.Screen)
 		}, false},
 		{"non-normal mode blocks", func(m *Model) { m.mode = modeComment }, false},
-		{"home blocks", func(m *Model) { m.top = topHome }, false},
+		{"home blocks", func(m *Model) { m.navigation = screenhost.Home }, false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

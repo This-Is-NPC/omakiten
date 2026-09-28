@@ -1,6 +1,8 @@
 package scrollwindow
 
-import "testing"
+import (
+	"testing"
+)
 
 // ones returns a heights slice of `n` items each of height 1 — used to
 // drive the fixed-height code path of Slice/Follow without copy-pasting

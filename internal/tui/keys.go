@@ -1,6 +1,8 @@
 package tui
 
-import "github.com/charmbracelet/bubbles/key"
+import (
+	"github.com/charmbracelet/bubbles/key"
+)
 
 // commentInputBindings is the single source of truth for the modal
 // comment-input keystrokes. The bindings drive both the textarea's

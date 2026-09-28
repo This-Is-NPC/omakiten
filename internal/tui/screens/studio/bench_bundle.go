@@ -6,6 +6,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
+	"omakiten/internal/commandcatalog"
 	"omakiten/internal/config"
 	"omakiten/internal/domain"
 )
@@ -144,7 +145,7 @@ func studioBenchBundle() config.Bundle {
 
 	commands := map[string]config.MCPCommandSpec{
 		config.MCPCommandsGlobalKey: {Laws: append([]string(nil), lawSlugs[:3]...)}}
-	for i, name := range defaultKnownCommands {
+	for i, name := range commandcatalog.CommandNames() {
 		persona := personas[i%len(personas)]
 		// A command may only bind skills the persona actually carries in its
 		// repertoire; the bundle validator rejects anything else.

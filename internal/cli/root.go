@@ -13,6 +13,7 @@ import (
 	"omakiten/internal/agentruntime"
 	"omakiten/internal/config"
 	"omakiten/internal/configstore"
+	"omakiten/internal/contract"
 	"omakiten/internal/domain"
 	"omakiten/internal/events"
 	"omakiten/internal/hooks"
@@ -58,7 +59,6 @@ type runtime struct {
 	bus                events.Bus
 	hooksEngine        *hooks.Engine
 	notificationAction *actions.NotificationShowAction
-	registry           *domain.EnumRegistry
 	// cache is the per-project BundleCache the CLI invocation seeds at
 	// boot. Phase 3c keeps the cache size at 1 for the single-shot CLI
 	// path (one --project per invocation), but exposing the cache lets
@@ -81,8 +81,8 @@ func (r *runtime) WithActivityRepo(ctx context.Context) context.Context {
 // uses `defer rt.close()` instead of inlining `defer func() { _ = rt.store.Close() }()`
 // so the boilerplate stays in one place.
 func (r *runtime) close() {
-	if r.hooksEngine != nil {
-		r.hooksEngine.Stop()
+	if r.cache != nil {
+		_ = r.cache.Close()
 	}
 	_ = r.store.Close()
 }
@@ -102,10 +102,10 @@ func (r *runtime) operationService() *operation.Service {
 // lookup means every service helper goes through the cache transparently
 // without churn at every callsite.
 func (r *runtime) activeRegistry() *domain.EnumRegistry {
-	if pr := r.ProjectRuntime(); pr != nil && pr.EnumRegistry != nil {
+	if pr := r.ProjectRuntime(); pr != nil {
 		return pr.EnumRegistry
 	}
-	return r.registry
+	return nil
 }
 
 // activeSnapshot returns the per-project *config.Snapshot from the
@@ -123,7 +123,7 @@ func (r *runtime) activeSnapshot() *config.Snapshot {
 	return pr.Snapshot
 }
 
-func NewRootCommand(version string) *cobra.Command {
+func NewRootCommand(version string, interactive ...func(context.Context, agentruntime.Session) error) *cobra.Command {
 	ensurePkgCatalog()
 	opts := &runtimeOptions{catalog: pkgCatalog}
 	cmd := &cobra.Command{
@@ -135,7 +135,7 @@ func NewRootCommand(version string) *cobra.Command {
 		SilenceErrors: true,
 	}
 	configureRootFlags(cmd, opts)
-	addRootCommands(cmd, opts, version)
+	addRootCommands(cmd, opts, version, interactive...)
 	return cmd
 }
 
@@ -146,7 +146,7 @@ func configureRootFlags(cmd *cobra.Command, opts *runtimeOptions) {
 	cmd.PersistentFlags().Int64Var(&opts.projectID, "project-id", 0, opts.t("cli.root.flag.project-id"))
 }
 
-func addRootCommands(cmd *cobra.Command, opts *runtimeOptions, version string) {
+func addRootCommands(cmd *cobra.Command, opts *runtimeOptions, version string, interactive ...func(context.Context, agentruntime.Session) error) {
 	cmd.AddCommand(newInitCommand(opts))
 	cmd.AddCommand(newAddCommand(opts))
 	cmd.AddCommand(newListCommand(opts))
@@ -177,7 +177,11 @@ func addRootCommands(cmd *cobra.Command, opts *runtimeOptions, version string) {
 	cmd.AddCommand(newTemplateCommand(opts))
 	cmd.AddCommand(newSearchCommand(opts))
 	cmd.AddCommand(newTagCommand(opts))
-	cmd.AddCommand(newTUICommand(opts, version))
+	var run func(context.Context, agentruntime.Session) error
+	if len(interactive) > 0 {
+		run = interactive[0]
+	}
+	cmd.AddCommand(newTUICommand(opts, version, run))
 	cmd.AddCommand(newMCPCommand(opts))
 	cmd.AddCommand(newSetupCommand(opts))
 	cmd.AddCommand(newUninstallCommand(opts))
@@ -263,57 +267,21 @@ func (r *runtime) materialize(ctx context.Context, opts *runtimeOptions, cs *con
 		)
 	}
 	emitBundleWarnings(preview)
-	if err := config.LoadDomainEventRegistry(preview.Config.Events); err != nil {
-		return err
-	}
+
 	cwd, err := os.Getwd()
 	if err != nil {
 		return err
 	}
-	bus := events.NewInProcessBus(preview.Config.Events)
-	cache := agentruntime.NewBundleCache(r.store, bus, cs)
-	cache.SetProjectSelector(operation.ProjectSelector{ProjectID: opts.projectID, Project: opts.project, CWD: cwd})
-	pr, err := cache.Resolve(ctx, opts.projectID, r.configPath)
+	cache, bus, pr, err := agentruntime.Bootstrap(ctx, r.store, cs, r.configPath, contract.ProjectSelector{ProjectID: opts.projectID, Project: opts.project, CWD: cwd}, preview)
 	if err != nil {
 		return err
 	}
-	r.registry = pr.EnumRegistry
 	r.bus = bus
 	r.hooksEngine = pr.HooksEngine
 	r.notificationAction = pr.NotificationAction
 	r.cache = cache
 	r.projectID = opts.projectID
 	return nil
-}
-
-// ResolveProjectRuntime returns the ProjectRuntime for the supplied
-// project selector, consulting the BundleCache the runtime seeded at
-// boot. When selector zero, returns the entry that was Installed for
-// the active --project (or the default 0 key when no flag was
-// supplied). Used by subcommands that want a project-aware bundle
-// handle without re-implementing the cache lookup.
-func (r *runtime) ResolveProjectRuntime(ctx context.Context, projectID int64) (*agentruntime.ProjectRuntime, error) {
-	if r.cache == nil {
-		// Redacted message: the underlying cause names internal
-		// construction options (materializeConfig=true) the user has
-		// no way to set. Point them at the user-facing remediation
-		// instead.
-		return nil, domain.NewError(domain.ErrConfigInvalid, t("cli.err.runtime_not_initialised"), nil)
-	}
-	if projectID == 0 {
-		projectID = r.projectID
-	}
-	if pr := r.cache.Get(projectID); pr != nil {
-		return pr, nil
-	}
-	// Fall back to the boot-seeded entry — Phase 3c does not yet
-	// reparse a different project's bundle from the subcommand surface;
-	// that arrives in Phase 3e/3f. Returning the active entry keeps the
-	// surface uniform for callers.
-	if pr := r.cache.Get(r.projectID); pr != nil {
-		return pr, nil
-	}
-	return nil, fmt.Errorf("cli runtime: no ProjectRuntime cached for project %d", projectID)
 }
 
 // ProjectRuntime returns the active boot-seeded ProjectRuntime. Panics

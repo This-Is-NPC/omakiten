@@ -35,21 +35,13 @@ type Notification struct {
 	IsCustom   bool   `yaml:"-" json:"-"`
 }
 
-// NotificationAction is one interactive button surfaced in the notification
-// footer. When the user presses Key, the notification component emits an
-// ActionMsg carrying ID and Command; the parent Model dispatches Command
-// in-process through the cobra root so the action runs against the same
-// runtime store as the live TUI. Actions with empty Command behave as
-// labeled dismiss shortcuts (used for "Skip" / "Cancel" buttons).
-//
-// Each element of Command is rendered through text/template against the
-// triggering event payload and the active project before invocation, so
-// args like "--project={{.Project.Slug}}" resolve at dispatch time.
+// NotificationAction declares a structured operation or a labeled dismissal.
 type NotificationAction struct {
-	Key     string   `yaml:"key" json:"key"`
-	ID      string   `yaml:"id" json:"id"`
-	Label   string   `yaml:"label" json:"label"`
-	Command []string `yaml:"command,omitempty" json:"command,omitempty"`
+	Key       string         `yaml:"key" json:"key"`
+	ID        string         `yaml:"id" json:"id"`
+	Label     string         `yaml:"label" json:"label"`
+	Operation string         `yaml:"operation,omitempty" json:"operation,omitempty"`
+	Arguments map[string]any `yaml:"arguments,omitempty" json:"arguments,omitempty"`
 }
 
 // NotificationDismiss is the close-strategy for the rendered card. Mode

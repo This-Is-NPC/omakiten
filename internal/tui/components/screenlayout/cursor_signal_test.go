@@ -1,6 +1,8 @@
 package screenlayout
 
-import "testing"
+import (
+	"testing"
+)
 
 // ---------------------------------------------------------------------------
 // Placement.CursorUnread (#2445).

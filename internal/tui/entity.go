@@ -8,10 +8,10 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"omakiten/internal/agentruntime"
 	"omakiten/internal/config"
+	"omakiten/internal/config/bundledraft"
+	"omakiten/internal/contract"
 	"omakiten/internal/domain"
-	"omakiten/internal/operation"
 	"omakiten/internal/tui/screenhost"
 )
 
@@ -140,12 +140,15 @@ func (m *Model) handleEditorFinished(msg editorFinishedMsg) {
 		return
 	}
 	if m.repos.Editor != nil {
-		resolved, err := applyBundleEditor(m.ctx, m.repos.Editor, nil)
+		_, err := bundledraft.ApplyPlanned(m.ctx, m.repos.Editor, nil)
 		if err != nil {
 			m.status = err.Error()
 			return
 		}
-		m.rotateSnapshotAfterEdit(resolved)
+		if err := m.rotateSnapshotAfterEdit(); err != nil {
+			m.status = err.Error()
+			return
+		}
 	}
 	if err := m.refresh(); err != nil {
 		m.status = err.Error()
@@ -154,36 +157,16 @@ func (m *Model) handleEditorFinished(msg editorFinishedMsg) {
 	m.status = m.t("tui.status.saved")
 }
 
-// rotateSnapshotAfterEdit advances the per-project Snapshot the TUI
-// reads through after the BundleEditor wrote new bytes to disk. In
-// production this defers to BundleCache.Reload so every reader of the
-// per-project view sees the rotation atomically. Phase 2-bis dropped the
-// Repositories.Snapshot escape hatch — tests now wire a real cache via
-// testfixtures/runtimecache.Install, so reads always flow through
-// r.Cache.Get(r.ProjectID).Snapshot. When Reload cannot run (test caches
-// constructed without store/configstore/bus), fall back to re-installing
-// the cache entry with a snapshot rebuilt from the supplied bundle so
-// the test path converges on the same accessor production uses.
-func (m *Model) rotateSnapshotAfterEdit(resolved config.Bundle) {
+// rotateSnapshotAfterEdit reloads the project runtime after an entity write.
+func (m *Model) rotateSnapshotAfterEdit() error {
 	if m.repos.Cache == nil {
-		return
+		return fmt.Errorf("project runtime is unavailable")
 	}
-	if _, err := m.repos.Cache.Reload(m.ctx, m.repos.ProjectID, ""); err == nil {
-		m.studioRuntimeGeneration++
-		return
+	if _, err := m.repos.Cache.ReloadView(m.ctx, m.repos.ProjectID, m.repos.ConfigPath); err != nil {
+		return err
 	}
-	snap := config.BuildSnapshot(resolved)
-	runtime := &agentruntime.ProjectRuntime{Snapshot: snap}
-	if existing := m.repos.Cache.Get(m.repos.ProjectID); existing != nil {
-		runtime.Service = existing.Service
-		runtime.Editor = existing.Editor
-		runtime.PreviousSnapshot = existing.PreviousSnapshot
-		if runtime.Service != nil {
-			runtime.Service.SetSnapshot(snap)
-		}
-	}
-	m.repos.Cache.Install(m.repos.ProjectID, runtime)
 	m.studioRuntimeGeneration++
+	return nil
 }
 
 func (m *Model) deleteEntity(kind entityKind, slug string) {
@@ -208,10 +191,9 @@ func (m *Model) deleteEntity(kind entityKind, slug string) {
 		m.status = err.Error()
 		return
 	}
-	if m.repos.Editor != nil {
-		if resolved, lerr := m.repos.Editor.Load(); lerr == nil {
-			m.rotateSnapshotAfterEdit(resolved)
-		}
+	if err := m.rotateSnapshotAfterEdit(); err != nil {
+		m.status = err.Error()
+		return
 	}
 	m.clearDeletePrompt("")
 	if refreshErr := m.refresh(); refreshErr != nil {
@@ -336,7 +318,7 @@ func (m *Model) confirmTagMerge(sourceName, targetName string) {
 		m.status = m.t("tui.status.tag_merge_missing")
 		return
 	}
-	resp, err := svc.MergeTags(m.ctx, operation.MergeTagsInput{
+	resp, err := svc.MergeTags(m.ctx, contract.MergeTagsInput{
 		SourceTagID: sourceID,
 		TargetTagID: targetID})
 	if err != nil {

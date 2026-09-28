@@ -8,10 +8,9 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"omakiten/internal/agentruntime"
 	"omakiten/internal/config"
+	"omakiten/internal/contract"
 	"omakiten/internal/domain"
-	"omakiten/internal/operation"
 	"omakiten/internal/paths"
 	"omakiten/internal/tui/screenhost"
 	"omakiten/internal/tui/screens/board"
@@ -112,7 +111,7 @@ func (m *Model) selectHomeProjectID(projectID int64) bool {
 }
 
 func (m *Model) selectHomeProject(project domain.Project) error {
-	var runtime *agentruntime.ProjectRuntime
+	var runtime *contract.RuntimeView
 	var runtimePath string
 	if m.repos.Cache != nil {
 		var err error
@@ -134,8 +133,8 @@ func (m *Model) selectHomeProject(project domain.Project) error {
 	} else {
 		m.clearProjectRuntime()
 	}
-	if m.top == topHome {
-		m.top, m.sub = topTasks, subBoard
+	if m.navigation == screenhost.Home {
+		m.navigation = screenhost.TasksBoard
 	}
 	m.boardScreen, m.tableScreen, m.graphScreen = board.New(), table.New(), graph.New()
 	m.logsScreen = m.logsScreen.Reset()
@@ -145,9 +144,9 @@ func (m *Model) selectHomeProject(project domain.Project) error {
 	return m.refresh()
 }
 
-func (m *Model) resolveProjectRuntime(project domain.Project) (*agentruntime.ProjectRuntime, string, error) {
+func (m *Model) resolveProjectRuntime(project domain.Project) (*contract.RuntimeView, string, error) {
 	cache := m.repos.Cache
-	entry := cache.Get(project.ID)
+	entry := cache.View(project.ID)
 	path := ""
 	if entry != nil {
 		path = entry.SourcePath
@@ -169,12 +168,12 @@ func (m *Model) resolveProjectRuntime(project domain.Project) (*agentruntime.Pro
 	if entry == nil && path == "" {
 		return nil, "", nil
 	}
-	cache.SetProjectSelector(operation.ProjectSelector{ProjectID: project.ID})
-	runtime, err := cache.Resolve(m.ctx, project.ID, path)
+	cache.SetProjectSelector(contract.ProjectSelector{ProjectID: project.ID})
+	runtime, err := cache.ResolveView(m.ctx, project.ID, path)
 	return runtime, path, err
 }
 
-func (m *Model) bindProjectRuntime(pr *agentruntime.ProjectRuntime, path string) error {
+func (m *Model) bindProjectRuntime(pr *contract.RuntimeView, path string) error {
 	if pr == nil || pr.Snapshot == nil {
 		return fmt.Errorf("tui: project selection returned an empty project runtime")
 	}
@@ -255,7 +254,7 @@ func (m *Model) executeHomeProjectDeleteAction(action screenhost.Action) tea.Cmd
 type homeProjectDeleteResultMsg struct {
 	generation uint64
 	project    domain.Project
-	result     agentruntime.ProjectDeleteResult
+	result     contract.ProjectDeleteResult
 	err        error
 	audit      string
 	pruneWarn  error
@@ -263,10 +262,8 @@ type homeProjectDeleteResultMsg struct {
 
 func (m *Model) executeHomeProjectDelete(project domain.Project, counters domain.ProjectDeleteCounters, generation uint64) tea.Cmd {
 	var pruneWarn error
-	backup, err := m.buildHomeBackupService(func(pruneErr error) { pruneWarn = pruneErr })
-	if err != nil {
-		m.status = err.Error()
-		m.homeScreen = m.homeScreen.Apply(home.Result{Generation: generation, Err: err})
+	if m.repos.DeleteProject == nil {
+		m.status = "project deletion is unavailable"
 		return nil
 	}
 	if counters == (domain.ProjectDeleteCounters{}) {
@@ -277,11 +274,7 @@ func (m *Model) executeHomeProjectDelete(project domain.Project, counters domain
 	m.status = fmt.Sprintf(m.t("tui.status.deleting_project_fmt"), project.Name)
 	ctx, repos := m.ctx, m.repos
 	return func() tea.Msg {
-		store, ok := repos.Projects.(agentruntime.ProjectStore)
-		if !ok {
-			return homeProjectDeleteResultMsg{generation: generation, project: project, err: fmt.Errorf("project store does not support delete")}
-		}
-		result, deleteErr := agentruntime.DeleteProjectChecked(ctx, store, backup, repos.Checkpointer, repos.Events, project.ID, counters)
+		result, deleteErr := repos.DeleteProject(ctx, project.ID, counters, func(err error) { pruneWarn = err })
 		return homeProjectDeleteResultMsg{generation: generation, project: project, result: result, err: deleteErr, audit: result.Audit, pruneWarn: pruneWarn}
 	}
 }
@@ -324,21 +317,4 @@ func drainAuditString(status *string, audit string) {
 		*status += " · "
 	}
 	*status += strings.Join(cleaned, " · ")
-}
-
-func (m *Model) buildHomeBackupService(pruneWarn func(error)) (*agentruntime.Backup, error) {
-	destDir, err := paths.BackupDir()
-	if err != nil {
-		return nil, err
-	}
-	retention := 0
-	if snapshot := m.repos.activeSnapshot(); snapshot != nil {
-		retention = snapshot.Settings().Backup.RetentionCount
-	}
-	return agentruntime.NewBackup(agentruntime.BackupOptions{
-		SourcePath:     m.repos.DBPath,
-		DestDir:        destDir,
-		Retention:      retention,
-		PruneWarn:      pruneWarn,
-		SnapshotWriter: m.repos.SnapshotWriter}), nil
 }

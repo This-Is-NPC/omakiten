@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"omakiten/internal/app"
+	"omakiten/internal/contract"
 	"omakiten/internal/domain"
 )
 
@@ -19,9 +20,9 @@ import (
 // The fallthrough therefore IS the "global summary" code path; the
 // downstream app.MetricsService.Summary sees ProjectContext{} (ID=0)
 // and skips the project filter on every query.
-func (s *Service) MetricsSummary(ctx context.Context, input MetricsSummaryInput) (MetricsSummaryResponse, error) {
+func (s *Service) MetricsSummary(ctx context.Context, input contract.MetricsSummaryInput) (contract.MetricsSummaryResponse, error) {
 	if err := s.allow("metrics.summary"); err != nil {
-		return MetricsSummaryResponse{}, err
+		return contract.MetricsSummaryResponse{}, err
 	}
 	project, err := s.resolveProject(ctx, input.ProjectSelector)
 	if err != nil {
@@ -30,7 +31,7 @@ func (s *Service) MetricsSummary(ctx context.Context, input MetricsSummaryInput)
 	}
 	summary, err := app.NewMetricsService(s.repo).Summary(ctx, project, input.Period, input.ProjectID)
 	if err != nil {
-		return MetricsSummaryResponse{}, err
+		return contract.MetricsSummaryResponse{}, err
 	}
-	return MetricsSummaryResponse{Project: projectSummary(project), Summary: summary}, nil
+	return contract.MetricsSummaryResponse{Project: projectSummary(project), Summary: summary}, nil
 }

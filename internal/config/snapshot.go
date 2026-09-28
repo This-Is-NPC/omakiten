@@ -187,6 +187,7 @@ func copyBool(b *bool) *bool {
 // the contract "snapshot is immutable" enforceable even when a caller
 // mistakenly mutates the returned slice.
 type Snapshot struct {
+	eventRegistry      *domain.EventRegistry
 	kit                Kit
 	subtaskKitPath     string
 	subtaskKitSnapshot *Snapshot
@@ -360,7 +361,8 @@ func populateSnapshotSettings(snap *Snapshot, bundle Bundle) {
 			snap.settingsSources[k] = v
 		}
 	}
-	snap.registry = buildEnumRegistry(bundle)
+	snap.registry = BuildEnumRegistry(bundle)
+	snap.eventRegistry, _ = BuildEventRegistry(bundle.Config.Events)
 	snap.theme = cloneTheme(bundle.ActiveTheme)
 	snap.themeErr = bundle.ActiveThemeErr
 }
@@ -473,7 +475,7 @@ func buildSurfaceCatalog(snap *Snapshot, code string, baseline *Language) *Catal
 // per-project EnumRegistry. Built once at BuildSnapshot time so every app
 // service that resolves priority or severity labels reads through the same
 // immutable instance — no separate registry plumbing escapes the snapshot.
-func buildEnumRegistry(bundle Bundle) *domain.EnumRegistry {
+func BuildEnumRegistry(bundle Bundle) *domain.EnumRegistry {
 	priorityPairs := make([]domain.PriorityPair, len(bundle.Config.Priorities))
 	for i, p := range bundle.Config.Priorities {
 		priorityPairs[i] = domain.PriorityPair{ID: p.ID, Value: p.Value, Default: p.Default}
@@ -943,4 +945,12 @@ func (s *Snapshot) Warnings() []SourceWarning {
 // returned value is always positive.
 func (s *Snapshot) LogsWindowDays() time.Duration {
 	return time.Duration(s.settings.Views.Logs.WindowDays) * 24 * time.Hour
+}
+
+// EventRegistry returns the immutable metadata owned by this snapshot.
+func (s *Snapshot) EventRegistry() *domain.EventRegistry {
+	if s == nil {
+		return nil
+	}
+	return s.eventRegistry
 }

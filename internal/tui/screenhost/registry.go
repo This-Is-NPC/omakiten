@@ -42,15 +42,12 @@ type DescriptorSpec struct {
 	HelpKeys  []string
 }
 
-// Descriptor is one validated screen registry row.
-type Descriptor = DescriptorSpec
-
 // Registry is an immutable, validated screen descriptor collection. All and
 // lookup methods return descriptor copies, including copied help-key slices.
 type Registry struct {
-	all       []Descriptor
-	byID      map[ID]Descriptor
-	byPalette map[string]Descriptor
+	all       []DescriptorSpec
+	byID      map[ID]DescriptorSpec
+	byPalette map[string]DescriptorSpec
 }
 
 // NewRegistry validates stable identity, placement, palette metadata, and
@@ -60,9 +57,9 @@ func NewRegistry(specs []DescriptorSpec) (Registry, error) {
 		return Registry{}, fmt.Errorf("screenhost: registry requires at least one descriptor")
 	}
 	registry := Registry{
-		all:       make([]Descriptor, 0, len(specs)),
-		byID:      make(map[ID]Descriptor, len(specs)),
-		byPalette: make(map[string]Descriptor, len(specs)),
+		all:       make([]DescriptorSpec, 0, len(specs)),
+		byID:      make(map[ID]DescriptorSpec, len(specs)),
+		byPalette: make(map[string]DescriptorSpec, len(specs)),
 	}
 	codes := make(map[string]ID, len(specs))
 	cycleSlots := make(map[string]ID, len(specs))
@@ -163,26 +160,26 @@ func validPaletteCode(code string) bool {
 	return len(code) == 2 && code[0] >= '1' && code[0] <= '9' && code[1] >= '1' && code[1] <= '9'
 }
 
-func cloneDescriptor(descriptor Descriptor) Descriptor {
+func cloneDescriptor(descriptor DescriptorSpec) DescriptorSpec {
 	descriptor.HelpKeys = append([]string(nil), descriptor.HelpKeys...)
 	return descriptor
 }
 
 // All returns descriptors in declaration order.
-func (r Registry) All() []Descriptor {
-	descriptors := make([]Descriptor, len(r.all))
+func (r Registry) All() []DescriptorSpec {
+	descriptors := make([]DescriptorSpec, len(r.all))
 	for i, descriptor := range r.all {
 		descriptors[i] = cloneDescriptor(descriptor)
 	}
 	return descriptors
 }
 
-func (r Registry) ByID(id ID) (Descriptor, bool) {
+func (r Registry) ByID(id ID) (DescriptorSpec, bool) {
 	descriptor, ok := r.byID[id]
 	return cloneDescriptor(descriptor), ok
 }
 
-func (r Registry) ByPaletteRoute(route string) (Descriptor, bool) {
+func (r Registry) ByPaletteRoute(route string) (DescriptorSpec, bool) {
 	descriptor, ok := r.byPalette[route]
 	return cloneDescriptor(descriptor), ok
 }

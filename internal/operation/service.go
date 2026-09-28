@@ -7,6 +7,7 @@ import (
 
 	"omakiten/internal/app"
 	"omakiten/internal/config"
+	"omakiten/internal/contract"
 	"omakiten/internal/domain"
 	projectresolver "omakiten/internal/project"
 )
@@ -80,23 +81,23 @@ type Repository interface {
 // declaring `default: task` and `project: <slug>` matching the current
 // project; it falls back to the global default (no project) when none
 // matches. Returns nil when neither is configured.
-type TaskTemplateLookup func(projectSlug string) *TaskTemplateSummary
+type TaskTemplateLookup func(projectSlug string) *contract.TaskTemplateSummary
 
 // TemplateCatalog returns every loaded template so the read-only MCP
 // endpoints (templates.list / templates.show) can browse the bundle without
 // reaching for the BundleEditor directly. The agent never mutates these
 // records — assignment happens in the TUI via direct file edits.
-type TemplateCatalog func() []TemplateSummary
+type TemplateCatalog func() []contract.TemplateSummary
 
 type Service struct {
 	repo               Repository
-	selector           ProjectSelector
+	selector           contract.ProjectSelector
 	taskTemplateLookup TaskTemplateLookup
 	templateCatalog    TemplateCatalog
-	skillCatalog       SkillCatalog
-	lawCatalog         LawCatalog
-	personaCatalog     PersonaCatalog
-	commandCatalog     CommandCatalog
+	skillCatalog       contract.SkillCatalog
+	lawCatalog         contract.LawCatalog
+	personaCatalog     contract.PersonaCatalog
+	commandCatalog     contract.CommandCatalog
 	settings           ServiceSettings
 	registry           *domain.EnumRegistry
 	stopwords          map[string]bool
@@ -153,7 +154,7 @@ type entityRepos struct {
 // the agent layer no longer carries hardcoded defaults. Tests that
 // construct a service without going through the runtime composition
 // root must call SetSettings explicitly.
-func NewService(repo Repository, selector ProjectSelector) *Service {
+func NewService(repo Repository, selector contract.ProjectSelector) *Service {
 	return &Service{
 		repo:     repo,
 		selector: selector,
@@ -229,14 +230,14 @@ func (s *Service) newTagService() *app.TagService {
 // this once boot has resolved the project from --project/--cwd; this
 // matches the Phase 3a runtime pattern where the BundleCache builds
 // services first and the boot path threads the selector after.
-func (s *Service) SetProjectSelector(selector ProjectSelector) {
+func (s *Service) SetProjectSelector(selector contract.ProjectSelector) {
 	s.selector = selector
 }
 
 // Selector returns the service's default ProjectSelector. Exposed for
 // tests that assert the boot-resolved selector survives BundleCache
 // rebuilds.
-func (s *Service) Selector() ProjectSelector {
+func (s *Service) Selector() contract.ProjectSelector {
 	return s.selector
 }
 
@@ -324,7 +325,7 @@ func (s *Service) SettingsCachePrompts() bool {
 	return s.settings.CachePrompts
 }
 
-func (s *Service) resolveProject(ctx context.Context, selector ProjectSelector) (domain.ProjectContext, error) {
+func (s *Service) resolveProject(ctx context.Context, selector contract.ProjectSelector) (domain.ProjectContext, error) {
 	effective := s.selector
 	if selector.ProjectID > 0 || strings.TrimSpace(selector.Project) != "" || strings.TrimSpace(selector.CWD) != "" {
 		effective = selector

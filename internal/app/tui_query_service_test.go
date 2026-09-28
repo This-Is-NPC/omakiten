@@ -37,7 +37,7 @@ func TestTUIQueryPortSnapshotAggregatesRepos(t *testing.T) {
 		t.Fatalf("Comment.Add() error = %v", err)
 	}
 
-	tags := NewTagService(store, cfgSnap)
+	tags := NewTagServiceWithEvents(store, nil, cfgSnap)
 	if _, err := tags.Add(ctx, project.Context(), TagEntityTask, active.ID, "board"); err != nil {
 		t.Fatalf("Tag.Add() error = %v", err)
 	}

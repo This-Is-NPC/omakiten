@@ -1,6 +1,8 @@
 package plan
 
-import "omakiten/internal/domain"
+import (
+	"omakiten/internal/domain"
+)
 
 // WaveRails is the shape of one wave once its intra-wave dependency edges are
 // resolved into a tree: the wave's tasks in DFS pre-order, the rail glyph

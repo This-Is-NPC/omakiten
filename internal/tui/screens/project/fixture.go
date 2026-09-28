@@ -163,15 +163,6 @@ func formFixtureScenarios() []screenfixture.Scenario {
 	}
 }
 
-// FixtureScenarios returns every recorded state for the project overview and
-// reader.
-func FixtureScenarios() []screenfixture.Scenario {
-	out := make([]screenfixture.Scenario, 0, 5)
-	out = append(out, overviewFixtureScenarios()...)
-	out = append(out, formFixtureScenarios()...)
-	return out
-}
-
 // FixtureScenariosFor returns the scenarios for one screen ID, or nil when the
 // ID is not owned by this package.
 func FixtureScenariosFor(id screenhost.ID) []screenfixture.Scenario {

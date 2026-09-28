@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"omakiten/internal/contract"
 	"omakiten/internal/domain"
 	"omakiten/internal/operation"
 	"omakiten/internal/testfixtures/snapstore"
@@ -29,7 +30,7 @@ func (s fixedSearchPort) Search(context.Context, domain.ProjectContext, string, 
 func stubSearchService(t *testing.T) SearchPort {
 	t.Helper()
 	store := snapstore.Open(t, t.TempDir()+"/search.db")
-	svc := operation.NewService(store, operation.ProjectSelector{})
+	svc := operation.NewService(store, contract.ProjectSelector{})
 	svc.SetSnapshot(store.Snapshot())
 	return searchAdapter{svc: svc}
 }
@@ -42,8 +43,8 @@ func TestDispatchTrickNavResolvesAndCloses(t *testing.T) {
 	if model.paletteOpen {
 		t.Fatalf("nav dispatch should close palette on success")
 	}
-	if model.top != topSettings || model.sub != subSettingsGeneral {
-		t.Fatalf("after nav:41 (top, sub) = (%v, %v), want (topSettings, subSettingsGeneral)", model.top, model.sub)
+	if model.navigationTop() != screenhost.TopSettings || model.navigation != screenhost.SettingsGeneral {
+		t.Fatalf("after nav:41 (top, sub) = (%v, %v), want (screenhost.TopSettings, screenhost.SettingsGeneral)", model.navigationTop(), model.navigation)
 	}
 }
 
@@ -51,14 +52,14 @@ func TestDispatchTrickNavUnknownCodeKeepsPaletteOpen(t *testing.T) {
 	model, _ := newPickerModel(t)
 	model.paletteOpen = true
 	model.palette = palette.NewModel()
-	prevTop := model.top
-	prevSub := model.sub
+	prevTop := model.navigationTop()
+	prevSub := model.navigation
 	model.dispatchTrick(palette.Token{Verb: "nav", Operand: "99", Raw: "nav:99"})
 	if !model.paletteOpen {
 		t.Fatalf("unknown nav code should keep palette open")
 	}
-	if model.top != prevTop || model.sub != prevSub {
-		t.Fatalf("unknown nav code mutated nav state: (%v, %v) → (%v, %v)", prevTop, prevSub, model.top, model.sub)
+	if model.navigationTop() != prevTop || model.navigation != prevSub {
+		t.Fatalf("unknown nav code mutated nav state: (%v, %v) → (%v, %v)", prevTop, prevSub, model.navigationTop(), model.navigation)
 	}
 	if model.palette.Status() == "" {
 		t.Fatalf("unknown nav code should set inline status")
@@ -150,7 +151,7 @@ func TestDispatchPaletteSearchReturnsCmdWhenRepoPresent(t *testing.T) {
 func TestDispatchPaletteSearchNilRepoStaysSyncStatus(t *testing.T) {
 	model, _ := newPickerModel(t)
 	model.repos.Search = nil
-	if rt := model.repos.Cache.Get(model.repos.ProjectID); rt != nil {
+	if rt := model.repos.Cache.View(model.repos.ProjectID); rt != nil {
 		rt.Service = nil
 	}
 	model.paletteOpen = true

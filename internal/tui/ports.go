@@ -5,12 +5,12 @@ import (
 	"time"
 
 	"omakiten/internal/config"
+	"omakiten/internal/contract"
 	"omakiten/internal/domain"
-	"omakiten/internal/tui/screens/studio"
 )
 
 // Local ports so Repositories does not name internal/app types (D1 / D20).
-// *sqlite.Store and BundleEditor satisfy these structurally.
+// *sqlite.Store and contract.BundleEditor satisfy these structurally.
 
 type TaskStore interface {
 	ListTasks(ctx context.Context, projectID int64, filter domain.TaskFilter, buckets domain.BucketResolver) ([]domain.Task, error)
@@ -55,15 +55,9 @@ type BundleLoader interface {
 	LoadBundle(path string) (config.Bundle, error)
 }
 
-type Checkpointer interface {
-	Checkpoint(ctx context.Context) error
-}
-
 type DataVersionReader interface {
 	DataVersion(ctx context.Context) (int64, error)
 }
-
-type SnapshotWriter func(context.Context, string, string) error
 
 type MetricsPort interface {
 	Summary(ctx context.Context, project domain.ProjectContext, period string, projectID int64) (domain.MetricsSummary, error)
@@ -77,5 +71,12 @@ type SearchPort interface {
 	Search(ctx context.Context, project domain.ProjectContext, query string, entityTypes []string) ([]domain.SearchHit, error)
 }
 
-// BundleEditor is the studio/host editor surface. BundleEditor satisfies it.
-type BundleEditor = studio.BundleEditor
+// RuntimeCache supplies project views and transactional reloads.
+type RuntimeCache interface {
+	View(projectID int64) *contract.RuntimeView
+	ResolveView(context.Context, int64, string) (*contract.RuntimeView, error)
+	ReloadView(context.Context, int64, string) (*contract.RuntimeView, error)
+	ApplyView(context.Context, int64, string, func(*contract.RuntimeView) (func() error, error)) (*contract.RuntimeView, error)
+	ResolveApplyView(context.Context, int64, string, func(*contract.RuntimeView) (func() error, error)) (*contract.RuntimeView, bool, error)
+	SetProjectSelector(contract.ProjectSelector)
+}

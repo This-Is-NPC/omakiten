@@ -10,9 +10,10 @@ import (
 	"github.com/charmbracelet/x/ansi"
 
 	"omakiten/internal/testutil"
+	screenkit "omakiten/internal/tui/components/screenkit"
 )
 
-var themeOmakiten = Tokens{
+var themeOmakiten = screenkit.MarkdownTokens{
 	ThemeKey:   "omakiten",
 	Foreground: "#E5E2E1",
 	Border:     "#494543",
@@ -20,7 +21,7 @@ var themeOmakiten = Tokens{
 	Secondary:  "#8FAE9A",
 }
 
-var themeAlt = Tokens{
+var themeAlt = screenkit.MarkdownTokens{
 	ThemeKey:   "alt",
 	Foreground: "#FFFFFF",
 	Border:     "#222222",
@@ -253,10 +254,10 @@ func TestConcurrentRenderMatchesSequential(t *testing.T) {
 
 	baseline := make(map[string]string, len(bodies))
 	for _, body := range bodies {
-		baseline[body] = New(Tokens{ThemeKey: "test"}).Render(body, width)
+		baseline[body] = New(screenkit.MarkdownTokens{ThemeKey: "test"}).Render(body, width)
 	}
 
-	r := New(Tokens{ThemeKey: "test"})
+	r := New(screenkit.MarkdownTokens{ThemeKey: "test"})
 	var wg sync.WaitGroup
 	results := make([]string, goroutines)
 	for i := 0; i < goroutines; i++ {

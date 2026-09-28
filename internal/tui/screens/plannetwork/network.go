@@ -56,8 +56,6 @@ type Screen struct {
 	kit                   screenkit.Kit
 }
 
-type Model = Screen
-
 type networkTone uint8
 
 const (
@@ -70,15 +68,10 @@ const (
 	toneBadgeBlocker
 )
 
-// The renderer keeps short local names, while the semantic model belongs to
-// the non-UI projection package.
-type planNetworkRow = networkprojection.Row
-type planNetworkRowKind = networkprojection.RowKind
-
 const (
-	planRowWaveHeader planNetworkRowKind = networkprojection.WaveHeader
-	planRowTaskCard   planNetworkRowKind = networkprojection.TaskCard
-	planRowNone       planNetworkRowKind = 2
+	planRowWaveHeader networkprojection.RowKind = networkprojection.WaveHeader
+	planRowTaskCard   networkprojection.RowKind = networkprojection.TaskCard
+	planRowNone       networkprojection.RowKind = 2
 )
 
 type fingerprint struct{ hash hash.Hash64 }
@@ -374,7 +367,7 @@ func (m Screen) handlePlanNetworkKey(msg tea.KeyMsg) screenhost.Outcome {
 	return screenhost.Stay(m, nil)
 }
 
-func (m *Screen) collapsePlanNetworkWave(rows []planNetworkRow) {
+func (m *Screen) collapsePlanNetworkWave(rows []networkprojection.Row) {
 	idx := m.outlineCursor()
 	if len(rows) == 0 || idx < 0 || idx >= len(rows) {
 		return
@@ -389,7 +382,7 @@ func (m *Screen) collapsePlanNetworkWave(rows []planNetworkRow) {
 	m.snapCursorToWaveHeader(rows, waveID)
 }
 
-func (m *Screen) expandPlanNetworkWave(rows []planNetworkRow) {
+func (m *Screen) expandPlanNetworkWave(rows []networkprojection.Row) {
 	idx := m.outlineCursor()
 	if len(rows) == 0 || idx < 0 || idx >= len(rows) || rows[idx].Kind != planRowWaveHeader {
 		return
@@ -401,7 +394,7 @@ func (m *Screen) expandPlanNetworkWave(rows []planNetworkRow) {
 	m.syncPlanNetworkScroll(m.planNetworkBuildRows())
 }
 
-func (m Screen) openPlanNetworkRow(rows []planNetworkRow) screenhost.Outcome {
+func (m Screen) openPlanNetworkRow(rows []networkprojection.Row) screenhost.Outcome {
 	idx := m.outlineCursor()
 	if len(rows) == 0 || idx < 0 || idx >= len(rows) {
 		return screenhost.Stay(m, nil)
@@ -420,7 +413,7 @@ func (m Screen) openPlanNetworkRow(rows []planNetworkRow) screenhost.Outcome {
 // header rows). Cursor stays in place; WithItemCount(new-row-count)
 // clamps the cursor to the new last row if the toggle shrank the
 // list past it.
-func (m *Model) togglePlanWaveAtCursor() {
+func (m *Screen) togglePlanWaveAtCursor() {
 	rows := m.planNetworkBuildRows()
 	idx := m.outlineCursor()
 	if len(rows) == 0 || idx < 0 || idx >= len(rows) {
@@ -449,7 +442,7 @@ func (m *Model) togglePlanWaveAtCursor() {
 // [screengrid.State.WithCursor]: that write keeps the frame the last composition
 // recorded, where WithLayout would throw it away and make the next keystroke
 // re-render the body to rediscover an arrangement nothing had changed.
-func (m *Model) snapCursorToWaveHeader(rows []planNetworkRow, waveID int64) {
+func (m *Screen) snapCursorToWaveHeader(rows []networkprojection.Row, waveID int64) {
 	for i := clampOutlineCursor(m.outlineCursor(), len(rows)); i >= 0 && i < len(rows); i-- {
 		if rows[i].Kind == planRowWaveHeader && rows[i].WaveID == waveID {
 			m.grid = m.grid.WithCursor(sectionOutline, i)
@@ -463,7 +456,7 @@ func (m *Model) snapCursorToWaveHeader(rows []planNetworkRow, waveID int64) {
 // editor is sqlite-backed end-to-end (no tempfile / no $EDITOR shell-
 // out) — submit hits PlanService.UpdateGoalBody and reloadPlanNetwork
 // refreshes the projection so the next render reflects the new body.
-func (m *Model) openPlanGoalEditor() {
+func (m *Screen) openPlanGoalEditor() {
 	if m.planNetworkShow.Plan.ID == 0 {
 		return
 	}
@@ -481,7 +474,7 @@ func (m *Model) openPlanGoalEditor() {
 // the preset's bucket guards (omakase requires a self-branch comment
 // before backlog → dev). The new flow only writes assigned_to;
 // bucket transitions stay manual via the board's move binding.
-func (m *Model) openPlanAssignEditor() bool {
+func (m *Screen) openPlanAssignEditor() bool {
 	if m.planNetworkShow.Plan.ID == 0 {
 		return false
 	}
@@ -505,7 +498,7 @@ func (m *Model) openPlanAssignEditor() bool {
 // outlineCursor is the outline's selected row index, read from the one place
 // that holds it: the arranger state under the grid, keyed by the screen's single
 // section. There is no second copy on the screen to disagree with it.
-func (m Model) outlineCursor() int { return m.grid.Layout().Cursor(sectionOutline) }
+func (m Screen) outlineCursor() int { return m.grid.Layout().Cursor(sectionOutline) }
 
 // clampOutlineCursor is where a row index lands once the outline has the rows it
 // actually has: the arranger's no-selection sentinel on an empty outline, the
@@ -539,7 +532,7 @@ func clampOutlineCursor(cursor, rows int) int {
 // this screen renders strings to take. Heights still vary per row because
 // wave↔task transitions inject a separator line; the arranger measures those
 // from the Block returned by the grid's single Cell, as it always did.
-func (m *Model) syncPlanNetworkScroll(rows []planNetworkRow) {
+func (m *Screen) syncPlanNetworkScroll(rows []networkprojection.Row) {
 	m.grid = m.grid.WithCursor(sectionOutline, clampOutlineCursor(m.outlineCursor(), len(rows)))
 }
 
@@ -553,7 +546,7 @@ func (m *Model) syncPlanNetworkScroll(rows []planNetworkRow) {
 // replaced assumed all four optional rows were always present; a plan with no
 // dependencies and no claimable task draws two of them, and the outline was
 // short by three rows on every such plan.
-func (m Model) planNetworkOuterChromeRows() int {
+func (m Screen) planNetworkOuterChromeRows() int {
 	rows := 2 // plan header + blank spacer
 	if footer := m.planNetworkDepsFooterBlock(m.planNetworkShow.Dependencies); footer != "" {
 		rows += 2 + strings.Count(footer, "\n") // blank spacer + footer lines
@@ -565,14 +558,14 @@ func (m Model) planNetworkOuterChromeRows() int {
 }
 
 // planNetworkHeaderLine is the plan progress + keymap line above the table.
-func (m Model) planNetworkHeaderLine() string {
+func (m Screen) planNetworkHeaderLine() string {
 	show := m.planNetworkShow
 	pct := networkprojection.CompletionPercent(show.DoneCount, show.TotalCount)
 	return m.styles.HintAccent.Render(fmt.Sprintf(m.t("tui.plans.network.header_fmt"), screenkit.Sanitize(show.Plan.Slug), show.DoneCount, show.TotalCount, pct) + "   " + m.t("tui.plans.network.keymap"))
 }
 
 // planNetworkNextClaimableLine is the "next claimable: #N" hint under the table.
-func (m Model) planNetworkNextClaimableLine() string {
+func (m Screen) planNetworkNextClaimableLine() string {
 	return m.styles.HintAccent.Render(fmt.Sprintf(m.t("tui.plans.network.next_claimable_fmt"), m.nextClaimableID))
 }
 
@@ -584,7 +577,7 @@ func (m Model) planNetworkNextClaimableLine() string {
 // measured. The budget measures them at a probe layout, which is sound because
 // every one of these elements is a single line at any column width — the same
 // probe technique screenkit.Chrome.Box uses on a style.
-func (m Model) planNetworkTableChrome(rows []planNetworkRow, layout planNetworkTableLayout, cursorPad, lane string) (top []string, bottom string) {
+func (m Screen) planNetworkTableChrome(rows []networkprojection.Row, layout planNetworkTableLayout, cursorPad, lane string) (top []string, bottom string) {
 	top = []string{
 		m.renderPlanNetworkSeparator(planRowNone, planRowTaskCard, layout, cursorPad, lane),
 		m.renderPlanNetworkHeaderRow(layout, cursorPad, lane),
@@ -619,7 +612,7 @@ type planNetworkBuildCacheEntry struct {
 // copy. The key extends the row-only fingerprint with the dependency edge
 // set, because the critical-path DFS reads show.Dependencies — an input
 // the row skeleton (and thus the row-only key) does not depend on.
-func (m Model) planNetworkFullBuild() networkprojection.Projection {
+func (m Screen) planNetworkFullBuild() networkprojection.Projection {
 	key := m.planNetworkFullBuildKey()
 	if m.planNetworkBuildCache != nil && m.planNetworkBuildCache.valid && m.planNetworkBuildCache.key == key {
 		return m.planNetworkBuildCache.build
@@ -636,7 +629,7 @@ func (m Model) planNetworkFullBuild() networkprojection.Projection {
 // dependency edges the critical-path DFS walks. The next-claimable peek
 // reads only the same plan id + task buckets already in the row key, so
 // no extra term is needed for it.
-func (m Model) planNetworkFullBuildKey() uint64 {
+func (m Screen) planNetworkFullBuildKey() uint64 {
 	f := newFingerprint()
 	f.writeInt64(int64(m.planNetworkRowsCacheKey()))
 	for _, d := range m.planNetworkShow.Dependencies {
@@ -657,7 +650,7 @@ func (m Model) planNetworkFullBuildKey() uint64 {
 // invalidatePlanNetworkBuildCache drops the memoised full build. Called
 // from the same mutation seams that drop the row cache so a reload always
 // recomputes the DFS against the freshly-loaded dependencies.
-func (m *Model) invalidatePlanNetworkBuildCache() {
+func (m *Screen) invalidatePlanNetworkBuildCache() {
 	if m.planNetworkBuildCache != nil {
 		m.planNetworkBuildCache.valid = false
 	}
@@ -675,7 +668,7 @@ func (m *Model) invalidatePlanNetworkBuildCache() {
 // only rebuild when one of those changes — every other call short-
 // circuits to the cached slice. Pointer receiver so the cache writes
 // back into the model.
-func (m *Model) planNetworkBuildRows() []planNetworkRow {
+func (m *Screen) planNetworkBuildRows() []networkprojection.Row {
 	key := m.planNetworkRowsCacheKey()
 	if m.planNetworkRowsCache.valid && m.planNetworkRowsCache.key == key {
 		return m.planNetworkRowsCache.rows
@@ -697,7 +690,7 @@ func (m *Model) planNetworkBuildRows() []planNetworkRow {
 // projects rows directly through the projection's row-only build without writing
 // the pointer-receiver row cache, so calling it from the render path
 // never mutates model state.
-func (m Model) planNetworkCursorOnTaskRow() bool {
+func (m Screen) planNetworkCursorOnTaskRow() bool {
 	rows := networkprojection.BuildRows(m.planNetworkInput()).Rows
 	idx := m.outlineCursor()
 	if idx < 0 || idx >= len(rows) {
@@ -706,7 +699,7 @@ func (m Model) planNetworkCursorOnTaskRow() bool {
 	return rows[idx].Kind == planRowTaskCard
 }
 
-func (m Model) planNetworkInput() networkprojection.Input {
+func (m Screen) planNetworkInput() networkprojection.Input {
 	return networkprojection.Input{
 		Show:            m.planNetworkShow,
 		NextClaimableID: m.nextClaimableID,
@@ -723,12 +716,12 @@ func (m Model) planNetworkInput() networkprojection.Input {
 type planNetworkRowsCacheEntry struct {
 	valid bool
 	key   uint64
-	rows  []planNetworkRow
+	rows  []networkprojection.Row
 }
 
 // planNetworkRowsCacheKey fingerprints the inputs the semantic row projection
 // depends on: the focused plan, collapse state, and each task's id/bucket.
-func (m Model) planNetworkRowsCacheKey() uint64 {
+func (m Screen) planNetworkRowsCacheKey() uint64 {
 	f := newFingerprint()
 	f.writeInt64(m.planNetworkShow.Plan.ID)
 
@@ -758,7 +751,7 @@ func (m Model) planNetworkRowsCacheKey() uint64 {
 // the cache key alone — the cache key covers structural inputs, but
 // some mutation paths (assignee write, bucket move outside the row
 // projection) still want a fresh build after they finish.
-func (m *Model) invalidatePlanNetworkRowsCache() {
+func (m *Screen) invalidatePlanNetworkRowsCache() {
 	m.planNetworkRowsCache.valid = false
 	// The full build (DFS + peek + cross-blockers) derives from the same
 	// projection, so drop it on the same seam — a reload whose refetched
@@ -841,7 +834,7 @@ func planNetworkBuildTable(budget int, measuredTitle int) planNetworkTableLayout
 // title text + @assignee). Wave header text influences the result
 // indirectly by demanding `title >= waveText - bucket - deps - 2`
 // so the wave header doesn't truncate under the chosen layout.
-func (m Model) planNetworkMeasureTitle(rows []planNetworkRow, bucketW, depsW int) int {
+func (m Screen) planNetworkMeasureTitle(rows []networkprojection.Row, bucketW, depsW int) int {
 	const innerSeparators = 2
 	maxW := 0
 	for _, r := range rows {
@@ -859,7 +852,7 @@ func (m Model) planNetworkMeasureTitle(rows []planNetworkRow, bucketW, depsW int
 	return maxW
 }
 
-func (m Model) planNetworkTaskTitleWidth(row planNetworkRow) int {
+func (m Screen) planNetworkTaskTitleWidth(row networkprojection.Row) int {
 	railW := screenkit.VisibleWidth(row.Rail)
 	badge, _ := m.planNetworkRowStateBadge(row)
 	badgeW := 0
@@ -873,7 +866,7 @@ func (m Model) planNetworkTaskTitleWidth(row planNetworkRow) int {
 	return railW + 2 + badgeW + screenkit.VisibleWidth(title)
 }
 
-func (m Model) planNetworkWaveTitleWidth(row planNetworkRow, bucketW, depsW, separators int) int {
+func (m Screen) planNetworkWaveTitleWidth(row networkprojection.Row, bucketW, depsW, separators int) int {
 	glyph := "▼"
 	if row.Collapsed {
 		glyph = "▶"
@@ -909,7 +902,7 @@ func (m Model) planNetworkWaveTitleWidth(row planNetworkRow, bucketW, depsW, sep
 // horizontal scan reveals the state without reading the title text.
 // Wave header rows return ("", _). Badge text comes from the i18n
 // catalog (tui.plans.network.badge.*).
-func (m Model) planNetworkRowStateBadge(row planNetworkRow) (string, networkTone) {
+func (m Screen) planNetworkRowStateBadge(row networkprojection.Row) (string, networkTone) {
 	if row.Kind != planRowTaskCard {
 		return "", toneNone
 	}
@@ -935,7 +928,7 @@ func (m Model) planNetworkRowStateBadge(row planNetworkRow) (string, networkTone
 // this row. Intra-wave non-rail blockers prefix with `←`; cross-wave
 // blockers not covered by a filament prefix with `←W`. Returns the
 // empty string when there are no deps to surface.
-func (m Model) planNetworkRowDepsCell(row planNetworkRow, suppressedCrossIDs map[int64]bool) string {
+func (m Screen) planNetworkRowDepsCell(row networkprojection.Row, suppressedCrossIDs map[int64]bool) string {
 	var parts []string
 	for _, id := range row.IntraBlockers {
 		parts = append(parts, fmt.Sprintf("←#%d", id))
@@ -961,7 +954,7 @@ func padCell(s string, width int) string {
 // trace from the title text to the next column without losing
 // alignment. lipgloss width awareness keeps SGR escape sequences
 // out of the math.
-func (m Model) padCellDashed(s string, width int) string {
+func (m Screen) padCellDashed(s string, width int) string {
 	w := screenkit.VisibleWidth(s)
 	if w >= width {
 		return s
@@ -978,7 +971,7 @@ func (m Model) padCellDashed(s string, width int) string {
 // and the user accepted tighter rows over wrapped titles. The
 // caller appends a transition separator below this row only when
 // the next row is a different kind.
-func (m Model) renderPlanNetworkRowBody(row planNetworkRow, selected bool, lanePrimary string, suppressedCrossIDs map[int64]bool, layout planNetworkTableLayout) string {
+func (m Screen) renderPlanNetworkRowBody(row networkprojection.Row, selected bool, lanePrimary string, suppressedCrossIDs map[int64]bool, layout planNetworkTableLayout) string {
 	if row.Kind == planRowWaveHeader {
 		return m.renderPlanNetworkWaveRow(row, selected, lanePrimary, layout)
 	}
@@ -988,7 +981,7 @@ func (m Model) renderPlanNetworkRowBody(row planNetworkRow, selected bool, laneP
 	return m.renderPlanNetworkTaskRow(row, selected, lanePrimary, suppressedCrossIDs, layout)
 }
 
-func (m Model) renderPlanNetworkWaveRow(row planNetworkRow, selected bool, lanePrimary string, layout planNetworkTableLayout) string {
+func (m Screen) renderPlanNetworkWaveRow(row networkprojection.Row, selected bool, lanePrimary string, layout planNetworkTableLayout) string {
 	cursor := m.cursorChevron(selected)
 	if cursor == "" {
 		cursor = "  "
@@ -1009,7 +1002,7 @@ func (m Model) renderPlanNetworkWaveRow(row planNetworkRow, selected bool, laneP
 	return cursor + lanePrimary + style.Render(padCell(truncateText(text, layout.Total()), layout.Total())) + border
 }
 
-func (m Model) renderPlanNetworkTaskRow(row planNetworkRow, selected bool, lanePrimary string, suppressedCrossIDs map[int64]bool, layout planNetworkTableLayout) string {
+func (m Screen) renderPlanNetworkTaskRow(row networkprojection.Row, selected bool, lanePrimary string, suppressedCrossIDs map[int64]bool, layout planNetworkTableLayout) string {
 	cursor := m.cursorChevron(selected)
 	if cursor == "" {
 		cursor = "  "
@@ -1069,7 +1062,7 @@ func (m Model) renderPlanNetworkTaskRow(row planNetworkRow, selected bool, laneP
 // one transition separator below when the next row's kind differs
 // (wave→task or task→wave). Heights drive the heights-aware scroll
 // helpers without re-rendering each row.
-func planNetworkRowHeights(rows []planNetworkRow) []int {
+func planNetworkRowHeights(rows []networkprojection.Row) []int {
 	h := make([]int, len(rows))
 	for i, r := range rows {
 		h[i] = 1
@@ -1086,7 +1079,7 @@ func planNetworkRowHeights(rows []planNetworkRow) []int {
 // labels stay visible regardless of cursor position. Narrow
 // terminals may zero the Deps column; the helper drops its label
 // and trailing border in that case.
-func (m Model) renderPlanNetworkHeaderRow(layout planNetworkTableLayout, cursorPad, lane string) string {
+func (m Screen) renderPlanNetworkHeaderRow(layout planNetworkTableLayout, cursorPad, lane string) string {
 	border := m.styles.Hint.Render("│")
 	title := m.styles.HintAccent.Render(padCell(m.t("tui.plans.network.column.title"), layout.Title))
 	bucket := m.styles.HintAccent.Render(padCell(m.t("tui.plans.network.column.bucket"), layout.Bucket))
@@ -1103,7 +1096,7 @@ func (m Model) renderPlanNetworkHeaderRow(layout planNetworkTableLayout, cursorP
 // final destination) render their vertical `│`; lanes closing at
 // this row or beyond render empty cells. Trailing slot is always
 // a space (no arrowhead on continuation lines).
-func (m Model) renderPlanNetworkLaneContinuation(rowIdx int, filaments []networkprojection.Filament, laneCount int) string {
+func (m Screen) renderPlanNetworkLaneContinuation(rowIdx int, filaments []networkprojection.Filament, laneCount int) string {
 	if laneCount <= 0 {
 		return ""
 	}
@@ -1126,7 +1119,7 @@ func (m Model) renderPlanNetworkLaneContinuation(rowIdx int, filaments []network
 // open / close / cross the inner verticals as the layout changes.
 // Pass planRowNone for the side that has no row (top / bottom of
 // the table).
-func (m Model) renderPlanNetworkSeparator(above, below planNetworkRowKind, layout planNetworkTableLayout, cursorPad, lane string) string {
+func (m Screen) renderPlanNetworkSeparator(above, below networkprojection.RowKind, layout planNetworkTableLayout, cursorPad, lane string) string {
 	aboveHasCols := above == planRowTaskCard
 	belowHasCols := below == planRowTaskCard
 
@@ -1201,7 +1194,7 @@ func (m Model) renderPlanNetworkSeparator(above, below planNetworkRowKind, layou
 // renderPlanNetworkLane paints the fixed-width lane block for one
 // row of the outline. Delegates to lane — the glyph math lives
 // with the rest of the filament painter in this package.
-func (m Model) renderPlanNetworkLane(rowIdx int, filaments []networkprojection.Filament, laneCount int) string {
+func (m Screen) renderPlanNetworkLane(rowIdx int, filaments []networkprojection.Filament, laneCount int) string {
 	return lane(m.styles, rowIdx, filaments, laneCount)
 }
 
@@ -1211,7 +1204,7 @@ func (m Model) renderPlanNetworkLane(rowIdx int, filaments []networkprojection.F
 // disambiguates blocked / in-progress / next / ready in text. Sharing
 // FinalBucket / Gated with planNetworkRowStateBadge keeps both surfaces
 // driven by the same flags (no hardcoded bucket-key lookups).
-func (m Model) planNetworkRowStatusGlyph(row planNetworkRow) (string, networkTone) {
+func (m Screen) planNetworkRowStatusGlyph(row networkprojection.Row) (string, networkTone) {
 	switch row.Status {
 	case networkprojection.StatusDone:
 		return "✓", toneSuccess
@@ -1242,7 +1235,7 @@ func (m Model) planNetworkRowStatusGlyph(row planNetworkRow) (string, networkTon
 // through here so the wrap cannot be charged in one place and not the other:
 // the budget used to measure the unwrapped string and hand the data window a
 // row the footer had already taken.
-func (m Model) planNetworkDepsFooterBlock(deps []domain.TaskDependency) string {
+func (m Screen) planNetworkDepsFooterBlock(deps []domain.TaskDependency) string {
 	footer := m.planNetworkDepsFooter(deps)
 	if footer == "" {
 		return ""
@@ -1250,7 +1243,7 @@ func (m Model) planNetworkDepsFooterBlock(deps []domain.TaskDependency) string {
 	return m.kit.WrapBody(m.styles.Hint.Render(footer))
 }
 
-func (m Model) planNetworkDepsFooter(deps []domain.TaskDependency) string {
+func (m Screen) planNetworkDepsFooter(deps []domain.TaskDependency) string {
 	if len(deps) == 0 {
 		return ""
 	}
@@ -1291,7 +1284,7 @@ func truncateAgentHandle(handle string, max int) string {
 // PlanService.UpdateGoalBody; no tempfile / no $EDITOR shell-out.
 // planGoalEditorHeader is the chrome above the goal textarea: the plan kicker,
 // the key hint and the blank spacer under them.
-func (m Model) planGoalEditorHeader() []string {
+func (m Screen) planGoalEditorHeader() []string {
 	return []string{
 		m.styles.HintAccent.Render(fmt.Sprintf(m.t("tui.plans.goal.kicker_fmt"), screenkit.Sanitize(m.planNetworkShow.Plan.Slug))),
 		m.formHint(m.t("tui.plans.goal.hint.ctrl_s"), m.t("tui.plans.goal.hint.alt_newline"), m.t("tui.plans.goal.hint.esc_cancel")),
@@ -1306,12 +1299,12 @@ func (m Model) planGoalEditorHeader() []string {
 //
 // `m.height - 12` charged twelve rows for a chrome that is seventeen, so the
 // editor painted five rows past the bottom of the terminal at every geometry.
-func (m Model) planGoalEditorRows(width int, header []string) int {
+func (m Screen) planGoalEditorRows(width int, header []string) int {
 	probe := field.RenderArea(m.goalInput, width, 1, true, m.multilineFormTheme())
 	return m.kit.PanelChrome().Lines(header...).Around(probe).ViewportRows()
 }
 
-func (m Model) renderPlanGoalEditor(canvasWidth int) string {
+func (m Screen) renderPlanGoalEditor(canvasWidth int) string {
 	width := canvasWidth - 10
 	if width < 32 {
 		width = 32
@@ -1329,7 +1322,7 @@ func (m Model) renderPlanGoalEditor(canvasWidth int) string {
 	return m.renderPanel(strings.Join(append(header, area), "\n"))
 }
 
-func (m Model) renderPlanAssignEditor(canvasWidth int) string {
+func (m Screen) renderPlanAssignEditor(canvasWidth int) string {
 	width := canvasWidth - 10
 	if width < 32 {
 		width = 32
@@ -1338,11 +1331,11 @@ func (m Model) renderPlanAssignEditor(canvasWidth int) string {
 	return m.renderPanel(strings.Join([]string{m.styles.HintAccent.Render(fmt.Sprintf(m.t("tui.plans.assign.status_fmt"), m.assignTaskID)), "", area}, "\n"))
 }
 
-func (m Model) multilineFormTheme() field.Theme {
+func (m Screen) multilineFormTheme() field.Theme {
 	return field.Multiline(m.kit.Styles)
 }
 
-func (m Model) formHint(tokens ...string) string {
+func (m Screen) formHint(tokens ...string) string {
 	var kept []string
 	for _, token := range tokens {
 		if token != "" {
@@ -1352,7 +1345,7 @@ func (m Model) formHint(tokens ...string) string {
 	return m.styles.Hint.Render(strings.Join(kept, " · "))
 }
 
-func (m Model) renderTone(tone networkTone, value string) string {
+func (m Screen) renderTone(tone networkTone, value string) string {
 	switch tone {
 	case toneMuted:
 		return m.styles.Hint.Render(value)

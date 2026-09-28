@@ -6,8 +6,8 @@ import (
 	"reflect"
 	"testing"
 
-	"omakiten/internal/agentruntime"
 	"omakiten/internal/config"
+	"omakiten/internal/contract"
 	"omakiten/internal/domain"
 	"omakiten/internal/operation"
 	"omakiten/internal/testfixtures/snapstore"
@@ -16,7 +16,7 @@ import (
 func TestRuntimeApplyFailureLeavesCacheAndModelUntouchedAtThemeStage(t *testing.T) {
 	t.Parallel()
 	m, _, _, _ := newStudioApplyModel(t)
-	previous := m.repos.Cache.Get(m.project.ID)
+	previous := m.repos.Cache.View(m.project.ID)
 	m.studioApplyDiff = []string{"candidate diff"}
 	m.studioOutcomeGeneration = 41
 	m.studioOutcomeGenerationSet = true
@@ -24,7 +24,7 @@ func TestRuntimeApplyFailureLeavesCacheAndModelUntouchedAtThemeStage(t *testing.
 
 	bundle := tuiTestBundle(t)
 	bundle.ActiveThemeErr = errors.New("theme stage failed")
-	failed := &agentruntime.ProjectRuntime{
+	failed := &contract.RuntimeView{
 		Snapshot:   config.BuildSnapshot(bundle),
 		Editor:     previous.Editor,
 		SourcePath: m.repos.ConfigPath,
@@ -38,14 +38,14 @@ func TestRuntimeApplyFailureLeavesCacheAndModelUntouchedAtThemeStage(t *testing.
 
 func TestRuntimeApplyFailureLeavesStateUntouchedThenSameSourceRetrySucceeds(t *testing.T) {
 	m, _, store, _ := newStudioApplyModel(t)
-	previous := m.repos.Cache.Get(m.project.ID)
+	previous := m.repos.Cache.View(m.project.ID)
 	previousEditorPath := m.repos.Editor.Path()
 	before := m
 	bundle := tuiTestBundle(t)
 	candidate := config.BuildSnapshot(bundle)
-	failing := operation.NewService(failingTaskRepo{Store: store}, operation.ProjectSelector{ProjectID: m.project.ID})
+	failing := operation.NewService(failingTaskRepo{Store: store}, contract.ProjectSelector{ProjectID: m.project.ID})
 	failing.SetSnapshot(candidate)
-	failed := &agentruntime.ProjectRuntime{Snapshot: candidate, Service: failing, Editor: previous.Editor, SourcePath: m.repos.ConfigPath}
+	failed := &contract.RuntimeView{Snapshot: candidate, Service: failing, Editor: previous.Editor, SourcePath: m.repos.ConfigPath}
 	staged := before
 	if err := staged.applyProjectRuntime(failed, m.repos.ConfigPath+".candidate"); err == nil {
 		t.Fatal("refresh-stage apply succeeded")
@@ -58,7 +58,7 @@ func TestRuntimeApplyFailureLeavesStateUntouchedThenSameSourceRetrySucceeds(t *t
 	if err := m.reloadBundle(m.repos.ConfigPath); err != nil {
 		t.Fatalf("same-source retry: %v", err)
 	}
-	current := m.repos.Cache.Get(m.project.ID)
+	current := m.repos.Cache.View(m.project.ID)
 	if current == nil || current == previous {
 		t.Fatal("same-source retry did not publish a fresh runtime")
 	}
@@ -67,9 +67,9 @@ func TestRuntimeApplyFailureLeavesStateUntouchedThenSameSourceRetrySucceeds(t *t
 	}
 }
 
-func assertRuntimeUntouched(t *testing.T, m Model, previous *agentruntime.ProjectRuntime, before Model) {
+func assertRuntimeUntouched(t *testing.T, m Model, previous *contract.RuntimeView, before Model) {
 	t.Helper()
-	if m.repos.Cache.Get(m.project.ID) != previous {
+	if m.repos.Cache.View(m.project.ID) != previous {
 		t.Fatal("failed apply left cache on the replacement runtime")
 	}
 	if m.repos.activeSnapshot() != previous.Snapshot || m.registry != before.registry || m.repos.Editor != before.repos.Editor {

@@ -45,7 +45,7 @@ type Bus interface {
 	Subscribe(filter Filter, handler Handler) Subscription
 	// SetSettings refreshes the broadcast policy. Call once at composition
 	// root; safe to call again on config reload.
-	SetSettings(settings config.EventsSettings)
+	SetSettings(projectID int64, settings config.EventsSettings)
 }
 
 type subscription struct {
@@ -67,18 +67,18 @@ type inProcessBus struct {
 	mu       sync.RWMutex
 	subs     map[uint64]*subscription
 	nextID   uint64
-	settings config.EventsSettings
+	settings map[int64]config.EventsSettings
 }
 
 // NewInProcessBus constructs the default goroutine-local bus. Settings
 // gate broadcast per event type; the zero value broadcasts everything.
 func NewInProcessBus(settings config.EventsSettings) Bus {
-	return &inProcessBus{subs: map[uint64]*subscription{}, settings: settings}
+	return &inProcessBus{subs: map[uint64]*subscription{}, settings: map[int64]config.EventsSettings{0: settings}}
 }
 
-func (b *inProcessBus) SetSettings(settings config.EventsSettings) {
+func (b *inProcessBus) SetSettings(projectID int64, settings config.EventsSettings) {
 	b.mu.Lock()
-	b.settings = settings
+	b.settings[projectID] = settings
 	b.mu.Unlock()
 }
 
@@ -100,7 +100,11 @@ func (b *inProcessBus) remove(id uint64) {
 
 func (b *inProcessBus) Publish(ctx context.Context, ev domain.Event) error {
 	b.mu.RLock()
-	if !b.settings.ResolveBroadcast(ev.EventType) {
+	settings, ok := b.settings[ev.ProjectID]
+	if !ok {
+		settings = b.settings[0]
+	}
+	if !settings.ResolveBroadcast(ev.EventType) {
 		b.mu.RUnlock()
 		return nil
 	}

@@ -1,6 +1,8 @@
 package screenkit
 
-import "testing"
+import (
+	"testing"
+)
 
 // The census these names were lifted from. A value that moves here is a
 // redesign, not a rename: the goldens of every screen that reads the name

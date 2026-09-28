@@ -1,6 +1,8 @@
 package domain
 
-import "fmt"
+import (
+	"fmt"
+)
 
 func init() {
 	registerFormatter(EventTypeUpdateHealthCheckPassed, summarizeUpdateHealthCheckPassed)

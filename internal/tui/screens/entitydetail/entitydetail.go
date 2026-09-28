@@ -58,7 +58,7 @@ type entityDetailBodyKey struct {
 }
 
 func New() Screen {
-	return Screen{grid: screengrid.NewState(), md: markdown.New(markdown.Tokens{}), body: &entityDetailBodyCache{}, rendered: true}
+	return Screen{grid: screengrid.NewState(), md: markdown.New(screenkit.MarkdownTokens{}), body: &entityDetailBodyCache{}, rendered: true}
 }
 func (s Screen) ID() screenhost.ID { return screenhost.EntityDetail }
 func (s Screen) Payload() Payload  { return s.payload }

@@ -1,6 +1,8 @@
 package screenlayout
 
-import "omakiten/internal/tui/components/screenkit"
+import (
+	"omakiten/internal/tui/components/screenkit"
+)
 
 // The two multi-column archetypes, as ready-made Spec fragments. A screen that
 // is `lista | inspector` or `[a over b] | feed` calls these; it does not

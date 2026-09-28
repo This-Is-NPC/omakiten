@@ -1,6 +1,8 @@
 package domain
 
-import "testing"
+import (
+	"testing"
+)
 
 func TestOrphanPayloadJSON(t *testing.T) {
 	cases := map[string]struct {

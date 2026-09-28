@@ -9,7 +9,9 @@
 // domain, app or sqlite.
 package list
 
-import "fmt"
+import (
+	"fmt"
+)
 
 // pageStep is the half-page key increment Picker and Viewport share.
 // Floored at 4 so tiny viewports still feel distinct from j/k.

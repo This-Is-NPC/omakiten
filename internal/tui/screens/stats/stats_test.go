@@ -12,6 +12,7 @@ import (
 	"omakiten/internal/domain"
 	"omakiten/internal/tui/components/panel"
 	"omakiten/internal/tui/components/screenlayout"
+	screenfixture "omakiten/internal/tui/screenfixture"
 	"omakiten/internal/tui/screenhost"
 	"omakiten/internal/tui/screens/screentest"
 )
@@ -410,7 +411,7 @@ func TestViewSanitizesUntrustedModelNames(t *testing.T) {
 // catalog wired: labels degrade to keys instead of crashing.
 func TestViewWithoutCatalogDoesNotPanic(t *testing.T) {
 	t.Parallel()
-	frame := screentest.Frame(t, screentest.Options{NoCatalog: true})
+	frame := screentest.Frame(t, screenfixture.Options{NoCatalog: true})
 	out := ansi.Strip(loadedScreen().View(frame))
 	if !strings.Contains(out, "tui.stat") {
 		t.Fatalf("expected key-literal degradation, got:\n%s", out)

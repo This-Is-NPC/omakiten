@@ -1,6 +1,8 @@
 package domain
 
-import "testing"
+import (
+	"testing"
+)
 
 func TestTaskIsSubTask(t *testing.T) {
 	t.Parallel()

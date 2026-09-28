@@ -1,6 +1,8 @@
 package domain
 
-import "testing"
+import (
+	"testing"
+)
 
 func TestLogsFilterCycleAndPartition(t *testing.T) {
 	if got := CycleLogsFilter(LogsFilterAll, -1); got != LogsFilterSystem {
@@ -41,16 +43,12 @@ func TestComputeEventStatsClassifiesHealthAndSeedsCategories(t *testing.T) {
 }
 
 func TestFilterLogVisibleRowsPreservesUnknownRows(t *testing.T) {
-	previous := EventDefByKey
-	defs := make(map[string]EventDef, len(previous)+1)
-	for key, definition := range previous {
-		defs[key] = definition
-	}
-	defs["test.hidden"] = EventDef{Key: "test.hidden", LogVisible: false}
-	EventDefByKey = defs
-	t.Cleanup(func() { EventDefByKey = previous })
+	registry := NewEventRegistry([]EventDef{{Key: "test.hidden", LogVisible: false}})
 
 	rows := []EventRow{{ID: 1, EventType: "test.hidden"}, {ID: 2, EventType: "test.unknown"}}
+	for i, row := range rows {
+		rows[i] = registry.Prepare(row)
+	}
 	got := FilterLogVisibleRows(rows)
 	if len(got) != 1 || got[0].ID != 2 {
 		t.Fatalf("visible rows = %+v, want only the unknown row", got)

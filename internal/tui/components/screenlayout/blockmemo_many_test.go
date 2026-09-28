@@ -1,6 +1,8 @@
 package screenlayout
 
-import "testing"
+import (
+	"testing"
+)
 
 func TestBlockManyBuildsIndependentKeysOnce(t *testing.T) {
 	var builds int

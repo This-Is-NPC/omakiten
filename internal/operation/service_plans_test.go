@@ -4,23 +4,24 @@ import (
 	"testing"
 
 	"omakiten/internal/activity"
+	"omakiten/internal/contract"
 	"omakiten/internal/domain"
 )
 
 func TestAssignAndClaimPlanTaskRoundTrip(t *testing.T) {
 	fixture := newAgentFixture(t)
 
-	plan, err := fixture.service.CreatePlan(fixture.ctx, CreatePlanInput{Slug: "race", Name: "Race"})
+	plan, err := fixture.service.CreatePlan(fixture.ctx, contract.CreatePlanInput{Slug: "race", Name: "Race"})
 	if err != nil {
 		t.Fatalf("CreatePlan: %v", err)
 	}
-	wave, err := fixture.service.AddPlanWave(fixture.ctx, AddPlanWaveInput{PlanID: plan.Plan.ID, Name: "wave-one"})
+	wave, err := fixture.service.AddPlanWave(fixture.ctx, contract.AddPlanWaveInput{PlanID: plan.Plan.ID, Name: "wave-one"})
 	if err != nil {
 		t.Fatalf("AddPlanWave: %v", err)
 	}
 
 	// AssignPlanTask via slug — attach project A's existing task.
-	if _, err := fixture.service.AssignPlanTask(fixture.ctx, AssignPlanTaskInput{
+	if _, err := fixture.service.AssignPlanTask(fixture.ctx, contract.AssignPlanTaskInput{
 		TaskID: fixture.taskA1.ID,
 		Slug:   "race",
 		WaveID: wave.Wave.ID,
@@ -30,7 +31,7 @@ func TestAssignAndClaimPlanTaskRoundTrip(t *testing.T) {
 
 	// Claim — must succeed and stamp assignee.
 	ctxModel := activity.WithAgent(fixture.ctx, "mcp", "plans.claim_next", "claude-opus-4-7", "")
-	resp, err := fixture.service.ClaimNextPlanTask(ctxModel, ClaimNextPlanTaskInput{Slug: "race"})
+	resp, err := fixture.service.ClaimNextPlanTask(ctxModel, contract.ClaimNextPlanTaskInput{Slug: "race"})
 	if err != nil {
 		t.Fatalf("ClaimNextPlanTask: %v", err)
 	}
@@ -42,7 +43,7 @@ func TestAssignAndClaimPlanTaskRoundTrip(t *testing.T) {
 	}
 
 	// Second call → nothing claimable (only one task, already claimed).
-	resp2, err := fixture.service.ClaimNextPlanTask(ctxModel, ClaimNextPlanTaskInput{Slug: "race"})
+	resp2, err := fixture.service.ClaimNextPlanTask(ctxModel, contract.ClaimNextPlanTaskInput{Slug: "race"})
 	if err != nil {
 		t.Fatalf("ClaimNextPlanTask second: %v", err)
 	}
@@ -53,7 +54,7 @@ func TestAssignAndClaimPlanTaskRoundTrip(t *testing.T) {
 
 func TestAssignPlanTaskRejectsMissingPlanIdentifier(t *testing.T) {
 	fixture := newAgentFixture(t)
-	_, err := fixture.service.AssignPlanTask(fixture.ctx, AssignPlanTaskInput{TaskID: fixture.taskA1.ID, WaveID: 1})
+	_, err := fixture.service.AssignPlanTask(fixture.ctx, contract.AssignPlanTaskInput{TaskID: fixture.taskA1.ID, WaveID: 1})
 	assertCodedError(t, err, domain.ErrValidation)
 }
 
@@ -89,7 +90,7 @@ func moveTaskToBucket(t *testing.T, f agentFixture, taskID int64, targetKey stri
 func TestCreatePlanRoundTripThroughAgentService(t *testing.T) {
 	fixture := newAgentFixture(t)
 
-	resp, err := fixture.service.CreatePlan(fixture.ctx, CreatePlanInput{
+	resp, err := fixture.service.CreatePlan(fixture.ctx, contract.CreatePlanInput{
 		Slug:     "ship-mcp",
 		Name:     "Ship MCP",
 		GoalBody: "Goal markdown",
@@ -111,10 +112,10 @@ func TestCreatePlanRoundTripThroughAgentService(t *testing.T) {
 func TestListPlansScopesByActiveProject(t *testing.T) {
 	fixture := newAgentFixture(t)
 
-	if _, err := fixture.service.CreatePlan(fixture.ctx, CreatePlanInput{Slug: "p-one", Name: "Plan One"}); err != nil {
+	if _, err := fixture.service.CreatePlan(fixture.ctx, contract.CreatePlanInput{Slug: "p-one", Name: "Plan One"}); err != nil {
 		t.Fatalf("CreatePlan A1: %v", err)
 	}
-	if _, err := fixture.service.CreatePlan(fixture.ctx, CreatePlanInput{Slug: "p-two", Name: "Plan Two"}); err != nil {
+	if _, err := fixture.service.CreatePlan(fixture.ctx, contract.CreatePlanInput{Slug: "p-two", Name: "Plan Two"}); err != nil {
 		t.Fatalf("CreatePlan A2: %v", err)
 	}
 	// Plan on project B must not leak into a project A list.
@@ -122,7 +123,7 @@ func TestListPlansScopesByActiveProject(t *testing.T) {
 		t.Fatalf("CreatePlan B: %v", err)
 	}
 
-	resp, err := fixture.service.ListPlans(fixture.ctx, ListPlansInput{})
+	resp, err := fixture.service.ListPlans(fixture.ctx, contract.ListPlansInput{})
 	if err != nil {
 		t.Fatalf("ListPlans: %v", err)
 	}
@@ -139,29 +140,29 @@ func TestListPlansScopesByActiveProject(t *testing.T) {
 func TestCreatePlanRejectsDuplicateSlugAtAgentLayer(t *testing.T) {
 	fixture := newAgentFixture(t)
 
-	if _, err := fixture.service.CreatePlan(fixture.ctx, CreatePlanInput{Slug: "dup", Name: "First"}); err != nil {
+	if _, err := fixture.service.CreatePlan(fixture.ctx, contract.CreatePlanInput{Slug: "dup", Name: "First"}); err != nil {
 		t.Fatalf("CreatePlan first: %v", err)
 	}
-	_, err := fixture.service.CreatePlan(fixture.ctx, CreatePlanInput{Slug: "dup", Name: "Second"})
+	_, err := fixture.service.CreatePlan(fixture.ctx, contract.CreatePlanInput{Slug: "dup", Name: "Second"})
 	assertCodedError(t, err, domain.ErrPlanSlugConflict)
 }
 
 func TestAddPlanWaveAndShowPlanRoundTrip(t *testing.T) {
 	fixture := newAgentFixture(t)
 
-	plan, err := fixture.service.CreatePlan(fixture.ctx, CreatePlanInput{Slug: "ship", Name: "Ship", GoalBody: "Goal"})
+	plan, err := fixture.service.CreatePlan(fixture.ctx, contract.CreatePlanInput{Slug: "ship", Name: "Ship", GoalBody: "Goal"})
 	if err != nil {
 		t.Fatalf("CreatePlan: %v", err)
 	}
 
-	if _, err := fixture.service.AddPlanWave(fixture.ctx, AddPlanWaveInput{Slug: "ship", Name: "alpha"}); err != nil {
+	if _, err := fixture.service.AddPlanWave(fixture.ctx, contract.AddPlanWaveInput{Slug: "ship", Name: "alpha"}); err != nil {
 		t.Fatalf("AddPlanWave alpha: %v", err)
 	}
-	if _, err := fixture.service.AddPlanWave(fixture.ctx, AddPlanWaveInput{PlanID: plan.Plan.ID, Name: "beta"}); err != nil {
+	if _, err := fixture.service.AddPlanWave(fixture.ctx, contract.AddPlanWaveInput{PlanID: plan.Plan.ID, Name: "beta"}); err != nil {
 		t.Fatalf("AddPlanWave beta: %v", err)
 	}
 
-	show, err := fixture.service.ShowPlan(fixture.ctx, ShowPlanInput{Slug: "ship"})
+	show, err := fixture.service.ShowPlan(fixture.ctx, contract.ShowPlanInput{Slug: "ship"})
 	if err != nil {
 		t.Fatalf("ShowPlan: %v", err)
 	}
@@ -185,15 +186,15 @@ func TestAddPlanWaveAndShowPlanRoundTrip(t *testing.T) {
 func TestShowPlanComputesProgressAcrossWaves(t *testing.T) {
 	fixture := newAgentFixture(t)
 
-	plan, err := fixture.service.CreatePlan(fixture.ctx, CreatePlanInput{Slug: "prog", Name: "Progress"})
+	plan, err := fixture.service.CreatePlan(fixture.ctx, contract.CreatePlanInput{Slug: "prog", Name: "Progress"})
 	if err != nil {
 		t.Fatalf("CreatePlan: %v", err)
 	}
-	w1, err := fixture.service.AddPlanWave(fixture.ctx, AddPlanWaveInput{PlanID: plan.Plan.ID, Name: "wave-1"})
+	w1, err := fixture.service.AddPlanWave(fixture.ctx, contract.AddPlanWaveInput{PlanID: plan.Plan.ID, Name: "wave-1"})
 	if err != nil {
 		t.Fatalf("AddPlanWave 1: %v", err)
 	}
-	w2, err := fixture.service.AddPlanWave(fixture.ctx, AddPlanWaveInput{PlanID: plan.Plan.ID, Name: "wave-2"})
+	w2, err := fixture.service.AddPlanWave(fixture.ctx, contract.AddPlanWaveInput{PlanID: plan.Plan.ID, Name: "wave-2"})
 	if err != nil {
 		t.Fatalf("AddPlanWave 2: %v", err)
 	}
@@ -230,7 +231,7 @@ func TestShowPlanComputesProgressAcrossWaves(t *testing.T) {
 	// We can't assume the path length, so iterate transitions.
 	moveTaskToBucket(t, fixture, ta.ID, final)
 
-	show, err := fixture.service.ShowPlan(fixture.ctx, ShowPlanInput{Slug: "prog"})
+	show, err := fixture.service.ShowPlan(fixture.ctx, contract.ShowPlanInput{Slug: "prog"})
 	if err != nil {
 		t.Fatalf("ShowPlan: %v", err)
 	}
@@ -255,11 +256,11 @@ func TestShowPlanComputesProgressAcrossWaves(t *testing.T) {
 func TestContinuePlanPreviewsNextClaimable(t *testing.T) {
 	fixture := newAgentFixture(t)
 
-	plan, err := fixture.service.CreatePlan(fixture.ctx, CreatePlanInput{Slug: "resume", Name: "Resume", GoalBody: "Pick me up"})
+	plan, err := fixture.service.CreatePlan(fixture.ctx, contract.CreatePlanInput{Slug: "resume", Name: "Resume", GoalBody: "Pick me up"})
 	if err != nil {
 		t.Fatalf("CreatePlan: %v", err)
 	}
-	wave, err := fixture.service.AddPlanWave(fixture.ctx, AddPlanWaveInput{PlanID: plan.Plan.ID, Name: "first"})
+	wave, err := fixture.service.AddPlanWave(fixture.ctx, contract.AddPlanWaveInput{PlanID: plan.Plan.ID, Name: "first"})
 	if err != nil {
 		t.Fatalf("AddPlanWave: %v", err)
 	}
@@ -271,7 +272,7 @@ func TestContinuePlanPreviewsNextClaimable(t *testing.T) {
 		t.Fatalf("AssignTaskToPlan: %v", err)
 	}
 
-	resp, err := fixture.service.ContinuePlan(fixture.ctx, ContinuePlanInput{Slug: "resume"})
+	resp, err := fixture.service.ContinuePlan(fixture.ctx, contract.ContinuePlanInput{Slug: "resume"})
 	if err != nil {
 		t.Fatalf("ContinuePlan: %v", err)
 	}
@@ -291,7 +292,7 @@ func TestContinuePlanPreviewsNextClaimable(t *testing.T) {
 	// Sanity: peek did not mutate. plans.claim_next on the same plan
 	// must still hand back the same task id.
 	claimCtx := activity.WithAgent(fixture.ctx, "mcp", "plans.claim_next", "claude-test", "")
-	claim, err := fixture.service.ClaimNextPlanTask(claimCtx, ClaimNextPlanTaskInput{Slug: "resume"})
+	claim, err := fixture.service.ClaimNextPlanTask(claimCtx, contract.ClaimNextPlanTaskInput{Slug: "resume"})
 	if err != nil {
 		t.Fatalf("ClaimNextPlanTask after peek: %v", err)
 	}
@@ -305,11 +306,11 @@ func TestContinuePlanPreviewsNextClaimable(t *testing.T) {
 func TestContinuePlanNoCandidate(t *testing.T) {
 	fixture := newAgentFixture(t)
 
-	if _, err := fixture.service.CreatePlan(fixture.ctx, CreatePlanInput{Slug: "empty", Name: "Empty"}); err != nil {
+	if _, err := fixture.service.CreatePlan(fixture.ctx, contract.CreatePlanInput{Slug: "empty", Name: "Empty"}); err != nil {
 		t.Fatalf("CreatePlan: %v", err)
 	}
 
-	resp, err := fixture.service.ContinuePlan(fixture.ctx, ContinuePlanInput{Slug: "empty"})
+	resp, err := fixture.service.ContinuePlan(fixture.ctx, contract.ContinuePlanInput{Slug: "empty"})
 	if err != nil {
 		t.Fatalf("ContinuePlan: %v", err)
 	}
@@ -320,11 +321,11 @@ func TestContinuePlanNoCandidate(t *testing.T) {
 
 func TestEditPlanUpdatesNameSlugStatus(t *testing.T) {
 	fixture := newAgentFixture(t)
-	if _, err := fixture.service.CreatePlan(fixture.ctx, CreatePlanInput{Slug: "p-edit", Name: "Original"}); err != nil {
+	if _, err := fixture.service.CreatePlan(fixture.ctx, contract.CreatePlanInput{Slug: "p-edit", Name: "Original"}); err != nil {
 		t.Fatalf("CreatePlan: %v", err)
 	}
 	name, newSlug, status := "Renamed", "p-renamed", string(domain.PlanStatusDone)
-	resp, err := fixture.service.EditPlan(fixture.ctx, EditPlanInput{
+	resp, err := fixture.service.EditPlan(fixture.ctx, contract.EditPlanInput{
 		Slug:    "p-edit",
 		Name:    &name,
 		NewSlug: &newSlug,
@@ -343,11 +344,11 @@ func TestEditPlanUpdatesNameSlugStatus(t *testing.T) {
 
 func TestEditPlanGoalBodyOnly(t *testing.T) {
 	fixture := newAgentFixture(t)
-	if _, err := fixture.service.CreatePlan(fixture.ctx, CreatePlanInput{Slug: "p-goal", Name: "Plan", GoalBody: "old"}); err != nil {
+	if _, err := fixture.service.CreatePlan(fixture.ctx, contract.CreatePlanInput{Slug: "p-goal", Name: "Plan", GoalBody: "old"}); err != nil {
 		t.Fatalf("CreatePlan: %v", err)
 	}
 	body := "new body"
-	resp, err := fixture.service.EditPlan(fixture.ctx, EditPlanInput{Slug: "p-goal", GoalBody: &body})
+	resp, err := fixture.service.EditPlan(fixture.ctx, contract.EditPlanInput{Slug: "p-goal", GoalBody: &body})
 	if err != nil {
 		t.Fatalf("EditPlan goal: %v", err)
 	}
@@ -361,26 +362,26 @@ func TestEditPlanGoalBodyOnly(t *testing.T) {
 
 func TestEditPlanRejectsEmptyFieldSet(t *testing.T) {
 	fixture := newAgentFixture(t)
-	if _, err := fixture.service.CreatePlan(fixture.ctx, CreatePlanInput{Slug: "p-noop", Name: "Plan"}); err != nil {
+	if _, err := fixture.service.CreatePlan(fixture.ctx, contract.CreatePlanInput{Slug: "p-noop", Name: "Plan"}); err != nil {
 		t.Fatalf("CreatePlan: %v", err)
 	}
-	_, err := fixture.service.EditPlan(fixture.ctx, EditPlanInput{Slug: "p-noop"})
+	_, err := fixture.service.EditPlan(fixture.ctx, contract.EditPlanInput{Slug: "p-noop"})
 	assertCodedError(t, err, domain.ErrValidation)
 }
 
 func TestEditPlanRejectsMissingPlanIdentifier(t *testing.T) {
 	fixture := newAgentFixture(t)
 	name := "X"
-	_, err := fixture.service.EditPlan(fixture.ctx, EditPlanInput{Name: &name})
+	_, err := fixture.service.EditPlan(fixture.ctx, contract.EditPlanInput{Name: &name})
 	assertCodedError(t, err, domain.ErrValidation)
 }
 
 func TestDeletePlanRequiresConfirmation(t *testing.T) {
 	fixture := newAgentFixture(t)
-	if _, err := fixture.service.CreatePlan(fixture.ctx, CreatePlanInput{Slug: "p-del", Name: "Plan"}); err != nil {
+	if _, err := fixture.service.CreatePlan(fixture.ctx, contract.CreatePlanInput{Slug: "p-del", Name: "Plan"}); err != nil {
 		t.Fatalf("CreatePlan: %v", err)
 	}
-	resp, err := fixture.service.DeletePlan(fixture.ctx, DeletePlanInput{Slug: "p-del"})
+	resp, err := fixture.service.DeletePlan(fixture.ctx, contract.DeletePlanInput{Slug: "p-del"})
 	if err != nil {
 		t.Fatalf("DeletePlan unconfirmed: %v", err)
 	}
@@ -391,40 +392,40 @@ func TestDeletePlanRequiresConfirmation(t *testing.T) {
 		t.Fatalf("DeletePlan unconfirmed should not delete, got snapshot %+v", resp.Snapshot)
 	}
 	// Plan still present.
-	if _, err := fixture.service.ShowPlan(fixture.ctx, ShowPlanInput{Slug: "p-del"}); err != nil {
+	if _, err := fixture.service.ShowPlan(fixture.ctx, contract.ShowPlanInput{Slug: "p-del"}); err != nil {
 		t.Fatalf("plan should still exist after unconfirmed delete: %v", err)
 	}
 }
 
 func TestDeletePlanConfirmedRemoves(t *testing.T) {
 	fixture := newAgentFixture(t)
-	if _, err := fixture.service.CreatePlan(fixture.ctx, CreatePlanInput{Slug: "p-del2", Name: "Plan"}); err != nil {
+	if _, err := fixture.service.CreatePlan(fixture.ctx, contract.CreatePlanInput{Slug: "p-del2", Name: "Plan"}); err != nil {
 		t.Fatalf("CreatePlan: %v", err)
 	}
-	resp, err := fixture.service.DeletePlan(fixture.ctx, DeletePlanInput{Slug: "p-del2", Confirmed: true})
+	resp, err := fixture.service.DeletePlan(fixture.ctx, contract.DeletePlanInput{Slug: "p-del2", Confirmed: true})
 	if err != nil {
 		t.Fatalf("DeletePlan confirmed: %v", err)
 	}
 	if resp.Snapshot == nil || resp.Snapshot.EventType != domain.EventTypePlanDeleted {
 		t.Fatalf("DeletePlan confirmed snapshot = %+v, want plan.deleted", resp.Snapshot)
 	}
-	_, err = fixture.service.ShowPlan(fixture.ctx, ShowPlanInput{Slug: "p-del2"})
+	_, err = fixture.service.ShowPlan(fixture.ctx, contract.ShowPlanInput{Slug: "p-del2"})
 	assertCodedError(t, err, domain.ErrPlanNotFound)
 }
 
 func TestRemovePlanWaveRequiresConfirmation(t *testing.T) {
 	fixture := newAgentFixture(t)
-	plan, err := fixture.service.CreatePlan(fixture.ctx, CreatePlanInput{Slug: "rw", Name: "RW"})
+	plan, err := fixture.service.CreatePlan(fixture.ctx, contract.CreatePlanInput{Slug: "rw", Name: "RW"})
 	if err != nil {
 		t.Fatalf("CreatePlan: %v", err)
 	}
-	wave, err := fixture.service.AddPlanWave(fixture.ctx, AddPlanWaveInput{PlanID: plan.Plan.ID, Name: "wave-one"})
+	wave, err := fixture.service.AddPlanWave(fixture.ctx, contract.AddPlanWaveInput{PlanID: plan.Plan.ID, Name: "wave-one"})
 	if err != nil {
 		t.Fatalf("AddPlanWave: %v", err)
 	}
 
 	// Unconfirmed → confirmation block, wave survives.
-	resp, err := fixture.service.RemovePlanWave(fixture.ctx, RemovePlanWaveInput{WaveID: wave.Wave.ID})
+	resp, err := fixture.service.RemovePlanWave(fixture.ctx, contract.RemovePlanWaveInput{WaveID: wave.Wave.ID})
 	if err != nil {
 		t.Fatalf("RemovePlanWave unconfirmed: %v", err)
 	}
@@ -433,7 +434,7 @@ func TestRemovePlanWaveRequiresConfirmation(t *testing.T) {
 	}
 
 	// Confirmed → removed.
-	resp, err = fixture.service.RemovePlanWave(fixture.ctx, RemovePlanWaveInput{WaveID: wave.Wave.ID, Confirmed: true})
+	resp, err = fixture.service.RemovePlanWave(fixture.ctx, contract.RemovePlanWaveInput{WaveID: wave.Wave.ID, Confirmed: true})
 	if err != nil {
 		t.Fatalf("RemovePlanWave confirmed: %v", err)
 	}
@@ -444,15 +445,15 @@ func TestRemovePlanWaveRequiresConfirmation(t *testing.T) {
 
 func TestRenamePlanWaveUpdatesName(t *testing.T) {
 	fixture := newAgentFixture(t)
-	plan, err := fixture.service.CreatePlan(fixture.ctx, CreatePlanInput{Slug: "rn", Name: "RN"})
+	plan, err := fixture.service.CreatePlan(fixture.ctx, contract.CreatePlanInput{Slug: "rn", Name: "RN"})
 	if err != nil {
 		t.Fatalf("CreatePlan: %v", err)
 	}
-	wave, err := fixture.service.AddPlanWave(fixture.ctx, AddPlanWaveInput{PlanID: plan.Plan.ID, Name: "before"})
+	wave, err := fixture.service.AddPlanWave(fixture.ctx, contract.AddPlanWaveInput{PlanID: plan.Plan.ID, Name: "before"})
 	if err != nil {
 		t.Fatalf("AddPlanWave: %v", err)
 	}
-	resp, err := fixture.service.RenamePlanWave(fixture.ctx, RenamePlanWaveInput{WaveID: wave.Wave.ID, Name: "after"})
+	resp, err := fixture.service.RenamePlanWave(fixture.ctx, contract.RenamePlanWaveInput{WaveID: wave.Wave.ID, Name: "after"})
 	if err != nil {
 		t.Fatalf("RenamePlanWave: %v", err)
 	}
@@ -463,18 +464,18 @@ func TestRenamePlanWaveUpdatesName(t *testing.T) {
 
 func TestReorderPlanWaveSwaps(t *testing.T) {
 	fixture := newAgentFixture(t)
-	plan, err := fixture.service.CreatePlan(fixture.ctx, CreatePlanInput{Slug: "ro", Name: "RO"})
+	plan, err := fixture.service.CreatePlan(fixture.ctx, contract.CreatePlanInput{Slug: "ro", Name: "RO"})
 	if err != nil {
 		t.Fatalf("CreatePlan: %v", err)
 	}
-	w1, err := fixture.service.AddPlanWave(fixture.ctx, AddPlanWaveInput{PlanID: plan.Plan.ID, Name: "one", Position: 1})
+	w1, err := fixture.service.AddPlanWave(fixture.ctx, contract.AddPlanWaveInput{PlanID: plan.Plan.ID, Name: "one", Position: 1})
 	if err != nil {
 		t.Fatalf("AddPlanWave 1: %v", err)
 	}
-	if _, err := fixture.service.AddPlanWave(fixture.ctx, AddPlanWaveInput{PlanID: plan.Plan.ID, Name: "two", Position: 2}); err != nil {
+	if _, err := fixture.service.AddPlanWave(fixture.ctx, contract.AddPlanWaveInput{PlanID: plan.Plan.ID, Name: "two", Position: 2}); err != nil {
 		t.Fatalf("AddPlanWave 2: %v", err)
 	}
-	resp, err := fixture.service.ReorderPlanWave(fixture.ctx, ReorderPlanWaveInput{WaveID: w1.Wave.ID, Position: 2})
+	resp, err := fixture.service.ReorderPlanWave(fixture.ctx, contract.ReorderPlanWaveInput{WaveID: w1.Wave.ID, Position: 2})
 	if err != nil {
 		t.Fatalf("ReorderPlanWave: %v", err)
 	}
@@ -485,27 +486,27 @@ func TestReorderPlanWaveSwaps(t *testing.T) {
 
 func TestReorderPlanWaveRejectsMissingWave(t *testing.T) {
 	fixture := newAgentFixture(t)
-	_, err := fixture.service.ReorderPlanWave(fixture.ctx, ReorderPlanWaveInput{Position: 1})
+	_, err := fixture.service.ReorderPlanWave(fixture.ctx, contract.ReorderPlanWaveInput{Position: 1})
 	assertCodedError(t, err, domain.ErrValidation)
 }
 
 func TestUnassignPlanTaskDetaches(t *testing.T) {
 	fixture := newAgentFixture(t)
-	plan, err := fixture.service.CreatePlan(fixture.ctx, CreatePlanInput{Slug: "un", Name: "UN"})
+	plan, err := fixture.service.CreatePlan(fixture.ctx, contract.CreatePlanInput{Slug: "un", Name: "UN"})
 	if err != nil {
 		t.Fatalf("CreatePlan: %v", err)
 	}
-	wave, err := fixture.service.AddPlanWave(fixture.ctx, AddPlanWaveInput{PlanID: plan.Plan.ID, Name: "wave-one"})
+	wave, err := fixture.service.AddPlanWave(fixture.ctx, contract.AddPlanWaveInput{PlanID: plan.Plan.ID, Name: "wave-one"})
 	if err != nil {
 		t.Fatalf("AddPlanWave: %v", err)
 	}
-	if _, err := fixture.service.AssignPlanTask(fixture.ctx, AssignPlanTaskInput{
+	if _, err := fixture.service.AssignPlanTask(fixture.ctx, contract.AssignPlanTaskInput{
 		TaskID: fixture.taskA1.ID, PlanID: plan.Plan.ID, WaveID: wave.Wave.ID,
 	}); err != nil {
 		t.Fatalf("AssignPlanTask: %v", err)
 	}
 
-	resp, err := fixture.service.UnassignPlanTask(fixture.ctx, UnassignPlanTaskInput{TaskID: fixture.taskA1.ID})
+	resp, err := fixture.service.UnassignPlanTask(fixture.ctx, contract.UnassignPlanTaskInput{TaskID: fixture.taskA1.ID})
 	if err != nil {
 		t.Fatalf("UnassignPlanTask: %v", err)
 	}
@@ -514,7 +515,7 @@ func TestUnassignPlanTaskDetaches(t *testing.T) {
 	}
 
 	// Second call → no-op (already detached).
-	resp, err = fixture.service.UnassignPlanTask(fixture.ctx, UnassignPlanTaskInput{TaskID: fixture.taskA1.ID})
+	resp, err = fixture.service.UnassignPlanTask(fixture.ctx, contract.UnassignPlanTaskInput{TaskID: fixture.taskA1.ID})
 	if err != nil {
 		t.Fatalf("UnassignPlanTask second: %v", err)
 	}

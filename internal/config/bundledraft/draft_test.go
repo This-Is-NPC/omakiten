@@ -396,7 +396,7 @@ func TestCloneBundleIsolatesAllNestedMutableFields(t *testing.T) {
 	*notification.Padding.Top = 9
 	*notification.AutoHeight = false
 	notification.Dismiss.Keys[0] = "owned"
-	notification.Actions[0].Command[0] = "owned"
+	notification.Actions[0].Arguments["slug"] = "owned"
 	clone.Notifications["alert"] = notification
 	clone.Languages[0].Keys["key"] = "owned"
 	clone.ActiveTheme.Colors["accent"] = "owned"
@@ -421,7 +421,7 @@ func cloneNestedMutableBundle() config.Bundle {
 		Padding:    &config.NotificationPadding{Top: &padding},
 		AutoHeight: &autoHeight,
 		Dismiss:    config.NotificationDismiss{Keys: []string{"esc"}},
-		Actions:    []config.NotificationAction{{Command: []string{"okt", "list"}}},
+		Actions:    []config.NotificationAction{{Operation: "skill.get", Arguments: map[string]any{"slug": "okt"}}},
 	}}
 	bundle.Languages = []config.Language{{Code: "en", Keys: map[string]string{"key": "value"}}}
 	bundle.ActiveTheme = config.Theme{Colors: map[string]string{"accent": "blue"}}
@@ -443,7 +443,7 @@ func assertNestedMutableBundleIsolated(t *testing.T, bundle config.Bundle) {
 		t.Fatal("project laws alias clone")
 	}
 	originalNotification := bundle.Notifications["alert"]
-	if originalNotification.Animation[0].Value != "frame" || *originalNotification.Padding.Top != 1 || !*originalNotification.AutoHeight || originalNotification.Dismiss.Keys[0] != "esc" || originalNotification.Actions[0].Command[0] != "okt" {
+	if originalNotification.Animation[0].Value != "frame" || *originalNotification.Padding.Top != 1 || !*originalNotification.AutoHeight || originalNotification.Dismiss.Keys[0] != "esc" || originalNotification.Actions[0].Arguments["slug"] != "okt" {
 		t.Fatal("notification internals alias clone")
 	}
 	if bundle.Languages[0].Keys["key"] != "value" || bundle.ActiveTheme.Colors["accent"] != "blue" || bundle.Sources["theme.active"] != config.SourceProject {

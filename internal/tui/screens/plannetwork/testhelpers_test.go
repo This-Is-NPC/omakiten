@@ -22,4 +22,4 @@ func newStyles(config.Theme) screenkit.Styles {
 	}
 }
 
-func buildRefreshHotPathModel(testing.TB) Model { return New() }
+func buildRefreshHotPathModel(testing.TB) Screen { return New() }

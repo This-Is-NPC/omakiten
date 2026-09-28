@@ -1,6 +1,8 @@
 package relationshipprojection
 
-import "sort"
+import (
+	"sort"
+)
 
 // Kind identifies the relationship being edited.
 type Kind string

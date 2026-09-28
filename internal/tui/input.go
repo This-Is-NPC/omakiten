@@ -7,8 +7,8 @@ import (
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
 
+	"omakiten/internal/contract"
 	"omakiten/internal/domain"
-	"omakiten/internal/operation"
 	"omakiten/internal/tui/components/field"
 )
 
@@ -158,7 +158,7 @@ func (m *Model) submitCommentInput(input string) error {
 	if !ok {
 		return fmt.Errorf("%s", m.status)
 	}
-	_, err := svc.AddComment(m.ctx, operation.AddCommentInput{
+	_, err := svc.AddComment(m.ctx, contract.AddCommentInput{
 		ProjectSelector: m.projectSelector(),
 		TaskID:          task.ID,
 		Body:            input,
@@ -175,7 +175,7 @@ func (m *Model) submitMoveInput(input string) (domain.Task, bool, error) {
 	if !ok {
 		return domain.Task{}, false, fmt.Errorf("%s", m.status)
 	}
-	_, err := svc.MoveTask(m.ctx, operation.MoveTaskInput{
+	_, err := svc.MoveTask(m.ctx, contract.MoveTaskInput{
 		ProjectSelector: m.projectSelector(),
 		TaskID:          task.ID,
 		BucketKey:       input})

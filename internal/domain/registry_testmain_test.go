@@ -2,52 +2,39 @@ package domain
 
 import (
 	_ "embed"
-	"fmt"
-	"os"
-	"sort"
-	"testing"
+	"sync"
+
+	"gopkg.in/yaml.v3"
 )
 
-// eventRegistryFixture mirrors the 41-entry `definitions:` block + `defaults:`
-// block every shipped kit YAML carries (defaults/config/<kit>.yaml::events).
-// Embedded so the domain package's unit tests can hydrate EventDefinitions /
-// EventDefByKey / KnownEventTypes without depending on the boot wiring or
-// pulling in internal/config.
-//
 //go:embed testdata/event_registry_fixture.yaml
 var eventRegistryFixture []byte
 
-// fixtureKnownEventTypes caches the sorted key list the fixture installs.
-// Captured once at TestMain so tests that mutate the registry (the loader
-// tests) can restore the canonical state on cleanup without re-parsing
-// the YAML each time.
-var fixtureKnownEventTypes []string
-
-// loadFixtureRegistry hydrates the package-level EventDefinitions /
-// EventDefByKey / KnownEventTypes from the embedded fixture. Used by
-// TestMain at startup and by loader-test cleanup hooks to restore the
-// canonical state after a test installs a synthetic registry.
-func loadFixtureRegistry() error {
-	if err := LoadEventRegistryFromYAML(eventRegistryFixture); err != nil {
-		return fmt.Errorf("domain testmain: load fixture: %w", err)
+var fixtureRegistry = sync.OnceValue(func() *EventRegistry {
+	var raw struct {
+		Definitions map[string]struct {
+			Category   string
+			Display    string
+			Formatter  FormatterID
+			Metric     string `yaml:"metric"`
+			LogVisible *bool  `yaml:"log_visible"`
+			EntityType string `yaml:"entity_type"`
+		}
 	}
-	return nil
-}
-
-// TestMain bootstraps the YAML event registry from the embedded fixture
-// before any test in the domain package runs. After Phase 1 the static
-// `register()` + summarizers table is gone, so SummarizeEvent /
-// EventCategoryOf / EventTypesForCategory / KnownEventTypes all return
-// empty until the registry is populated — every domain test relies on
-// this hook running first.
-func TestMain(m *testing.M) {
-	if err := loadFixtureRegistry(); err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
+	if err := yaml.Unmarshal(eventRegistryFixture, &raw); err != nil {
+		panic(err)
 	}
-	cached := make([]string, len(KnownEventTypes))
-	copy(cached, KnownEventTypes)
-	sort.Strings(cached)
-	fixtureKnownEventTypes = cached
-	os.Exit(m.Run())
-}
+	defs := make([]EventDef, 0, len(raw.Definitions))
+	for key, d := range raw.Definitions {
+		fn, ok := ResolveFormatter(d.Formatter)
+		if !ok {
+			panic(d.Formatter)
+		}
+		visible := true
+		if d.LogVisible != nil {
+			visible = *d.LogVisible
+		}
+		defs = append(defs, EventDef{Key: key, Category: EventCategory(d.Category), Display: d.Display, Formatter: fn, Metric: d.Metric, EntityType: d.EntityType, LogVisible: visible})
+	}
+	return NewEventRegistry(defs)
+})

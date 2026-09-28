@@ -3,20 +3,11 @@ package cli
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"testing"
-
-	"omakiten/internal/testutil"
 )
 
-// TestMain hydrates the domain event registry from the embedded omakase
-// kit before any test in the cli package runs. Phase 1 of the YAML
-// event registry refactor dropped the static EventCategoryOf switch, so
-// CLI command bodies (e.g. logs projection in cli/logs.go) that call
-// domain.EventCategoryOf and domain.SummarizeEvent need the registry
-// populated even for tests that bypass testfixtures.LoadBundle.
-//
-// The hydration body lives in internal/testutil so the agent, cli,
-// sqlite, and tui packages share a single source of truth.
+// TestMain isolates config, data, cache and state paths from the host installation.
 func TestMain(m *testing.M) {
 	testHome, err := os.MkdirTemp("", "omakiten-cli-test-home-")
 	if err != nil {
@@ -33,9 +24,11 @@ func TestMain(m *testing.M) {
 		fmt.Fprintln(os.Stderr, fmt.Errorf("cli testmain TMPDIR: %w", err))
 		os.Exit(1)
 	}
-	if err := testutil.HydrateDomainEventRegistry(); err != nil {
-		fmt.Fprintln(os.Stderr, fmt.Errorf("cli testmain: %w", err))
-		os.Exit(1)
+	for _, directory := range []string{"CONFIG", "DATA", "CACHE", "STATE"} {
+		if err := os.Setenv("XDG_"+directory+"_HOME", filepath.Join(testHome, directory)); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
 	}
 	code := m.Run()
 	_ = os.RemoveAll(testHome)

@@ -5,7 +5,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"omakiten/internal/operation"
+	"omakiten/internal/contract"
 )
 
 func newDependCommand(opts *runtimeOptions) *cobra.Command {
@@ -37,7 +37,7 @@ func newDependAddCommand(opts *runtimeOptions) *cobra.Command {
 					return nil, err
 				}
 				defer rt.close()
-				return rt.operationService().AddDependency(ctx, operation.AddDependencyInput{
+				return rt.operationService().AddDependency(ctx, contract.AddDependencyInput{
 					ProjectSelector: opts.projectSelector(),
 					TaskID:          taskID,
 					DependsOnTaskID: on,
@@ -68,7 +68,7 @@ func newDependRemoveCommand(opts *runtimeOptions) *cobra.Command {
 					return nil, err
 				}
 				defer rt.close()
-				return rt.operationService().RemoveDependency(ctx, operation.RemoveDependencyInput{
+				return rt.operationService().RemoveDependency(ctx, contract.RemoveDependencyInput{
 					ProjectSelector: opts.projectSelector(),
 					TaskID:          taskID,
 					DependsOnTaskID: on,
@@ -99,7 +99,7 @@ func newDependListCommand(opts *runtimeOptions) *cobra.Command {
 					return nil, err
 				}
 				defer rt.close()
-				return rt.operationService().ListDependencies(ctx, operation.ListDependenciesInput{
+				return rt.operationService().ListDependencies(ctx, contract.ListDependenciesInput{
 					ProjectSelector: opts.projectSelector(),
 					TaskID:          taskID,
 				})

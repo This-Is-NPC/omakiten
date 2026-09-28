@@ -3,18 +3,21 @@ package agentruntime
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"omakiten/internal/activity"
 	"omakiten/internal/app"
 	"omakiten/internal/config"
 	"omakiten/internal/configstore"
+	"omakiten/internal/contract"
 	"omakiten/internal/domain"
 	"omakiten/internal/events"
 	"omakiten/internal/hooks"
@@ -23,21 +26,10 @@ import (
 	"omakiten/internal/sqlite"
 )
 
-// ProjectRuntime aggregates every per-bundle resource derived from a
-// single ConfigService.Import call. One instance per project lives in
-// the BundleCache; today the cache holds exactly one (the default
-// project), but the type and the cache are shaped so Phase 3b–3f can
-// add per-project entries without touching consumer code.
-//
-// The fields are documented from the consumer's perspective: callers
-// that need to read config go through Snapshot (immutable, per-project);
-// callers that need to dispatch MCP/CLI calls take Service; the hooks
-// engine, the audit registry, and the notification snapshot are owned
-// per runtime so a reload can stop the old engine cleanly before the
-// new one starts. The raw config.Bundle is intentionally not exposed —
-// Phase 2-bis Invariant 1 keeps every consumer reading through Snapshot
-// so the Store/Bundle reverse-coupling cannot creep back in.
+// ProjectRuntime owns one project's immutable snapshot, operations and hook resources.
 type ProjectRuntime struct {
+	deliveryView    *contract.RuntimeView
+	deliveryService *operation.Service
 	// Service is the agent service wired against the bundle's
 	// catalogs, lookups, and settings. Stateless aside from the
 	// snapshots it captures at construction.
@@ -59,13 +51,6 @@ type ProjectRuntime struct {
 	// the bundle's enum tables. Threaded into the agent service so
 	// renderers do not consult process-global state.
 	EnumRegistry *domain.EnumRegistry
-	// NotificationSnapshot is the catalog the notification.show action
-	// reads from. Owned by the runtime so a reload can rotate it.
-	NotificationSnapshot actions.NotificationBundleSnapshot
-	// Theme is the active theme resolved at load time. nil when no
-	// theme is configured — TUI surfaces fall back to their default
-	// palette.
-	Theme *config.Theme
 	// SourcePath is the absolute path to the omakiten.yaml that
 	// produced this runtime. Used by Reload to stat-detect bundle
 	// changes.
@@ -73,10 +58,6 @@ type ProjectRuntime struct {
 	// SourcePaths includes SourcePath plus any loaded sub-kit files that
 	// should trigger the same rebuild when their mtime changes.
 	SourcePaths []string
-	// LoadedAt is the wall-clock timestamp the runtime finished
-	// initialising. Used by /metrics.summary timelines and the TUI
-	// "config loaded at" badge.
-	LoadedAt time.Time
 	// Mtime is the SourcePath's modification time captured at load. A
 	// stat comparison in Resolve drives the rebuild-on-change rule.
 	Mtime time.Time
@@ -94,13 +75,6 @@ type ProjectRuntime struct {
 	// task.bucket_id → previous key across the rebuild. nil when the
 	// runtime has only been built once for this project.
 	PreviousSnapshot *config.Snapshot
-	// Workflow is the per-project app.WorkflowService captured against
-	// this runtime's Snapshot. TUI / CLI surfaces that hold a long-lived
-	// workflow reference (e.g. tui.Repositories.Workflow) read this
-	// pointer on Reload so the rotation rebuilds the service rather than
-	// mutating it through a setter — the immutability invariant the
-	// Phase 2-bis Round-2 spec requires.
-	Workflow *app.WorkflowService
 	// Editor is the bundle editor wired against this runtime's config
 	// path. The TUI host copies it onto Repositories.Editor so it does
 	// not construct app.BundleEditor itself (D20).
@@ -116,16 +90,12 @@ type ProjectRuntime struct {
 	StoreConfig sqlite.ConfigKnobs
 }
 
-// BundleCache is the per-project ProjectRuntime registry. Phase 3a
-// keeps the cache size at 1 (the default project) — the type is shaped
-// for the multi-project future where each project's bundle lives in
-// its own entry. Reads take RLock; lifecycle rebuilds are serialized so
-// old and replacement hook engines cannot overlap; publication is a
-// pointer-only swap after the old engine drains.
+// BundleCache serializes project rebuilds and publishes a replacement after the old hooks drain.
 type BundleCache struct {
 	mu        sync.RWMutex
 	entries   map[int64]*ProjectRuntime
 	rebuildMu sync.Mutex
+	closed    atomic.Bool
 
 	// Dependencies the cache needs to build a runtime. Stored on the
 	// cache so Resolve does not require the caller to thread them in.
@@ -143,7 +113,7 @@ type BundleCache struct {
 	// mtime-driven rebuild does not lose the boot-resolved
 	// project/CWD. Zero value when no selector was installed (rare
 	// boot shapes that resolve project per call).
-	selector operation.ProjectSelector
+	selector contract.ProjectSelector
 
 	notifyMu          sync.RWMutex
 	onSurfacesChanged func()
@@ -168,13 +138,13 @@ func NewBundleCache(store *sqlite.Store, bus events.Bus, cs *configstore.Adapter
 // composition root calls this once after Open resolves the runtime
 // project; tests that drive the cache directly may leave it unset and
 // build services with a zero selector.
-func (c *BundleCache) SetProjectSelector(selector operation.ProjectSelector) {
+func (c *BundleCache) SetProjectSelector(selector contract.ProjectSelector) {
 	c.selectorMu.Lock()
 	c.selector = selector
 	c.selectorMu.Unlock()
 }
 
-func (c *BundleCache) projectSelector() operation.ProjectSelector {
+func (c *BundleCache) projectSelector() contract.ProjectSelector {
 	c.selectorMu.RLock()
 	defer c.selectorMu.RUnlock()
 	return c.selector
@@ -266,6 +236,9 @@ func (c *BundleCache) Get(projectID int64) *ProjectRuntime {
 // dispatch filter accepts only events scoped to this project (Phase
 // 3d).
 func (c *BundleCache) Resolve(ctx context.Context, projectID int64, configPath string) (*ProjectRuntime, error) {
+	if c.closed.Load() {
+		return nil, fmt.Errorf("bundle cache: closed")
+	}
 	c.mu.RLock()
 	entry := c.entries[projectID]
 	c.mu.RUnlock()
@@ -310,6 +283,9 @@ func (c *BundleCache) ResolveApply(ctx context.Context, projectID int64, configP
 
 // ResolveApplyWithCommit is ResolveApply with a staged consumer commit.
 func (c *BundleCache) ResolveApplyWithCommit(ctx context.Context, projectID int64, configPath string, accept func(*ProjectRuntime) (func() error, error)) (*ProjectRuntime, bool, error) {
+	if c.closed.Load() {
+		return nil, false, fmt.Errorf("bundle cache: closed")
+	}
 	c.rebuildMu.Lock()
 	defer c.rebuildMu.Unlock()
 	c.mu.RLock()
@@ -451,6 +427,9 @@ func (c *BundleCache) rebuild(ctx context.Context, projectID int64, configPath s
 }
 
 func (c *BundleCache) applyLocked(ctx context.Context, projectID int64, configPath string, accept func(*ProjectRuntime) (func() error, error)) (*ProjectRuntime, error) {
+	if c.closed.Load() {
+		return nil, fmt.Errorf("bundle cache: closed")
+	}
 
 	if c.store == nil {
 		return nil, fmt.Errorf("bundle cache: store is required")
@@ -553,6 +532,9 @@ func (c *BundleCache) commitRuntime(ctx context.Context, projectID int64, old, r
 // unpublished, while the old entry remains installed with admission closed;
 // retrying after the old action returns completes the handoff safely.
 func (c *BundleCache) replaceRuntime(ctx context.Context, projectID int64, runtime *ProjectRuntime) error {
+	if c.closed.Load() {
+		return fmt.Errorf("bundle cache: closed")
+	}
 	c.mu.RLock()
 	old := c.entries[projectID]
 	c.mu.RUnlock()
@@ -573,6 +555,30 @@ func (c *BundleCache) replaceRuntime(ctx context.Context, projectID int64, runti
 	c.entries[projectID] = runtime
 	c.mu.Unlock()
 	return nil
+}
+
+// Close rejects rebuilds and drains every project's hooks before the store closes.
+func (c *BundleCache) Close() error {
+	c.rebuildMu.Lock()
+	defer c.rebuildMu.Unlock()
+	c.closed.Store(true)
+	c.mu.RLock()
+	entries := make([]*ProjectRuntime, 0, len(c.entries))
+	for _, entry := range c.entries {
+		entries = append(entries, entry)
+	}
+	c.mu.RUnlock()
+	var errs []error
+	for _, entry := range entries {
+		if entry == nil || entry.HooksEngine == nil {
+			continue
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), hooks.DefaultShutdownTimeout)
+		err := entry.HooksEngine.Shutdown(ctx)
+		cancel()
+		errs = append(errs, err)
+	}
+	return errors.Join(errs...)
 }
 
 // maybeEmitSubtaskKitNotice records the one-shot transparency notice
@@ -663,35 +669,7 @@ func (c *BundleCache) releasePreviousSnapshot(projectID int64) {
 	entry.PreviousSnapshot = nil
 }
 
-// BuildProjectRuntime is the single point of bundle inflation. Open
-// uses it for the boot path; BundleCache.rebuild calls it on
-// stat-detected changes and explicit reloads; the CLI composition
-// root reuses it via cache.Resolve so a single construction path
-// produces identical runtimes everywhere — drift between boot and
-// reload was the bug that motivated the Phase 3a refactor.
-//
-// selector flows into the constructed operation.Service so calls without
-// explicit project arguments still see the boot-resolved project /
-// CWD; pass a zero value when callers always provide selectors per
-// call.
-func BuildProjectRuntime(ctx context.Context, store *sqlite.Store, cs *configstore.Adapter, bus events.Bus, configPath string, projectID int64, selector operation.ProjectSelector) (*ProjectRuntime, error) {
-	runtime, err := buildProjectRuntime(ctx, store, cs, bus, configPath, projectID, selector)
-	if err != nil {
-		return nil, err
-	}
-	if err := store.ApplyConfig(ctx, runtime.StoreConfig); err != nil {
-		return nil, err
-	}
-	if _, err := store.BackfillTaskCompletedAt(ctx, projectID, runtime.Snapshot); err != nil {
-		slog.Warn("build project runtime: completion timestamp backfill failed", "project_id", projectID, "err", err)
-	}
-	if bus != nil {
-		runtime.HooksEngine.Start(bus)
-	}
-	return runtime, nil
-}
-
-func buildProjectRuntime(ctx context.Context, store *sqlite.Store, cs *configstore.Adapter, bus events.Bus, configPath string, projectID int64, selector operation.ProjectSelector) (*ProjectRuntime, error) {
+func buildProjectRuntime(ctx context.Context, store *sqlite.Store, cs *configstore.Adapter, bus events.Bus, configPath string, projectID int64, selector contract.ProjectSelector) (*ProjectRuntime, error) {
 	bundle, bundleHash, enumRegistry, err := app.NewConfigService(cs).Import(activity.WithoutTracking(ctx), configPath)
 	if err != nil {
 		return nil, err
@@ -720,12 +698,8 @@ func buildProjectRuntime(ctx context.Context, store *sqlite.Store, cs *configsto
 	// snapshots; nothing in the hot path reaches back into the bundle.
 	snapshot := config.BuildSnapshot(bundle)
 
-	notifSvc := app.NewNotificationService(snapshot)
-	notifSnapshot := notifSvc.BundleSnapshot()
-	// The CLI surface catalog handles notification chrome expansion
-	// (${{intl:KEY}} tokens). Set here at the composition root because the
-	// app layer is constrained by the i18n arch boundary from naming
-	// config.SurfaceCLI directly.
+	notifSnapshot := notificationBundleSnapshot(snapshot)
+	// Resolve hook copy against the active CLI language catalog.
 	notifSnapshot.Catalog = snapshot.Catalog(config.SurfaceCLI)
 	registry := hooks.NewActionRegistry()
 	actions.RegisterBuiltins(registry)
@@ -750,6 +724,7 @@ func buildProjectRuntime(ctx context.Context, store *sqlite.Store, cs *configsto
 	}
 
 	storeConfig := sqlite.ConfigKnobs{
+		ProjectID:                projectID,
 		BusyTimeoutMs:            bundle.Config.SQLite.BusyTimeoutMs,
 		CacheSizeKB:              bundle.Config.SQLite.CacheSizeKB,
 		MmapSizeBytes:            bundle.Config.SQLite.MmapSizeBytes,
@@ -811,14 +786,11 @@ func buildProjectRuntime(ctx context.Context, store *sqlite.Store, cs *configsto
 		ActionRegistry:        registry,
 		NotificationAction:    notificationAction,
 		EnumRegistry:          enumRegistry,
-		NotificationSnapshot:  notifSnapshot,
 		SourcePath:            configPath,
 		SourcePaths:           append([]string(nil), sourcePaths...),
-		LoadedAt:              time.Now(),
 		Mtime:                 mtime,
 		SourceMtimes:          sourceMtimes,
 		Snapshot:              snapshot,
-		Workflow:              app.NewWorkflowServiceFromStore(store, snapshot.Registry(), snapshot),
 		Editor:                editor,
 		BundleImportedPayload: string(auditPayload),
 		StoreConfig:           storeConfig,

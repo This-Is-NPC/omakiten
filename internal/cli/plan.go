@@ -6,8 +6,8 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"omakiten/internal/contract"
 	"omakiten/internal/domain"
-	"omakiten/internal/operation"
 )
 
 // newPlanCommand assembles the `okt plan ...` subcommand tree. Plans
@@ -54,7 +54,7 @@ func newPlanWaveRemoveCommand(opts *runtimeOptions) *cobra.Command {
 					return nil, err
 				}
 				defer rt.close()
-				return rt.operationService().RemovePlanWave(ctx, operation.RemovePlanWaveInput{
+				return rt.operationService().RemovePlanWave(ctx, contract.RemovePlanWaveInput{
 					ProjectSelector: opts.projectSelector(),
 					WaveID:          waveID,
 					Confirmed:       confirm,
@@ -83,7 +83,7 @@ func newPlanWaveRenameCommand(opts *runtimeOptions) *cobra.Command {
 					return nil, err
 				}
 				defer rt.close()
-				return rt.operationService().RenamePlanWave(ctx, operation.RenamePlanWaveInput{
+				return rt.operationService().RenamePlanWave(ctx, contract.RenamePlanWaveInput{
 					ProjectSelector: opts.projectSelector(),
 					WaveID:          waveID,
 					Name:            args[1],
@@ -116,7 +116,7 @@ func newPlanWaveReorderCommand(opts *runtimeOptions) *cobra.Command {
 					return nil, err
 				}
 				defer rt.close()
-				return rt.operationService().ReorderPlanWave(ctx, operation.ReorderPlanWaveInput{
+				return rt.operationService().ReorderPlanWave(ctx, contract.ReorderPlanWaveInput{
 					ProjectSelector: opts.projectSelector(),
 					WaveID:          waveID,
 					Position:        position,
@@ -144,7 +144,7 @@ func newPlanUnassignCommand(opts *runtimeOptions) *cobra.Command {
 					return nil, err
 				}
 				defer rt.close()
-				return rt.operationService().UnassignPlanTask(ctx, operation.UnassignPlanTaskInput{
+				return rt.operationService().UnassignPlanTask(ctx, contract.UnassignPlanTaskInput{
 					ProjectSelector: opts.projectSelector(),
 					TaskID:          taskID,
 				})
@@ -186,8 +186,8 @@ func newPlanEditCommand(opts *runtimeOptions) *cobra.Command {
 	return cmd
 }
 
-func editPlanInput(cmd *cobra.Command, opts *runtimeOptions, planSlug, name, slug, status, goalBody string) (operation.EditPlanInput, error) {
-	input := operation.EditPlanInput{ProjectSelector: opts.projectSelector(), Slug: planSlug}
+func editPlanInput(cmd *cobra.Command, opts *runtimeOptions, planSlug, name, slug, status, goalBody string) (contract.EditPlanInput, error) {
+	input := contract.EditPlanInput{ProjectSelector: opts.projectSelector(), Slug: planSlug}
 	if cmd.Flags().Changed("name") {
 		input.Name = &name
 	}
@@ -201,7 +201,7 @@ func editPlanInput(cmd *cobra.Command, opts *runtimeOptions, planSlug, name, slu
 		input.GoalBody = &goalBody
 	}
 	if input.Name == nil && input.NewSlug == nil && input.Status == nil && input.GoalBody == nil {
-		return operation.EditPlanInput{}, domain.NewError(domain.ErrValidation,
+		return contract.EditPlanInput{}, domain.NewError(domain.ErrValidation,
 			"plan edit requires at least one of --name, --slug, --status, --goal-body", nil)
 	}
 	return input, nil
@@ -223,7 +223,7 @@ func newPlanDeleteCommand(opts *runtimeOptions) *cobra.Command {
 					return nil, err
 				}
 				defer rt.close()
-				return rt.operationService().DeletePlan(ctx, operation.DeletePlanInput{
+				return rt.operationService().DeletePlan(ctx, contract.DeletePlanInput{
 					ProjectSelector: opts.projectSelector(),
 					Slug:            args[0],
 					Confirmed:       confirm,
@@ -249,7 +249,7 @@ func newPlanCreateCommand(opts *runtimeOptions) *cobra.Command {
 					return nil, err
 				}
 				defer rt.close()
-				return rt.operationService().CreatePlan(ctx, operation.CreatePlanInput{
+				return rt.operationService().CreatePlan(ctx, contract.CreatePlanInput{
 					ProjectSelector: opts.projectSelector(),
 					Slug:            args[0],
 					Name:            name,
@@ -275,7 +275,7 @@ func newPlanListCommand(opts *runtimeOptions) *cobra.Command {
 					return nil, err
 				}
 				defer rt.close()
-				return rt.operationService().ListPlans(ctx, operation.ListPlansInput{
+				return rt.operationService().ListPlans(ctx, contract.ListPlansInput{
 					ProjectSelector: opts.projectSelector(),
 				})
 			})
@@ -295,7 +295,7 @@ func newPlanContinueCommand(opts *runtimeOptions) *cobra.Command {
 					return nil, err
 				}
 				defer rt.close()
-				return rt.operationService().ContinuePlan(ctx, operation.ContinuePlanInput{
+				return rt.operationService().ContinuePlan(ctx, contract.ContinuePlanInput{
 					ProjectSelector: opts.projectSelector(),
 					Slug:            args[0],
 				})
@@ -316,7 +316,7 @@ func newPlanShowCommand(opts *runtimeOptions) *cobra.Command {
 					return nil, err
 				}
 				defer rt.close()
-				return rt.operationService().ShowPlan(ctx, operation.ShowPlanInput{
+				return rt.operationService().ShowPlan(ctx, contract.ShowPlanInput{
 					ProjectSelector: opts.projectSelector(),
 					Slug:            args[0],
 				})
@@ -338,7 +338,7 @@ func newPlanWaveAddCommand(opts *runtimeOptions) *cobra.Command {
 					return nil, err
 				}
 				defer rt.close()
-				return rt.operationService().AddPlanWave(ctx, operation.AddPlanWaveInput{
+				return rt.operationService().AddPlanWave(ctx, contract.AddPlanWaveInput{
 					ProjectSelector: opts.projectSelector(),
 					Slug:            args[0],
 					Name:            args[1],
@@ -371,7 +371,7 @@ func newPlanAssignCommand(opts *runtimeOptions) *cobra.Command {
 					return nil, err
 				}
 				defer rt.close()
-				return rt.operationService().AssignPlanTask(ctx, operation.AssignPlanTaskInput{
+				return rt.operationService().AssignPlanTask(ctx, contract.AssignPlanTaskInput{
 					ProjectSelector: opts.projectSelector(),
 					Slug:            args[0],
 					WaveID:          waveID,
@@ -395,7 +395,7 @@ func newPlanClaimCommand(opts *runtimeOptions) *cobra.Command {
 					return nil, err
 				}
 				defer rt.close()
-				return rt.operationService().ClaimNextPlanTask(ctx, operation.ClaimNextPlanTaskInput{
+				return rt.operationService().ClaimNextPlanTask(ctx, contract.ClaimNextPlanTaskInput{
 					ProjectSelector: opts.projectSelector(),
 					Slug:            args[0],
 				})

@@ -117,6 +117,18 @@ linters:
             - pkg: omakiten/internal/agentruntime
               desc: app cannot import its composition root
 
+        application-adapters:
+          list-mode: lax
+          files:
+            - "**/internal/app/**"
+          deny:
+            - pkg: omakiten/internal/recovery
+              desc: application services use recovery ports
+            - pkg: omakiten/internal/terminal
+              desc: application services are independent of delivery composition
+            - pkg: omakiten/internal/hooks
+              desc: the runtime binds hook adapter payloads
+
         sqlite-leaf:
           list-mode: lax
           files:
@@ -163,7 +175,17 @@ linters:
             - "**/internal/agentruntime/**"
           deny:
             - pkg: omakiten/internal/tui
-              desc: agentruntime is the headless agent/MCP composition root; TUI delivery must stay behind neutral hook actions and sender ports
+              desc: agentruntime is independent of delivery implementations
+            - pkg: omakiten/internal/cli
+              desc: agentruntime is independent of delivery implementations
+
+        runtime-has-no-terminal:
+          list-mode: lax
+          files:
+            - "**/internal/agentruntime/**"
+          deny:
+            - pkg: omakiten/internal/terminal
+              desc: the terminal composes the headless runtime
 
         cli-does-not-import-app:
           list-mode: lax
@@ -172,14 +194,84 @@ linters:
           deny:
             - pkg: omakiten/internal/app
               desc: cli consumes operation.Service; importing application services bypasses the facade
+            - pkg: omakiten/internal/tui
+              desc: the interactive runner is injected by the executable
+            - pkg: omakiten/internal/terminal
+              desc: the executable owns interactive composition
 
-        tui-does-not-import-app:
+        tui-talks-to-ports:
           list-mode: lax
           files:
             - "**/internal/tui/**"
           deny:
             - pkg: omakiten/internal/app
-              desc: tui consumes operation.Service; importing application services bypasses the facade
+              desc: tui receives application ports
+            - pkg: omakiten/internal/operation
+              desc: tui consumes neutral operation contracts
+            - pkg: omakiten/internal/agentruntime
+              desc: terminal binds the runtime outside the TUI
+            - pkg: omakiten/internal/cli
+              desc: delivery adapters are independent
+            - pkg: omakiten/internal/configstore
+              desc: tui receives filesystem ports
+            - pkg: omakiten/internal/sqlite
+              desc: tui receives repository ports
+            - pkg: omakiten/internal/recovery
+              desc: project deletion is an injected operation
+
+        contracts-have-no-implementations:
+          list-mode: lax
+          files:
+            - "**/internal/contract/**"
+          deny:
+            - pkg: omakiten/internal/app
+              desc: this package consumes contracts rather than delivery implementations
+            - pkg: omakiten/internal/operation
+              desc: this package consumes contracts rather than delivery implementations
+            - pkg: omakiten/internal/agentruntime
+              desc: this package consumes contracts rather than delivery implementations
+            - pkg: omakiten/internal/sqlite
+              desc: this package consumes contracts rather than delivery implementations
+            - pkg: omakiten/internal/configstore
+              desc: this package consumes contracts rather than delivery implementations
+            - pkg: omakiten/internal/recovery
+              desc: this package consumes contracts rather than delivery implementations
+            - pkg: omakiten/internal/tui
+              desc: this package consumes contracts rather than delivery implementations
+            - pkg: omakiten/internal/cli
+              desc: this package consumes contracts rather than delivery implementations
+            - pkg: omakiten/internal/mcp
+              desc: this package consumes contracts rather than delivery implementations
+            - pkg: omakiten/internal/terminal
+              desc: this package consumes contracts rather than delivery implementations
+            - pkg: omakiten/internal/updater
+              desc: this package consumes contracts rather than delivery implementations
+
+        configuration-has-no-delivery:
+          list-mode: lax
+          files:
+            - "**/internal/config/**"
+          deny:
+            - pkg: omakiten/internal/tui
+              desc: this package consumes contracts rather than delivery implementations
+            - pkg: omakiten/internal/cli
+              desc: this package consumes contracts rather than delivery implementations
+            - pkg: omakiten/internal/terminal
+              desc: this package consumes contracts rather than delivery implementations
+
+        operations-have-no-delivery:
+          list-mode: lax
+          files:
+            - "**/internal/operation/**"
+          deny:
+            - pkg: omakiten/internal/tui
+              desc: this package consumes contracts rather than delivery implementations
+            - pkg: omakiten/internal/cli
+              desc: this package consumes contracts rather than delivery implementations
+            - pkg: omakiten/internal/terminal
+              desc: this package consumes contracts rather than delivery implementations
+            - pkg: omakiten/internal/mcp
+              desc: this package consumes contracts rather than delivery implementations
 
         screens-do-not-import-operation:
           list-mode: lax
@@ -187,7 +279,7 @@ linters:
             - "**/internal/tui/screens/**"
           deny:
             - pkg: omakiten/internal/operation
-              desc: screens talk to the TUI host; only internal/tui (the facade) may import operation
+              desc: screens receive host ports and neutral contracts
 
         screens-do-not-import-lipgloss:
           list-mode: lax

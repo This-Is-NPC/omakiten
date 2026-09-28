@@ -10,7 +10,9 @@ import (
 
 	"omakiten/internal/agentruntime"
 	"omakiten/internal/config"
+	"omakiten/internal/config/bundledraft"
 	"omakiten/internal/configstore"
+	"omakiten/internal/contract"
 	"omakiten/internal/events"
 	"omakiten/internal/testfixtures/bundleeditor"
 	"omakiten/internal/testfixtures/snapstore"
@@ -87,7 +89,7 @@ func TestStudioApplyFailureDoesNotReportSuccessOrRotateRoot(t *testing.T) {
 	}
 }
 
-func newStudioApplyModel(t *testing.T) (Model, BundleEditor, *snapstore.Store, events.Bus) {
+func newStudioApplyModel(t *testing.T) (Model, contract.BundleEditor, *snapstore.Store, events.Bus) {
 	t.Helper()
 	ctx := context.Background()
 	tmp := t.TempDir()
@@ -99,7 +101,7 @@ func newStudioApplyModel(t *testing.T) (Model, BundleEditor, *snapstore.Store, e
 	store := snapstore.Open(t, filepath.Join(tmp, "omakiten.db"))
 	files := configstore.New()
 	editor := bundleeditor.New(files, configPath)
-	if _, err := applyBundleEditor(ctx, editor, nil); err != nil {
+	if _, err := bundledraft.ApplyPlanned(ctx, editor, nil); err != nil {
 		t.Fatalf("editor.Apply: %v", err)
 	}
 	project, err := store.UpsertProject(ctx, "Project", "project", "/work/project")
@@ -124,8 +126,8 @@ func newStudioApplyModel(t *testing.T) (Model, BundleEditor, *snapstore.Store, e
 
 func enterStudioForApplyTest(t *testing.T, m *Model) {
 	t.Helper()
-	m.top, m.sub = topStudio, subStudioCommands
-	m.refreshAfterViewChangeCmd(navState{top: topTasks, sub: subBoard})
+	m.navigation = screenhost.StudioCommands
+	m.refreshAfterViewChangeCmd(screenhost.TasksBoard)
 	if !m.studioScreen.StudioDraftOpen() {
 		t.Fatal("Studio navigation did not retain the entered draft")
 	}

@@ -209,11 +209,11 @@ func TestResolveOptionalNotificationMessage_payloadIntCoerced(t *testing.T) {
 	}
 }
 
-func TestNotificationShowAction_templatesActionCommands(t *testing.T) {
+func TestNotificationShowAction_templatesActionArguments(t *testing.T) {
 	a := NewNotificationShowAction(NotificationBundleSnapshot{
 		Notifications: map[string]config.Notification{
 			"prompt": withActions(sampleNotificationConfig(), []config.NotificationAction{
-				{Key: "a", ID: "apply", Label: "Apply", Command: []string{"workflow", "orphans", "--id={{.Payload.id}}", "--confirm"}},
+				{Key: "a", ID: "apply", Label: "Apply", Operation: "orphans.migrate", Arguments: map[string]any{"id": "{{.Payload.id}}", "confirmed": true}},
 				{Key: "s", ID: "skip", Label: "Skip"},
 			}),
 		},
@@ -229,18 +229,12 @@ func TestNotificationShowAction_templatesActionCommands(t *testing.T) {
 		if len(msg.Notification.Actions) != 2 {
 			t.Fatalf("Actions len = %d, want 2", len(msg.Notification.Actions))
 		}
-		got := msg.Notification.Actions[0].Command
-		want := []string{"workflow", "orphans", "--id=42", "--confirm"}
-		if len(got) != len(want) {
-			t.Fatalf("rendered cmd = %v, want %v", got, want)
+		got := msg.Notification.Actions[0]
+		if got.Operation != "orphans.migrate" || got.Arguments["id"] != "42" || got.Arguments["confirmed"] != true {
+			t.Fatalf("rendered action = %+v", got)
 		}
-		for i := range want {
-			if got[i] != want[i] {
-				t.Fatalf("cmd[%d] = %q, want %q", i, got[i], want[i])
-			}
-		}
-		if len(msg.Notification.Actions[1].Command) != 0 {
-			t.Fatalf("skip action command should remain empty, got %v", msg.Notification.Actions[1].Command)
+		if msg.Notification.Actions[1].Operation != "" || len(msg.Notification.Actions[1].Arguments) != 0 {
+			t.Fatalf("skip action should have no operation: %+v", msg.Notification.Actions[1])
 		}
 	default:
 		t.Fatal("Execute did not send NotificationShowMsg")
@@ -251,7 +245,7 @@ func TestNotificationShowAction_templatingErrorPropagates(t *testing.T) {
 	a := NewNotificationShowAction(NotificationBundleSnapshot{
 		Notifications: map[string]config.Notification{
 			"prompt": withActions(sampleNotificationConfig(), []config.NotificationAction{
-				{Key: "a", ID: "apply", Label: "Apply", Command: []string{"workflow", "orphans", "--id={{.Payload.missing}}"}},
+				{Key: "a", ID: "apply", Label: "Apply", Operation: "orphans.migrate", Arguments: map[string]any{"id": "{{.Payload.missing}}"}},
 			}),
 		},
 	})

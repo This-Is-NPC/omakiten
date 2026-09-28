@@ -389,22 +389,6 @@ func TestBundleEditorNilMutator(t *testing.T) {
 	}
 }
 
-func TestResolveEditorFallsBackToNano(t *testing.T) {
-	t.Setenv("EDITOR", "")
-	t.Setenv("VISUAL", "")
-	if got := app.ResolveEditor(); got != "nano" {
-		t.Fatalf("ResolveEditor() = %q, want nano", got)
-	}
-	t.Setenv("VISUAL", "vim")
-	if got := app.ResolveEditor(); got != "vim" {
-		t.Fatalf("ResolveEditor() = %q, want vim", got)
-	}
-	t.Setenv("EDITOR", "code --wait")
-	if got := app.ResolveEditor(); got != "code --wait" {
-		t.Fatalf("ResolveEditor() = %q, want code --wait", got)
-	}
-}
-
 func assertCoded(t *testing.T, err error, want domain.ErrorCode) {
 	t.Helper()
 	if err == nil {

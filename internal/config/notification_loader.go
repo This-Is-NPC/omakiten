@@ -33,22 +33,6 @@ func decodeNotificationBytes(path string, raw []byte) (Notification, error) {
 	return notification, nil
 }
 
-// LoadNotifications discovers every *.yaml under dir and dir/custom and
-// returns them keyed by Notification.Name. Custom files override defaults
-// that share a name. Returns an empty map when dir is missing — the
-// runtime treats "no notifications" as "no notification hooks available" and the
-// hooks-validator step rejects `notification:` references accordingly.
-//
-// Default-scope files MUST be valid — a parse or validation error at
-// the default scope is fatal. Custom-scope files are user-owned and
-// may drift from the current schema; loading errors there are
-// surfaced as SourceWarnings instead of failing the whole bundle, so
-// the app stays usable while clearly flagging which custom files
-// were skipped.
-func LoadNotifications(dir string) (map[string]Notification, []SourceWarning, error) {
-	return loadNotificationsReader(dir, nil)
-}
-
 func loadNotificationsReader(dir string, reader bundleSourceReader) (map[string]Notification, []SourceWarning, error) {
 	opts := LoadOptions[Notification]{
 		Suffixes:     []string{".yaml", ".yml"},

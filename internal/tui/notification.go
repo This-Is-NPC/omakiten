@@ -77,10 +77,11 @@ type DismissedMsg struct{ ID int64 }
 // Emitting ActionMsg also dismisses the notification — the contract is "the
 // user chose one option", not "the user chose AND then closes manually".
 type ActionMsg struct {
-	ID       int64
-	Slug     string
-	ActionID string
-	Command  []string
+	ID        int64
+	Slug      string
+	ActionID  string
+	Operation string
+	Arguments map[string]any
 }
 
 type typingTickMsg struct{ id int64 }
@@ -248,7 +249,7 @@ func (m notificationModel) fireAction(action config.NotificationAction) (notific
 	slug := m.cfg.Name
 	m.dismissed = true
 	return m, func() tea.Msg {
-		return ActionMsg{ID: id, Slug: slug, ActionID: action.ID, Command: action.Command}
+		return ActionMsg{ID: id, Slug: slug, ActionID: action.ID, Operation: action.Operation, Arguments: action.Arguments}
 	}
 }
 
@@ -401,7 +402,7 @@ func (m notificationModel) resolvedColor(value string) lipgloss.Color {
 	if err != nil || rc.IsTransparent() {
 		return ""
 	}
-	return rc.Color
+	return lipgloss.Color(rc.Color)
 }
 
 func (m notificationModel) formatScrollHint(above, below int) string {

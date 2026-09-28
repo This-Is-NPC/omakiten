@@ -106,10 +106,6 @@ func (l *lockedWriter) Write(p []byte) (int, error) {
 	return l.w.Write(p)
 }
 
-func Serve(ctx context.Context, input io.Reader, output io.Writer, adapter *Adapter) error {
-	return ServeNotify(ctx, input, output, adapter, nil)
-}
-
 // ServeNotify is Serve plus a channel that emits the MCP
 // notifications/tools/list_changed notification (no id, no params)
 // when the surfaces table rotates. The send side must not block —

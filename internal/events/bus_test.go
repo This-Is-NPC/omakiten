@@ -144,4 +144,10 @@ func TestBusBroadcastGate(t *testing.T) {
 	if count != 1 {
 		t.Fatalf("count = %d, want 1 (other event types still broadcast)", count)
 	}
+	bus.SetSettings(2, config.EventsSettings{})
+	_ = bus.Publish(context.Background(), domain.Event{ProjectID: 2, EventType: domain.EventTypeTaskCreated})
+	_ = bus.Publish(context.Background(), domain.Event{ProjectID: 1, EventType: domain.EventTypeTaskCreated})
+	if count != 2 {
+		t.Fatalf("project 2 policy changed project 1 broadcast: count = %d, want 2", count)
+	}
 }

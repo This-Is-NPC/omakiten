@@ -1,7 +1,3 @@
-// Package hooks declares the YAML-driven hooks engine that subscribes
-// to the in-process events bus and dispatches actions asynchronously.
-// The engine is configured via config.hooks; actions register
-// themselves through the Engine's RegisterAction method.
 package hooks
 
 // SubjectDepthFilter controls which task-subject depth a hook entry accepts.

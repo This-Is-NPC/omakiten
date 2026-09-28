@@ -11,6 +11,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"omakiten/internal/agentruntime"
+	"omakiten/internal/contract"
 	"omakiten/internal/domain"
 	"omakiten/internal/sqlite"
 )
@@ -120,7 +121,7 @@ func runDBReindex(ctx context.Context, cmd *cobra.Command, opts *runtimeOptions,
 
 func runConfirmedDBReindex(ctx context.Context, store *sqlite.Store, backup *agentruntime.Backup, result *domain.SearchIndexReindexReport) (string, agentruntime.DestructiveResult, error) {
 	var backupPath string
-	operation, leaseErr := agentruntime.RunLeased(ctx, backup, func(lease agentruntime.RecoveryLease) agentruntime.DestructiveResult {
+	operation, leaseErr := agentruntime.RunLeased(ctx, backup, func(lease contract.RecoveryLease) agentruntime.DestructiveResult {
 		createBackup := func(backupCtx context.Context, write func(string) error) (string, error) {
 			return lease.WriteSnapshot(backupCtx, write)
 		}

@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"omakiten/internal/contract"
 )
 
 // TestResolveCommandComposesEffectiveLaws is the load-bearing test for the
@@ -16,7 +18,7 @@ func TestResolveCommandComposesEffectiveLaws(t *testing.T) {
 	fixture := newAgentFixture(t)
 	wireBindingFixtures(t, fixture)
 
-	resp, err := fixture.service.ResolveCommand(fixture.ctx, ResolveCommandInput{Name: "okt-task-implement"})
+	resp, err := fixture.service.ResolveCommand(fixture.ctx, contract.ResolveCommandInput{Name: "okt-task-implement"})
 	if err != nil {
 		t.Fatalf("ResolveCommand() error = %v", err)
 	}
@@ -53,7 +55,7 @@ func TestResolveCommandLawsDisabledOptsOut(t *testing.T) {
 	fixture := newAgentFixture(t)
 	wireBindingFixtures(t, fixture)
 
-	resp, err := fixture.service.ResolveCommand(fixture.ctx, ResolveCommandInput{Name: "okt-task-imagine"})
+	resp, err := fixture.service.ResolveCommand(fixture.ctx, contract.ResolveCommandInput{Name: "okt-task-imagine"})
 	if err != nil {
 		t.Fatalf("ResolveCommand() error = %v", err)
 	}
@@ -79,7 +81,7 @@ func TestResolveCommandUnknownCommand(t *testing.T) {
 	fixture := newAgentFixture(t)
 	wireBindingFixtures(t, fixture)
 
-	if _, err := fixture.service.ResolveCommand(fixture.ctx, ResolveCommandInput{Name: "okt-bogus"}); err == nil {
+	if _, err := fixture.service.ResolveCommand(fixture.ctx, contract.ResolveCommandInput{Name: "okt-bogus"}); err == nil {
 		t.Fatal("ResolveCommand(unknown) error = nil, want validation failure")
 	}
 }
@@ -87,7 +89,7 @@ func TestResolveCommandUnknownCommand(t *testing.T) {
 // TestResolveCommandEmptyName covers the empty-input boundary.
 func TestResolveCommandEmptyName(t *testing.T) {
 	fixture := newAgentFixture(t)
-	if _, err := fixture.service.ResolveCommand(fixture.ctx, ResolveCommandInput{Name: ""}); err == nil {
+	if _, err := fixture.service.ResolveCommand(fixture.ctx, contract.ResolveCommandInput{Name: ""}); err == nil {
 		t.Fatal("ResolveCommand(empty) error = nil, want validation failure")
 	}
 }
@@ -113,7 +115,7 @@ func TestResolveCommandTemplatesJITRendering(t *testing.T) {
 	fixture := newAgentFixture(t)
 	wireBindingFixtures(t, fixture)
 
-	resp, err := fixture.service.ResolveCommand(fixture.ctx, ResolveCommandInput{Name: "okt-task-implement"})
+	resp, err := fixture.service.ResolveCommand(fixture.ctx, contract.ResolveCommandInput{Name: "okt-task-implement"})
 	if err != nil {
 		t.Fatalf("ResolveCommand() error = %v", err)
 	}
@@ -141,7 +143,7 @@ func TestRenderCommandMarkdownDropsRedundantStructure(t *testing.T) {
 	fixture := newAgentFixture(t)
 	wireBindingFixtures(t, fixture)
 
-	resp, err := fixture.service.ResolveCommand(fixture.ctx, ResolveCommandInput{Name: "okt-task-implement"})
+	resp, err := fixture.service.ResolveCommand(fixture.ctx, contract.ResolveCommandInput{Name: "okt-task-implement"})
 	if err != nil {
 		t.Fatalf("ResolveCommand() error = %v", err)
 	}
@@ -168,8 +170,8 @@ func TestRenderCommandMarkdownDropsRedundantStructure(t *testing.T) {
 // contract directly: skills with a body render the body, skills without a
 // body fall back to the description, and configured order is preserved.
 func TestRenderCommandMarkdownSkillBulletWithBody(t *testing.T) {
-	resp := ResolveCommandResponse{
-		Skills: []SkillInfo{
+	resp := contract.ResolveCommandResponse{
+		Skills: []contract.SkillInfo{
 			{Slug: "go", Name: "Go", Description: "Idiomatic Go.", Body: "Write small functions.\nPrefer composition."},
 			{Slug: "sqlite", Name: "SQLite", Description: "Embedded SQL.", Body: ""},
 			{Slug: "bare", Name: "Bare", Description: "", Body: ""},
@@ -199,9 +201,9 @@ func TestRenderCommandMarkdownSkillBulletWithBody(t *testing.T) {
 }
 
 func TestRenderCommandMarkdownInvocationArgs(t *testing.T) {
-	resp := ResolveCommandResponse{
-		InvocationArgs: []InvocationArg{{Name: "slug", Value: "\"release-plan\""}, {Name: "task_id", Value: "42"}},
-		Skills:         []SkillInfo{{Slug: "playbook", Name: "Playbook", Body: "Run it."}},
+	resp := contract.ResolveCommandResponse{
+		InvocationArgs: []contract.InvocationArg{{Name: "slug", Value: "\"release-plan\""}, {Name: "task_id", Value: "42"}},
+		Skills:         []contract.SkillInfo{{Slug: "playbook", Name: "Playbook", Body: "Run it."}},
 	}
 	md := renderCommandMarkdown(resp)
 
@@ -217,7 +219,7 @@ func TestResolveCommandInvocationArgsAreSortedAndJSONRendered(t *testing.T) {
 	fixture := newAgentFixture(t)
 	wireBindingFixtures(t, fixture)
 
-	resp, err := fixture.service.ResolveCommand(fixture.ctx, ResolveCommandInput{
+	resp, err := fixture.service.ResolveCommand(fixture.ctx, contract.ResolveCommandInput{
 		Name:      "okt",
 		Arguments: map[string]any{"task_id": 42, "slug": "release-plan"},
 	})
@@ -274,7 +276,7 @@ func TestLawBodiesCarryFewShotExamples(t *testing.T) {
 	wireBindingFixtures(t, fixture)
 
 	loadBearing := []string{"template-fidelity"} // wired in the fixture's law catalog
-	resp, err := fixture.service.ResolveCommand(fixture.ctx, ResolveCommandInput{Name: "okt-task-implement"})
+	resp, err := fixture.service.ResolveCommand(fixture.ctx, contract.ResolveCommandInput{Name: "okt-task-implement"})
 	if err != nil {
 		t.Fatalf("ResolveCommand() error = %v", err)
 	}
@@ -302,7 +304,7 @@ func TestLawBodiesCarryFewShotExamples(t *testing.T) {
 func TestResolveCommandRendersPersonaBody(t *testing.T) {
 	fixture := newAgentFixture(t)
 	const marker = "PERSONA_BODY_MARKER_xyz"
-	wireBindingFixturesWithPersona(t, fixture, PersonaInfo{
+	wireBindingFixturesWithPersona(t, fixture, contract.PersonaInfo{
 		Slug:            "backend-agent",
 		Name:            "Backend Agent",
 		Description:     "Backend-focused agent.",
@@ -311,7 +313,7 @@ func TestResolveCommandRendersPersonaBody(t *testing.T) {
 		Laws:            []string{"project-scope-only"},
 	})
 
-	resp, err := fixture.service.ResolveCommand(fixture.ctx, ResolveCommandInput{Name: "okt-task-implement"})
+	resp, err := fixture.service.ResolveCommand(fixture.ctx, contract.ResolveCommandInput{Name: "okt-task-implement"})
 	if err != nil {
 		t.Fatalf("ResolveCommand() error = %v", err)
 	}
@@ -325,7 +327,7 @@ func TestResolveCommandRendersPersonaBody(t *testing.T) {
 // bound persona's repertoire under `## Skills`.
 func TestResolveCommandFallsBackToSkillRepertoire(t *testing.T) {
 	fixture := newAgentFixture(t)
-	wireBindingFixturesWithPersona(t, fixture, PersonaInfo{
+	wireBindingFixturesWithPersona(t, fixture, contract.PersonaInfo{
 		Slug:            "backend-agent",
 		Name:            "Backend Agent",
 		Description:     "Backend-focused agent.",
@@ -335,7 +337,7 @@ func TestResolveCommandFallsBackToSkillRepertoire(t *testing.T) {
 
 	// okt-task-implement declares no command-level skills in the fixture, so
 	// Resolution must use the persona's current repertoire.
-	resp, err := fixture.service.ResolveCommand(fixture.ctx, ResolveCommandInput{Name: "okt-task-implement"})
+	resp, err := fixture.service.ResolveCommand(fixture.ctx, contract.ResolveCommandInput{Name: "okt-task-implement"})
 	if err != nil {
 		t.Fatalf("ResolveCommand() error = %v", err)
 	}
@@ -368,7 +370,7 @@ func TestResolveCommandFallsBackToSkillRepertoire(t *testing.T) {
 // fail, and an unknown command must still reject.
 func TestResolveCommandWithoutCatalogsDegradesGracefully(t *testing.T) {
 	fixture := newAgentFixture(t)
-	resp, err := fixture.service.ResolveCommand(fixture.ctx, ResolveCommandInput{Name: "okt"})
+	resp, err := fixture.service.ResolveCommand(fixture.ctx, contract.ResolveCommandInput{Name: "okt"})
 	if err != nil {
 		t.Fatalf("ResolveCommand() error = %v", err)
 	}
@@ -385,14 +387,14 @@ func TestResolveCommandWithoutCatalogsDegradesGracefully(t *testing.T) {
 		t.Fatalf("ResolveCommand.Skills = %+v, want none when the skill catalog is unwired", resp.Skills)
 	}
 	// An unknown command still rejects even on the degraded path.
-	if _, err := fixture.service.ResolveCommand(fixture.ctx, ResolveCommandInput{Name: "okt-bogus"}); err == nil {
+	if _, err := fixture.service.ResolveCommand(fixture.ctx, contract.ResolveCommandInput{Name: "okt-bogus"}); err == nil {
 		t.Fatal("ResolveCommand(unknown) error = nil, want validation failure even when unwired")
 	}
 }
 
 func wireBindingFixtures(t *testing.T, fixture agentFixture) {
 	t.Helper()
-	wireBindingFixturesWithPersona(t, fixture, PersonaInfo{
+	wireBindingFixturesWithPersona(t, fixture, contract.PersonaInfo{
 		Slug:            "backend-agent",
 		Name:            "Backend Agent",
 		Description:     "Backend-focused agent.",
@@ -406,13 +408,13 @@ func wireBindingFixtures(t *testing.T, fixture agentFixture) {
 // few tests that want to vary the persona body (e.g. the Loop-step
 // rendering test) while keeping the standard skills/laws/templates/
 // commands stable.
-func wireBindingFixturesWithPersona(t *testing.T, fixture agentFixture, persona PersonaInfo) {
+func wireBindingFixturesWithPersona(t *testing.T, fixture agentFixture, persona contract.PersonaInfo) {
 	t.Helper()
-	skills := []SkillInfo{
+	skills := []contract.SkillInfo{
 		{Slug: "go", Name: "Go", Description: "Idiomatic Go.", Body: "Go body."},
 		{Slug: "sqlite", Name: "SQLite", Body: "SQLite body."},
 	}
-	laws := []LawInfo{
+	laws := []contract.LawInfo{
 		// Body deliberately mirrors the production shape: directive paragraph
 		// followed by Bad:/Good: examples. The few-shot test asserts the
 		// markers are forwarded verbatim through ResolveCommand's renderer,
@@ -420,16 +422,16 @@ func wireBindingFixturesWithPersona(t *testing.T, fixture agentFixture, persona 
 		{Slug: "template-fidelity", Name: "Template fidelity", Severity: "warning", Body: "Do not invent fields.\n\nBad: wrote `Closes #40`.\nGood: left References blank."},
 		{Slug: "project-scope-only", Name: "Project scope only", Severity: "error", Body: "Never mix projects."},
 	}
-	templates := []TemplateSummary{
+	templates := []contract.TemplateSummary{
 		{Slug: "pull-request", Name: "Pull Request", Default: "pr", Body: "## Before\n## After\n", Laws: []string{"template-fidelity"}},
 	}
-	commands := map[string]MCPCommandBinding{
+	commands := map[string]contract.MCPCommandBinding{
 		MCPCommandsGlobalKey: {Laws: []string{"template-fidelity"}},
 		"okt":                {Persona: "backend-agent"},
 		"okt-task-implement": {Persona: "backend-agent", Templates: []string{"pull-request"}},
 		"okt-task-imagine":   {Persona: "backend-agent", LawsDisabled: []string{"template-fidelity"}},
 	}
-	fixture.service.SetSnapshot(snapshotWithEntities(t, skills, laws, []PersonaInfo{persona}, templates, commands))
+	fixture.service.SetSnapshot(snapshotWithEntities(t, skills, laws, []contract.PersonaInfo{persona}, templates, commands))
 }
 
 func equalStringSlices(a, b []string) bool {
@@ -475,10 +477,10 @@ func testNoGoCommandFallbackBehavior(t *testing.T) {
 	fixture := newAgentFixture(t)
 	fixture.service.SetSnapshot(snapshotWithEntities(t,
 		nil,
-		[]LawInfo{{Slug: "project-scope-only", Name: "Project scope only", Severity: "error", Body: "Never mix projects."}},
-		[]PersonaInfo{{Slug: "backend-agent", Name: "Backend Agent", Body: "Backend body."}},
+		[]contract.LawInfo{{Slug: "project-scope-only", Name: "Project scope only", Severity: "error", Body: "Never mix projects."}},
+		[]contract.PersonaInfo{{Slug: "backend-agent", Name: "Backend Agent", Body: "Backend body."}},
 		nil,
-		map[string]MCPCommandBinding{
+		map[string]contract.MCPCommandBinding{
 			MCPCommandsGlobalKey: {Laws: []string{"project-scope-only"}},
 			"okt":                {Persona: "backend-agent"},
 			"okt-start":          {Persona: "backend-agent"},
@@ -493,7 +495,7 @@ func testNoGoCommandFallbackBehavior(t *testing.T) {
 
 func assertNoGoCommandFallback(t *testing.T, fixture agentFixture, name string) {
 	t.Helper()
-	resp, err := fixture.service.ResolveCommand(fixture.ctx, ResolveCommandInput{Name: name})
+	resp, err := fixture.service.ResolveCommand(fixture.ctx, contract.ResolveCommandInput{Name: name})
 	if err != nil {
 		t.Fatalf("ResolveCommand(%s) error = %v", name, err)
 	}
@@ -512,7 +514,7 @@ func assertNoGoCommandFallback(t *testing.T, fixture agentFixture, name string) 
 }
 
 func testNoGoCommandFallbackSource(t *testing.T) {
-	for _, file := range []string{"command_table.go", "service_command.go"} {
+	for _, file := range []string{"../commandcatalog/command_table.go", "service_command.go"} {
 		assertNoRemovedCommandProse(t, file)
 	}
 }
@@ -612,11 +614,11 @@ func consumeGoBlockCommentByte(src string, index *int) goCommentState {
 // stays first, template body is appended after a blank line.
 func TestCreateTaskWithTemplateSlugMergesBody(t *testing.T) {
 	fixture := newAgentFixture(t)
-	fixture.service.SetSnapshot(snapshotWithTemplates(t, []TemplateSummary{
+	fixture.service.SetSnapshot(snapshotWithTemplates(t, []contract.TemplateSummary{
 		{Slug: "user-story", Name: "Story", Default: "task", Body: "**User Story**\n\nAs a [role]..."},
 	}))
 
-	resp, err := fixture.service.CreateTask(fixture.ctx, CreateTaskInput{
+	resp, err := fixture.service.CreateTask(fixture.ctx, contract.CreateTaskInput{
 		Title:        "Brand new direction",
 		Description:  "intro",
 		TemplateSlug: "user-story",
@@ -642,7 +644,7 @@ func TestCreateTaskWithUnknownTemplateSlugFails(t *testing.T) {
 	fixture := newAgentFixture(t)
 	fixture.service.SetSnapshot(snapshotWithTemplates(t, nil))
 
-	_, err := fixture.service.CreateTask(fixture.ctx, CreateTaskInput{
+	_, err := fixture.service.CreateTask(fixture.ctx, contract.CreateTaskInput{
 		Title:        "Brand new",
 		Description:  "x",
 		TemplateSlug: "missing",
@@ -657,11 +659,11 @@ func TestCreateTaskWithUnknownTemplateSlugFails(t *testing.T) {
 // bodies without dynamic placeholder support.
 func TestAddCommentTemplateSlugMergesBody(t *testing.T) {
 	fixture := newAgentFixture(t)
-	fixture.service.SetSnapshot(snapshotWithTemplates(t, []TemplateSummary{
+	fixture.service.SetSnapshot(snapshotWithTemplates(t, []contract.TemplateSummary{
 		{Slug: "comment-resume", Name: "Resume", Default: "comment-resume", Body: "## What changed\n## Open questions"},
 	}))
 
-	resp, err := fixture.service.AddComment(fixture.ctx, AddCommentInput{
+	resp, err := fixture.service.AddComment(fixture.ctx, contract.AddCommentInput{
 		TaskID:       fixture.taskA1.ID,
 		Body:         "kicking off review",
 		AuthorType:   "agent",
@@ -687,13 +689,13 @@ func TestAddCommentTemplateSlugMergesBody(t *testing.T) {
 func TestCreateTaskWithTemplateSlugSkipsDuplicateScaffold(t *testing.T) {
 	fixture := newAgentFixture(t)
 	scaffold := "## Description\n\nAs a [role], I want [capability].\n\n## Acceptance criteria\n\n1.\n\n## Definition of done\n\n- [ ] tests pass"
-	fixture.service.SetSnapshot(snapshotWithTemplates(t, []TemplateSummary{
+	fixture.service.SetSnapshot(snapshotWithTemplates(t, []contract.TemplateSummary{
 		{Slug: "user-story", Name: "Story", Default: "task", Body: scaffold},
 	}))
 
 	filled := "## Description\n\nAs a developer, I want template dedupe.\n\n## Acceptance criteria\n\n1. filled scaffold is not duplicated.\n\n## Definition of done\n\n- [ ] regression test green"
 
-	resp, err := fixture.service.CreateTask(fixture.ctx, CreateTaskInput{
+	resp, err := fixture.service.CreateTask(fixture.ctx, contract.CreateTaskInput{
 		Title:        "Story",
 		Description:  filled,
 		TemplateSlug: "user-story",
@@ -721,13 +723,13 @@ func TestCreateTaskWithTemplateSlugSkipsDuplicateScaffold(t *testing.T) {
 func TestAddCommentTemplateSlugSkipsDuplicateScaffold(t *testing.T) {
 	fixture := newAgentFixture(t)
 	scaffold := "## What changed\n\n- [ ] entry\n\n## Open questions\n\n- [ ] question"
-	fixture.service.SetSnapshot(snapshotWithTemplates(t, []TemplateSummary{
+	fixture.service.SetSnapshot(snapshotWithTemplates(t, []contract.TemplateSummary{
 		{Slug: "comment-resume", Name: "Resume", Default: "comment-resume", Body: scaffold},
 	}))
 
 	filled := "## What changed\n\n- migrated tests.\n\n## Open questions\n\n- none."
 
-	resp, err := fixture.service.AddComment(fixture.ctx, AddCommentInput{
+	resp, err := fixture.service.AddComment(fixture.ctx, contract.AddCommentInput{
 		TaskID:       fixture.taskA1.ID,
 		Body:         filled,
 		AuthorType:   "agent",

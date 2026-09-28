@@ -7,6 +7,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"omakiten/internal/config"
+	bundledraft "omakiten/internal/config/bundledraft"
 	"omakiten/internal/studioprojection"
 	"omakiten/internal/tui/components/gridtable"
 	"omakiten/internal/tui/components/screengrid"
@@ -31,8 +32,6 @@ const (
 // laws, laws_disabled, templates and the global laws. Every command has all six,
 // so the zone's height is a constant rather than a function of the selection.
 const studioCommandFieldCount = 6
-
-type studioCommandRow = studioprojection.CommandRow
 
 // commandsZones names the inspector's two halves: the command's metadata, and
 // the resolved prompt preview under it.
@@ -144,7 +143,7 @@ func (m Screen) commandsPreviewBody(canvas screenlayout.Canvas) screenlayout.Blo
 	return m.inspectorBox(canvas, kicker, "", body, focused)
 }
 
-func (m Screen) commandsInspectorTable(row studioCommandRow, bundle config.Bundle, width, rows int) []string {
+func (m Screen) commandsInspectorTable(row studioprojection.CommandRow, bundle config.Bundle, width, rows int) []string {
 	fields := [][2]string{
 		{m.tr("tui.studio.commands.field.persona", "persona"), valueOrDash(row.Spec.Persona)},
 		{m.tr("tui.studio.commands.field.skills", "skills"), valueOrDash(strings.Join(row.Spec.Skills, ", "))},
@@ -285,16 +284,16 @@ func (m Screen) studioCommandsCandidate() config.Bundle {
 	return bundle
 }
 
-func (m Screen) studioCommandsBundle() (config.Bundle, StudioDraftReport) {
+func (m Screen) studioCommandsBundle() (config.Bundle, bundledraft.Report) {
 	if m.studioDraft != nil {
 		report := m.studioDraft.ReportText(m.t)
 		return report.Candidate, report
 	}
 	if snap := m.repos.activeSnapshot(); snap != nil {
 		bundle := config.Bundle{MCPCommands: snap.MCPCommands(), AllPersonas: snap.AllPersonas(), AllSkills: snap.AllSkills(), AllLaws: snap.AllLaws(), AllTemplates: snap.AllTemplates()}
-		return bundle, StudioDraftReport{Candidate: bundle}
+		return bundle, bundledraft.Report{Candidate: bundle}
 	}
-	return config.Bundle{}, StudioDraftReport{}
+	return config.Bundle{}, bundledraft.Report{}
 }
 
 func (m *Screen) studioCommandsClamp(n int) {
@@ -316,7 +315,7 @@ func (m *Screen) studioCommandsClamp(n int) {
 	}
 }
 
-func studioCommandRows(commands map[string]config.MCPCommandSpec, names []string) []studioCommandRow {
+func studioCommandRows(commands map[string]config.MCPCommandSpec, names []string) []studioprojection.CommandRow {
 	return studioprojection.CommandRows(commands, names)
 }
 

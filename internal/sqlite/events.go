@@ -25,7 +25,7 @@ func (s *Store) RecordTaskEvent(ctx context.Context, projectID, taskID int64, ev
 		return domain.Event{}, err
 	}
 	var ev domain.Event
-	if s.shouldLogEvent(eventType) {
+	if s.shouldLogEvent(projectID, eventType) {
 		var err error
 		ev, err = insertTaskEvent(ctx, s.db, projectID, taskID, eventType, body, payload)
 		if err != nil {
@@ -81,7 +81,7 @@ func resolvedKitKey(buckets domain.BucketResolver) string {
 // the kit canonical so tests using bare sqlite.Open still work.
 func (s *Store) ListRecentEvents(ctx context.Context, eventType string, limit int) ([]domain.Event, error) {
 	if limit <= 0 {
-		limit = s.recentEventLimit()
+		limit = s.recentEventLimit(0)
 	}
 	if limit <= 0 {
 		// Composition root forgot to wire SetEventsRecentLimit; fall
@@ -118,7 +118,7 @@ func (s *Store) RecordEntityEvent(ctx context.Context, entityType string, entity
 	if payload == "" {
 		payload = "{}"
 	}
-	if s.shouldLogEvent(eventType) {
+	if s.shouldLogEvent(projectID, eventType) {
 		source, entrypoint, agentModel, agentSessionID := agentAttribution(ctx)
 		var entityIDArg, projectIDArg any
 		if entityID > 0 {
@@ -190,7 +190,7 @@ func (s *Store) ListTaskActivity(ctx context.Context, projectID, taskID int64, o
 func (s *Store) loadTaskActivityRows(ctx context.Context, projectID, taskID int64, direction string) ([]domain.Event, error) {
 	// The inner select takes the newest rows; the outer select preserves the
 	// requested direction within that bounded window.
-	limit := s.recentEventLimit()
+	limit := s.recentEventLimit(projectID)
 	if limit <= 0 {
 		if cfg, err := config.LoadKitConfig(); err == nil && cfg.Events.DefaultRecentLimit > 0 {
 			limit = cfg.Events.DefaultRecentLimit

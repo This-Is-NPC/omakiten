@@ -59,7 +59,8 @@ func kitCacheSizeKB() int {
 // has no in-code defaults: zero values mean "config not yet wired" and the
 // affected code paths skip work or error out rather than masking the gap.
 type Store struct {
-	db *sql.DB
+	eventRegistries map[int64]*domain.EventRegistry
+	db              *sql.DB
 	// configMu makes hot-reload configuration publication and readers of the
 	// event policy one Store-wide critical section. Database writes remain
 	// SQLite-transactional; this lock only prevents torn in-memory settings.
@@ -77,16 +78,8 @@ type Store struct {
 	// connection, and ApplyConfig records any later override. ClaimNextPlanTask
 	// reapplies this field on its borrowed connection so hot-reloaded config
 	// supersedes the DSN's startup value.
-	busyTimeoutMs            int
-	eventsDefaultRecentLimit int
-	retentionGroups          []config.RetentionGroup
-	eventTypeRetentionIndex  map[string]int
-	// eventsPolicy gates the per-event-type log channel: when
-	// ResolveLog returns false, the audit event is dropped before
-	// reaching the events table. The zero value resolves to "log
-	// everything" so tests that do not wire the policy keep their
-	// existing emission assertions.
-	eventsPolicy config.EventsSettings
+	busyTimeoutMs   int
+	projectPolicies map[int64]projectEventPolicy
 	// bus carries domain events to in-process subscribers (hooks
 	// engine, future notifications, future TUI live views). nil disables
 	// broadcast — production wires it from composition root, tests
@@ -127,7 +120,12 @@ type Store struct {
 func (s *Store) SetEventsRecentLimit(limit int) {
 	s.configMu.Lock()
 	defer s.configMu.Unlock()
-	s.eventsDefaultRecentLimit = limit
+	policy, _ := s.eventPolicyLocked(0)
+	policy.recentLimit = limit
+	if s.projectPolicies == nil {
+		s.projectPolicies = map[int64]projectEventPolicy{}
+	}
+	s.projectPolicies[0] = policy
 }
 
 // SetEventsPolicy installs the per-event-type channel policy. When the
@@ -143,37 +141,38 @@ func (s *Store) SetEventsPolicy(policy config.EventsSettings) {
 }
 
 func (s *Store) setEventsPolicyLocked(policy config.EventsSettings) {
-	s.eventsPolicy = policy
-	if s.bus != nil {
-		s.bus.SetSettings(policy)
+	previous, _ := s.eventPolicyLocked(0)
+	s.setProjectEventPolicyLocked(0, policy, previous.recentLimit)
+}
+
+func (s *Store) setProjectEventPolicyLocked(projectID int64, settings config.EventsSettings, recentLimit int) {
+	if s.projectPolicies == nil {
+		s.projectPolicies = map[int64]projectEventPolicy{}
 	}
-	// The orphan-sweep policy rides the same block, so installing the
-	// events settings also arms reconciliation. Stores that never call
-	// this setter (tests that skip ApplyConfig) keep the zero-valued
-	// policy, whose Enabled=false leaves every event row untouched.
-	s.SetOrphanSweepPolicy(policy.ResolveOrphanSweep())
-	s.retentionGroups = policy.BuildRetentionGroups()
-	s.eventTypeRetentionIndex = make(map[string]int, len(s.retentionGroups)*4)
-	for i, grp := range s.retentionGroups {
-		for _, eventType := range grp.EventTypes {
-			s.eventTypeRetentionIndex[eventType] = i
-		}
+	s.projectPolicies[projectID] = newProjectEventPolicy(settings, recentLimit)
+	if s.bus != nil {
+		s.bus.SetSettings(projectID, settings)
+	}
+	if projectID == 0 {
+		s.SetOrphanSweepPolicy(settings.ResolveOrphanSweep())
 	}
 }
 
 // shouldLogEvent reports whether an event of eventType should be
 // persisted. Centralised so every emission path consults the same
 // resolution logic.
-func (s *Store) shouldLogEvent(eventType string) bool {
+func (s *Store) shouldLogEvent(projectID int64, eventType string) bool {
 	s.configMu.RLock()
 	defer s.configMu.RUnlock()
-	return s.eventsPolicy.ResolveLog(eventType)
+	policy, _ := s.eventPolicyLocked(projectID)
+	return policy.settings.ResolveLog(eventType)
 }
 
-func (s *Store) recentEventLimit() int {
+func (s *Store) recentEventLimit(projectID int64) int {
 	s.configMu.RLock()
 	defer s.configMu.RUnlock()
-	return s.eventsDefaultRecentLimit
+	policy, _ := s.eventPolicyLocked(projectID)
+	return policy.recentLimit
 }
 
 func (s *Store) busyTimeout() int {
@@ -214,6 +213,7 @@ func (s *Store) publishEvent(ctx context.Context, ev domain.Event) {
 // about post-Open re-application skip this entirely and inherit the
 // kit-canonical busy_timeout that Open applied.
 type ConfigKnobs struct {
+	ProjectID     int64
 	BusyTimeoutMs int
 	// CacheSizeKB applies PRAGMA cache_size in negative-kilobyte form
 	// after Open via ApplyConfig. 0 leaves Open's value in place; <0
@@ -237,10 +237,11 @@ type ConfigKnobs struct {
 func (s *Store) CurrentConfig() ConfigKnobs {
 	s.configMu.RLock()
 	defer s.configMu.RUnlock()
+	policy, _ := s.eventPolicyLocked(0)
 	return ConfigKnobs{
 		BusyTimeoutMs:            s.busyTimeoutMs,
-		EventsDefaultRecentLimit: s.eventsDefaultRecentLimit,
-		EventsPolicy:             cloneEventsSettings(s.eventsPolicy),
+		EventsDefaultRecentLimit: policy.recentLimit,
+		EventsPolicy:             cloneEventsSettings(policy.settings),
 		EventBus:                 s.bus,
 	}
 }
@@ -258,6 +259,10 @@ func (s *Store) ApplyConfig(ctx context.Context, k ConfigKnobs) error {
 }
 
 func (s *Store) applyConfigLocked(ctx context.Context, k ConfigKnobs) error {
+	registry, err := config.BuildEventRegistry(k.EventsPolicy)
+	if err != nil {
+		return err
+	}
 	if err := applyPragmas(ctx, s.db, pragmaSet{
 		BusyTimeoutMs: k.BusyTimeoutMs,
 		CacheSizeKB:   k.CacheSizeKB,
@@ -268,12 +273,15 @@ func (s *Store) applyConfigLocked(ctx context.Context, k ConfigKnobs) error {
 	if k.BusyTimeoutMs > 0 {
 		s.busyTimeoutMs = k.BusyTimeoutMs
 	}
-	s.eventsDefaultRecentLimit = k.EventsDefaultRecentLimit
-	s.setEventsPolicyLocked(k.EventsPolicy)
+	if s.eventRegistries == nil {
+		s.eventRegistries = map[int64]*domain.EventRegistry{}
+	}
+	s.eventRegistries[k.ProjectID] = registry
 	if k.EventBus != nil {
 		s.bus = k.EventBus
 	}
-	if err := s.pruneAllRetentionGroups(ctx); err != nil {
+	s.setProjectEventPolicyLocked(k.ProjectID, k.EventsPolicy, k.EventsDefaultRecentLimit)
+	if err := s.pruneAllRetentionGroups(ctx, k.ProjectID); err != nil {
 		return err
 	}
 	// Forced reconciliation pass, only after the rest of ApplyConfig
@@ -290,27 +298,26 @@ func (s *Store) applyConfigLocked(ctx context.Context, k ConfigKnobs) error {
 	return nil
 }
 
-func (s *Store) pruneAllRetentionGroups(ctx context.Context) error {
-	for _, grp := range s.retentionGroups {
-		if err := s.PruneEventTypes(ctx, grp.EventTypes, grp.MaxAgeDays, grp.MaxRows); err != nil {
+func (s *Store) pruneAllRetentionGroups(ctx context.Context, projectID int64) error {
+	policy, _ := s.eventPolicyLocked(projectID)
+	condition, args := s.policyScopeLocked(projectID).condition("")
+	for _, group := range policy.groups {
+		if err := s.pruneEventTypes(ctx, group.EventTypes, group.MaxAgeDays, group.MaxRows, condition, args); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func (s *Store) pruneRetentionForEventType(ctx context.Context, eventType string) {
+func (s *Store) pruneRetentionForEventType(ctx context.Context, projectID int64, eventType string) {
 	s.configMu.RLock()
 	defer s.configMu.RUnlock()
-	if len(s.retentionGroups) == 0 {
-		return
+	policy, scopeID := s.eventPolicyLocked(projectID)
+	if position, ok := policy.index[eventType]; ok {
+		group := policy.groups[position]
+		condition, args := s.policyScopeLocked(scopeID).condition("")
+		_ = s.pruneEventTypes(ctx, group.EventTypes, group.MaxAgeDays, group.MaxRows, condition, args)
 	}
-	idx, ok := s.eventTypeRetentionIndex[eventType]
-	if !ok {
-		return
-	}
-	grp := s.retentionGroups[idx]
-	_ = s.PruneEventTypes(ctx, grp.EventTypes, grp.MaxAgeDays, grp.MaxRows)
 }
 
 // pragmaSet carries the user-tunable PRAGMA values applyPragmas issues.
@@ -405,7 +412,7 @@ func openSearchMaintenance(ctx context.Context, path string, afterOpen func()) (
 	if err != nil {
 		return nil, maintenanceValidationError("database could not be opened")
 	}
-	store := &Store{db: db, busyTimeoutMs: busyTimeout}
+	store := &Store{db: db, busyTimeoutMs: busyTimeout, eventRegistries: defaultEventRegistries()}
 	db.SetMaxOpenConns(3)
 	db.SetMaxIdleConns(2)
 	closeWith := func(err error) (*Store, error) {
@@ -611,7 +618,7 @@ func openWithOptions(ctx context.Context, path string, opts Options, afterOpen f
 	db.SetMaxOpenConns(3)
 	db.SetMaxIdleConns(2)
 
-	store := &Store{db: db}
+	store := &Store{db: db, eventRegistries: defaultEventRegistries()}
 	// busyTimeout was resolved above (kit canonical fallback) and threaded
 	// into the DSN; record it so the per-connection PRAGMA reappliers
 	// outside Open's path (ClaimNextPlanTask) honour the same value.

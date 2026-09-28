@@ -1,5 +1,3 @@
-// Keys are the strip's binding tokens — the footer that tells the reader which
-// keys do something here.
 package tokenstrip
 
 import (

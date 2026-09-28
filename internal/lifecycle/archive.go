@@ -1,11 +1,3 @@
-// Package lifecycle — archive extraction helper for `okt update`.
-//
-// goreleaser publishes release assets as `okt_<OS>_<arch>.tar.gz` on
-// POSIX and `.zip` on Windows (.goreleaser.yml: formats: [tar.gz] +
-// format_overrides Windows -> zip). Each archive bundles the `okt`
-// binary alongside LICENSE/README/CONTRIBUTING, so the update path
-// must locate the binary entry inside the archive rather than treat
-// the whole body as the binary.
 package lifecycle
 
 import (

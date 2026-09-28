@@ -24,9 +24,7 @@ type SurfaceCensusEntry struct {
 	Kind SurfaceKind
 }
 
-// CanonicalSurfaceCensus is the single source of truth for the 70
-// operation.Service methods. Validator, tests, and later scaffold/check
-// share this table. Slugs match .temp/plano-operation.md (matrix 242–310).
+// CanonicalSurfaceCensus declares the supported product and wiring operations.
 var CanonicalSurfaceCensus = []SurfaceCensusEntry{
 	{Slug: "command.list", Kind: SurfaceKindProduct},
 	{Slug: "command.resolve", Kind: SurfaceKindProduct},

@@ -56,7 +56,7 @@ func Render(styles Styles, opts Options) string {
 	lines := Lines(styles, opts)
 	viewport := opts.Viewport
 	if viewport > 0 && len(lines) > viewport {
-		visible, above, below := sliceLines(lines, opts.Scroll, viewport-1)
+		visible, above, below := scrollwindow.SliceLines(lines, opts.Scroll, viewport-1)
 		hint := ""
 		if opts.FormatScrollHint != nil {
 			hint = opts.FormatScrollHint(above, below)
@@ -161,22 +161,4 @@ func ViewportRows(termHeight, headerRows, footerRows int) int {
 		return 0
 	}
 	return rows
-}
-
-func sliceLines(lines []string, scroll, viewport int) (visible []string, above, below int) {
-	if viewport <= 0 || len(lines) <= viewport {
-		return lines, 0, 0
-	}
-	if scroll < 0 {
-		scroll = 0
-	}
-	if maxOffset := len(lines) - viewport; scroll > maxOffset {
-		scroll = maxOffset
-	}
-	heights := make([]int, len(lines))
-	for i := range heights {
-		heights[i] = 1
-	}
-	end := scrollwindow.Slice(scroll, heights, viewport, scrollwindow.HintsNone)
-	return lines[scroll:end], scrollwindow.Above(scroll), scrollwindow.Below(end, len(lines))
 }

@@ -1,10 +1,3 @@
-// Chips are the strip's choice tokens — the Logs filter presets and the Stats
-// period picker.
-//
-// A chip is not a pill. A pill is attached to a card and describes it; a chip is
-// a choice you are standing on, which is why chips are the family that uses
-// [Drop] and declares [Options.Keep]: the strip may lose any chip except the one
-// the reader has selected.
 package tokenstrip
 
 import (

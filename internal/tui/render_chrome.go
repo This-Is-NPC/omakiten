@@ -51,15 +51,15 @@ func (m Model) headerOptions() header.Options {
 	for i, t := range topOrder {
 		opts.Tops = append(opts.Tops, header.Item{
 			Label:  fmt.Sprintf("%02d // %s", i+1, topLabels[t]),
-			Active: t == m.top,
+			Active: t == m.navigationTop(),
 		})
 	}
-	subs := subsByTop[m.top]
+	subs := subsByTop[m.navigationTop()]
 	opts.Subs = make([]header.Item, 0, len(subs))
 	for _, s := range subs {
 		opts.Subs = append(opts.Subs, header.Item{
 			Label:  fmt.Sprintf("// %s", subLabels[s]),
-			Active: s == m.sub,
+			Active: s == m.navigation,
 		})
 	}
 	return opts
@@ -91,7 +91,7 @@ func (m Model) renderCurrentView() string {
 		return ""
 	}
 	frame := m.screenFrame()
-	screen := descriptor.Factory(legacyScreenHost{frame: frame, model: m})
+	screen := descriptor.Factory(modelScreenHost{frame: frame, model: m})
 	return screen.View(frame)
 }
 

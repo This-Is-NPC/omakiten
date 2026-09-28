@@ -6,6 +6,8 @@ import (
 	"strings"
 
 	"gopkg.in/yaml.v3"
+
+	"omakiten/internal/domain"
 )
 
 // skillFrontmatter mirrors the YAML inside skills/<slug>.md.
@@ -36,14 +38,6 @@ type templateFrontmatter struct {
 	Default     string   `yaml:"default,omitempty"`
 	Project     string   `yaml:"project,omitempty"`
 	Laws        []string `yaml:"laws,omitempty"`
-}
-
-// LoadSkills scans dir for *.md files (defaults at root + customs under
-// dir/custom) and parses each one into a Skill. Same-slug pairs are resolved
-// with custom winning, so the user's `<entity>/custom/<slug>.md` overrides any
-// default with the same slug. Returns empty slice when dir does not exist.
-func LoadSkills(dir string) ([]Skill, []SourceWarning, error) {
-	return loadSkillsReader(dir, nil)
 }
 
 func loadSkillsReader(dir string, reader bundleSourceReader) ([]Skill, []SourceWarning, error) {
@@ -88,10 +82,6 @@ func decodeSkillFile(path string, raw []byte, isCustom bool) (Skill, *SourceWarn
 	}, slugMismatchWarning(slug, meta.Name, path), nil
 }
 
-func LoadLaws(dir string) ([]Law, []SourceWarning, error) {
-	return loadLawsReader(dir, nil)
-}
-
 func loadLawsReader(dir string, reader bundleSourceReader) ([]Law, []SourceWarning, error) {
 	opts := LoadOptions[Law]{
 		Suffixes:     []string{".md"},
@@ -131,10 +121,6 @@ func decodeLawFile(path string, raw []byte, isCustom bool) (Law, *SourceWarning,
 		SourcePath: path,
 		IsCustom:   isCustom,
 	}, nil, nil
-}
-
-func LoadPersonas(dir string) ([]Persona, []SourceWarning, error) {
-	return loadPersonasReader(dir, nil)
 }
 
 func loadPersonasReader(dir string, reader bundleSourceReader) ([]Persona, []SourceWarning, error) {
@@ -178,17 +164,6 @@ func decodePersonaFile(path string, raw []byte, isCustom bool) (Persona, *Source
 		SourcePath:      path,
 		IsCustom:        isCustom,
 	}, slugMismatchWarning(slug, meta.Name, path), nil
-}
-
-// LoadTemplates scans dir (defaults at root + customs in dir/custom) for *.md
-// files and parses each into a TaskTemplate. Custom files override defaults
-// with the same slug. Returns empty slice when dir does not exist.
-//
-// Templates are not validated structurally — the body is free-form markdown
-// that the agent uses as a scaffold. Frontmatter requires `name`; `description`
-// and `entity` are optional metadata for humans browsing the kit.
-func LoadTemplates(dir string) ([]TaskTemplate, []SourceWarning, error) {
-	return loadTemplatesReader(dir, nil)
 }
 
 func loadTemplatesReader(dir string, reader bundleSourceReader) ([]TaskTemplate, []SourceWarning, error) {
@@ -275,7 +250,7 @@ func slugFromFilename(path string) string {
 }
 
 func slugMismatchWarning(slug, name, path string) *SourceWarning {
-	expected := Slugify(name)
+	expected := domain.Slugify(name)
 	if expected == "" || expected == slug {
 		return nil
 	}
@@ -311,3 +286,6 @@ func decodeYAMLStrict(data []byte, target any) error {
 func parseError(path string, err error) error {
 	return fmt.Errorf("%s: %w", path, err)
 }
+
+// ReadEntityFile reads one entity source with the loader size and path constraints.
+func ReadEntityFile(path string) ([]byte, error) { return readFileBounded(path, MaxEntityFileBytes) }

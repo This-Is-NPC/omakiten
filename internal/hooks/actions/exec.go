@@ -10,8 +10,8 @@ import (
 	"strings"
 	"time"
 
-	"omakiten/internal/cliutil"
 	"omakiten/internal/domain"
+	"omakiten/internal/processutil"
 )
 
 // DefaultExecTimeout is the fallback timeout applied to exec actions
@@ -107,7 +107,7 @@ func readArgv(args map[string]any) ([]string, error) {
 }
 
 // resolveExecBinary delegates the security contract for argv[0] to
-// the shared cliutil.ResolveBinary helper (also consumed by the CLI
+// the shared processutil.ResolveBinary helper (also consumed by the CLI
 // editor surface).
 //
 // The actual guarantee is narrow and worth naming precisely: pin the
@@ -129,14 +129,14 @@ func readArgv(args map[string]any) ([]string, error) {
 // separators ("./script.sh", "../bin/foo") are rejected because the
 // hook YAML rarely knows what CWD the runtime executor will inherit.
 func resolveExecBinary(name string) (string, error) {
-	resolved, err := cliutil.ResolveBinary(name)
+	resolved, err := processutil.ResolveBinary(name)
 	if err == nil {
 		return resolved, nil
 	}
 	switch {
-	case errors.Is(err, cliutil.ErrBinaryEmpty):
+	case errors.Is(err, processutil.ErrBinaryEmpty):
 		return "", errors.New("exec: args.argv[0] must be a non-empty path")
-	case errors.Is(err, cliutil.ErrBinaryRelativeWithSep):
+	case errors.Is(err, processutil.ErrBinaryRelativeWithSep):
 		return "", fmt.Errorf("exec: args.argv[0] %q must be an absolute path or a bare command name on PATH", strings.TrimSpace(name))
 	default:
 		return "", fmt.Errorf("exec: %w", err)

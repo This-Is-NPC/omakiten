@@ -26,12 +26,6 @@ type TagService struct {
 	snap   *config.Snapshot
 }
 
-// NewTagService wires the canonical writer without event emission. snap
-// supplies the per-project tag-synonym table; nil disables substitution.
-func NewTagService(repo TagRepository, snap *config.Snapshot) *TagService {
-	return &TagService{repo: repo, snap: snap}
-}
-
 // NewTagServiceWithEvents wires emission of tag.added / tag.removed
 // alongside the canonical write. events may be nil (callers that do not
 // want emission keep using NewTagService); telemetry errors are swallowed

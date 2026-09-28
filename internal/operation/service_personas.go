@@ -5,46 +5,47 @@ import (
 	"sort"
 	"strings"
 
+	"omakiten/internal/contract"
 	"omakiten/internal/domain"
 )
 
 // ListPersonas returns every persona wired in the active config personas: block,
 // ordered by slug. Bodies and expanded references are omitted — callers fetch
 // one persona via ShowPersona. Read-only.
-func (s *Service) ListPersonas(_ context.Context, _ ListPersonasInput) (ListPersonasResponse, error) {
+func (s *Service) ListPersonas(_ context.Context, _ contract.ListPersonasInput) (contract.ListPersonasResponse, error) {
 	if err := s.allow("persona.list"); err != nil {
-		return ListPersonasResponse{}, err
+		return contract.ListPersonasResponse{}, err
 	}
 	if s.personaCatalog == nil {
-		return ListPersonasResponse{Personas: []PersonaSummary{}}, nil
+		return contract.ListPersonasResponse{Personas: []contract.PersonaSummary{}}, nil
 	}
 	all := s.personaCatalog()
-	out := make([]PersonaSummary, 0, len(all))
+	out := make([]contract.PersonaSummary, 0, len(all))
 	for _, p := range all {
-		out = append(out, PersonaSummary{
+		out = append(out, contract.PersonaSummary{
 			Slug:        p.Slug,
 			Name:        p.Name,
 			Description: p.Description,
 		})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Slug < out[j].Slug })
-	return ListPersonasResponse{Personas: out}, nil
+	return contract.ListPersonasResponse{Personas: out}, nil
 }
 
 // ShowPersona returns one persona by slug with body and every explicitly
 // referenced law/skill expanded inline. Read-only.
-func (s *Service) ShowPersona(_ context.Context, input ShowPersonaInput) (ShowPersonaResponse, error) {
+func (s *Service) ShowPersona(_ context.Context, input contract.ShowPersonaInput) (contract.ShowPersonaResponse, error) {
 	if err := s.allow("persona.get"); err != nil {
-		return ShowPersonaResponse{}, err
+		return contract.ShowPersonaResponse{}, err
 	}
 	slug := strings.TrimSpace(input.Slug)
 	if slug == "" {
-		return ShowPersonaResponse{}, domain.NewError(domain.ErrValidation, "persona slug is required", nil)
+		return contract.ShowPersonaResponse{}, domain.NewError(domain.ErrValidation, "persona slug is required", nil)
 	}
 	if s.personaCatalog == nil {
-		return ShowPersonaResponse{}, domain.NewError(domain.ErrValidation, "persona catalog not initialized", map[string]any{"slug": slug})
+		return contract.ShowPersonaResponse{}, domain.NewError(domain.ErrValidation, "persona catalog not initialized", map[string]any{"slug": slug})
 	}
-	var found *PersonaInfo
+	var found *contract.PersonaInfo
 	for _, p := range s.personaCatalog() {
 		if p.Slug == slug {
 			copy := p
@@ -53,17 +54,17 @@ func (s *Service) ShowPersona(_ context.Context, input ShowPersonaInput) (ShowPe
 		}
 	}
 	if found == nil {
-		return ShowPersonaResponse{}, domain.NewError(domain.ErrValidation, "persona not found", map[string]any{"slug": slug})
+		return contract.ShowPersonaResponse{}, domain.NewError(domain.ErrValidation, "persona not found", map[string]any{"slug": slug})
 	}
 	laws, err := resolveLawSlugs(found.Laws, s.lawCatalog)
 	if err != nil {
-		return ShowPersonaResponse{}, err
+		return contract.ShowPersonaResponse{}, err
 	}
 	repertoire, err := resolveSkillSlugs(found.SkillRepertoire, s.skillCatalog)
 	if err != nil {
-		return ShowPersonaResponse{}, err
+		return contract.ShowPersonaResponse{}, err
 	}
-	return ShowPersonaResponse{Persona: PersonaDetail{
+	return contract.ShowPersonaResponse{Persona: contract.PersonaDetail{
 		Slug:            found.Slug,
 		Name:            found.Name,
 		Description:     found.Description,

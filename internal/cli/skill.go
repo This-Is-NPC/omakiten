@@ -5,8 +5,8 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"omakiten/internal/contract"
 	"omakiten/internal/domain"
-	"omakiten/internal/operation"
 )
 
 func newSkillCommand(opts *runtimeOptions) *cobra.Command {
@@ -35,7 +35,7 @@ func newSkillListCommand(opts *runtimeOptions) *cobra.Command {
 				}
 				defer rt.close()
 
-				return rt.operationService().ListSkills(ctx, operation.ListSkillsInput{})
+				return rt.operationService().ListSkills(ctx, contract.ListSkillsInput{})
 			})
 		},
 	}
@@ -54,7 +54,7 @@ func newSkillShowCommand(opts *runtimeOptions) *cobra.Command {
 				}
 				defer rt.close()
 
-				return rt.operationService().ShowSkill(ctx, operation.ShowSkillInput{Slug: args[0]})
+				return rt.operationService().ShowSkill(ctx, contract.ShowSkillInput{Slug: args[0]})
 			})
 		},
 	}

@@ -1,10 +1,5 @@
 package tui
 
-// The Studio draft fakes stay here because the screen-driving tests in
-// internal/tui still build a draft to bind into the Studio screen. The engine
-// tests that used to sit alongside them moved with the engine, to
-// internal/config/bundledraft.
-
 import (
 	"encoding/json"
 	"os"
@@ -12,7 +7,13 @@ import (
 	"testing"
 
 	"omakiten/internal/config"
+	"omakiten/internal/tui/screens/studio"
 )
+
+// The Studio draft fakes stay here because the screen-driving tests in
+// internal/tui still build a draft to bind into the Studio screen. The engine
+// tests that used to sit alongside them moved with the engine, to
+// internal/config/bundledraft.
 
 func studioDraftBundle() config.Bundle {
 	tru := true
@@ -84,7 +85,7 @@ type studioDraftStore struct {
 }
 
 func (s *studioDraftStore) LoadBundle(string) (config.Bundle, error) {
-	return cloneBundle(s.bundle), nil
+	return studio.CloneBundle(s.bundle), nil
 }
 
 func (s *studioDraftStore) LoadBundlePlan(path string) (config.Bundle, map[string]string, error) {
@@ -101,7 +102,7 @@ func (s *studioDraftStore) LoadBundlePlan(path string) (config.Bundle, map[strin
 
 func (s *studioDraftStore) SaveBundle(_ string, bundle config.Bundle) error {
 	s.saves++
-	s.bundle = cloneBundle(bundle)
+	s.bundle = studio.CloneBundle(bundle)
 	return nil
 }
 

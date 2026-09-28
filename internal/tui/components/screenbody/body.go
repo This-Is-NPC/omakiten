@@ -1,34 +1,7 @@
-// Package screenbody is the pushed-body contract: a screen composes when the
-// payload or the geometry changes, and View only slices. It lives here rather
-// than in screenhost because it is an implementation a screen embeds, not a
-// capability the host type-asserts — screenhost stays identity and outcomes.
-//
-// The screen's only body-path function is the compose hook the base calls on
-// Enter/Resize. The Body: callback that slices stored lines lives here, so a
-// screen using this package has no slot in which to compose on paint.
-//
-// # State ownership: ONE Body serves N sections
-//
-// A multi-zone screen holds one [Body] with N zones. It does NOT hold N Bodies,
-// and that is the arranger's requirement rather than a preference here.
-//
-// [screenlayout.Arrange] takes ONE state and N sections. A [screenlayout.State]
-// carries a SINGLE focus ID and a single frame — the measurement of the one
-// resolve that produced the cursors and offsets stored beside it. So two Bodies
-// each holding their own State cannot be arranged together: there would be two
-// focuses with no tiebreak, and each frame would describe a resolve the other
-// zone never took part in.
-//
-// The consequence for callers: per-zone geometry travels in each zone's
-// [screenlayout.Spec] — MinRows, Weight and Scroll may all differ — while the
-// cursor that moves between zones is single-valued and lives on the Body. A
-// screen that wants two independently-scrolling zones is asking for two
-// focuses, which this contract cannot express and the arranger cannot either.
+// Package screenbody stores composed content and delegates geometry and scrolling to screenlayout.
 package screenbody
 
 import (
-	"fmt"
-
 	"omakiten/internal/tui/components/screenkit"
 	"omakiten/internal/tui/components/screenlayout"
 	"omakiten/internal/tui/screenhost"
@@ -47,23 +20,7 @@ type Compose func(box screenlayout.Box) []string
 // the screen writes — the base applies it while slicing.
 type Split func(lines []string) (header, items []string)
 
-// Body holds the lines a screen composed and the width they were composed at.
-// Apply invalidates; Lifecycle Enter/Resize composes; View slices.
-//
-// # State ownership — one Body serves N sections
-//
-// The [screenlayout.State] here is the state for EVERY zone this Body holds,
-// not one zone's share of it, and that is forced by the arranger rather than
-// chosen. [screenlayout.Arrange] takes ONE state and N sections; a State
-// carries a SINGLE focus ID and a single frame — the measurement of the one
-// resolve that produced its cursors and offsets. So two Bodies, each with their
-// own State, cannot be arranged together: there would be two focuses and the
-// arranger has no way to choose between them, and each frame would describe a
-// resolve the other did not take part in.
-//
-// A multi-zone screen therefore holds ONE Body with N zones, not N Bodies. The
-// per-zone geometry lives in each zone's [screenlayout.Spec]; the cross-zone
-// cursor lives once, here.
+// Body owns the prepared section and its scroll state. Methods return a new value.
 type Body struct {
 	zones  []zone
 	layout screenlayout.State
@@ -80,64 +37,11 @@ type zone struct {
 	lines []string
 }
 
-// Zone is one zone's declaration at construction time. Its fields are
-// UNEXPORTED and it is built through [NewZone], which is not ceremony: when
-// Spec was a plain optional field, Zone{Split: f} compiled with the Spec
-// omitted and produced a zone that took the whole box and answered no key —
-// measured at 20 of 20 rows with all eight scroll keys returning false. An
-// omitted Spec is a zero Spec, and a zero Spec is loud and unreachable rather
-// than obviously broken, so the compiler refuses the shape instead.
-type Zone struct {
-	spec  screenlayout.Spec
-	split Split
-}
-
-// NewZone declares one zone. The Spec is positional because it is not
-// optional — see [Zone].
-func NewZone(spec screenlayout.Spec, split Split) Zone {
-	return Zone{spec: spec, split: split}
-}
-
-// NewZones returns an empty body holding one section per zone, in order. The
-// zones share this Body's single [screenlayout.State] — see the type comment
-// for why that is the arranger's requirement rather than a convenience.
-//
-// A zone whose Spec has no ID is a construction error and panics. That is the
-// residual [NewZone] cannot catch: a bare Zone{} still compiles inside this
-// package's own callers, and the ID is the one field that is never meaningfully
-// empty — every section is keyed by it, and it is the Body's only focus target.
-// Deliberate geometry is untouched: a zone may still choose Weight 0 or
-// ScrollNone, which are real choices; what it may not do is arrive without a
-// name because someone omitted the whole Spec.
-func NewZones(zones ...Zone) Body {
-	out := make([]zone, len(zones))
-	for i, z := range zones {
-		requireNamedSpec(z.spec, i)
-		out[i] = zone{spec: z.spec, split: z.split}
+// requireNamedSpec rejects sections without a focus identity.
+func requireNamedSpec(spec screenlayout.Spec) {
+	if spec.ID == "" {
+		panic("screenbody: section has no Spec.ID")
 	}
-	return Body{zones: out, layout: screenlayout.NewState()}
-}
-
-// requireNamedSpec is the ONE check, called from EVERY door that builds a zone
-// — [New] and [NewZones] both, because they are separate doors to the same
-// place and closing one leaves the other open.
-//
-// It rejects the VALUE, not the syntax. Unexporting Zone's fields stops
-// Zone{Split: f}, but New(screenlayout.Spec{}, nil) states the field and
-// arrives at the identical zero Spec; a remedy aimed at omission would close
-// the door it happened to name and leave that one standing.
-//
-// It checks IDENTITY, not geometry. An empty ID is not one bad field among
-// three: it is the Body's only focus target being empty, so the zone is never
-// a focus candidate and answers no key while taking its rows. Weight and
-// MinRows are deliberate choices a zone may legitimately make; a name is not.
-func requireNamedSpec(spec screenlayout.Spec, index int) {
-	if spec.ID != "" {
-		return
-	}
-	panic(fmt.Sprintf("screenbody: zone %d has no Spec.ID. A zone with a zero Spec takes its rows "+
-		"and answers no key, because ScrollNone is the zero ScrollPolicy and an empty ID is never a "+
-		"focus candidate. Use screenbody.Spec(id) for the pre-existing geometry, or state an ID.", index))
 }
 
 // New returns an empty single-zone body. The caller supplies the section Spec
@@ -145,20 +49,16 @@ func requireNamedSpec(spec screenlayout.Spec, index int) {
 // screen's to state, and a body that fixed them could not host a zone that
 // needed different ones. split is optional.
 func New(spec screenlayout.Spec, split Split) Body {
-	requireNamedSpec(spec, 0)
+	requireNamedSpec(spec)
 	return Body{zones: []zone{{spec: spec, split: split}}, layout: screenlayout.NewState()}
 }
 
-// Spec is the Spec [New] used before it accepted one, kept so a caller that
-// wants the historical single-zone geometry says so instead of restating three
-// literals — and so that a change to the default is a change to one line here
-// rather than to every call site that copied it.
+// Spec declares a scrolling content section with the default row allocation.
 func Spec(id screenlayout.ID) screenlayout.Spec {
 	return screenlayout.Spec{ID: id, MinRows: 1, Weight: 1, Scroll: screenlayout.ScrollItems}
 }
 
-// id is the focus target: the first zone's section. Focus is single-valued on
-// State, so a multi-zone Body focuses its first zone until a caller moves it.
+// id is the section's focus target.
 func (b Body) id() screenlayout.ID {
 	if len(b.zones) == 0 {
 		return ""
@@ -204,36 +104,17 @@ func (b Body) WithCursor(id screenlayout.ID, index int) Body {
 	return b
 }
 
-// Compose stores compose(box) for the FIRST zone, recaps to that width, and
-// resyncs the window. It is ComposeZones for the single-zone case, which is
-// every screen that has adopted this contract so far.
+// Compose prepares content at the supplied width and resyncs its scroll state.
 func (b Body) Compose(kit screenkit.Kit, box screenlayout.Box, compose Compose) Body {
-	return b.ComposeZones(kit, box, compose)
-}
-
-// ComposeZones stores one composed line-set per zone, in zone order, and
-// resyncs the window once against all of them. A nil composer, or a zone with
-// no composer supplied, stores no lines for that zone — the same meaning a nil
-// Compose has always had, per zone instead of per body.
-func (b Body) ComposeZones(kit screenkit.Kit, box screenlayout.Box, composers ...Compose) Body {
 	b.width = box.Width
-	b.zones = b.withZonesIndexed(func(i int, z zone) zone {
-		if i >= len(composers) || composers[i] == nil {
-			z.lines = nil
-			return z
+	b.zones = b.withZones(func(z zone) zone {
+		z.lines = nil
+		if compose != nil {
+			z.lines = screenkit.CapRows(compose(box), b.width)
 		}
-		z.lines = screenkit.CapRows(composers[i](box), b.width)
 		return z
 	})
 	return b.Resync(kit, box)
-}
-
-func (b Body) withZonesIndexed(fn func(int, zone) zone) []zone {
-	out := make([]zone, len(b.zones))
-	for i, z := range b.zones {
-		out[i] = fn(i, z)
-	}
-	return out
 }
 
 // ComposeOn composes for Enter and Resize and is a no-op for every other event.
@@ -290,39 +171,15 @@ func AfterApply(screen screenhost.Screen, frame screenhost.Frame) screenhost.Scr
 	return screen.Lifecycle(frame, screenhost.LifecycleResize).Screen
 }
 
-// sections is one Section per zone, in declaration order. The Spec is the
-// caller's — this is the line that used to invent MinRows, Weight and Scroll,
-// and inventing them is what stopped a zone from differing from its neighbour.
+// sections mounts the prepared content in the arranger.
 func (b Body) sections() []screenlayout.Section {
-	// The single-zone path is kept allocation-identical to the shape that
-	// preceded zones, and that is a keystroke-budget requirement rather than a
-	// tidiness one. sections is reached four times per keystroke — Arrange,
-	// ArrangeHost, HandleKey and Resync — so a closure that captures anything
-	// beyond the receiver escapes once per call and the budget moves. Capturing
-	// the zone VALUE cost four allocations a keystroke on both migrated screens
-	// and the gate caught it; indexing through the already-captured receiver
-	// costs none.
-	if len(b.zones) == 1 {
-		return []screenlayout.Section{screenlayout.Func{
-			Def: b.zones[0].spec,
-			Body: func(canvas screenlayout.Canvas) screenlayout.Block {
-				return b.block(canvas, b.zones[0])
-			},
-		}}
+	if len(b.zones) == 0 {
+		return nil
 	}
-	out := make([]screenlayout.Section, len(b.zones))
-	for i := range b.zones {
-		out[i] = screenlayout.Func{
-			Def: b.zones[i].spec,
-			// i is indexed through the receiver rather than captured as a zone
-			// value. Go 1.22 gives a per-iteration i, so this closure reads the
-			// zone it was built for.
-			Body: func(canvas screenlayout.Canvas) screenlayout.Block {
-				return b.block(canvas, b.zones[i])
-			},
-		}
-	}
-	return out
+	return []screenlayout.Section{screenlayout.Func{
+		Def:  b.zones[0].spec,
+		Body: func(canvas screenlayout.Canvas) screenlayout.Block { return b.block(canvas, b.zones[0]) },
+	}}
 }
 
 func (b Body) block(canvas screenlayout.Canvas, z zone) screenlayout.Block {
@@ -341,8 +198,7 @@ func (b Body) block(canvas screenlayout.Canvas, z zone) screenlayout.Block {
 	return screenlayout.Block{
 		Header: header,
 		Items:  items,
-		// Carry the current item selection through the Body mount. The old
-		// NoSelection override discarded every cursor after Resync.
+		// Preserve the section's item selection.
 		Cursor: screenlayout.At(b.layout.Cursor(z.spec.ID)),
 	}
 }

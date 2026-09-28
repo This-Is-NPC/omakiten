@@ -5,7 +5,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"omakiten/internal/operation"
+	"omakiten/internal/contract"
 )
 
 func newWorkflowCommand(opts *runtimeOptions) *cobra.Command {
@@ -24,7 +24,7 @@ func newWorkflowCommand(opts *runtimeOptions) *cobra.Command {
 					return nil, err
 				}
 				defer rt.close()
-				return rt.operationService().ShowWorkflow(ctx, operation.WorkflowInput{
+				return rt.operationService().ShowWorkflow(ctx, contract.WorkflowInput{
 					ProjectSelector: opts.projectSelector(),
 				})
 			})
@@ -53,7 +53,7 @@ func newWorkflowOrphansCommand(opts *runtimeOptions) *cobra.Command {
 				defer rt.close()
 
 				// dry-run keeps the preview path (--confirm ignored).
-				return rt.operationService().MigrateOrphans(ctx, operation.MigrateOrphansInput{
+				return rt.operationService().MigrateOrphans(ctx, contract.MigrateOrphansInput{
 					ProjectSelector: opts.projectSelector(),
 					Confirmed:       confirm && !dryRun,
 				})

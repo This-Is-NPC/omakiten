@@ -8,6 +8,7 @@ import (
 
 	"omakiten/internal/agentruntime"
 	"omakiten/internal/config"
+	"omakiten/internal/contract"
 	"omakiten/internal/domain"
 	"omakiten/internal/operation"
 	"omakiten/internal/testfixtures/snapstore"
@@ -31,7 +32,7 @@ func TestTaskArchiveUnarchiveViaFacade(t *testing.T) {
 		t.Fatalf("CreateTask: %v", err)
 	}
 
-	svc := operation.NewService(store, operation.ProjectSelector{ProjectID: project.ID})
+	svc := operation.NewService(store, contract.ProjectSelector{ProjectID: project.ID})
 	svc.SetSnapshot(snap)
 	svc.SetSettings(operation.ServiceSettings{
 		RecentCommentLimit: 5,

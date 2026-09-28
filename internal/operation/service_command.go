@@ -7,6 +7,8 @@ import (
 	"sort"
 	"strings"
 
+	"omakiten/internal/commandcatalog"
+	"omakiten/internal/contract"
 	"omakiten/internal/domain"
 )
 
@@ -28,9 +30,9 @@ import (
 // Missing catalogs degrade gracefully — an unwired runtime still resolves a
 // registered command (empty description, no persona/skills); an unknown
 // command still rejects.
-func (s *Service) ResolveCommand(_ context.Context, input ResolveCommandInput) (ResolveCommandResponse, error) {
+func (s *Service) ResolveCommand(_ context.Context, input contract.ResolveCommandInput) (contract.ResolveCommandResponse, error) {
 	if err := s.allow("command.resolve"); err != nil {
-		return ResolveCommandResponse{}, err
+		return contract.ResolveCommandResponse{}, err
 	}
 	name := strings.TrimSpace(input.Name)
 	commands := s.loadCommandCatalog()
@@ -49,39 +51,39 @@ func (s *Service) ResolveCommand(_ context.Context, input ResolveCommandInput) (
 // entity-sourced description. MCP tool commands.list is this gated
 // discovery surface; Adapter.Prompts() (prompts/list) stays ungated so
 // a human slash-command picker still works when the tool is denied.
-func (s *Service) ListCommands(_ context.Context) (ListCommandsResponse, error) {
+func (s *Service) ListCommands(_ context.Context) (contract.ListCommandsResponse, error) {
 	if err := s.allow("command.list"); err != nil {
-		return ListCommandsResponse{}, err
+		return contract.ListCommandsResponse{}, err
 	}
-	names := CommandNames()
-	out := make([]CommandListEntry, 0, len(names))
+	names := commandcatalog.CommandNames()
+	out := make([]contract.CommandListEntry, 0, len(names))
 	for _, name := range names {
-		out = append(out, CommandListEntry{Name: name, Description: s.CommandDescription(name)})
+		out = append(out, contract.CommandListEntry{Name: name, Description: s.CommandDescription(name)})
 	}
-	return ListCommandsResponse{Commands: out}, nil
+	return contract.ListCommandsResponse{Commands: out}, nil
 }
 
 // ResolveCommandFromCatalog resolves a command against an unsaved candidate
 // catalog. Studio uses this entry point so prompt preview and MCP runtime
 // resolution share one composition and rendering implementation.
-func ResolveCommandFromCatalog(name string, commands map[string]MCPCommandBinding, personas map[string]PersonaInfo, skills map[string]SkillInfo, laws map[string]LawInfo, templates map[string]TemplateInfo, outputLanguage string) (ResolveCommandResponse, error) {
+func ResolveCommandFromCatalog(name string, commands map[string]contract.MCPCommandBinding, personas map[string]contract.PersonaInfo, skills map[string]contract.SkillInfo, laws map[string]contract.LawInfo, templates map[string]contract.TemplateInfo, outputLanguage string) (contract.ResolveCommandResponse, error) {
 	return resolveCommandFromCatalog(strings.TrimSpace(name), nil, commands, personas, skills, laws, templates, outputLanguage)
 }
 
-func resolveCommandFromCatalog(name string, args []InvocationArg, commands map[string]MCPCommandBinding, personas map[string]PersonaInfo, skills map[string]SkillInfo, laws map[string]LawInfo, templates map[string]TemplateInfo, outputLanguage string) (ResolveCommandResponse, error) {
+func resolveCommandFromCatalog(name string, args []contract.InvocationArg, commands map[string]contract.MCPCommandBinding, personas map[string]contract.PersonaInfo, skills map[string]contract.SkillInfo, laws map[string]contract.LawInfo, templates map[string]contract.TemplateInfo, outputLanguage string) (contract.ResolveCommandResponse, error) {
 	if name == "" {
-		return ResolveCommandResponse{}, domain.NewError(domain.ErrValidation, "command name is required", nil)
+		return contract.ResolveCommandResponse{}, domain.NewError(domain.ErrValidation, "command name is required", nil)
 	}
-	if !isKnownCommand(name) {
-		return ResolveCommandResponse{}, domain.NewError(domain.ErrValidation, "unknown MCP command", map[string]any{"name": name})
+	if !commandcatalog.IsRegisteredCommand(name) {
+		return contract.ResolveCommandResponse{}, domain.NewError(domain.ErrValidation, "unknown MCP command", map[string]any{"name": name})
 	}
 
-	resp := ResolveCommandResponse{Name: name, InvocationArgs: args}
+	resp := contract.ResolveCommandResponse{Name: name, InvocationArgs: args}
 
 	// The prompts/list one-liner is entity-sourced: it is the frontmatter
 	// `description` of the bound okt-<slug>-playbook skill, not Go prose. An
 	// unwired runtime (no skill catalog) degrades to an empty description.
-	if pb, ok := skills[playbookSlugForCommand(name)]; ok {
+	if pb, ok := skills[commandcatalog.PlaybookSlug(name)]; ok {
 		resp.Description = pb.Description
 	}
 
@@ -122,24 +124,24 @@ func resolveCommandFromCatalog(name string, args []InvocationArg, commands map[s
 // skill catalog / no matching playbook skill) — callers treat empty as "no
 // description available" rather than an error.
 func (s *Service) CommandDescription(name string) string {
-	if !isKnownCommand(name) {
+	if !commandcatalog.IsRegisteredCommand(name) {
 		return ""
 	}
-	if pb, ok := s.loadSkillCatalog()[playbookSlugForCommand(name)]; ok {
+	if pb, ok := s.loadSkillCatalog()[commandcatalog.PlaybookSlug(name)]; ok {
 		return pb.Description
 	}
 	return ""
 }
 
-func (s *Service) loadCommandCatalog() map[string]MCPCommandBinding {
+func (s *Service) loadCommandCatalog() map[string]contract.MCPCommandBinding {
 	if s.commandCatalog == nil {
-		return map[string]MCPCommandBinding{}
+		return map[string]contract.MCPCommandBinding{}
 	}
 	return s.commandCatalog()
 }
 
-func (s *Service) loadPersonaCatalog() map[string]PersonaInfo {
-	out := map[string]PersonaInfo{}
+func (s *Service) loadPersonaCatalog() map[string]contract.PersonaInfo {
+	out := map[string]contract.PersonaInfo{}
 	if s.personaCatalog == nil {
 		return out
 	}
@@ -149,8 +151,8 @@ func (s *Service) loadPersonaCatalog() map[string]PersonaInfo {
 	return out
 }
 
-func (s *Service) loadSkillCatalog() map[string]SkillInfo {
-	out := map[string]SkillInfo{}
+func (s *Service) loadSkillCatalog() map[string]contract.SkillInfo {
+	out := map[string]contract.SkillInfo{}
 	if s.skillCatalog == nil {
 		return out
 	}
@@ -160,8 +162,8 @@ func (s *Service) loadSkillCatalog() map[string]SkillInfo {
 	return out
 }
 
-func (s *Service) loadLawCatalog() map[string]LawInfo {
-	out := map[string]LawInfo{}
+func (s *Service) loadLawCatalog() map[string]contract.LawInfo {
+	out := map[string]contract.LawInfo{}
 	if s.lawCatalog == nil {
 		return out
 	}
@@ -176,13 +178,13 @@ func (s *Service) loadLawCatalog() map[string]LawInfo {
 // command can ship the scaffold inline; project-scoped templates are
 // surfaced verbatim — the resolver does not pick a winner here, the
 // command spec already decided which slugs to bind.
-func (s *Service) loadTemplateCatalogForCommand() map[string]TemplateInfo {
-	out := map[string]TemplateInfo{}
+func (s *Service) loadTemplateCatalogForCommand() map[string]contract.TemplateInfo {
+	out := map[string]contract.TemplateInfo{}
 	if s.templateCatalog == nil {
 		return out
 	}
 	for _, t := range s.templateCatalog() {
-		out[t.Slug] = TemplateInfo{
+		out[t.Slug] = contract.TemplateInfo{
 			Slug:        t.Slug,
 			Name:        t.Name,
 			Description: t.Description,
@@ -199,11 +201,11 @@ func (s *Service) loadTemplateCatalogForCommand() map[string]TemplateInfo {
 // preserving the order the caller declared them in and silently dropping slugs
 // the catalog does not know. Callers pass either the command's declared skill
 // subset (schema v2) or the persona's full repertoire (fallback).
-func pickSkills(slugs []string, skills map[string]SkillInfo) []SkillInfo {
+func pickSkills(slugs []string, skills map[string]contract.SkillInfo) []contract.SkillInfo {
 	if len(slugs) == 0 || len(skills) == 0 {
 		return nil
 	}
-	out := make([]SkillInfo, 0, len(slugs))
+	out := make([]contract.SkillInfo, 0, len(slugs))
 	for _, slug := range slugs {
 		if sk, ok := skills[slug]; ok {
 			out = append(out, sk)
@@ -212,7 +214,7 @@ func pickSkills(slugs []string, skills map[string]SkillInfo) []SkillInfo {
 	return out
 }
 
-func invocationArgs(args map[string]any) []InvocationArg {
+func invocationArgs(args map[string]any) []contract.InvocationArg {
 	if len(args) == 0 {
 		return nil
 	}
@@ -226,9 +228,9 @@ func invocationArgs(args map[string]any) []InvocationArg {
 		}
 	}
 	sort.Strings(keys)
-	out := make([]InvocationArg, 0, len(keys))
+	out := make([]contract.InvocationArg, 0, len(keys))
 	for _, key := range keys {
-		out = append(out, InvocationArg{Name: key, Value: formatInvocationArg(values[key])})
+		out = append(out, contract.InvocationArg{Name: key, Value: formatInvocationArg(values[key])})
 	}
 	return out
 }
@@ -245,7 +247,7 @@ func formatInvocationArg(value any) string {
 // template-bound law slugs, then subtracts laws_disabled. Each surviving slug
 // is resolved against the law catalog so the prompt ships the law body, not
 // just the name.
-func effectiveLaws(globalSpec, commandSpec MCPCommandBinding, persona *PersonaInfo, templates []TemplateInfo, laws map[string]LawInfo) []LawInfo {
+func effectiveLaws(globalSpec, commandSpec contract.MCPCommandBinding, persona *contract.PersonaInfo, templates []contract.TemplateInfo, laws map[string]contract.LawInfo) []contract.LawInfo {
 	disabled := map[string]struct{}{}
 	for _, slug := range commandSpec.LawsDisabled {
 		disabled[slug] = struct{}{}
@@ -262,9 +264,9 @@ func effectiveLaws(globalSpec, commandSpec MCPCommandBinding, persona *PersonaIn
 	return resolveEffectiveLaws(slugs, disabled, laws)
 }
 
-func resolveEffectiveLaws(slugs []string, disabled map[string]struct{}, laws map[string]LawInfo) []LawInfo {
+func resolveEffectiveLaws(slugs []string, disabled map[string]struct{}, laws map[string]contract.LawInfo) []contract.LawInfo {
 	seen := map[string]struct{}{}
-	out := []LawInfo{}
+	out := []contract.LawInfo{}
 	for _, slug := range slugs {
 		if slug == "" {
 			continue
@@ -312,7 +314,7 @@ func resolveEffectiveLaws(slugs []string, disabled map[string]struct{}, laws map
 // trailing footer; instead, every templates-bound command must surface the
 // hint via its action text or its persona body. This is enforced by
 // `TestTemplateBoundCommandsCarryFetchHint`.
-func renderCommandMarkdown(resp ResolveCommandResponse) string {
+func renderCommandMarkdown(resp contract.ResolveCommandResponse) string {
 	r := markdownRenderer{}
 	r.writePersona(resp.Persona)
 	r.writeInvocationArgs(resp.InvocationArgs)
@@ -337,7 +339,7 @@ func (r *markdownRenderer) openSection(heading string) {
 	r.sectionStarted = true
 }
 
-func (r *markdownRenderer) writePersona(persona *PersonaInfo) {
+func (r *markdownRenderer) writePersona(persona *contract.PersonaInfo) {
 	if persona == nil {
 		return
 	}
@@ -350,7 +352,7 @@ func (r *markdownRenderer) writePersona(persona *PersonaInfo) {
 	}
 }
 
-func (r *markdownRenderer) writeInvocationArgs(args []InvocationArg) {
+func (r *markdownRenderer) writeInvocationArgs(args []contract.InvocationArg) {
 	if len(args) == 0 {
 		return
 	}
@@ -360,7 +362,7 @@ func (r *markdownRenderer) writeInvocationArgs(args []InvocationArg) {
 	}
 }
 
-func (r *markdownRenderer) writeSkills(skills []SkillInfo) {
+func (r *markdownRenderer) writeSkills(skills []contract.SkillInfo) {
 	if len(skills) == 0 {
 		return
 	}
@@ -382,7 +384,7 @@ func (r *markdownRenderer) writeSkills(skills []SkillInfo) {
 	}
 }
 
-func (r *markdownRenderer) writeLaws(laws []LawInfo) {
+func (r *markdownRenderer) writeLaws(laws []contract.LawInfo) {
 	if len(laws) == 0 {
 		return
 	}
@@ -396,7 +398,7 @@ func (r *markdownRenderer) writeLaws(laws []LawInfo) {
 	}
 }
 
-func (r *markdownRenderer) writeTemplates(templates []TemplateInfo) {
+func (r *markdownRenderer) writeTemplates(templates []contract.TemplateInfo) {
 	if len(templates) == 0 {
 		return
 	}
@@ -470,13 +472,4 @@ func templateNameEchoesSlug(name, slug string) bool {
 		titled = append(titled, strings.ToUpper(p[:1])+p[1:])
 	}
 	return strings.EqualFold(strings.Join(titled, " "), name)
-}
-
-// SortedCommandNames is exposed for tests that want a stable iteration order.
-// It is a thin wrapper around CommandNames; both are in the agent layer so
-// the MCP adapter does not have to maintain its own list.
-func SortedCommandNames() []string {
-	out := append([]string(nil), CommandNames()...)
-	sort.Strings(out)
-	return out
 }

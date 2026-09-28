@@ -7,6 +7,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"omakiten/internal/config"
+	studioprojection "omakiten/internal/studioprojection"
 	"omakiten/internal/tui/components/screenkit"
 	"omakiten/internal/tui/screenhost"
 )
@@ -88,7 +89,7 @@ func (m Screen) renderStudioPromptPreview(bundle config.Bundle) string {
 	return m.tr("tui.studio.commands.preview_composing", "Composing preview…")
 }
 
-func (m Screen) renderPreparedStudioPromptPreview(row studioCommandRow) string {
+func (m Screen) renderPreparedStudioPromptPreview(row studioprojection.CommandRow) string {
 	if m.commandPreview.matches(m.repos.ProjectID, m.repos.RuntimeGeneration, row.Key, row.Spec) {
 		return m.commandPreview.formatted
 	}

@@ -7,6 +7,7 @@ import (
 
 	"omakiten/internal/config"
 	"omakiten/internal/domain"
+	"omakiten/internal/testutil"
 )
 
 // kitKeys is the closed set of kits whose YAMLs ship under
@@ -26,7 +27,7 @@ const refKit = "omakase"
 // the YAML-driven event registry refactor (Phase 0):
 //
 //  1. const ↔ YAML key — every domain.EventType* const in
-//     domain.KnownEventTypes appears as a key in
+//     testutil.EventRegistry().Types() appears as a key in
 //     Settings.Events.Definitions for every shipped kit, and every key
 //     in Definitions matches a known const value. Either-side drift
 //     fails the test with the offending diff.
@@ -85,11 +86,11 @@ func loadEventRegistryKits(t *testing.T) map[string]map[string]config.EventDefin
 
 func hydrateKnownEventTypes(t *testing.T) map[string]struct{} {
 	t.Helper()
-	if err := config.LoadDomainEventRegistry(kitEvents(t, refKit)); err != nil {
+	if _, err := config.BuildEventRegistry(kitEvents(t, refKit)); err != nil {
 		t.Fatalf("LoadDomainEventRegistry(%q): %v", refKit, err)
 	}
-	knownSet := make(map[string]struct{}, len(domain.KnownEventTypes))
-	for _, key := range domain.KnownEventTypes {
+	knownSet := make(map[string]struct{}, len(testutil.EventRegistry().Types()))
+	for _, key := range testutil.EventRegistry().Types() {
 		knownSet[key] = struct{}{}
 	}
 	return knownSet
@@ -98,7 +99,7 @@ func hydrateKnownEventTypes(t *testing.T) map[string]struct{} {
 func assertEventRegistryKeys(t *testing.T, key string, defs map[string]config.EventDefinitionSettings, knownSet map[string]struct{}) {
 	t.Helper()
 	var missingInYAML []string
-	for _, known := range domain.KnownEventTypes {
+	for _, known := range testutil.EventRegistry().Types() {
 		if _, ok := defs[known]; !ok {
 			missingInYAML = append(missingInYAML, known)
 		}
@@ -115,7 +116,7 @@ func assertEventRegistryKeys(t *testing.T, key string, defs map[string]config.Ev
 		t.Errorf("kit %q: missing in YAML definitions: %v", key, missingInYAML)
 	}
 	if len(unknownInYAML) > 0 {
-		t.Errorf("kit %q: YAML keys not in domain.KnownEventTypes: %v", key, unknownInYAML)
+		t.Errorf("kit %q: YAML keys not in testutil.EventRegistry().Types(): %v", key, unknownInYAML)
 	}
 }
 

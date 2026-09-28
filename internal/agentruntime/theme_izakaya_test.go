@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"omakiten/internal/operation"
+	"omakiten/internal/contract"
 )
 
 // openIzakayaRuntime materialises a runtime seeded from the embedded default
@@ -35,7 +35,7 @@ func TestIzakayaBuilderIdentityRenders(t *testing.T) {
 	rt := openIzakayaRuntime(t)
 	ctx := context.Background()
 
-	resp, err := rt.Service().ResolveCommand(ctx, operation.ResolveCommandInput{Name: "okt-task-implement"})
+	resp, err := rt.Service().ResolveCommand(ctx, contract.ResolveCommandInput{Name: "okt-task-implement"})
 	if err != nil {
 		t.Fatalf("ResolveCommand(okt-task-implement) error = %v", err)
 	}
@@ -112,7 +112,7 @@ func assertIzakayaRepresentative(t *testing.T, ctx context.Context, rt *Runtime,
 	law     string
 }) {
 	t.Helper()
-	resp, err := rt.Service().ResolveCommand(ctx, operation.ResolveCommandInput{Name: tc.command})
+	resp, err := rt.Service().ResolveCommand(ctx, contract.ResolveCommandInput{Name: tc.command})
 	if err != nil {
 		t.Fatalf("ResolveCommand(%s) error = %v", tc.command, err)
 	}
@@ -151,7 +151,7 @@ func TestIzakayaNotesSlotsCarryScribeRepertoire(t *testing.T) {
 
 func assertIzakayaNoteSlot(t *testing.T, ctx context.Context, rt *Runtime, name string) {
 	t.Helper()
-	resp, err := rt.Service().ResolveCommand(ctx, operation.ResolveCommandInput{Name: name})
+	resp, err := rt.Service().ResolveCommand(ctx, contract.ResolveCommandInput{Name: name})
 	if err != nil {
 		t.Fatalf("ResolveCommand(%s) error = %v", name, err)
 	}
@@ -170,7 +170,7 @@ func assertIzakayaNoteSlot(t *testing.T, ctx context.Context, rt *Runtime, name 
 	assertBulletWithBody(t, name, resp)
 }
 
-func hasSkill(skills []operation.SkillInfo, want map[string]struct{}) bool {
+func hasSkill(skills []contract.SkillInfo, want map[string]struct{}) bool {
 	for _, skill := range skills {
 		if _, ok := want[skill.Slug]; ok {
 			return true
@@ -181,7 +181,7 @@ func hasSkill(skills []operation.SkillInfo, want map[string]struct{}) bool {
 
 // --- helpers ---
 
-func assertBulletWithBody(t *testing.T, name string, resp operation.ResolveCommandResponse) {
+func assertBulletWithBody(t *testing.T, name string, resp contract.ResolveCommandResponse) {
 	t.Helper()
 	if len(resp.Skills) == 0 {
 		t.Fatalf("%s resolved with no skills — command-level subset not wired", name)

@@ -14,6 +14,7 @@ import (
 var (
 	logsEventRegistryOnce sync.Once
 	logsEventRegistryErr  error
+	logsFixtureRegistry   *domain.EventRegistry
 )
 
 func logsEnsureEventRegistry() {
@@ -23,7 +24,9 @@ func logsEnsureEventRegistry() {
 			logsEventRegistryErr = fmt.Errorf("load omakase kit: %w", err)
 			return
 		}
-		if err := config.LoadDomainEventRegistry(cfg.Events); err != nil {
+		var registryErr error
+		logsFixtureRegistry, registryErr = config.BuildEventRegistry(cfg.Events)
+		if err := registryErr; err != nil {
 			logsEventRegistryErr = fmt.Errorf("hydrate event registry: %w", err)
 		}
 	})
@@ -195,6 +198,7 @@ func logsGoldenTemplates() []domain.EventRow {
 // with a distinct id and a distinct literal timestamp. It is called afresh on
 // every Build and every Bind, so no two materialisations share a slice.
 func logsGoldenFeed(cycles int) []domain.EventRow {
+	logsEnsureEventRegistry()
 	templates := logsGoldenTemplates()
 	rows := make([]domain.EventRow, 0, cycles*len(templates))
 	for cycle := 0; cycle < cycles; cycle++ {
@@ -203,7 +207,7 @@ func logsGoldenFeed(cycles int) []domain.EventRow {
 			row.ProjectID = screenfixture.Project().ID
 			row.ProjectSlug = screenfixture.Project().Slug
 			row.CreatedAt = logsGoldenStamp(len(rows))
-			rows = append(rows, row)
+			rows = append(rows, logsFixtureRegistry.Prepare(row))
 		}
 	}
 	return rows
@@ -217,10 +221,10 @@ func logsGoldenFeed(cycles int) []domain.EventRow {
 func logsGoldenAuthoredFeed() []domain.EventRow {
 	rows := make([]domain.EventRow, 0, 12)
 	for _, row := range logsGoldenFeed(1) {
-		switch domain.EventCategoryOf(row.EventType) {
+		switch row.Category {
 		case domain.EventCategoryTask, domain.EventCategoryComment,
 			domain.EventCategoryPlan, domain.EventCategoryTagDep:
-			rows = append(rows, row)
+			rows = append(rows, logsFixtureRegistry.Prepare(row))
 		}
 	}
 	return rows
@@ -230,7 +234,7 @@ func logsGoldenCategoryAllowed(categories []domain.EventCategory, eventType stri
 	if len(categories) == 0 {
 		return true
 	}
-	actual := domain.EventCategoryOf(eventType)
+	actual := logsFixtureRegistry.CategoryOf(eventType)
 	for _, category := range categories {
 		if category == actual {
 			return true
@@ -254,12 +258,13 @@ func logsGoldenDeps(rows []domain.EventRow) Deps {
 	}
 }
 
-func logsGoldenPayload(rows []domain.EventRow, filter FilterMode) Payload {
+func logsGoldenPayload(rows []domain.EventRow, filter domain.LogsFilterMode) Payload {
 	visible := rows
 	if filter != FilterAll {
 		categories := domain.LogsFilterCategories(filter)
 		visible = make([]domain.EventRow, 0, len(rows))
 		for _, row := range rows {
+			row = logsFixtureRegistry.Prepare(row)
 			if logsGoldenCategoryAllowed(categories, row.EventType) {
 				visible = append(visible, row)
 			}
@@ -272,7 +277,8 @@ func logsGoldenPayload(rows []domain.EventRow, filter FilterMode) Payload {
 		counts[category] = 0
 	}
 	for _, row := range rows {
-		if category := domain.EventCategoryOf(row.EventType); category != domain.EventCategoryUnknown {
+		row = logsFixtureRegistry.Prepare(row)
+		if category := row.Category; category != domain.EventCategoryUnknown {
 			counts[category]++
 		}
 	}

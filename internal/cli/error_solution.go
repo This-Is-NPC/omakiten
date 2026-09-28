@@ -5,8 +5,8 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"omakiten/internal/contract"
 	"omakiten/internal/domain"
-	"omakiten/internal/operation"
 )
 
 func newErrorCommand(opts *runtimeOptions) *cobra.Command {
@@ -31,7 +31,7 @@ func newErrorRecordCommand(opts *runtimeOptions) *cobra.Command {
 					return nil, err
 				}
 				defer rt.close()
-				return rt.operationService().RecordError(ctx, operation.RecordErrorInput{
+				return rt.operationService().RecordError(ctx, contract.RecordErrorInput{
 					ProjectSelector: opts.projectSelector(),
 					Description:     description,
 					Context:         errContext,
@@ -71,7 +71,7 @@ func newSolutionAddCommand(opts *runtimeOptions) *cobra.Command {
 					return nil, err
 				}
 				defer rt.close()
-				return rt.operationService().AddSolution(ctx, operation.AddSolutionInput{
+				return rt.operationService().AddSolution(ctx, contract.AddSolutionInput{
 					ProjectSelector: opts.projectSelector(),
 					ErrorID:         errorID,
 					Description:     description,
@@ -106,7 +106,7 @@ func newSolutionConfirmCommand(opts *runtimeOptions) *cobra.Command {
 					return nil, err
 				}
 				defer rt.close()
-				return rt.operationService().ConfirmSolution(ctx, operation.ConfirmSolutionInput{
+				return rt.operationService().ConfirmSolution(ctx, contract.ConfirmSolutionInput{
 					ProjectSelector: opts.projectSelector(),
 					SolutionID:      solutionID,
 					Success:         success,
@@ -132,7 +132,7 @@ func newSolutionListTopCommand(opts *runtimeOptions) *cobra.Command {
 					return nil, err
 				}
 				defer rt.close()
-				return rt.operationService().ListTopSolutions(ctx, operation.ListTopSolutionsInput{
+				return rt.operationService().ListTopSolutions(ctx, contract.ListTopSolutionsInput{
 					ProjectSelector: opts.projectSelector(),
 					Limit:           limit,
 				})

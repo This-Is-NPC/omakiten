@@ -2,13 +2,15 @@ package operation
 
 import (
 	"testing"
+
+	"omakiten/internal/contract"
 )
 
 func TestContinueTaskSurfacesAgentOutputLanguage(t *testing.T) {
 	fixture := newAgentFixture(t)
 	fixture.service.SetSnapshot(snapshotWithAgentOutputLanguage(t, "Português (Brasil)"))
 
-	resp, err := fixture.service.ContinueTask(fixture.ctx, ContinueTaskInput{TaskID: fixture.taskA1.ID})
+	resp, err := fixture.service.ContinueTask(fixture.ctx, contract.ContinueTaskInput{TaskID: fixture.taskA1.ID})
 	if err != nil {
 		t.Fatalf("ContinueTask: %v", err)
 	}
@@ -21,7 +23,7 @@ func TestContinueTaskOmitsAgentOutputLanguageWhenEmpty(t *testing.T) {
 	fixture := newAgentFixture(t)
 	fixture.service.SetSnapshot(snapshotWithAgentOutputLanguage(t, ""))
 
-	resp, err := fixture.service.ContinueTask(fixture.ctx, ContinueTaskInput{TaskID: fixture.taskA1.ID})
+	resp, err := fixture.service.ContinueTask(fixture.ctx, contract.ContinueTaskInput{TaskID: fixture.taskA1.ID})
 	if err != nil {
 		t.Fatalf("ContinueTask: %v", err)
 	}

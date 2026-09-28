@@ -12,7 +12,7 @@ func TestLoadSkillsParsesSchemaV2Fields(t *testing.T) {
 	writeFile(t, filepath.Join(dir, "go.md"),
 		"---\nname: Go\ndescription: Go lang\nschema_version: 2\nrole_affinity:\n  - builder\n  - verifier\n---\nbody\n")
 
-	skills, _, err := LoadSkills(dir)
+	skills, _, err := loadSkillsReader(dir, nil)
 	if err != nil {
 		t.Fatalf("LoadSkills() error = %v", err)
 	}
@@ -36,7 +36,7 @@ func TestLoadPersonasParsesSchemaV2Fields(t *testing.T) {
 	writeFile(t, filepath.Join(dir, "builder.md"),
 		"---\nname: Builder\nschema_version: 2\nskill_repertoire:\n  - go\n  - sqlite\n  - markdown\n---\nbody\n")
 
-	personas, _, err := LoadPersonas(dir)
+	personas, _, err := loadPersonasReader(dir, nil)
 	if err != nil {
 		t.Fatalf("LoadPersonas() error = %v", err)
 	}

@@ -8,6 +8,7 @@ import (
 
 	"omakiten/internal/app"
 	"omakiten/internal/domain"
+	"omakiten/internal/recovery"
 )
 
 type projectDeleteEventRecorder struct {
@@ -27,7 +28,7 @@ func (r *projectDeleteEventRecorder) RecordEntityEvent(_ context.Context, _ stri
 // order but cannot prove that WAL frames committed from this process
 // actually land in the .db file BackupService's generic writer copies.
 //
-// This test wires the real *sqlite.Store and *app.BackupService, then runs the
+// This test wires the real *sqlite.Store and *recovery.BackupService, then runs the
 // full atomic ProjectService.Delete cascade against a fresh DB. Tasks are
 // inserted through the store's normal write path (the inserts hit the WAL
 // sidecar in WAL mode). The production atomic port creates the recovery image
@@ -51,7 +52,7 @@ func TestProjectDeleteSnapshotsRealWALData(t *testing.T) {
 	}
 
 	backupDir := t.TempDir()
-	backup := app.NewBackupService(app.BackupOptions{
+	backup := recovery.NewBackupService(recovery.BackupOptions{
 		SourcePath: dbPath,
 		DestDir:    backupDir,
 		Retention:  0,
@@ -67,7 +68,6 @@ func TestProjectDeleteSnapshotsRealWALData(t *testing.T) {
 
 	events := &projectDeleteEventRecorder{}
 	svc := app.NewProjectService(store, backup, events).
-		WithCheckpointer(store).
 		SetAuditWarnWriter(io.Discard)
 	result, err := svc.Delete(ctx, project.ID, counters)
 	if err != nil {

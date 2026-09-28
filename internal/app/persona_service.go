@@ -135,7 +135,7 @@ func (s *PersonaService) Add(ctx context.Context, input domain.PersonaInput) (do
 		return domain.Persona{}, configError(path, err)
 	}
 
-	if err := assertNoCollision(path, slug, "persona"); err != nil {
+	if err := assertNoCollision(s.files, path, slug, "persona"); err != nil {
 		return domain.Persona{}, err
 	}
 	bundle, _, fileHashes, err := s.editor.LoadPlanWithFiles()

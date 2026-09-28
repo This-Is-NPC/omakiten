@@ -6,38 +6,24 @@ import (
 	"path/filepath"
 	"strings"
 
-	"omakiten/internal/agentruntime"
 	"omakiten/internal/config"
+	"omakiten/internal/contract"
 	"omakiten/internal/domain"
-	"omakiten/internal/operation"
 	"omakiten/internal/paths"
 	"omakiten/internal/tui/screens/studio"
 )
 
-// reloadBundle re-resolves the bundle at path through the BundleCache
-// (Phase 3e) and rewires every bundle-derived field on the Model in
-// place. BundleCache prepares an inactive candidate, accepts a staged Model,
-// then commits Store settings, hooks, cache publication, and the staged Model.
-// On error nothing on the live Model changes so the caller can surface the
-// failure and let the user retry.
-// bundle.swapped continues to fire after commit so the hooks engine can react
-// (e.g., the orphan-migration notification when the new workflow
-// lost buckets the previous one had).
-//
-// Repositories.Cache MUST be wired — Phase 3e dropped the
-// ConfigService.Import fallback so the TUI never reaches the SQL
-// config-write path. Production composition (cli/tui.go) always
-// installs the cache; tests use newPickerModel-style helpers that do
-// the same.
+// reloadBundle stages a replacement model and commits it through the runtime port.
+// A rejected candidate leaves the active model and its snapshot unchanged.
 func (m *Model) reloadBundle(path string) error {
 	if m.repos.Cache == nil {
-		return fmt.Errorf("tui: Repositories.Cache is required for hot-reload (Phase 3e dropped the ConfigService.Import fallback)")
+		return fmt.Errorf("tui: Repositories.Cache is required for hot-reload")
 	}
 	fromWorkflow := m.workflow.Key
 	fromPath := m.repos.Editor.Path()
 	before := *m
 	before.studioApplyDiff = nil
-	_, err := m.repos.Cache.ApplyWithCommit(m.ctx, m.repos.ProjectID, path, func(pr *agentruntime.ProjectRuntime) (func() error, error) {
+	_, err := m.repos.Cache.ApplyView(m.ctx, m.repos.ProjectID, path, func(pr *contract.RuntimeView) (func() error, error) {
 		staged := before
 		if err := staged.applyProjectRuntime(pr, path); err != nil {
 			return nil, err
@@ -67,7 +53,7 @@ func (m *Model) reloadBundleIfChanged() (bool, error) {
 	if m.repos.Cache == nil || m.repos.ConfigPath == "" {
 		return false, nil
 	}
-	before := m.repos.Cache.Get(m.repos.ProjectID)
+	before := m.repos.Cache.View(m.repos.ProjectID)
 	modelBefore := *m
 	modelBefore.studioApplyDiff = nil
 	// Intentional asymmetry vs the MCP Service() marker re-resolve
@@ -77,7 +63,7 @@ func (m *Model) reloadBundleIfChanged() (bool, error) {
 	// edits to its bundle, but NOT an active-profile SWITCH — that is the
 	// AC2 contract (the switch is observed on the next explicit reload,
 	// not the refresh tick). Do not "fix" this into a marker re-stat.
-	_, changed, err := m.repos.Cache.ResolveApplyWithCommit(m.ctx, m.repos.ProjectID, m.repos.ConfigPath, func(pr *agentruntime.ProjectRuntime) (func() error, error) {
+	_, changed, err := m.repos.Cache.ResolveApplyView(m.ctx, m.repos.ProjectID, m.repos.ConfigPath, func(pr *contract.RuntimeView) (func() error, error) {
 		path := pr.SourcePath
 		if path == "" {
 			path = m.repos.ConfigPath
@@ -95,10 +81,10 @@ func (m *Model) reloadBundleIfChanged() (bool, error) {
 		m.studioApplyDiff = nil
 		return false, err
 	}
-	return changed && m.repos.Cache.Get(m.repos.ProjectID) != before, nil
+	return changed && m.repos.Cache.View(m.repos.ProjectID) != before, nil
 }
 
-func (m *Model) applyProjectRuntime(pr *agentruntime.ProjectRuntime, path string) error {
+func (m *Model) applyProjectRuntime(pr *contract.RuntimeView, path string) error {
 	if pr == nil || pr.Snapshot == nil {
 		return fmt.Errorf("tui: hot-reload returned an empty project runtime")
 	}
@@ -217,8 +203,8 @@ func (m *Model) emitBundleSwapped(fromKey, toKey, fromPath string) {
 // Facade path first; repository fallback keeps lightweight fixtures working.
 func (m *Model) previewOrphanReport(toKey string) (domain.OrphanReport, error) {
 	if svc := m.repos.operationService(); svc != nil {
-		resp, err := svc.MigrateOrphans(m.ctx, operation.MigrateOrphansInput{
-			ProjectSelector: operation.ProjectSelector{ProjectID: m.project.ID}})
+		resp, err := svc.MigrateOrphans(m.ctx, contract.MigrateOrphansInput{
+			ProjectSelector: contract.ProjectSelector{ProjectID: m.project.ID}})
 		if err != nil {
 			return domain.OrphanReport{}, err
 		}
@@ -228,12 +214,7 @@ func (m *Model) previewOrphanReport(toKey string) (domain.OrphanReport, error) {
 		}
 		return report, nil
 	}
-	current := m.repos.activeSnapshot()
-	previous := m.repos.activePreviousSnapshot()
-	if operation.CascadeActive(current, previous) {
-		return m.repos.Orphans.PreviewOrphanedCascade(m.ctx, m.project.ID, operation.NewOrphanCascadePlan(current, previous))
-	}
-	return m.repos.Orphans.PreviewOrphanedTasks(m.ctx, m.project.ID, current, previous)
+	return domain.OrphanReport{WorkflowKey: toKey}, nil
 }
 
 // revertConfigSwap re-imports the previous bundle and rewrites .active to

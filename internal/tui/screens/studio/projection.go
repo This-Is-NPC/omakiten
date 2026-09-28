@@ -2,10 +2,11 @@ package studio
 
 import (
 	"omakiten/internal/config"
+	bundledraft "omakiten/internal/config/bundledraft"
 	"omakiten/internal/studioprojection"
 )
 
-func projectionText(text Text) studioprojection.Text {
+func projectionText(text bundledraft.Text) studioprojection.Text {
 	return func(key, fallback string, args ...any) string { return tr(text, key, fallback, args...) }
 }
 

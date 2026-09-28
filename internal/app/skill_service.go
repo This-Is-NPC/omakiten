@@ -120,7 +120,7 @@ func (s *SkillService) Add(ctx context.Context, input domain.SkillInput) (domain
 		return domain.Skill{}, configError(path, err)
 	}
 
-	if err := assertNoCollision(path, slug, "skill"); err != nil {
+	if err := assertNoCollision(s.files, path, slug, "skill"); err != nil {
 		return domain.Skill{}, err
 	}
 	bundle, _, fileHashes, err := s.editor.LoadPlanWithFiles()
@@ -346,8 +346,12 @@ func warningIndex(warnings []config.SourceWarning) map[string]string {
 
 // assertNoCollision ensures we never overwrite an existing skill file when the
 // user creates a "new" skill that resolves to the same slug.
-func assertNoCollision(path, slug, kind string) error {
-	if _, err := osStat(path); err == nil {
+func assertNoCollision(files EntityFileWriter, path, slug, kind string) error {
+	exists, err := files.FileExists(path)
+	if err != nil {
+		return err
+	}
+	if exists {
 		return domain.NewError(domain.ErrValidation, fmt.Sprintf("%s slug already exists on disk", kind), map[string]any{"slug": slug, "path": path})
 	}
 	return nil

@@ -1,6 +1,8 @@
 package keynav
 
-import "testing"
+import (
+	"testing"
+)
 
 // The whole reason this package exists is that two surfaces have to agree, so
 // the table is asserted as a table rather than through either of them.

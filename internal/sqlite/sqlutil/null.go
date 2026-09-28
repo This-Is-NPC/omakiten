@@ -16,7 +16,6 @@ package sqlutil
 
 import (
 	"database/sql"
-	"time"
 )
 
 // NullStringOr returns the wrapped string when v is valid, otherwise the
@@ -55,17 +54,5 @@ func NullInt64Ptr(v sql.NullInt64) *int64 {
 		return nil
 	}
 	out := v.Int64
-	return &out
-}
-
-// NullTimePtr is the time.Time analogue of NullInt64Ptr: nullable
-// timestamp into a `*time.Time` so the caller can distinguish "never
-// happened" (nil) from the zero time. Defensive copy semantics match
-// NullInt64Ptr.
-func NullTimePtr(v sql.NullTime) *time.Time {
-	if !v.Valid {
-		return nil
-	}
-	out := v.Time
 	return &out
 }

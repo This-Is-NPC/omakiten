@@ -9,7 +9,7 @@ import (
 )
 
 // fixtureBundleEditor is the fixture's own implementation of the screen's
-// BundleEditor port, reading and writing the materialised config root through
+// contract.BundleEditor port, reading and writing the materialised config root through
 // internal/config — the package the screen already depends on for
 // config.Bundle.
 //

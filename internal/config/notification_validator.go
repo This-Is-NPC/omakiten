@@ -152,17 +152,18 @@ func validateNotificationAction(i int, action NotificationAction, seenKey, seenI
 	if strings.TrimSpace(action.Label) == "" {
 		return fmt.Errorf("actions[%d].label is required (shown in the notification footer)", i)
 	}
-	if len(action.Command) == 0 {
+	if action.Operation == "" {
+		if len(action.Arguments) > 0 {
+			return fmt.Errorf("actions[%d].operation is required with arguments", i)
+		}
 		return nil
 	}
-	head := strings.TrimSpace(action.Command[0])
-	if head == "" {
-		return fmt.Errorf("actions[%d].command[0] must be a cobra subcommand, got empty string", i)
+	for _, entry := range CanonicalSurfaceCensus {
+		if entry.Slug == action.Operation && entry.Kind == SurfaceKindProduct {
+			return nil
+		}
 	}
-	if head == "tui" || head == "mcp" {
-		return fmt.Errorf("actions[%d].command[0] %q is reserved — `tui` and `mcp` cannot be dispatched from a hook-driven notification (they require their own terminal)", i, head)
-	}
-	return nil
+	return fmt.Errorf("actions[%d].operation must name an application operation", i)
 }
 
 func validateNotificationStyle(notification Notification) error {

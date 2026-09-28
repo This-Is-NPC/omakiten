@@ -8,6 +8,7 @@ import (
 
 	"omakiten/internal/agentruntime"
 	"omakiten/internal/config"
+	"omakiten/internal/config/bundledraft"
 	"omakiten/internal/domain"
 	"omakiten/internal/testfixtures/bundleeditor"
 	"omakiten/internal/tui/screenhost"
@@ -33,15 +34,15 @@ func TestStudioDirtyDraftCannotCrossProjectRoundTrip(t *testing.T) {
 		t.Fatalf("install B runtime: %v", err)
 	}
 
-	aDraft, err := NewStudioDraft(aEditor)
+	aDraft, err := bundledraft.New(aEditor)
 	if err != nil {
 		t.Fatalf("open A draft: %v", err)
 	}
 	aDraft.RenameBucket(1, "A dirty candidate")
 	m := Model{
-		ctx:     context.Background(),
-		project: domain.ProjectContext{ID: 1, Slug: "a"},
-		top:     topHome,
+		ctx:        context.Background(),
+		project:    domain.ProjectContext{ID: 1, Slug: "a"},
+		navigation: screenhost.Home,
 		repos: Repositories{
 			Cache:      cache,
 			ProjectID:  1,

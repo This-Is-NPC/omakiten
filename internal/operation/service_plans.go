@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"omakiten/internal/app"
+	"omakiten/internal/contract"
 	"omakiten/internal/domain"
 )
 
@@ -19,19 +20,19 @@ func (s *Service) newPlanService() *app.PlanService {
 // CreatePlan creates a plan in the resolved project, returning the wire
 // projection. Validation lives in app.PlanService → sqlite.Store; this
 // layer only resolves the project and projects the response.
-func (s *Service) CreatePlan(ctx context.Context, input CreatePlanInput) (CreatePlanResponse, error) {
+func (s *Service) CreatePlan(ctx context.Context, input contract.CreatePlanInput) (contract.CreatePlanResponse, error) {
 	if err := s.allow("plan.create"); err != nil {
-		return CreatePlanResponse{}, err
+		return contract.CreatePlanResponse{}, err
 	}
 	project, err := s.resolveProject(ctx, input.ProjectSelector)
 	if err != nil {
-		return CreatePlanResponse{}, err
+		return contract.CreatePlanResponse{}, err
 	}
 	plan, err := s.newPlanService().Create(ctx, project, input.Slug, input.Name, input.GoalBody)
 	if err != nil {
-		return CreatePlanResponse{}, err
+		return contract.CreatePlanResponse{}, err
 	}
-	return CreatePlanResponse{
+	return contract.CreatePlanResponse{
 		Project: projectSummary(project),
 		Plan:    planSummary(plan),
 	}, nil
@@ -40,25 +41,25 @@ func (s *Service) CreatePlan(ctx context.Context, input CreatePlanInput) (Create
 // ListPlans returns every plan in the resolved project, oldest first.
 // GoalBody is stripped from each entry to keep payloads compact — the
 // goal body is full markdown capped at the domain write boundary.
-func (s *Service) ListPlans(ctx context.Context, input ListPlansInput) (ListPlansResponse, error) {
+func (s *Service) ListPlans(ctx context.Context, input contract.ListPlansInput) (contract.ListPlansResponse, error) {
 	if err := s.allow("plan.list"); err != nil {
-		return ListPlansResponse{}, err
+		return contract.ListPlansResponse{}, err
 	}
 	project, err := s.resolveProject(ctx, input.ProjectSelector)
 	if err != nil {
-		return ListPlansResponse{}, err
+		return contract.ListPlansResponse{}, err
 	}
 	plans, err := s.newPlanService().List(ctx, project)
 	if err != nil {
-		return ListPlansResponse{}, err
+		return contract.ListPlansResponse{}, err
 	}
-	summaries := make([]PlanSummary, 0, len(plans))
+	summaries := make([]contract.PlanSummary, 0, len(plans))
 	for _, p := range plans {
 		s := planSummary(p)
 		s.GoalBody = ""
 		summaries = append(summaries, s)
 	}
-	return ListPlansResponse{
+	return contract.ListPlansResponse{
 		Project: projectSummary(project),
 		Plans:   summaries,
 	}, nil
@@ -69,26 +70,26 @@ func (s *Service) ListPlans(ctx context.Context, input ListPlansInput) (ListPlan
 // the integer percent (done*100/total, clamped to 0 when total is 0).
 // The active wave id is the lowest-position wave that still has pending
 // tasks; 0 when every wave is fully done.
-func (s *Service) ShowPlan(ctx context.Context, input ShowPlanInput) (ShowPlanResponse, error) {
+func (s *Service) ShowPlan(ctx context.Context, input contract.ShowPlanInput) (contract.ShowPlanResponse, error) {
 	if err := s.allow("plan.show"); err != nil {
-		return ShowPlanResponse{}, err
+		return contract.ShowPlanResponse{}, err
 	}
 	return s.showPlan(ctx, input)
 }
 
-func (s *Service) showPlan(ctx context.Context, input ShowPlanInput) (ShowPlanResponse, error) {
+func (s *Service) showPlan(ctx context.Context, input contract.ShowPlanInput) (contract.ShowPlanResponse, error) {
 	project, err := s.resolveProject(ctx, input.ProjectSelector)
 	if err != nil {
-		return ShowPlanResponse{}, err
+		return contract.ShowPlanResponse{}, err
 	}
 	show, err := s.newPlanService().Show(ctx, project, input.Slug)
 	if err != nil {
-		return ShowPlanResponse{}, err
+		return contract.ShowPlanResponse{}, err
 	}
 
-	waves := make([]PlanWaveView, 0, len(show.Waves))
+	waves := make([]contract.PlanWaveView, 0, len(show.Waves))
 	for _, w := range show.Waves {
-		view := PlanWaveView{
+		view := contract.PlanWaveView{
 			ID:         w.Wave.ID,
 			Name:       w.Wave.Name,
 			Position:   w.Wave.Position,
@@ -96,7 +97,7 @@ func (s *Service) showPlan(ctx context.Context, input ShowPlanInput) (ShowPlanRe
 			TotalCount: w.TotalCount,
 		}
 		for _, t := range w.Tasks {
-			row := PlanTaskRow{
+			row := contract.PlanTaskRow{
 				TaskID:     t.TaskID,
 				Title:      t.Title,
 				BucketKey:  t.BucketKey,
@@ -115,7 +116,7 @@ func (s *Service) showPlan(ctx context.Context, input ShowPlanInput) (ShowPlanRe
 		percent = show.DoneCount * 100 / show.TotalCount
 	}
 
-	return ShowPlanResponse{
+	return contract.ShowPlanResponse{
 		Project:      projectSummary(project),
 		Plan:         planSummary(show.Plan),
 		Waves:        waves,
@@ -131,19 +132,19 @@ func (s *Service) showPlan(ctx context.Context, input ShowPlanInput) (ShowPlanRe
 // Agents picking up work call this before plans.claim_next so they can
 // inspect the goal_body and the candidate task without committing to
 // the claim.
-func (s *Service) ContinuePlan(ctx context.Context, input ContinuePlanInput) (ContinuePlanResponse, error) {
+func (s *Service) ContinuePlan(ctx context.Context, input contract.ContinuePlanInput) (contract.ContinuePlanResponse, error) {
 	if err := s.allow("plan.continue"); err != nil {
-		return ContinuePlanResponse{}, err
+		return contract.ContinuePlanResponse{}, err
 	}
-	show, err := s.showPlan(ctx, ShowPlanInput(input))
+	show, err := s.showPlan(ctx, contract.ShowPlanInput(input))
 	if err != nil {
-		return ContinuePlanResponse{}, err
+		return contract.ContinuePlanResponse{}, err
 	}
 	project, err := s.resolveProject(ctx, input.ProjectSelector)
 	if err != nil {
-		return ContinuePlanResponse{}, err
+		return contract.ContinuePlanResponse{}, err
 	}
-	resp := ContinuePlanResponse{
+	resp := contract.ContinuePlanResponse{
 		Project:      show.Project,
 		Plan:         show.Plan,
 		Waves:        show.Waves,
@@ -154,10 +155,10 @@ func (s *Service) ContinuePlan(ctx context.Context, input ContinuePlanInput) (Co
 	}
 	row, ok, err := s.newPlanService().PeekNextClaimable(ctx, project, show.Plan.ID)
 	if err != nil {
-		return ContinuePlanResponse{}, err
+		return contract.ContinuePlanResponse{}, err
 	}
 	if ok {
-		preview := PlanTaskRow{
+		preview := contract.PlanTaskRow{
 			TaskID:     row.TaskID,
 			Title:      row.Title,
 			BucketKey:  row.BucketKey,
@@ -177,33 +178,33 @@ func (s *Service) ContinuePlan(ctx context.Context, input ContinuePlanInput) (Co
 // go through UpdatePlan (emits plan.edited, plus plan.abandoned on an
 // abandon). At least one editable field must be supplied. Returns the
 // post-edit plan projection.
-func (s *Service) EditPlan(ctx context.Context, input EditPlanInput) (EditPlanResponse, error) {
+func (s *Service) EditPlan(ctx context.Context, input contract.EditPlanInput) (contract.EditPlanResponse, error) {
 	if err := s.allow("plan.edit"); err != nil {
-		return EditPlanResponse{}, err
+		return contract.EditPlanResponse{}, err
 	}
 	project, err := s.resolveProject(ctx, input.ProjectSelector)
 	if err != nil {
-		return EditPlanResponse{}, err
+		return contract.EditPlanResponse{}, err
 	}
 	svc := s.newPlanService()
 	planID, err := editPlanID(ctx, svc, project, input)
 	if err != nil {
-		return EditPlanResponse{}, err
+		return contract.EditPlanResponse{}, err
 	}
 	if err := validateEditPlan(input); err != nil {
-		return EditPlanResponse{}, err
+		return contract.EditPlanResponse{}, err
 	}
 	plan, err := s.applyPlanEdits(ctx, svc, project, planID, input)
 	if err != nil {
-		return EditPlanResponse{}, err
+		return contract.EditPlanResponse{}, err
 	}
-	return EditPlanResponse{
+	return contract.EditPlanResponse{
 		Project: projectSummary(project),
 		Plan:    planSummary(plan),
 	}, nil
 }
 
-func editPlanID(ctx context.Context, svc *app.PlanService, project domain.ProjectContext, input EditPlanInput) (int64, error) {
+func editPlanID(ctx context.Context, svc *app.PlanService, project domain.ProjectContext, input contract.EditPlanInput) (int64, error) {
 	if input.Slug != "" {
 		plan, err := svc.GetBySlug(ctx, project, input.Slug)
 		if err != nil {
@@ -217,7 +218,7 @@ func editPlanID(ctx context.Context, svc *app.PlanService, project domain.Projec
 	return input.PlanID, nil
 }
 
-func validateEditPlan(input EditPlanInput) error {
+func validateEditPlan(input contract.EditPlanInput) error {
 	if input.Name == nil && input.NewSlug == nil && input.Status == nil && input.GoalBody == nil {
 		return domain.NewError(domain.ErrValidation,
 			"plans.edit requires at least one of name, new_slug, status, goal_body", nil)
@@ -225,7 +226,7 @@ func validateEditPlan(input EditPlanInput) error {
 	return nil
 }
 
-func (s *Service) applyPlanEdits(ctx context.Context, svc *app.PlanService, project domain.ProjectContext, planID int64, input EditPlanInput) (domain.Plan, error) {
+func (s *Service) applyPlanEdits(ctx context.Context, svc *app.PlanService, project domain.ProjectContext, planID int64, input contract.EditPlanInput) (domain.Plan, error) {
 	// UpdatePlan must run BEFORE UpdateGoalBody: UpdatePlan rejects a
 	// no-op name/slug/status diff with "changed nothing", and that
 	// rejection has to fire before the goal-body write commits + emits.
@@ -255,33 +256,33 @@ func (s *Service) applyPlanEdits(ctx context.Context, svc *app.PlanService, proj
 // (unconfirmed) call returns a Confirmation block; retry with
 // confirmed=true to proceed. Waves cascade; member tasks survive
 // detached (plan_id / wave_id cleared).
-func (s *Service) DeletePlan(ctx context.Context, input DeletePlanInput) (DeletePlanResponse, error) {
+func (s *Service) DeletePlan(ctx context.Context, input contract.DeletePlanInput) (contract.DeletePlanResponse, error) {
 	if err := s.allow("plan.delete"); err != nil {
-		return DeletePlanResponse{}, err
+		return contract.DeletePlanResponse{}, err
 	}
 	project, err := s.resolveProject(ctx, input.ProjectSelector)
 	if err != nil {
-		return DeletePlanResponse{}, err
+		return contract.DeletePlanResponse{}, err
 	}
 	svc := s.newPlanService()
 	planID := input.PlanID
 	if input.Slug != "" {
 		plan, err := svc.GetBySlug(ctx, project, input.Slug)
 		if err != nil {
-			return DeletePlanResponse{}, err
+			return contract.DeletePlanResponse{}, err
 		}
 		planID = plan.ID
 	}
 	if planID == 0 {
-		return DeletePlanResponse{}, domain.NewError(domain.ErrValidation, "plan id or slug is required", nil)
+		return contract.DeletePlanResponse{}, domain.NewError(domain.ErrValidation, "plan id or slug is required", nil)
 	}
 	if !input.Confirmed {
-		return DeletePlanResponse{
+		return contract.DeletePlanResponse{
 			Project: projectSummary(project),
-			Confirmation: Confirmation{
+			Confirmation: contract.Confirmation{
 				RequiresConfirmation: true,
 				Reason:               "Deleting a plan is destructive: its waves cascade-delete and member tasks are detached (plan_id / wave_id cleared). The tasks themselves survive. Confirm with confirmed=true to proceed.",
-				Options: []ConfirmationOption{
+				Options: []contract.ConfirmationOption{
 					{Action: "confirm_delete", Label: "Retry plans.delete with confirmed=true to hard-delete the plan"},
 				},
 			},
@@ -289,10 +290,10 @@ func (s *Service) DeletePlan(ctx context.Context, input DeletePlanInput) (Delete
 	}
 	event, err := svc.DeletePlan(ctx, project, planID)
 	if err != nil {
-		return DeletePlanResponse{}, err
+		return contract.DeletePlanResponse{}, err
 	}
 	snapshot := eventSummary(event)
-	return DeletePlanResponse{Project: projectSummary(project), Snapshot: &snapshot}, nil
+	return contract.DeletePlanResponse{Project: projectSummary(project), Snapshot: &snapshot}, nil
 }
 
 // AssignPlanTask attaches an existing task to a plan + wave (census
@@ -301,35 +302,35 @@ func (s *Service) DeletePlan(ctx context.Context, input DeletePlanInput) (Delete
 // by slug or plan_id (slug wins when both supplied); wave_id is taken
 // verbatim — supplying a wave from a different plan fails with
 // ErrPlanWaveNotFound.
-func (s *Service) AssignPlanTask(ctx context.Context, input AssignPlanTaskInput) (AssignPlanTaskResponse, error) {
+func (s *Service) AssignPlanTask(ctx context.Context, input contract.AssignPlanTaskInput) (contract.AssignPlanTaskResponse, error) {
 	if err := s.allow("plan.task.assign"); err != nil {
-		return AssignPlanTaskResponse{}, err
+		return contract.AssignPlanTaskResponse{}, err
 	}
 	project, err := s.resolveProject(ctx, input.ProjectSelector)
 	if err != nil {
-		return AssignPlanTaskResponse{}, err
+		return contract.AssignPlanTaskResponse{}, err
 	}
 	planID := input.PlanID
 	if input.Slug != "" {
 		plan, err := s.newPlanService().GetBySlug(ctx, project, input.Slug)
 		if err != nil {
-			return AssignPlanTaskResponse{}, err
+			return contract.AssignPlanTaskResponse{}, err
 		}
 		planID = plan.ID
 	}
 	if planID == 0 {
-		return AssignPlanTaskResponse{}, domain.NewError(domain.ErrValidation, "plan id or slug is required", nil)
+		return contract.AssignPlanTaskResponse{}, domain.NewError(domain.ErrValidation, "plan id or slug is required", nil)
 	}
 	if input.WaveID == 0 {
-		return AssignPlanTaskResponse{}, domain.NewError(domain.ErrValidation, "wave_id is required", nil)
+		return contract.AssignPlanTaskResponse{}, domain.NewError(domain.ErrValidation, "wave_id is required", nil)
 	}
 	if input.TaskID == 0 {
-		return AssignPlanTaskResponse{}, domain.NewError(domain.ErrValidation, "task_id is required", nil)
+		return contract.AssignPlanTaskResponse{}, domain.NewError(domain.ErrValidation, "task_id is required", nil)
 	}
 	if err := s.newPlanService().AssignTask(ctx, project, input.TaskID, planID, input.WaveID); err != nil {
-		return AssignPlanTaskResponse{}, err
+		return contract.AssignPlanTaskResponse{}, err
 	}
-	return AssignPlanTaskResponse{
+	return contract.AssignPlanTaskResponse{
 		Project: projectSummary(project),
 		TaskID:  input.TaskID,
 		PlanID:  planID,
@@ -339,30 +340,30 @@ func (s *Service) AssignPlanTask(ctx context.Context, input AssignPlanTaskInput)
 
 // ClaimNextPlanTask runs the atomic claim primitive. Returns Claimed=false
 // (and no Task) when nothing is claimable in the plan's active wave.
-func (s *Service) ClaimNextPlanTask(ctx context.Context, input ClaimNextPlanTaskInput) (ClaimNextPlanTaskResponse, error) {
+func (s *Service) ClaimNextPlanTask(ctx context.Context, input contract.ClaimNextPlanTaskInput) (contract.ClaimNextPlanTaskResponse, error) {
 	if err := s.allow("plan.task.claim_next"); err != nil {
-		return ClaimNextPlanTaskResponse{}, err
+		return contract.ClaimNextPlanTaskResponse{}, err
 	}
 	project, err := s.resolveProject(ctx, input.ProjectSelector)
 	if err != nil {
-		return ClaimNextPlanTaskResponse{}, err
+		return contract.ClaimNextPlanTaskResponse{}, err
 	}
 	planID := input.PlanID
 	if input.Slug != "" {
 		plan, err := s.newPlanService().GetBySlug(ctx, project, input.Slug)
 		if err != nil {
-			return ClaimNextPlanTaskResponse{}, err
+			return contract.ClaimNextPlanTaskResponse{}, err
 		}
 		planID = plan.ID
 	}
 	if planID == 0 {
-		return ClaimNextPlanTaskResponse{}, domain.NewError(domain.ErrValidation, "plan id or slug is required", nil)
+		return contract.ClaimNextPlanTaskResponse{}, domain.NewError(domain.ErrValidation, "plan id or slug is required", nil)
 	}
 	task, claimed, err := s.newPlanService().ClaimNext(ctx, project, planID)
 	if err != nil {
-		return ClaimNextPlanTaskResponse{}, err
+		return contract.ClaimNextPlanTaskResponse{}, err
 	}
-	resp := ClaimNextPlanTaskResponse{Project: projectSummary(project), Claimed: claimed}
+	resp := contract.ClaimNextPlanTaskResponse{Project: projectSummary(project), Claimed: claimed}
 	if claimed {
 		summary := taskSummary(task, s.registry)
 		resp.Task = &summary
@@ -373,35 +374,35 @@ func (s *Service) ClaimNextPlanTask(ctx context.Context, input ClaimNextPlanTask
 // AddPlanWave appends (position=0) or inserts (position>0) a wave onto
 // a plan. Slug is the user-facing plan handle; plan_id may be supplied
 // instead when the caller already holds it from a previous response.
-func (s *Service) AddPlanWave(ctx context.Context, input AddPlanWaveInput) (AddPlanWaveResponse, error) {
+func (s *Service) AddPlanWave(ctx context.Context, input contract.AddPlanWaveInput) (contract.AddPlanWaveResponse, error) {
 	if err := s.allow("plan.wave.add"); err != nil {
-		return AddPlanWaveResponse{}, err
+		return contract.AddPlanWaveResponse{}, err
 	}
 	project, err := s.resolveProject(ctx, input.ProjectSelector)
 	if err != nil {
-		return AddPlanWaveResponse{}, err
+		return contract.AddPlanWaveResponse{}, err
 	}
 	planID := input.PlanID
 	if planID == 0 {
 		plan, err := s.newPlanService().GetBySlug(ctx, project, input.Slug)
 		if err != nil {
-			return AddPlanWaveResponse{}, err
+			return contract.AddPlanWaveResponse{}, err
 		}
 		planID = plan.ID
 	}
 	wave, err := s.newPlanService().AddWave(ctx, project, planID, input.Name, input.Position)
 	if err != nil {
-		return AddPlanWaveResponse{}, err
+		return contract.AddPlanWaveResponse{}, err
 	}
-	return AddPlanWaveResponse{
+	return contract.AddPlanWaveResponse{
 		Project: projectSummary(project),
 		Wave:    planWaveSummary(wave),
 	}, nil
 }
 
 // planWaveSummary projects a domain.PlanWave into the MCP wire shape.
-func planWaveSummary(wave domain.PlanWave) PlanWaveSummary {
-	return PlanWaveSummary{
+func planWaveSummary(wave domain.PlanWave) contract.PlanWaveSummary {
+	return contract.PlanWaveSummary{
 		ID:       wave.ID,
 		PlanID:   wave.PlanID,
 		Name:     wave.Name,
@@ -413,24 +414,24 @@ func planWaveSummary(wave domain.PlanWave) PlanWaveSummary {
 // (unconfirmed) call returns a Confirmation block; retry with
 // confirmed=true to proceed. The wave's tasks survive with wave_id
 // cleared (plan_id intact).
-func (s *Service) RemovePlanWave(ctx context.Context, input RemovePlanWaveInput) (RemovePlanWaveResponse, error) {
+func (s *Service) RemovePlanWave(ctx context.Context, input contract.RemovePlanWaveInput) (contract.RemovePlanWaveResponse, error) {
 	if err := s.allow("plan.wave.remove"); err != nil {
-		return RemovePlanWaveResponse{}, err
+		return contract.RemovePlanWaveResponse{}, err
 	}
 	project, err := s.resolveProject(ctx, input.ProjectSelector)
 	if err != nil {
-		return RemovePlanWaveResponse{}, err
+		return contract.RemovePlanWaveResponse{}, err
 	}
 	if input.WaveID == 0 {
-		return RemovePlanWaveResponse{}, domain.NewError(domain.ErrValidation, "wave_id is required", nil)
+		return contract.RemovePlanWaveResponse{}, domain.NewError(domain.ErrValidation, "wave_id is required", nil)
 	}
 	if !input.Confirmed {
-		return RemovePlanWaveResponse{
+		return contract.RemovePlanWaveResponse{
 			Project: projectSummary(project),
-			Confirmation: Confirmation{
+			Confirmation: contract.Confirmation{
 				RequiresConfirmation: true,
 				Reason:               "Removing a wave detaches its tasks (wave_id cleared; they stay in the plan but unscheduled). Confirm with confirmed=true to proceed.",
-				Options: []ConfirmationOption{
+				Options: []contract.ConfirmationOption{
 					{Action: "confirm_remove_wave", Label: "Retry plans.remove_wave with confirmed=true to delete the wave"},
 				},
 			},
@@ -438,71 +439,71 @@ func (s *Service) RemovePlanWave(ctx context.Context, input RemovePlanWaveInput)
 	}
 	wave, err := s.newPlanService().RemoveWave(ctx, project, input.WaveID)
 	if err != nil {
-		return RemovePlanWaveResponse{}, err
+		return contract.RemovePlanWaveResponse{}, err
 	}
 	summary := planWaveSummary(wave)
-	return RemovePlanWaveResponse{Project: projectSummary(project), Wave: &summary}, nil
+	return contract.RemovePlanWaveResponse{Project: projectSummary(project), Wave: &summary}, nil
 }
 
 // RenamePlanWave rewrites a wave's name. Name is required, non-blank, and
 // must differ from the current name (else ErrValidation).
-func (s *Service) RenamePlanWave(ctx context.Context, input RenamePlanWaveInput) (RenamePlanWaveResponse, error) {
+func (s *Service) RenamePlanWave(ctx context.Context, input contract.RenamePlanWaveInput) (contract.RenamePlanWaveResponse, error) {
 	if err := s.allow("plan.wave.rename"); err != nil {
-		return RenamePlanWaveResponse{}, err
+		return contract.RenamePlanWaveResponse{}, err
 	}
 	project, err := s.resolveProject(ctx, input.ProjectSelector)
 	if err != nil {
-		return RenamePlanWaveResponse{}, err
+		return contract.RenamePlanWaveResponse{}, err
 	}
 	if input.WaveID == 0 {
-		return RenamePlanWaveResponse{}, domain.NewError(domain.ErrValidation, "wave_id is required", nil)
+		return contract.RenamePlanWaveResponse{}, domain.NewError(domain.ErrValidation, "wave_id is required", nil)
 	}
 	wave, err := s.newPlanService().RenameWave(ctx, project, input.WaveID, input.Name)
 	if err != nil {
-		return RenamePlanWaveResponse{}, err
+		return contract.RenamePlanWaveResponse{}, err
 	}
-	return RenamePlanWaveResponse{Project: projectSummary(project), Wave: planWaveSummary(wave)}, nil
+	return contract.RenamePlanWaveResponse{Project: projectSummary(project), Wave: planWaveSummary(wave)}, nil
 }
 
 // ReorderPlanWave moves a wave to a 1-based position within its plan,
 // swapping with the occupant on collision.
-func (s *Service) ReorderPlanWave(ctx context.Context, input ReorderPlanWaveInput) (ReorderPlanWaveResponse, error) {
+func (s *Service) ReorderPlanWave(ctx context.Context, input contract.ReorderPlanWaveInput) (contract.ReorderPlanWaveResponse, error) {
 	if err := s.allow("plan.wave.reorder"); err != nil {
-		return ReorderPlanWaveResponse{}, err
+		return contract.ReorderPlanWaveResponse{}, err
 	}
 	project, err := s.resolveProject(ctx, input.ProjectSelector)
 	if err != nil {
-		return ReorderPlanWaveResponse{}, err
+		return contract.ReorderPlanWaveResponse{}, err
 	}
 	if input.WaveID == 0 {
-		return ReorderPlanWaveResponse{}, domain.NewError(domain.ErrValidation, "wave_id is required", nil)
+		return contract.ReorderPlanWaveResponse{}, domain.NewError(domain.ErrValidation, "wave_id is required", nil)
 	}
 	wave, err := s.newPlanService().ReorderWave(ctx, project, input.WaveID, input.Position)
 	if err != nil {
-		return ReorderPlanWaveResponse{}, err
+		return contract.ReorderPlanWaveResponse{}, err
 	}
-	return ReorderPlanWaveResponse{Project: projectSummary(project), Wave: planWaveSummary(wave)}, nil
+	return contract.ReorderPlanWaveResponse{Project: projectSummary(project), Wave: planWaveSummary(wave)}, nil
 }
 
 // UnassignPlanTask detaches a task from its plan (clears plan_id and
 // wave_id). Detached=false when the task was already unattached (no-op,
 // no event emitted).
-func (s *Service) UnassignPlanTask(ctx context.Context, input UnassignPlanTaskInput) (UnassignPlanTaskResponse, error) {
+func (s *Service) UnassignPlanTask(ctx context.Context, input contract.UnassignPlanTaskInput) (contract.UnassignPlanTaskResponse, error) {
 	if err := s.allow("plan.task.unassign"); err != nil {
-		return UnassignPlanTaskResponse{}, err
+		return contract.UnassignPlanTaskResponse{}, err
 	}
 	project, err := s.resolveProject(ctx, input.ProjectSelector)
 	if err != nil {
-		return UnassignPlanTaskResponse{}, err
+		return contract.UnassignPlanTaskResponse{}, err
 	}
 	if input.TaskID == 0 {
-		return UnassignPlanTaskResponse{}, domain.NewError(domain.ErrValidation, "task_id is required", nil)
+		return contract.UnassignPlanTaskResponse{}, domain.NewError(domain.ErrValidation, "task_id is required", nil)
 	}
 	event, err := s.newPlanService().UnassignTask(ctx, project, input.TaskID)
 	if err != nil {
-		return UnassignPlanTaskResponse{}, err
+		return contract.UnassignPlanTaskResponse{}, err
 	}
-	return UnassignPlanTaskResponse{
+	return contract.UnassignPlanTaskResponse{
 		Project:  projectSummary(project),
 		TaskID:   input.TaskID,
 		Detached: event.EventType != "",

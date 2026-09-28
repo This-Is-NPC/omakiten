@@ -8,7 +8,7 @@ import (
 )
 
 // view renders the four sections and a single active-section marker.
-func (m form) view(width int, labels Labels, theme Theme) string {
+func (m form) view(width int, labels Labels, theme field.FormTheme) string {
 	// Every field below subtracts its own frame from this width, so a
 	// non-positive value reaches lipgloss as a negative Width on five inputs at
 	// once and each of them silently paints unconstrained. Floor once, here,
@@ -36,7 +36,7 @@ func (m form) view(width int, labels Labels, theme Theme) string {
 	return strings.Join(sections, "\n")
 }
 
-func (m form) priorityField(width int, theme Theme) string {
+func (m form) priorityField(width int, theme field.FormTheme) string {
 	labels := make([]string, len(m.priorities))
 	active := -1
 	for i, option := range m.priorities {
@@ -63,7 +63,7 @@ func (m form) priorityField(width int, theme Theme) string {
 	return m.textField(strings.Join(parts, "  "), width, SectionPriority, theme)
 }
 
-func (m form) label(section Section, label string, theme Theme) string {
+func (m form) label(section Section, label string, theme field.FormTheme) string {
 	marker := "  // "
 	style := theme.Label
 	if m.section == section {
@@ -73,7 +73,7 @@ func (m form) label(section Section, label string, theme Theme) string {
 	return style.Render(marker + strings.ToUpper(screenkit.Sanitize(label)))
 }
 
-func (m form) textField(value string, width int, section Section, theme Theme) string {
+func (m form) textField(value string, width int, section Section, theme field.FormTheme) string {
 	innerWidth := width - theme.Input.GetHorizontalFrameSize()
 	if innerWidth < 8 {
 		innerWidth = 8
@@ -85,7 +85,7 @@ func (m form) textField(value string, width int, section Section, theme Theme) s
 	return style.Render(value)
 }
 
-func (m form) parentErrorLine(theme Theme) string {
+func (m form) parentErrorLine(theme field.FormTheme) string {
 	if m.parentError == "" {
 		return ""
 	}

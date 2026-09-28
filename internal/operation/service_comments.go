@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"omakiten/internal/app"
+	"omakiten/internal/contract"
 	"omakiten/internal/domain"
 )
 
@@ -13,19 +14,19 @@ import (
 // CommentFilter.CreatedAfter compares lexicographically against created_at.
 const commentSinceLayout = "2006-01-02 15:04:05"
 
-func (s *Service) AddComment(ctx context.Context, input AddCommentInput) (CommentResponse, error) {
+func (s *Service) AddComment(ctx context.Context, input contract.AddCommentInput) (contract.CommentResponse, error) {
 	if err := s.allow("comment.add"); err != nil {
-		return CommentResponse{}, err
+		return contract.CommentResponse{}, err
 	}
 	project, err := s.resolveProject(ctx, input.ProjectSelector)
 	if err != nil {
-		return CommentResponse{}, err
+		return contract.CommentResponse{}, err
 	}
 	body := input.Body
 	if input.TemplateSlug != "" {
 		merged, _, err := s.applyTemplateBody(input.TemplateSlug, body, TemplateKindComment)
 		if err != nil {
-			return CommentResponse{}, err
+			return contract.CommentResponse{}, err
 		}
 		body = merged
 	}
@@ -36,7 +37,7 @@ func (s *Service) AddComment(ctx context.Context, input AddCommentInput) (Commen
 	// The agent surface has no separate "task id supplied" signal — a positive
 	// TaskID is the only way to carry one — so hasTaskID mirrors TaskID > 0.
 	if err := domain.ValidateCommentScopeTaskID(scope, input.TaskID, input.TaskID > 0); err != nil {
-		return CommentResponse{}, err
+		return contract.CommentResponse{}, err
 	}
 
 	tags := make([]domain.Tag, 0, len(input.Tags))
@@ -54,18 +55,18 @@ func (s *Service) AddComment(ctx context.Context, input AddCommentInput) (Commen
 		Tags:       tags,
 	})
 	if err != nil {
-		return CommentResponse{}, err
+		return contract.CommentResponse{}, err
 	}
-	return CommentResponse{Project: projectSummary(project), Comment: commentSummary(comment)}, nil
+	return contract.CommentResponse{Project: projectSummary(project), Comment: commentSummary(comment)}, nil
 }
 
-func (s *Service) EditComment(ctx context.Context, input EditCommentInput) (CommentResponse, error) {
+func (s *Service) EditComment(ctx context.Context, input contract.EditCommentInput) (contract.CommentResponse, error) {
 	if err := s.allow("comment.edit"); err != nil {
-		return CommentResponse{}, err
+		return contract.CommentResponse{}, err
 	}
 	project, err := s.resolveProject(ctx, input.ProjectSelector)
 	if err != nil {
-		return CommentResponse{}, err
+		return contract.CommentResponse{}, err
 	}
 	workflow := s.workflow
 	edit := domain.CommentEdit{
@@ -92,26 +93,26 @@ func (s *Service) EditComment(ctx context.Context, input EditCommentInput) (Comm
 	}
 	comment, err := s.newCommentServiceWithWorkflow(workflow).EditScoped(ctx, project, input.CommentID, edit, rawTags)
 	if err != nil {
-		return CommentResponse{}, err
+		return contract.CommentResponse{}, err
 	}
-	return CommentResponse{Project: projectSummary(project), Comment: commentSummary(comment)}, nil
+	return contract.CommentResponse{Project: projectSummary(project), Comment: commentSummary(comment)}, nil
 }
 
-func (s *Service) DeleteComment(ctx context.Context, input DeleteCommentInput) (DeleteCommentResponse, error) {
+func (s *Service) DeleteComment(ctx context.Context, input contract.DeleteCommentInput) (contract.DeleteCommentResponse, error) {
 	if err := s.allow("comment.delete"); err != nil {
-		return DeleteCommentResponse{}, err
+		return contract.DeleteCommentResponse{}, err
 	}
 	project, err := s.resolveProject(ctx, input.ProjectSelector)
 	if err != nil {
-		return DeleteCommentResponse{}, err
+		return contract.DeleteCommentResponse{}, err
 	}
 	if !input.Confirmed {
-		return DeleteCommentResponse{
+		return contract.DeleteCommentResponse{
 			Project: projectSummary(project),
-			Confirmation: Confirmation{
+			Confirmation: contract.Confirmation{
 				RequiresConfirmation: true,
 				Reason:               "Deleting a comment is destructive. Confirm with confirmed=true to proceed.",
-				Options: []ConfirmationOption{
+				Options: []contract.ConfirmationOption{
 					{Action: "confirm_delete", Label: "Retry comments.delete with confirmed=true to hard-delete"},
 				},
 			},
@@ -120,10 +121,10 @@ func (s *Service) DeleteComment(ctx context.Context, input DeleteCommentInput) (
 	workflow := s.workflow
 	event, err := s.newCommentServiceWithWorkflow(workflow).Remove(ctx, project, input.CommentID)
 	if err != nil {
-		return DeleteCommentResponse{}, err
+		return contract.DeleteCommentResponse{}, err
 	}
 	snap := eventSummary(event)
-	return DeleteCommentResponse{Project: projectSummary(project), Snapshot: &snap}, nil
+	return contract.DeleteCommentResponse{Project: projectSummary(project), Snapshot: &snap}, nil
 }
 
 // ListComments is the comments.list handler. It is project-scoped by design:
@@ -137,13 +138,13 @@ func (s *Service) DeleteComment(ctx context.Context, input DeleteCommentInput) (
 // cross-project handoff/standup digest is not a single project-less call — the
 // agent enumerates each project and issues one scope=project call per project,
 // each carrying that project's id (see okt-note-recap in the command table).
-func (s *Service) ListComments(ctx context.Context, input ListCommentsInput) (CommentsResponse, error) {
+func (s *Service) ListComments(ctx context.Context, input contract.ListCommentsInput) (contract.CommentsResponse, error) {
 	if err := s.allow("comment.list"); err != nil {
-		return CommentsResponse{}, err
+		return contract.CommentsResponse{}, err
 	}
 	project, err := s.resolveProject(ctx, input.ProjectSelector)
 	if err != nil {
-		return CommentsResponse{}, err
+		return contract.CommentsResponse{}, err
 	}
 	scope := strings.TrimSpace(input.Scope)
 	kind := strings.TrimSpace(input.Kind)
@@ -157,9 +158,9 @@ func (s *Service) ListComments(ctx context.Context, input ListCommentsInput) (Co
 	if scope == "" && kind == "" && tag == "" && query == "" && since == "" && !input.Pinned && input.CommentID <= 0 {
 		comments, err := s.newCommentService().List(ctx, project, input.TaskID)
 		if err != nil {
-			return CommentsResponse{}, err
+			return contract.CommentsResponse{}, err
 		}
-		return CommentsResponse{Project: projectSummary(project), Comments: commentSummaries(comments)}, nil
+		return contract.CommentsResponse{Project: projectSummary(project), Comments: commentSummaries(comments)}, nil
 	}
 
 	// Universal comments carry project_id NULL and only match when the filter's
@@ -186,7 +187,7 @@ func (s *Service) ListComments(ctx context.Context, input ListCommentsInput) (Co
 	if since != "" {
 		floor, err := resolveLogsSince(since, s.snapshot, s.nowFunc())
 		if err != nil {
-			return CommentsResponse{}, err
+			return contract.CommentsResponse{}, err
 		}
 		if !floor.IsZero() {
 			filter.CreatedAfter = floor.UTC().Format(commentSinceLayout)
@@ -194,26 +195,26 @@ func (s *Service) ListComments(ctx context.Context, input ListCommentsInput) (Co
 	}
 	comments, err := s.newCommentService().Query(ctx, project, filter)
 	if err != nil {
-		return CommentsResponse{}, err
+		return contract.CommentsResponse{}, err
 	}
-	return CommentsResponse{Project: projectSummary(project), Comments: commentSummaries(comments)}, nil
+	return contract.CommentsResponse{Project: projectSummary(project), Comments: commentSummaries(comments)}, nil
 }
 
-func (s *Service) ListTaskActivity(ctx context.Context, input ListTaskActivityInput) (ListTaskActivityResponse, error) {
+func (s *Service) ListTaskActivity(ctx context.Context, input contract.ListTaskActivityInput) (contract.ListTaskActivityResponse, error) {
 	if err := s.allow("task_activity.list"); err != nil {
-		return ListTaskActivityResponse{}, err
+		return contract.ListTaskActivityResponse{}, err
 	}
 	project, err := s.resolveProject(ctx, input.ProjectSelector)
 	if err != nil {
-		return ListTaskActivityResponse{}, err
+		return contract.ListTaskActivityResponse{}, err
 	}
 	events, err := app.NewEventService(s.repo).ListTaskActivity(ctx, project, input.TaskID, input.Order)
 	if err != nil {
-		return ListTaskActivityResponse{}, err
+		return contract.ListTaskActivityResponse{}, err
 	}
 	resolvedOrder := strings.ToLower(strings.TrimSpace(input.Order))
 	if resolvedOrder != "asc" && resolvedOrder != "desc" {
 		resolvedOrder = "asc"
 	}
-	return ListTaskActivityResponse{Project: projectSummary(project), Events: eventSummaries(events), Order: resolvedOrder}, nil
+	return contract.ListTaskActivityResponse{Project: projectSummary(project), Events: eventSummaries(events), Order: resolvedOrder}, nil
 }

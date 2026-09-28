@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 
+	"omakiten/internal/contract"
 	"omakiten/internal/domain"
 )
 
@@ -14,27 +15,27 @@ import (
 // changed — emits a project.updated audit event keyed by the project
 // id so metrics.summary and the Logs inspector can attribute the edit
 // to the calling agent. The refreshed project DTO is returned.
-func (s *Service) EditProject(ctx context.Context, input EditProjectInput) (EditProjectResponse, error) {
+func (s *Service) EditProject(ctx context.Context, input contract.EditProjectInput) (contract.EditProjectResponse, error) {
 	if err := s.allow("project.edit"); err != nil {
-		return EditProjectResponse{}, err
+		return contract.EditProjectResponse{}, err
 	}
 	project, err := s.resolveProject(ctx, input.ProjectSelector)
 	if err != nil {
-		return EditProjectResponse{}, err
+		return contract.EditProjectResponse{}, err
 	}
 
 	before := project.Description
 
 	updated, err := s.repo.UpdateProjectDescription(ctx, project.ID, input.Description)
 	if err != nil {
-		return EditProjectResponse{}, err
+		return contract.EditProjectResponse{}, err
 	}
 
 	if before != updated.Description {
 		s.recordProjectUpdated(ctx, updated, before)
 	}
 
-	return EditProjectResponse{
+	return contract.EditProjectResponse{
 		Project:        projectSummary(updated.Context()),
 		Description:    updated.Description,
 		NextStepPrompt: "Project description updated. Ask for the overview, resume the project, or continue a task.",

@@ -1,6 +1,8 @@
 package domain
 
-import "testing"
+import (
+	"testing"
+)
 
 // TestCommentOpPolicyEvaluate covers every predicate branch of the polymorphic
 // comment-op rule: base allow short-circuit, require_tags (ALL present),

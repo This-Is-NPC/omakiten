@@ -42,7 +42,7 @@ func (s *Store) CreateTask(ctx context.Context, projectID int64, title, descript
 		EventType: domain.EventTypeTaskCreated,
 		ProjectID: projectID,
 		EntityID:  func(t domain.Task) int64 { return t.ID },
-		ShouldLog: func() bool { return s.shouldLogEvent(domain.EventTypeTaskCreated) },
+		ShouldLog: func() bool { return s.shouldLogEvent(projectID, domain.EventTypeTaskCreated) },
 		Mutate: func(ctx context.Context, tx *sql.Tx) (domain.Task, error) {
 			// parent_id lands in the same INSERT as the row itself so sub-task
 			// creation is atomic — no two-step INSERT-then-UPDATE that could
@@ -314,14 +314,14 @@ func (s *Store) taskMoveEvents(ctx context.Context, tx *sql.Tx, projectID, taskI
 }
 
 func (s *Store) persistTaskMoveEvent(ctx context.Context, tx *sql.Tx, projectID, taskID int64, payload string) (domain.Event, error) {
-	if s.shouldLogEvent(domain.EventTypeTaskMoved) {
+	if s.shouldLogEvent(projectID, domain.EventTypeTaskMoved) {
 		return insertTaskEvent(ctx, tx, projectID, taskID, domain.EventTypeTaskMoved, "", payload)
 	}
 	return domain.Event{EntityType: domain.EventEntityTask, EntityID: taskID, ProjectID: projectID, EventType: domain.EventTypeTaskMoved, Payload: payload}, nil
 }
 
 func (s *Store) persistTaskUnassignEvent(ctx context.Context, tx *sql.Tx, projectID, taskID int64, payload string) (domain.Event, error) {
-	if s.shouldLogEvent(domain.EventTypeTaskUnassigned) {
+	if s.shouldLogEvent(projectID, domain.EventTypeTaskUnassigned) {
 		return insertEntityEvent(ctx, tx, domain.EventEntityTask, taskID, projectID, domain.EventTypeTaskUnassigned, payload)
 	}
 	return domain.Event{EntityType: domain.EventEntityTask, EntityID: taskID, ProjectID: projectID, EventType: domain.EventTypeTaskUnassigned, Payload: payload}, nil

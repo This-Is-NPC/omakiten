@@ -6,8 +6,8 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"omakiten/internal/contract"
 	"omakiten/internal/domain"
-	"omakiten/internal/operation"
 )
 
 func newTaskCommand(opts *runtimeOptions) *cobra.Command {
@@ -39,7 +39,7 @@ func newTaskContinueCommand(opts *runtimeOptions) *cobra.Command {
 				}
 				defer rt.close()
 
-				input := operation.ContinueTaskInput{
+				input := contract.ContinueTaskInput{
 					ProjectSelector: opts.projectSelector(),
 					TaskID:          taskID,
 				}
@@ -75,7 +75,7 @@ func newTaskCreateIntentCommand(opts *runtimeOptions) *cobra.Command {
 				}
 				defer rt.close()
 
-				input := operation.CreateTaskInput{
+				input := contract.CreateTaskInput{
 					ProjectSelector: opts.projectSelector(),
 					Title:           title,
 					Description:     description,
@@ -121,7 +121,7 @@ func newTaskActivityCommand(opts *runtimeOptions) *cobra.Command {
 				}
 				defer rt.close()
 
-				return rt.operationService().ListTaskActivity(ctx, operation.ListTaskActivityInput{
+				return rt.operationService().ListTaskActivity(ctx, contract.ListTaskActivityInput{
 					ProjectSelector: opts.projectSelector(),
 					TaskID:          taskID,
 					Order:           order,

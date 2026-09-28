@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"omakiten/internal/operation"
+	"omakiten/internal/contract"
 )
 
 // openShokunin boots the runtime against the embedded shokunin default kit by
@@ -30,9 +30,9 @@ func openShokunin(t *testing.T) *Runtime {
 }
 
 // resolveShokunin resolves one command against the shokunin kit.
-func resolveShokunin(t *testing.T, rt *Runtime, name string) operation.ResolveCommandResponse {
+func resolveShokunin(t *testing.T, rt *Runtime, name string) contract.ResolveCommandResponse {
 	t.Helper()
-	resp, err := rt.Service().ResolveCommand(context.Background(), operation.ResolveCommandInput{Name: name})
+	resp, err := rt.Service().ResolveCommand(context.Background(), contract.ResolveCommandInput{Name: name})
 	if err != nil {
 		t.Fatalf("ResolveCommand(%s) error = %v", name, err)
 	}
@@ -42,7 +42,7 @@ func resolveShokunin(t *testing.T, rt *Runtime, name string) operation.ResolveCo
 // assertSkillsBulletWithBody pins the W4 theming contract for a resolved
 // command: every declared skill renders as a `- **Name** — body` bullet under
 // `## Skills` (never a bare name or an empty section).
-func assertSkillsBulletWithBody(t *testing.T, name string, resp operation.ResolveCommandResponse) {
+func assertSkillsBulletWithBody(t *testing.T, name string, resp contract.ResolveCommandResponse) {
 	t.Helper()
 	if len(resp.Skills) == 0 {
 		t.Fatalf("%s resolved with no skills — the command-level skill subset is not wired", name)
@@ -112,7 +112,7 @@ func TestShokuninPresetSmoke(t *testing.T) {
 	}
 }
 
-func assertShokuninCommand(t *testing.T, name string, resp operation.ResolveCommandResponse) {
+func assertShokuninCommand(t *testing.T, name string, resp contract.ResolveCommandResponse) {
 	t.Helper()
 	if resp.Persona == nil {
 		t.Fatalf("%s resolved with no persona — the role slot is not wired in shokunin.yaml", name)
@@ -133,7 +133,7 @@ func assertShokuninCommand(t *testing.T, name string, resp operation.ResolveComm
 	assertShokuninTemplates(t, name, resp)
 }
 
-func assertShokuninTemplates(t *testing.T, name string, resp operation.ResolveCommandResponse) {
+func assertShokuninTemplates(t *testing.T, name string, resp contract.ResolveCommandResponse) {
 	t.Helper()
 	if len(resp.Templates) == 0 {
 		return
@@ -156,7 +156,7 @@ func TestShokuninBuilderIdentity(t *testing.T) {
 	assertShokuninBuilder(t, resp)
 }
 
-func assertShokuninBuilder(t *testing.T, resp operation.ResolveCommandResponse) {
+func assertShokuninBuilder(t *testing.T, resp contract.ResolveCommandResponse) {
 	t.Helper()
 	if resp.Persona == nil {
 		t.Fatal("okt-task-implement resolved with no persona — Builder slot unwired")
@@ -205,7 +205,7 @@ func assertShokuninBuilder(t *testing.T, resp operation.ResolveCommandResponse) 
 	}
 }
 
-func assertShokuninBuilderSkills(t *testing.T, resp operation.ResolveCommandResponse) {
+func assertShokuninBuilderSkills(t *testing.T, resp contract.ResolveCommandResponse) {
 	t.Helper()
 	wantSkills := map[string]bool{"gate-of-truth-toll": false, "automail-fallback": false, "implementation": false}
 	for _, skill := range resp.Skills {

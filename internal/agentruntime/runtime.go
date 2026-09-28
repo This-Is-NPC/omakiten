@@ -15,6 +15,7 @@ import (
 
 	"omakiten/internal/config"
 	"omakiten/internal/configstore"
+	"omakiten/internal/contract"
 	"omakiten/internal/events"
 	"omakiten/internal/hooks"
 	"omakiten/internal/hooks/actions"
@@ -39,13 +40,7 @@ type Options struct {
 	CWD        string
 }
 
-// Runtime owns the long-lived resources the MCP server needs: the sqlite
-// connection, the resolved paths, and the operation.Service that handlers
-// dispatch through. Phase 3a hoisted the per-bundle resources
-// (service, hooks engine, registry, notification snapshot) into the
-// BundleCache; Runtime keeps thin accessors so consumers do not need
-// to know whether the cache returned an existing entry or built a new
-// one.
+// Runtime owns the SQLite connection and project runtime cache for the MCP server.
 type Runtime struct {
 	store      *sqlite.Store
 	configPath string
@@ -56,10 +51,7 @@ type Runtime struct {
 	dbPath             string
 	bus                events.Bus
 	cache              *BundleCache
-	// defaultProjectID is the cache key the boot path installed the
-	// initial runtime under. Phase 3a always uses 0 (single bundle
-	// process-wide); Phase 3b–3f switch to per-project ids without
-	// touching the rest of this file.
+	// defaultProjectID identifies the boot runtime in the cache.
 	defaultProjectID int64
 	// actionRegistry is the same registry the active runtime's engine
 	// reads from. Held on Runtime so external callers (tests, future
@@ -112,18 +104,6 @@ func Open(ctx context.Context, opts Options) (*Runtime, error) {
 		return nil, err
 	}
 
-	// Hydrate the domain event_type registry from the kit YAML
-	// before the bundle cache resolves services that consume it
-	// (formatter resolution, log-visibility gating, metric routing).
-	// No-op when the events block has no definitions so fixture-only
-	// runtimes stay unaffected.
-	if err := config.LoadDomainEventRegistry(preview.Config.Events); err != nil {
-		_ = store.Close()
-		return nil, err
-	}
-
-	bus := events.NewInProcessBus(preview.Config.Events)
-
 	cwd := opts.CWD
 	if cwd == "" {
 		cwd, err = os.Getwd()
@@ -132,13 +112,7 @@ func Open(ctx context.Context, opts Options) (*Runtime, error) {
 			return nil, err
 		}
 	}
-	// Cache owns the selector so every rebuild (mtime change, explicit
-	// Reload) constructs services that retain the boot-resolved
-	// project / CWD. SetProjectSelector must precede Resolve so the
-	// initial build picks it up.
-	cache := NewBundleCache(store, bus, cs)
-	cache.SetProjectSelector(operation.ProjectSelector{ProjectID: opts.ProjectID, Project: opts.Project, CWD: cwd})
-	rt, err := cache.Resolve(ctx, opts.ProjectID, configPath)
+	cache, bus, rt, err := Bootstrap(ctx, store, cs, configPath, contract.ProjectSelector{ProjectID: opts.ProjectID, Project: opts.Project, CWD: cwd}, preview)
 	if err != nil {
 		_ = store.Close()
 		return nil, err
@@ -159,11 +133,7 @@ func Open(ctx context.Context, opts Options) (*Runtime, error) {
 }
 
 func (r *Runtime) Close() error {
-	var hookErr error
-	if pr := r.cache.Get(r.defaultProjectID); pr != nil && pr.HooksEngine != nil {
-		hookErr = pr.HooksEngine.Stop()
-	}
-	return errors.Join(hookErr, r.store.Close())
+	return errors.Join(r.cache.Close(), r.store.Close())
 }
 
 // Cache exposes the BundleCache so consumers (TUI hot-reload, future
@@ -184,39 +154,38 @@ func (r *Runtime) Snapshot() *config.Snapshot {
 	return nil
 }
 
-// ResolveServiceForProject returns the operation.Service the BundleCache
-// has wired for the given project. The lookup is best-effort: when
-// the project slug / id resolve to an entry without a per-project
-// `.omakiten/` install, or when any step in the resolution chain
-// fails, the function returns (nil, nil) so callers can fall back to
-// the default service without surfacing the discrepancy to the agent
-// caller.
-//
-// Phase 3b uses this from the MCP adapter to route each tool call to
-// the project the caller declared in `project` / `project_id`. Phase
-// 3c+ will extend the same routing to CLI and TUI without touching
-// this method's surface.
+// ResolveServiceForProject routes explicit project selectors to their local bundle.
+// Projects without a local install use the default bundle; resolution errors propagate.
 func (r *Runtime) ResolveServiceForProject(ctx context.Context, project string, projectID int64) (*operation.Service, error) {
 	if project == "" && projectID == 0 {
 		return nil, nil
 	}
 	resolved, err := project_.NewResolver(r.store).Resolve(ctx, project_.ResolveOptions{ProjectID: projectID, Project: project})
-	if err != nil || resolved.RootPath == "" {
+	if err != nil {
+		return nil, err
+	}
+	if resolved.RootPath == "" {
 		return nil, nil
 	}
 	repoLocal, ok, err := config.FindRepoLocal(resolved.RootPath)
-	if err != nil || !ok {
+	if err != nil {
+		return nil, err
+	}
+	if !ok {
 		// Project has no per-project install — the default runtime
 		// already serves the right bundle (single-bundle process-wide).
 		return nil, nil
 	}
 	configFile, err := paths.ActiveConfigFileInDir(filepath.Join(repoLocal, "config"))
-	if err != nil || configFile == "" {
+	if err != nil {
+		return nil, err
+	}
+	if configFile == "" {
 		return nil, nil
 	}
 	pr, err := r.cache.Resolve(ctx, resolved.ID, configFile)
-	if err != nil || pr == nil {
-		return nil, nil
+	if err != nil {
+		return nil, err
 	}
 	return pr.Service, nil
 }

@@ -133,7 +133,7 @@ func ActiveConfigFile() (string, error) {
 // install behaves identically to the global ConfigRoot: same .active rules,
 // same custom/ shadow, same fall-through to discovery on a vanished kit.
 func ActiveConfigFileInDir(dir string) (string, error) {
-	if err := validateNoSymlinkComponents(dir); err != nil {
+	if err := ValidateNoSymlinkComponents(dir); err != nil {
 		return "", err
 	}
 	if path, found, err := activeConfigFromMarker(dir); err != nil {
@@ -209,7 +209,7 @@ func discoverConfigFile(dir string) (string, error) {
 // sorted alphabetically. Returns an error if dir does not exist or no .yaml
 // is found.
 func firstYAMLInDir(dir string) (string, error) {
-	if err := validateNoSymlinkComponents(dir); err != nil {
+	if err := ValidateNoSymlinkComponents(dir); err != nil {
 		return "", err
 	}
 	entries, err := os.ReadDir(dir)
@@ -241,17 +241,6 @@ func firstYAMLInDir(dir string) (string, error) {
 	return names[0], nil
 }
 
-// ConfigCustomDir returns <config-dir>/custom/ — the user-owned subtree for
-// yaml profiles that should survive default refreshes. Mirrors the
-// <entity>/custom convention.
-func ConfigCustomDir() (string, error) {
-	dir, err := ConfigDir()
-	if err != nil {
-		return "", err
-	}
-	return filepath.Join(dir, "custom"), nil
-}
-
 // SetActiveConfig writes the state file so that subsequent calls to
 // ActiveConfigFile / ConfigFile resolve to the chosen yaml profile. The
 // caller must restart the runtime for the change to take effect — Omakiten
@@ -279,7 +268,7 @@ func SetActiveConfigInDir(dir, filename string) error {
 }
 
 func regularConfigFile(path string) (bool, error) {
-	if err := validateNoSymlinkComponents(path); err != nil {
+	if err := ValidateNoSymlinkComponents(path); err != nil {
 		return false, err
 	}
 	info, err := os.Lstat(path)
@@ -301,7 +290,7 @@ func regularConfigFile(path string) (bool, error) {
 // validateNoSymlinkComponents rejects links in an explicit config path. The
 // repo-local walker has the same check in internal/config, while this copy
 // keeps the paths package independent of that adapter.
-func validateNoSymlinkComponents(path string) error {
+func ValidateNoSymlinkComponents(path string) error {
 	abs, err := filepath.Abs(path)
 	if err != nil {
 		return err

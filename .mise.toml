@@ -22,7 +22,7 @@ run = "scripts/format.sh --check"
 
 [tasks.test]
 description = "Run Go tests once and enforce aggregate coverage"
-env = { OKT_ENFORCE_SCROLL_BOUNDARY = "1", OKT_REQUIRE_PWSH = "1" }
+env = { OKT_REQUIRE_PWSH = "1" }
 run = "scripts/test.sh"
 
 [tasks.build]

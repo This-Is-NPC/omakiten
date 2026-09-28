@@ -8,6 +8,7 @@ import (
 	"omakiten/internal/config"
 	"omakiten/internal/domain"
 	"omakiten/internal/tui/components/screengrid"
+	screenfixture "omakiten/internal/tui/screenfixture"
 	"omakiten/internal/tui/screenhost"
 	"omakiten/internal/tui/screens/screentest"
 )
@@ -157,7 +158,7 @@ func TestCursorVisibilityPropertyAcrossMoveResizeAndRefresh(t *testing.T) {
 }
 
 func TestFooterHelpAndEmptyBoard(t *testing.T) {
-	frame := screentest.Frame(t, screentest.Options{})
+	frame := screentest.Frame(t, screenfixture.Options{})
 	empty := New().Bind(Deps{}, frame)
 	if !strings.Contains(empty.View(frame), "No workflow buckets") {
 		t.Fatalf("empty view = %q", empty.View(frame))

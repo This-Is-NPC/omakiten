@@ -217,24 +217,6 @@ func defaultsCommentScopeField(defaults *WorkflowDefaults, scope, op string) *Co
 	return scopeOpField(scopeBlock(defaults.Comment, scope), op)
 }
 
-// ResolveCommentScopePermission resolves the comment create/edit/delete policy for a
-// given scope (task|project|universal) against the workflow defaults, with no
-// bucket layer. Scope resolution chains:
-//
-//	task:      defaults.comment.task.<op> → defaults.comment.<op> → defaults.task.<op> → true
-//	project:   defaults.comment.project.<op> → true
-//	universal: defaults.comment.universal.<op> → true
-//
-// Create skips the defaults.task fallback because tasks have no create permission.
-// The task scope keeps the flat `comment: {edit,delete}` fields as a
-// backward-compatible alias for `comment.task` and still inherits from
-// defaults.task, mirroring the per-bucket task chain at the defaults layer.
-// Project/Universal have no bucket and no task inheritance — an undeclared
-// sub-block falls straight through to the implicit `true` (no rule = allow).
-func ResolveCommentScopePermission(defaults *WorkflowDefaults, scope, op string) bool {
-	return ResolveCommentScopePolicy(defaults, scope, op).Evaluate(nil)
-}
-
 // ResolveCommentScopePolicy resolves the comment policy for a given scope/op
 // against the workflow defaults (no bucket layer) and returns the winning
 // CommentOpPolicy so callers can thread the relevant tag set into Evaluate.

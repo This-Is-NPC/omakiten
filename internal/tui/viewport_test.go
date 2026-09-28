@@ -3,10 +3,12 @@ package tui
 import (
 	"strings"
 	"testing"
+
+	"omakiten/internal/tui/components/scrollwindow"
 )
 
 func TestSliceViewportEmpty(t *testing.T) {
-	visible, above, below := sliceViewport(nil, 0, 10)
+	visible, above, below := scrollwindow.SliceLines(nil, 0, 10)
 	if len(visible) != 0 {
 		t.Errorf("visible = %v, want empty", visible)
 	}
@@ -17,7 +19,7 @@ func TestSliceViewportEmpty(t *testing.T) {
 
 func TestSliceViewportNonPositiveHeight(t *testing.T) {
 	lines := []string{"a", "b", "c"}
-	visible, above, below := sliceViewport(lines, 1, 0)
+	visible, above, below := scrollwindow.SliceLines(lines, 1, 0)
 	if len(visible) != 3 {
 		t.Errorf("non-positive height should return all lines, got %d", len(visible))
 	}
@@ -28,7 +30,7 @@ func TestSliceViewportNonPositiveHeight(t *testing.T) {
 
 func TestSliceViewportFits(t *testing.T) {
 	lines := []string{"a", "b", "c"}
-	visible, above, below := sliceViewport(lines, 0, 5)
+	visible, above, below := scrollwindow.SliceLines(lines, 0, 5)
 	if len(visible) != 3 {
 		t.Errorf("len(visible) = %d, want 3 (everything fits)", len(visible))
 	}
@@ -39,7 +41,7 @@ func TestSliceViewportFits(t *testing.T) {
 
 func TestSliceViewportOverflow(t *testing.T) {
 	lines := []string{"a", "b", "c", "d", "e"}
-	visible, above, below := sliceViewport(lines, 1, 2)
+	visible, above, below := scrollwindow.SliceLines(lines, 1, 2)
 	if got := strings.Join(visible, ","); got != "b,c" {
 		t.Errorf("visible = %q, want b,c", got)
 	}
@@ -55,7 +57,7 @@ func TestSliceViewportClampsScrollPastEnd(t *testing.T) {
 	// "Jump to end" callers store a sentinel like 1<<20 — the helper must
 	// clamp without producing an out-of-range slice.
 	lines := []string{"a", "b", "c", "d"}
-	visible, above, below := sliceViewport(lines, 1<<20, 2)
+	visible, above, below := scrollwindow.SliceLines(lines, 1<<20, 2)
 	if got := strings.Join(visible, ","); got != "c,d" {
 		t.Errorf("visible = %q, want c,d (clamped to end)", got)
 	}
@@ -66,7 +68,7 @@ func TestSliceViewportClampsScrollPastEnd(t *testing.T) {
 
 func TestSliceViewportNegativeScroll(t *testing.T) {
 	lines := []string{"a", "b", "c", "d"}
-	visible, above, below := sliceViewport(lines, -5, 2)
+	visible, above, below := scrollwindow.SliceLines(lines, -5, 2)
 	if got := strings.Join(visible, ","); got != "a,b" {
 		t.Errorf("visible = %q, want a,b (negative scroll → 0)", got)
 	}

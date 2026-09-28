@@ -94,13 +94,10 @@ func loadFromPath(t testing.TB, path string) (config.Bundle, *domain.EnumRegistr
 	// because Phase 1 of the YAML-registry refactor dropped the static
 	// switch fallback. Idempotent and process-global by design — every
 	// fixture installs the same canonical 41-entry table.
-	if err := config.LoadDomainEventRegistry(bundle.Config.Events); err != nil {
-		t.Fatalf("testfixtures: hydrate domain event registry: %v", err)
-	}
 
 	// Build the bundle-scoped EnumRegistry tests inject into services.
 	// No process-global state involved.
-	registry := registryFromBundle(bundle)
+	registry := config.BuildEnumRegistry(bundle)
 	return bundle, registry
 }
 
@@ -296,20 +293,4 @@ func mergeViewSettings(v *config.ViewSettings, kit config.ViewSettings) {
 	if v.TaskActivity.Sort.Order == "" {
 		v.TaskActivity.Sort.Order = kit.TaskActivity.Sort.Order
 	}
-}
-
-// registryFromBundle builds an instance-scoped EnumRegistry from the
-// bundle's priority + severity tables. Used by LoadBundle so every
-// fixture-driven test runs with the same id↔value mapping the production
-// composition roots build.
-func registryFromBundle(bundle config.Bundle) *domain.EnumRegistry {
-	priorityPairs := make([]domain.PriorityPair, len(bundle.Config.Priorities))
-	for i, p := range bundle.Config.Priorities {
-		priorityPairs[i] = domain.PriorityPair{ID: p.ID, Value: p.Value, Default: p.Default}
-	}
-	severityPairs := make([]domain.SeverityPair, len(bundle.Config.Severities))
-	for i, s := range bundle.Config.Severities {
-		severityPairs[i] = domain.SeverityPair{ID: s.ID, Value: s.Value, Default: s.Default}
-	}
-	return domain.NewEnumRegistry(priorityPairs, severityPairs)
 }

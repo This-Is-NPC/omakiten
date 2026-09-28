@@ -8,6 +8,7 @@ import (
 
 	"omakiten/internal/config"
 	"omakiten/internal/domain"
+	screenfixture "omakiten/internal/tui/screenfixture"
 	"omakiten/internal/tui/screenhost"
 	"omakiten/internal/tui/screens/screentest"
 )
@@ -29,7 +30,7 @@ func tableDeps() Deps {
 }
 
 func TestScreenContractNavigationAndOutcomes(t *testing.T) {
-	frame := screentest.Frame(t, screentest.Options{})
+	frame := screentest.Frame(t, screenfixture.Options{})
 	screen := New().Bind(tableDeps(), frame)
 	if screen.ID() != screenhost.TasksTable || len(screen.Rows()) != 3 {
 		t.Fatalf("contract identity/rows = %q/%d", screen.ID(), len(screen.Rows()))
@@ -70,7 +71,7 @@ func TestPrivateSelectedCursorSurvivesGridResync(t *testing.T) {
 }
 
 func TestProjectionFilterSortAndClamp(t *testing.T) {
-	frame := screentest.Frame(t, screentest.Options{})
+	frame := screentest.Frame(t, screenfixture.Options{})
 	deps := tableDeps()
 	deps.View.Filter.Bucket = []string{"dev"}
 	deps.View.Sort = config.SortSettings{Field: "id", Order: "desc"}
@@ -108,7 +109,7 @@ func TestPageNavigationResizeAndLifecycle(t *testing.T) {
 }
 
 func TestEmptyFilteredFooterHelpAndNoop(t *testing.T) {
-	frame := screentest.Frame(t, screentest.Options{})
+	frame := screentest.Frame(t, screenfixture.Options{})
 	empty := New().Bind(Deps{}, frame)
 	if !strings.Contains(empty.View(frame), "No tasks") {
 		t.Fatalf("empty view = %q", empty.View(frame))

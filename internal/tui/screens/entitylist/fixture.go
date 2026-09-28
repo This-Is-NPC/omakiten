@@ -75,17 +75,6 @@ func lawsLongFixtureScenarios() []screenfixture.Scenario {
 	}
 }
 
-// FixtureScenarios returns every recorded state for the five settings entity
-// lists and the long laws grid recordings.
-func FixtureScenarios() []screenfixture.Scenario {
-	out := make([]screenfixture.Scenario, 0, 7)
-	for _, descriptor := range []Descriptor{Laws(), Personas(), Skills(), Templates(), Tags()} {
-		out = append(out, kindFixtureScenarios(descriptor)...)
-	}
-	out = append(out, lawsLongFixtureScenarios()...)
-	return out
-}
-
 // FixtureScenariosFor returns the scenarios for one screen ID, or nil when the
 // ID is not owned by this package.
 func FixtureScenariosFor(id screenhost.ID) []screenfixture.Scenario {

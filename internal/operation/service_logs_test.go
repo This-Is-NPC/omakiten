@@ -7,6 +7,7 @@ import (
 
 	"omakiten/internal/domain"
 	"omakiten/internal/testfakes/clock"
+	"omakiten/internal/testutil"
 )
 
 // fakeClockAnchor is the deterministic instant the clock-dependent
@@ -160,7 +161,7 @@ func TestLogsRowCarriesSummary(t *testing.T) {
 		CreatedAt:  "2026-05-28 12:00:00",
 		AuthorType: "agent",
 	}
-	got := logsRow(row)
+	got := logsRow(testutil.EventRegistry().Prepare(row))
 	if got.ID != 42 {
 		t.Fatalf("ID = %d, want 42", got.ID)
 	}

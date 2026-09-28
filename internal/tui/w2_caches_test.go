@@ -5,6 +5,8 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
+
+	"omakiten/internal/tui/screenhost"
 )
 
 // TestViewChangeRefreshRegistryShrinksAfterFold pins the W2 #3
@@ -14,8 +16,7 @@ import (
 func TestViewChangeRefreshRegistryShrinksAfterFold(t *testing.T) {
 	clearViewChangeRefreshRegistry()
 	model := buildRefreshHotPathModel(t)
-	model.top = topTasks
-	model.sub = subBoard
+	model.navigation = screenhost.TasksBoard
 
 	// Drive enough nav cycles to exercise the registry on every refresh.
 	const navCount = 8

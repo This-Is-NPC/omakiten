@@ -141,7 +141,7 @@ func (a *NotificationShowAction) Execute(ctx context.Context, ev domain.Event, a
 	// args like "--project={{.Project.Slug}}" or "--id={{.Payload.id}}".
 	// Templating errors propagate so the user sees a precise failure instead
 	// of a notification that quietly dispatches the wrong command.
-	rendered, err := renderActionCommands(notification.Actions, ev)
+	rendered, err := renderActionArguments(notification.Actions, ev)
 	if err != nil {
 		return fmt.Errorf("notification.show: notification %q: %w", slug, err)
 	}
@@ -171,7 +171,7 @@ func resolveNotification(snapshot NotificationBundleSnapshot, slug, resolvedKit 
 	return n, ok
 }
 
-func renderActionCommands(actions []config.NotificationAction, ev domain.Event) ([]config.NotificationAction, error) {
+func renderActionArguments(actions []config.NotificationAction, ev domain.Event) ([]config.NotificationAction, error) {
 	if len(actions) == 0 {
 		return actions, nil
 	}
@@ -182,18 +182,21 @@ func renderActionCommands(actions []config.NotificationAction, ev domain.Event) 
 	out := make([]config.NotificationAction, len(actions))
 	for i, action := range actions {
 		out[i] = action
-		if len(action.Command) == 0 {
+		if len(action.Arguments) == 0 {
 			continue
 		}
-		rendered := make([]string, len(action.Command))
-		for j, segment := range action.Command {
-			value, err := renderTemplateSegment(segment, data)
-			if err != nil {
-				return nil, fmt.Errorf("actions[%d].command[%d]: %w", i, j, err)
+		rendered := make(map[string]any, len(action.Arguments))
+		for key, value := range action.Arguments {
+			if segment, ok := value.(string); ok {
+				text, err := renderTemplateSegment(segment, data)
+				if err != nil {
+					return nil, fmt.Errorf("actions[%d].arguments.%s: %w", i, key, err)
+				}
+				value = text
 			}
-			rendered[j] = value
+			rendered[key] = value
 		}
-		out[i].Command = rendered
+		out[i].Arguments = rendered
 	}
 	return out, nil
 }

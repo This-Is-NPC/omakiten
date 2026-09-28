@@ -10,8 +10,8 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"omakiten/internal/config"
+	"omakiten/internal/contract"
 	"omakiten/internal/domain"
-	"omakiten/internal/operation"
 	"omakiten/internal/taskvalidation"
 	"omakiten/internal/tui/screenhost"
 	"omakiten/internal/tui/screens/taskdetail"
@@ -172,7 +172,7 @@ func (m *Model) executeTaskDelete(taskID int64) {
 	if !ok {
 		return
 	}
-	if _, err := svc.DeleteTask(m.ctx, operation.DeleteTaskInput{
+	if _, err := svc.DeleteTask(m.ctx, contract.DeleteTaskInput{
 		ProjectSelector: m.projectSelector(),
 		TaskID:          taskID,
 		Confirmed:       true}); err != nil {
@@ -198,8 +198,8 @@ func (m *Model) executeTaskArchiveFromDetail(action screenhost.Action) {
 		m.status = m.t("tui.status.archive_unavailable")
 		return
 	}
-	if _, err := svc.ArchiveTask(m.ctx, operation.ArchiveTaskInput{
-		ProjectSelector: operation.ProjectSelector{ProjectID: m.project.ID},
+	if _, err := svc.ArchiveTask(m.ctx, contract.ArchiveTaskInput{
+		ProjectSelector: contract.ProjectSelector{ProjectID: m.project.ID},
 		TaskID:          action.TaskID}); err != nil {
 		m.status = err.Error()
 		return
@@ -216,8 +216,8 @@ func (m *Model) executeTaskUnarchiveFromDetail(action screenhost.Action) {
 		m.status = m.t("tui.status.unarchive_unavailable")
 		return
 	}
-	if _, err := svc.UnarchiveTask(m.ctx, operation.ArchiveTaskInput{
-		ProjectSelector: operation.ProjectSelector{ProjectID: m.project.ID},
+	if _, err := svc.UnarchiveTask(m.ctx, contract.ArchiveTaskInput{
+		ProjectSelector: contract.ProjectSelector{ProjectID: m.project.ID},
 		TaskID:          action.TaskID}); err != nil {
 		m.status = err.Error()
 		return
@@ -322,14 +322,14 @@ func (m *Model) prepareTaskFormSave(payload taskform.Payload, values taskform.Va
 	return input, true
 }
 
-func (m *Model) applyTaskFormSave(svc *operation.Service, payload taskform.Payload, input taskFormSaveValues) (domain.Task, error) {
+func (m *Model) applyTaskFormSave(svc contract.Operations, payload taskform.Payload, input taskFormSaveValues) (domain.Task, error) {
 	switch payload.Mode {
 	case taskform.Create:
 		createParent := input.parentID
 		if payload.CreateParentID != nil {
 			createParent = payload.CreateParentID
 		}
-		resp, err := svc.CreateTask(m.ctx, operation.CreateTaskInput{ProjectSelector: m.projectSelector(), Title: input.title, Description: input.description, Priority: m.priorityLabel(input.priority), ParentID: createParent})
+		resp, err := svc.CreateTask(m.ctx, contract.CreateTaskInput{ProjectSelector: m.projectSelector(), Title: input.title, Description: input.description, Priority: m.priorityLabel(input.priority), ParentID: createParent})
 		if err != nil {
 			return domain.Task{}, err
 		}
@@ -344,12 +344,12 @@ func (m *Model) applyTaskFormSave(svc *operation.Service, payload taskform.Paylo
 	}
 }
 
-func (m *Model) editTaskForm(svc *operation.Service, payload taskform.Payload, input taskFormSaveValues) (domain.Task, error) {
+func (m *Model) editTaskForm(svc contract.Operations, payload taskform.Payload, input taskFormSaveValues) (domain.Task, error) {
 	current, found := m.taskByID(payload.TaskID)
 	if !found {
 		return domain.Task{}, domain.NewError(domain.ErrTaskNotFound, "no selected task", nil)
 	}
-	edit := operation.EditTaskInput{ProjectSelector: m.projectSelector(), TaskID: current.ID, Title: &input.title, Description: &input.description}
+	edit := contract.EditTaskInput{ProjectSelector: m.projectSelector(), TaskID: current.ID, Title: &input.title, Description: &input.description}
 	if input.priority != domain.PriorityZero {
 		label := m.priorityLabel(input.priority)
 		edit.Priority = &label
@@ -359,7 +359,7 @@ func (m *Model) editTaskForm(svc *operation.Service, payload taskform.Payload, i
 		currentParent = strconv.FormatInt(*current.ParentID, 10)
 	}
 	if input.parentValue != currentParent {
-		edit.ParentID = operation.OptionalInt64{Set: true, Value: input.parentID}
+		edit.ParentID = contract.OptionalInt64{Set: true, Value: input.parentID}
 	}
 	if _, err := svc.EditTask(m.ctx, edit); err != nil {
 		return domain.Task{}, err
@@ -421,12 +421,12 @@ func taskTagSets(wanted []string, current []domain.Tag) (map[string]struct{}, ma
 	return wantedSet, currentSet
 }
 
-func (m *Model) addMissingTaskTags(svc *operation.Service, taskID int64, wanted []string, currentSet map[string]struct{}) error {
+func (m *Model) addMissingTaskTags(svc contract.Operations, taskID int64, wanted []string, currentSet map[string]struct{}) error {
 	for _, name := range wanted {
 		if _, exists := currentSet[name]; exists {
 			continue
 		}
-		if _, err := svc.AddTag(m.ctx, operation.AddTagInput{
+		if _, err := svc.AddTag(m.ctx, contract.AddTagInput{
 			ProjectSelector: m.projectSelector(),
 			EntityType:      "task",
 			EntityID:        taskID,
@@ -437,12 +437,12 @@ func (m *Model) addMissingTaskTags(svc *operation.Service, taskID int64, wanted 
 	return nil
 }
 
-func (m *Model) removeStaleTaskTags(svc *operation.Service, taskID int64, current []domain.Tag, wantedSet map[string]struct{}) error {
+func (m *Model) removeStaleTaskTags(svc contract.Operations, taskID int64, current []domain.Tag, wantedSet map[string]struct{}) error {
 	for _, tag := range current {
 		if _, keep := wantedSet[tag.Name]; keep {
 			continue
 		}
-		if _, err := svc.RemoveTag(m.ctx, operation.RemoveTagInput{
+		if _, err := svc.RemoveTag(m.ctx, contract.RemoveTagInput{
 			ProjectSelector: m.projectSelector(),
 			EntityType:      "task",
 			EntityID:        taskID,

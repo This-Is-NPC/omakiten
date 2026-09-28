@@ -49,23 +49,9 @@ func (s *ConfigService) Import(ctx context.Context, path string) (bundle config.
 	// severity tables. Returned to the caller so each surface (CLI, TUI,
 	// MCP agent) threads the registry into the services it constructs;
 	// no process-global state is touched.
-	registry = enumRegistryFromBundle(bundle)
+	registry = config.BuildEnumRegistry(bundle)
 
 	return
-}
-
-// enumRegistryFromBundle builds an instance-scoped EnumRegistry from the
-// bundle's priority and severity tables. No process-global state involved.
-func enumRegistryFromBundle(bundle config.Bundle) *domain.EnumRegistry {
-	priorityPairs := make([]domain.PriorityPair, len(bundle.Config.Priorities))
-	for i, p := range bundle.Config.Priorities {
-		priorityPairs[i] = domain.PriorityPair{ID: p.ID, Value: p.Value, Default: p.Default}
-	}
-	severityPairs := make([]domain.SeverityPair, len(bundle.Config.Severities))
-	for i, s := range bundle.Config.Severities {
-		severityPairs[i] = domain.SeverityPair{ID: s.ID, Value: s.Value, Default: s.Default}
-	}
-	return domain.NewEnumRegistry(priorityPairs, severityPairs)
 }
 
 func configError(path string, err error) error {

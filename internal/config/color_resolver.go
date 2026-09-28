@@ -4,8 +4,6 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
-
-	"github.com/charmbracelet/lipgloss"
 )
 
 // ColorTransparent is the literal that resolves to lipgloss.NoColor{}.
@@ -22,23 +20,11 @@ var hexColorPattern = regexp.MustCompile(`^#[0-9a-fA-F]{6}$`)
 // lipgloss.Style use the Apply* helpers rather than reading fields.
 type ResolvedColor struct {
 	Transparent bool
-	Color       lipgloss.Color
+	Color       string
 }
 
 // IsTransparent reports whether the value asked for "no color".
 func (r ResolvedColor) IsTransparent() bool { return r.Transparent }
-
-// TerminalColor returns the value to pass into lipgloss.Style. Callers
-// branch on IsTransparent first when they want to skip Background/etc.
-// entirely; for the common "set Foreground to whatever resolved" case
-// this returns lipgloss.NoColor{} for transparent, which lipgloss
-// understands as "inherit terminal default".
-func (r ResolvedColor) TerminalColor() lipgloss.TerminalColor {
-	if r.Transparent {
-		return lipgloss.NoColor{}
-	}
-	return r.Color
-}
 
 // ResolveColor maps the notification color grammar onto a lipgloss color.
 //
@@ -70,10 +56,10 @@ func ResolveColor(value string, theme Theme) (ResolvedColor, error) {
 		if !hexColorPattern.MatchString(hex) {
 			return ResolvedColor{}, fmt.Errorf("color reference %q resolved to %q which is not #rrggbb", value, hex)
 		}
-		return ResolvedColor{Color: lipgloss.Color(hex)}, nil
+		return ResolvedColor{Color: hex}, nil
 	}
 	if hexColorPattern.MatchString(trimmed) {
-		return ResolvedColor{Color: lipgloss.Color(trimmed)}, nil
+		return ResolvedColor{Color: trimmed}, nil
 	}
 	return ResolvedColor{}, fmt.Errorf("color value %q is not transparent | $theme.<key> | #rrggbb", value)
 }

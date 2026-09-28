@@ -6,7 +6,9 @@
 // and measures what it is handed. It does not import card.
 package cardtable
 
-import "github.com/charmbracelet/lipgloss"
+import (
+	"github.com/charmbracelet/lipgloss"
+)
 
 // Row joins already-painted cards left-to-right, top-aligned, one-space gutter.
 func Row(cards []string) string {

@@ -25,7 +25,9 @@
 // was the cause of the prior copy-paste regressions.
 package scrollwindow
 
-import "strings"
+import (
+	"strings"
+)
 
 // HintMode controls how Slice and Follow reserve viewport rows for
 // the scroll indicator(s) the caller plans to render inside the

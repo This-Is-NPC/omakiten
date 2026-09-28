@@ -1,6 +1,8 @@
 package studio
 
-import "strings"
+import (
+	"strings"
+)
 
 func (m Screen) resolveStudioGuardHint(hint string) string {
 	if hint == "" || !strings.Contains(hint, "${{intl:") {

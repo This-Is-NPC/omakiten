@@ -9,13 +9,14 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/charmbracelet/x/ansi"
-	"gopkg.in/yaml.v3"
+	yaml "gopkg.in/yaml.v3"
 
 	"omakiten/defaults"
 	"omakiten/internal/config"
 	"omakiten/internal/config/bundledraft"
+	"omakiten/internal/contract"
 	"omakiten/internal/domain"
+	studioprojection "omakiten/internal/studioprojection"
 	"omakiten/internal/tui/screenfixture"
 	"omakiten/internal/tui/screenhost"
 )
@@ -299,7 +300,7 @@ func StudioWorkflowDeps(root string) (Deps, error) {
 	return openStudioDepsOf(root, studioWorkflowGoldenBundle(), studioWorkflowTasks())
 }
 
-func workflowFocusKeys(pred func(workflowRow) bool) []string {
+func workflowFocusKeys(pred func(studioprojection.WorkflowRow) bool) []string {
 	idx := WorkflowIndexFor(studioWorkflowGoldenBundle().Workflows[0], pred)
 	if idx <= 0 {
 		return nil
@@ -560,10 +561,10 @@ func studioHooksExecOverlay() config.HookSpec {
 	}
 }
 
-func studioHooksGoldenHistory(hooks []config.HookSpec) map[int][]HookExecuted {
+func studioHooksGoldenHistory(hooks []config.HookSpec) map[int][]studioprojection.HookExecuted {
 	notifyIdx := HookIndexFor(hooks, studioHookIsGuardTaskDelete)
 	execIdx := HookIndexFor(hooks, func(spec config.HookSpec) bool { return spec.Do == "exec" })
-	return map[int][]HookExecuted{
+	return map[int][]studioprojection.HookExecuted{
 		notifyIdx: {
 			{CreatedAt: "2026-08-13 14:02:11", Success: true, DurationMs: 4, EventType: "guard.violated", TargetEventID: 2457},
 			{CreatedAt: "2026-08-13 13:55:02", Success: true, DurationMs: 3, EventType: "guard.violated", TargetEventID: 2401},
@@ -675,7 +676,7 @@ func fixtureCases() []FixtureCase {
 			// Workflow list: DEV bucket in the omakase overlay (SVG focus).
 			Name: "workflow-bucket",
 			ID:   screenhost.StudioWorkflow,
-			Keys: workflowFocusKeys(func(row workflowRow) bool {
+			Keys: workflowFocusKeys(func(row studioprojection.WorkflowRow) bool {
 				return row.Kind == workflowRowBucket && row.Bucket.Key == "dev"
 			}),
 			WantCursor: true,
@@ -684,7 +685,7 @@ func fixtureCases() []FixtureCase {
 			// #resume on dev → review (SVG inspector focus, ▸ PREVIEW kicker).
 			Name: "workflow-resume",
 			ID:   screenhost.StudioWorkflow,
-			Keys: append(workflowFocusKeys(func(row workflowRow) bool {
+			Keys: append(workflowFocusKeys(func(row studioprojection.WorkflowRow) bool {
 				return row.Kind == workflowRowGuard && row.Guard.Tag == "resume"
 			}), "tab"),
 			WantCursor:         true,
@@ -694,7 +695,7 @@ func fixtureCases() []FixtureCase {
 			// blockers_in on backlog → dev (SVG inspector focus).
 			Name: "workflow-blockers",
 			ID:   screenhost.StudioWorkflow,
-			Keys: workflowFocusKeys(func(row workflowRow) bool {
+			Keys: workflowFocusKeys(func(row studioprojection.WorkflowRow) bool {
 				return row.Guard.Type == "blockers_in"
 			}),
 			WantCursor: true,
@@ -729,19 +730,13 @@ func fixtureCases() []FixtureCase {
 			// not a fifth tab — the card paints over the editor that opened it.
 			Name: "workflow-apply",
 			ID:   screenhost.StudioWorkflow,
-			Keys: append(append([]string(nil), workflowFocusKeys(func(row workflowRow) bool {
+			Keys: append(append([]string(nil), workflowFocusKeys(func(row studioprojection.WorkflowRow) bool {
 				return row.Kind == workflowRowBucket && row.Bucket.Key == "dev"
 			})...), "e", "ctrl+s"),
 			WantCursor: true,
 			WantDirty:  true,
 		},
 	}
-}
-
-// FixtureCases returns every recorded Studio state definition, including the
-// assertion metadata goldens check on every run.
-func FixtureCases() []FixtureCase {
-	return fixtureCases()
 }
 
 func studioFixtureEnter(screen Screen, id screenhost.ID, deps Deps, frame screenhost.Frame) Screen {
@@ -769,20 +764,6 @@ func studioFixtureReplay(screen Screen, id screenhost.ID, deps Deps, frame scree
 		screen = studioFixtureDrive(screen.Bind(id, deps), frame, key)
 	}
 	return screen
-}
-
-// StudioFixtureView drives the case to its recorded state and returns the
-// rendered view with ANSI stripped, alongside the screen so the caller can
-// assert what the state actually carries.
-func StudioFixtureView(deps Deps, c FixtureCase, frame screenhost.Frame) (Screen, string) {
-	screen := New()
-	if c.PreludeID != "" {
-		screen = studioFixtureEnter(screen, c.PreludeID, deps, frame)
-		screen = studioFixtureReplay(screen, c.PreludeID, deps, frame, c.PreludeKeys)
-	}
-	screen = studioFixtureEnter(screen, c.ID, deps, frame)
-	screen = studioFixtureReplay(screen, c.ID, deps, frame, c.Keys)
-	return screen, ansi.Strip(screen.Bind(c.ID, deps).View(frame))
 }
 
 func studioFixtureScenario(c FixtureCase) screenfixture.Scenario {
@@ -824,16 +805,6 @@ func studioFixtureScenario(c FixtureCase) screenfixture.Scenario {
 	}
 }
 
-// FixtureScenarios returns every recorded state for Studio sub-screens.
-func FixtureScenarios() []screenfixture.Scenario {
-	cases := fixtureCases()
-	out := make([]screenfixture.Scenario, len(cases))
-	for i, c := range cases {
-		out[i] = studioFixtureScenario(c)
-	}
-	return out
-}
-
 // FixtureScenariosFor returns the scenarios for one screen ID, or nil when the
 // ID is not owned by this package.
 func FixtureScenariosFor(id screenhost.ID) []screenfixture.Scenario {
@@ -854,6 +825,6 @@ const commentResumeTemplateBody = "**Before** —\n**After** —\n\n**Changes**\
 // openFixtureBundleDraft is the fixture's half of the draft port, the same
 // choice internal/tui makes for the live screen. Recording a Studio state with
 // no draft open would record the snapshot fallback, not Studio.
-func openFixtureBundleDraft(editor BundleEditor) (StudioDraft, error) {
+func openFixtureBundleDraft(editor contract.BundleEditor) (StudioDraft, error) {
 	return bundledraft.New(editor)
 }

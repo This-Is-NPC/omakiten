@@ -1,5 +1,3 @@
-// Package actions provides hook action implementations registered by runtime
-// composition roots: noop, exec, and bundle-backed notification.show.
 package actions
 
 import (

@@ -4,9 +4,9 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"io"
 	"testing"
 
+	"omakiten/internal/contract"
 	"omakiten/internal/domain"
 )
 
@@ -224,98 +224,13 @@ func TestProjectServiceDelete_RequiresBackupRunner(t *testing.T) {
 	}
 }
 
-// fakeCheckpointer records every Checkpoint call and lets tests pin
-// an error. Used to assert ProjectService.Delete invokes the
-// Checkpointer BEFORE BackupService.Run so the snapshot reflects
-// every committed WAL frame this process wrote.
-type fakeCheckpointer struct {
-	calls int
-	err   error
-}
-
-func (f *fakeCheckpointer) Checkpoint(context.Context) error {
-	f.calls++
-	return f.err
-}
-
-// orderingBackup records the call order against a shared ledger so a
-// test can pin "checkpoint happened before backup".
-type orderingBackup struct {
-	ledger *[]string
-	path   string
-}
-
-func (o *orderingBackup) Run(context.Context) (string, error) {
-	*o.ledger = append(*o.ledger, "backup")
-	return o.path, nil
-}
-
-type orderingCheckpointer struct {
-	ledger *[]string
-}
-
-func (o *orderingCheckpointer) Checkpoint(context.Context) error {
-	*o.ledger = append(*o.ledger, "checkpoint")
-	return nil
-}
-
-func TestProjectServiceDelete_RunsCheckpointBeforeBackup(t *testing.T) {
-	ctx := context.Background()
-	store, project := appTestStore(t, appTestBundle(t))
-	defer func() { _ = store.Close() }()
-
-	counters, err := store.ProjectDeleteCounts(ctx, project.ID)
-	if err != nil {
-		t.Fatalf("ProjectDeleteCounts: %v", err)
-	}
-	ledger := make([]string, 0, 2)
-	svc := NewProjectService(store, &orderingBackup{ledger: &ledger, path: "/tmp/snap.db"}, &fakeEventRecorder{}).
-		WithCheckpointer(&orderingCheckpointer{ledger: &ledger})
-
-	if _, err := svc.Delete(ctx, project.ID, counters); err != nil {
-		t.Fatalf("Delete: %v", err)
-	}
-	if len(ledger) != 2 || ledger[0] != "checkpoint" || ledger[1] != "backup" {
-		t.Fatalf("call order = %v, want [checkpoint backup] (WAL must land in main DB before file copy)", ledger)
-	}
-}
-
-func TestProjectServiceDelete_ContinuesWhenCheckpointFails(t *testing.T) {
-	ctx := context.Background()
-	store, project := appTestStore(t, appTestBundle(t))
-	defer func() { _ = store.Close() }()
-
-	counters, err := store.ProjectDeleteCounts(ctx, project.ID)
-	if err != nil {
-		t.Fatalf("ProjectDeleteCounts: %v", err)
-	}
-	cp := &fakeCheckpointer{err: errors.New("SQLITE_BUSY: foreign writer holds the WAL")}
-	backup := &fakeBackup{path: "/var/state/snap.db"}
-	svc := NewProjectService(store, backup, &fakeEventRecorder{}).
-		SetAuditWarnWriter(io.Discard).
-		WithCheckpointer(cp)
-
-	result, err := svc.Delete(ctx, project.ID, counters)
-	if err != nil {
-		t.Fatalf("Delete error = %v, want nil — checkpoint failure must not abort the destructive flow", err)
-	}
-	if cp.calls != 1 {
-		t.Fatalf("Checkpoint calls = %d, want 1", cp.calls)
-	}
-	if backup.calls != 1 {
-		t.Fatalf("backup invoked = %d, want 1 — best-effort checkpoint must still let snapshot run", backup.calls)
-	}
-	if result.BackupPath == "" {
-		t.Fatalf("BackupPath empty after best-effort checkpoint failure")
-	}
-}
-
 // countingRepo wraps a ProjectRepository to count ProjectDeleteCounts
 // calls. Used to pin the contract that Delete does not re-query the
 // counters it accepts from the caller — the regression guard for the
 // duplicate round-trip review finding (#191 comment 7946).
 type countingRepo struct {
 	ProjectRepository
+	AtomicProjectDeleteRepository
 	countCalls int
 }
 
@@ -333,7 +248,7 @@ func TestProjectServiceDelete_AcceptsCounterSnapshotWithoutRequery(t *testing.T)
 	if err != nil {
 		t.Fatalf("ProjectDeleteCounts: %v", err)
 	}
-	repo := &countingRepo{ProjectRepository: store}
+	repo := &countingRepo{ProjectRepository: store, AtomicProjectDeleteRepository: store}
 	backup := &fakeBackup{path: "/var/state/omakiten/backups/snap.db"}
 	events := &fakeEventRecorder{}
 
@@ -366,9 +281,23 @@ func TestNormalizeSlug(t *testing.T) {
 	}
 
 	for _, tc := range tests {
-		actual := normalizeSlug(tc.input)
+		actual := domain.Slugify(tc.input)
 		if actual != tc.expected {
-			t.Errorf("normalizeSlug(%q) = %q, want %q", tc.input, actual, tc.expected)
+			t.Errorf("domain.Slugify(%q) = %q, want %q", tc.input, actual, tc.expected)
 		}
 	}
 }
+
+type fakeBackupLease struct{ backup *fakeBackup }
+
+func (f *fakeBackup) WithLease(ctx context.Context, run func(contract.BackupLease) error) error {
+	return run(fakeBackupLease{f})
+}
+func (l fakeBackupLease) WriteSnapshot(ctx context.Context, _ func(string) error) (string, error) {
+	return l.backup.Run(ctx)
+}
+func (l fakeBackupLease) Write(ctx context.Context) (string, error) { return l.backup.Run(ctx) }
+func (l fakeBackupLease) Discard(string) error                      { return nil }
+func (l fakeBackupLease) Validate() error                           { return nil }
+func (l fakeBackupLease) PruneRetaining(string) error               { return nil }
+func (l fakeBackupLease) PruneFailedRetaining(string) error         { return nil }

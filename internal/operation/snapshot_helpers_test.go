@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"omakiten/internal/config"
+	"omakiten/internal/contract"
 )
 
 // agentBundleWithTemplates returns the canonical agent test bundle
@@ -12,7 +13,7 @@ import (
 // agentTestBundle so the resulting snapshot still answers
 // Workflow() / Settings() correctly — replacing only the catalog the
 // test cares about.
-func agentBundleWithTemplates(t *testing.T, templates []TemplateSummary) config.Bundle {
+func agentBundleWithTemplates(t *testing.T, templates []contract.TemplateSummary) config.Bundle {
 	t.Helper()
 	bundle := agentTestBundle(t)
 	bundle.Templates = nil
@@ -36,7 +37,7 @@ func agentBundleWithTemplates(t *testing.T, templates []TemplateSummary) config.
 // snapshotWithTemplates builds a per-project Snapshot whose Templates()
 // catalog mirrors the supplied TemplateSummary slice while preserving
 // the rest of the canonical agent test bundle.
-func snapshotWithTemplates(t *testing.T, templates []TemplateSummary) *config.Snapshot {
+func snapshotWithTemplates(t *testing.T, templates []contract.TemplateSummary) *config.Snapshot {
 	t.Helper()
 	return config.BuildSnapshot(agentBundleWithTemplates(t, templates))
 }
@@ -44,7 +45,7 @@ func snapshotWithTemplates(t *testing.T, templates []TemplateSummary) *config.Sn
 // snapshotWithTaskTemplate builds a snapshot whose active task-default
 // resolves to the supplied scaffold, preserving the rest of the
 // canonical agent test bundle.
-func snapshotWithTaskTemplate(t *testing.T, projectSlug string, scaffold TaskTemplateSummary) *config.Snapshot {
+func snapshotWithTaskTemplate(t *testing.T, projectSlug string, scaffold contract.TaskTemplateSummary) *config.Snapshot {
 	t.Helper()
 	bundle := agentTestBundle(t)
 	bundle.Templates = []config.TaskTemplate{{
@@ -65,11 +66,11 @@ func snapshotWithTaskTemplate(t *testing.T, projectSlug string, scaffold TaskTem
 // to rebuild the full canonical fixture.
 func snapshotWithEntities(
 	t *testing.T,
-	skills []SkillInfo,
-	laws []LawInfo,
-	personas []PersonaInfo,
-	templates []TemplateSummary,
-	commands map[string]MCPCommandBinding,
+	skills []contract.SkillInfo,
+	laws []contract.LawInfo,
+	personas []contract.PersonaInfo,
+	templates []contract.TemplateSummary,
+	commands map[string]contract.MCPCommandBinding,
 ) *config.Snapshot {
 	t.Helper()
 	bundle := config.Bundle{}

@@ -45,20 +45,6 @@ type languageFile struct {
 	Keys   map[string]string `yaml:"keys,omitempty"`
 }
 
-// LoadLanguages reads every <code>.yaml under dir (bundled) and
-// dir/custom (user-authored). Custom files override bundled files with
-// the same code. Two files declaring the same code inside the same
-// scope is rejected as a duplicate. Files with a non-yaml extension are
-// ignored. A missing dir returns an empty slice with no error so
-// first-run paths can call this safely before materialization.
-//
-// The loader does not consult any configured language: it just discovers
-// what is on disk. The Snapshot picks the active language at build time
-// against the validated `languages.cli` / `languages.tui` config fields.
-func LoadLanguages(dir string) ([]Language, []SourceWarning, error) {
-	return loadLanguagesReader(dir, nil)
-}
-
 func loadLanguagesReader(dir string, reader bundleSourceReader) ([]Language, []SourceWarning, error) {
 	opts := LoadOptions[Language]{
 		Suffixes:     []string{".yaml", ".yml"},

@@ -8,7 +8,6 @@ import (
 	"testing"
 
 	"omakiten/internal/app"
-	"omakiten/internal/config"
 	"omakiten/internal/configstore"
 	"omakiten/internal/sqlite"
 	"omakiten/internal/testfixtures"
@@ -53,7 +52,7 @@ func TestTemplateServiceSetDefaultRewritesFrontmatter(t *testing.T) {
 		t.Fatalf("editor.Apply(seed) = %v", err)
 	}
 
-	svc := app.NewTemplateService(config.BuildSnapshot(bundle), editor, cs)
+	svc := app.NewTemplateService(editor, cs)
 	if err := svc.SetDefault(ctx, "beta", "task", "demo"); err != nil {
 		t.Fatalf("SetDefault(beta) = %v", err)
 	}
@@ -133,7 +132,7 @@ func TestTemplateServiceSetDefaultClears(t *testing.T) {
 		t.Fatalf("editor.Apply(seed) = %v", err)
 	}
 
-	svc := app.NewTemplateService(config.BuildSnapshot(bundle), editor, cs)
+	svc := app.NewTemplateService(editor, cs)
 	if err := svc.SetDefault(ctx, "only", "", ""); err != nil {
 		t.Fatalf("SetDefault(clear) = %v", err)
 	}

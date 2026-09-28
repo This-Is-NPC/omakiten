@@ -1,6 +1,8 @@
 package token
 
-import "strings"
+import (
+	"strings"
+)
 
 type Counter interface {
 	Count(text string) int

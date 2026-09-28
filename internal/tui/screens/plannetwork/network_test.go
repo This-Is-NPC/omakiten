@@ -17,9 +17,9 @@ func stripStyle(s string) string { return stripANSI(s) }
 // "Dependencies: #A→#B,#C  #D→#E" with stable ordering across
 // refreshes. The prefix comes from the i18n catalog so the test
 // uses the bundled en baseline (no Repositories.Catalog set on the
-// zero-value Model).
+// zero-value Screen).
 func TestPlanNetworkDepsFooterFormatsLine(t *testing.T) {
-	m := Model{}
+	m := Screen{}
 	deps := []domain.TaskDependency{
 		{TaskID: 3, DependsOnTaskID: 1},
 		{TaskID: 3, DependsOnTaskID: 2},
@@ -35,7 +35,7 @@ func TestPlanNetworkDepsFooterFormatsLine(t *testing.T) {
 // TestPlanNetworkDepsFooterEmpty confirms zero-dep plans return an
 // empty string so the renderer can skip writing the footer line.
 func TestPlanNetworkDepsFooterEmpty(t *testing.T) {
-	m := Model{}
+	m := Screen{}
 	if got := m.planNetworkDepsFooter(nil); got != "" {
 		t.Fatalf("footer = %q, want empty", got)
 	}
@@ -67,7 +67,7 @@ func TestPlanNetworkBuildFilamentsDropsCollapsedSource(t *testing.T) {
 // └─► at final dst, and pads other lanes / trailing slots with
 // spaces.
 func TestRenderPlanNetworkLaneGlyphs(t *testing.T) {
-	m := Model{styles: newStyles(config.Theme{})}
+	m := Screen{styles: newStyles(config.Theme{})}
 	filaments := []networkprojection.Filament{{SrcRow: 0, DstRows: []int{2, 3}, Lane: 0}}
 	laneCount := 1
 
@@ -102,7 +102,7 @@ func TestRenderPlanNetworkLaneGlyphs(t *testing.T) {
 // unrelated lane's pass-through vertical, and reaches the trailing
 // slot with `─` (source) or `►` (dst).
 func TestRenderPlanNetworkLaneHorizontalArmCrossesPassThrough(t *testing.T) {
-	m := Model{styles: newStyles(config.Theme{})}
+	m := Screen{styles: newStyles(config.Theme{})}
 	filaments := []networkprojection.Filament{
 		{SrcRow: 0, DstRows: []int{6}, Lane: 0}, // long lane 0
 		{SrcRow: 2, DstRows: []int{4}, Lane: 1}, // shorter lane 1
@@ -136,7 +136,7 @@ func TestRenderPlanNetworkLaneHorizontalArmCrossesPassThrough(t *testing.T) {
 // horizontal arm crossing an active pass-through `│` from a
 // different (longer) lane renders the junction glyph `┼`.
 func TestRenderPlanNetworkLaneArmCrossesActivePassThrough(t *testing.T) {
-	m := Model{styles: newStyles(config.Theme{})}
+	m := Screen{styles: newStyles(config.Theme{})}
 	filaments := []networkprojection.Filament{
 		{SrcRow: 0, DstRows: []int{8}, Lane: 1}, // very long lane 1
 		{SrcRow: 2, DstRows: []int{4}, Lane: 0}, // shorter lane 0
@@ -163,7 +163,7 @@ func TestRenderPlanNetworkLaneArmCrossesActivePassThrough(t *testing.T) {
 // the trailing slot to `►` (destination wins over source — the
 // arrowhead is the more informative marker when both apply).
 func TestRenderPlanNetworkLaneSourceAndDestinationSameRow(t *testing.T) {
-	m := Model{styles: newStyles(config.Theme{})}
+	m := Screen{styles: newStyles(config.Theme{})}
 	filaments := []networkprojection.Filament{
 		{SrcRow: 0, DstRows: []int{2}, Lane: 0}, // arrives at row 2
 		{SrcRow: 2, DstRows: []int{4}, Lane: 1}, // departs at row 2
@@ -181,13 +181,13 @@ func TestRenderPlanNetworkLaneSourceAndDestinationSameRow(t *testing.T) {
 // through a wave header must paint │ at the header row at the same
 // column as on intervening task rows — no wave nests under another.
 func TestRenderPlanNetworkWaveHeaderLaneAlignment(t *testing.T) {
-	m := Model{styles: newStyles(config.Theme{})}
+	m := Screen{styles: newStyles(config.Theme{})}
 	filaments := []networkprojection.Filament{{SrcRow: 0, DstRows: []int{4}, Lane: 0}}
-	headerRow := planNetworkRow{
+	headerRow := networkprojection.Row{
 		Kind: planRowWaveHeader, WavePos: 2, WaveName: "phase",
 		WaveDone: 0, WaveTotal: 3,
 	}
-	taskRow := planNetworkRow{
+	taskRow := networkprojection.Row{
 		Kind: planRowTaskCard,
 		Task: domain.PlanTaskRow{TaskID: 99, Title: "t"},
 	}
@@ -211,12 +211,12 @@ func TestRenderPlanNetworkWaveHeaderLaneAlignment(t *testing.T) {
 // builder emits the correct junction characters at the four row
 // transitions plus the top / bottom borders.
 func TestRenderPlanNetworkSeparatorJunctions(t *testing.T) {
-	m := Model{styles: newStyles(config.Theme{})}
+	m := Screen{styles: newStyles(config.Theme{})}
 	layout := planNetworkTableLayout{Title: 4, Bucket: 4, Deps: 4}
 
 	cases := []struct {
 		name         string
-		above, below planNetworkRowKind
+		above, below networkprojection.RowKind
 		wantSuffix   string
 	}{
 		{"top→wave", planRowNone, planRowWaveHeader, "────────────┐"},
@@ -239,9 +239,9 @@ func TestRenderPlanNetworkSeparatorJunctions(t *testing.T) {
 // renders with exactly two inner `│` separators (Title │ Bucket │
 // Deps │) and ends with a right border `│`.
 func TestRenderPlanNetworkTaskRowHasThreeCells(t *testing.T) {
-	m := Model{styles: newStyles(config.Theme{})}
+	m := Screen{styles: newStyles(config.Theme{})}
 	layout := planNetworkTableLayout{Title: 30, Bucket: 8, Deps: 10}
-	row := planNetworkRow{
+	row := networkprojection.Row{
 		Kind: planRowTaskCard,
 		Task: domain.PlanTaskRow{TaskID: 99, Title: "hello", BucketKey: "dev"},
 	}
@@ -258,9 +258,9 @@ func TestRenderPlanNetworkTaskRowHasThreeCells(t *testing.T) {
 // row carries NO inner `│` separators — its single cell spans the
 // full table interior — and still closes with the right border.
 func TestRenderPlanNetworkWaveHeaderFullWidth(t *testing.T) {
-	m := Model{styles: newStyles(config.Theme{})}
+	m := Screen{styles: newStyles(config.Theme{})}
 	layout := planNetworkTableLayout{Title: 30, Bucket: 8, Deps: 10}
-	row := planNetworkRow{
+	row := networkprojection.Row{
 		Kind: planRowWaveHeader, WavePos: 1, WaveName: "phase",
 		WaveDone: 1, WaveTotal: 3,
 	}
@@ -284,19 +284,19 @@ func TestRenderPlanNetworkWaveHeaderFullWidth(t *testing.T) {
 // guards (e.g. omakase's self-branch comment); an "in-progress" task
 // already left the first bucket and is in the working pipeline.
 func TestPlanNetworkRowStateBadgePrecedence(t *testing.T) {
-	m := Model{styles: newStyles(config.Theme{})}
+	m := Screen{styles: newStyles(config.Theme{})}
 	cases := []struct {
 		name string
-		row  planNetworkRow
+		row  networkprojection.Row
 		want string
 	}{
-		{"done", planNetworkRow{Kind: planRowTaskCard, Status: networkprojection.StatusDone}, "done"},
-		{"gated", planNetworkRow{Kind: planRowTaskCard, Status: networkprojection.StatusGated}, "gated"},
-		{"in-progress", planNetworkRow{Kind: planRowTaskCard, Status: networkprojection.StatusInProgress}, "in-progress"},
-		{"blocked", planNetworkRow{Kind: planRowTaskCard, Status: networkprojection.StatusBlocked}, "blocked"},
-		{"assigned", planNetworkRow{Kind: planRowTaskCard, Status: networkprojection.StatusAssigned}, "assigned"},
-		{"next", planNetworkRow{Kind: planRowTaskCard, Status: networkprojection.StatusNext}, "▶next"},
-		{"ready", planNetworkRow{Kind: planRowTaskCard, Status: networkprojection.StatusReady}, "ready"},
+		{"done", networkprojection.Row{Kind: planRowTaskCard, Status: networkprojection.StatusDone}, "done"},
+		{"gated", networkprojection.Row{Kind: planRowTaskCard, Status: networkprojection.StatusGated}, "gated"},
+		{"in-progress", networkprojection.Row{Kind: planRowTaskCard, Status: networkprojection.StatusInProgress}, "in-progress"},
+		{"blocked", networkprojection.Row{Kind: planRowTaskCard, Status: networkprojection.StatusBlocked}, "blocked"},
+		{"assigned", networkprojection.Row{Kind: planRowTaskCard, Status: networkprojection.StatusAssigned}, "assigned"},
+		{"next", networkprojection.Row{Kind: planRowTaskCard, Status: networkprojection.StatusNext}, "▶next"},
+		{"ready", networkprojection.Row{Kind: planRowTaskCard, Status: networkprojection.StatusReady}, "ready"},
 	}
 	for _, c := range cases {
 		got, _ := m.planNetworkRowStateBadge(c.row)
@@ -312,17 +312,17 @@ func TestPlanNetworkRowStateBadgePrecedence(t *testing.T) {
 // dropped). Every non-done / non-gated row collapses to ○ and the
 // inline badge disambiguates downstream.
 func TestPlanNetworkRowStatusGlyphSharesFlags(t *testing.T) {
-	m := Model{styles: newStyles(config.Theme{})}
+	m := Screen{styles: newStyles(config.Theme{})}
 	cases := []struct {
 		name string
-		row  planNetworkRow
+		row  networkprojection.Row
 		want string
 	}{
-		{"done", planNetworkRow{Kind: planRowTaskCard, Status: networkprojection.StatusDone}, "✓"},
-		{"gated", planNetworkRow{Kind: planRowTaskCard, Status: networkprojection.StatusGated}, "⊘"},
-		{"in-progress falls through to ○", planNetworkRow{Kind: planRowTaskCard, Status: networkprojection.StatusInProgress}, "○"},
-		{"blocked falls through to ○", planNetworkRow{Kind: planRowTaskCard, Status: networkprojection.StatusBlocked}, "○"},
-		{"ready default", planNetworkRow{Kind: planRowTaskCard, Status: networkprojection.StatusReady}, "○"},
+		{"done", networkprojection.Row{Kind: planRowTaskCard, Status: networkprojection.StatusDone}, "✓"},
+		{"gated", networkprojection.Row{Kind: planRowTaskCard, Status: networkprojection.StatusGated}, "⊘"},
+		{"in-progress falls through to ○", networkprojection.Row{Kind: planRowTaskCard, Status: networkprojection.StatusInProgress}, "○"},
+		{"blocked falls through to ○", networkprojection.Row{Kind: planRowTaskCard, Status: networkprojection.StatusBlocked}, "○"},
+		{"ready default", networkprojection.Row{Kind: planRowTaskCard, Status: networkprojection.StatusReady}, "○"},
 	}
 	for _, c := range cases {
 		got, _ := m.planNetworkRowStatusGlyph(c.row)
@@ -337,9 +337,9 @@ func TestPlanNetworkRowStatusGlyphSharesFlags(t *testing.T) {
 // and skips the value when the task is in the workflow's final
 // bucket (done already implied by the state badge + glyph).
 func TestRenderPlanNetworkTaskRowShowsBucketCell(t *testing.T) {
-	m := Model{styles: newStyles(config.Theme{})}
+	m := Screen{styles: newStyles(config.Theme{})}
 	layout := planNetworkTableLayout{Title: 30, Bucket: 8, Deps: 10}
-	row := planNetworkRow{
+	row := networkprojection.Row{
 		Kind: planRowTaskCard,
 		Task: domain.PlanTaskRow{TaskID: 1, Title: "x", BucketKey: "review"},
 	}
@@ -348,7 +348,7 @@ func TestRenderPlanNetworkTaskRowShowsBucketCell(t *testing.T) {
 		t.Fatalf("expected bucket cell to contain %q, got %q", "review", plain)
 	}
 
-	doneRow := planNetworkRow{
+	doneRow := networkprojection.Row{
 		Kind:        planRowTaskCard,
 		FinalBucket: true,
 		Status:      networkprojection.StatusDone,

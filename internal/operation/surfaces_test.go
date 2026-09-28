@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"omakiten/internal/config"
+	"omakiten/internal/contract"
 )
 
 func snapshotWithSurfaces(t *testing.T, table config.SurfaceTable) *config.Snapshot {
@@ -21,7 +22,7 @@ func TestForMCPSetSnapshotUngated(t *testing.T) {
 	if row.MCP == nil || *row.MCP {
 		t.Fatal("canonical wiring.set_snapshot must be mcp:false")
 	}
-	orig := NewService(nil, ProjectSelector{})
+	orig := NewService(nil, contract.ProjectSelector{})
 	mcp := orig.ForMCP()
 	mcp.SetSnapshot(snapshotWithSurfaces(t, table))
 	if orig.Snapshot() != nil {
@@ -40,9 +41,9 @@ func TestForMCPProductDenied(t *testing.T) {
 	row.Reason = "${{intl:operations.denied.agent_delete}}"
 	table["template.list"] = row
 
-	svc := NewService(nil, ProjectSelector{}).ForMCP()
+	svc := NewService(nil, contract.ProjectSelector{}).ForMCP()
 	svc.SetSnapshot(snapshotWithSurfaces(t, table))
-	_, err := svc.ListTemplates(context.Background(), ListTemplatesInput{})
+	_, err := svc.ListTemplates(context.Background(), contract.ListTemplatesInput{})
 	var denied OperationDenied
 	if !errors.As(err, &denied) {
 		t.Fatalf("ListTemplates err = %v, want OperationDenied", err)
@@ -65,9 +66,9 @@ func TestNewServiceZeroSurfaceAllowsProduct(t *testing.T) {
 	row.Reason = "all off"
 	table["template.list"] = row
 
-	svc := NewService(nil, ProjectSelector{})
+	svc := NewService(nil, contract.ProjectSelector{})
 	svc.SetSnapshot(snapshotWithSurfaces(t, table))
-	if _, err := svc.ListTemplates(context.Background(), ListTemplatesInput{}); err != nil {
+	if _, err := svc.ListTemplates(context.Background(), contract.ListTemplatesInput{}); err != nil {
 		t.Fatalf("zero-surface ListTemplates = %v", err)
 	}
 }
@@ -80,9 +81,9 @@ func TestForTUISyncBlockersDenied(t *testing.T) {
 	row.Reason = "blockers hidden in tui"
 	table["dependency.add"] = row
 
-	svc := NewService(nil, ProjectSelector{}).ForTUI()
+	svc := NewService(nil, contract.ProjectSelector{}).ForTUI()
 	svc.SetSnapshot(snapshotWithSurfaces(t, table))
-	err := svc.SyncBlockers(context.Background(), SyncBlockersInput{TaskID: 1})
+	err := svc.SyncBlockers(context.Background(), contract.SyncBlockersInput{TaskID: 1})
 	var denied OperationDenied
 	if !errors.As(err, &denied) {
 		t.Fatalf("SyncBlockers err = %v, want OperationDenied", err)
@@ -101,13 +102,13 @@ func TestForCLIVsForTUI(t *testing.T) {
 	row.Reason = "tui off"
 	table["template.list"] = row
 
-	svc := NewService(nil, ProjectSelector{})
+	svc := NewService(nil, contract.ProjectSelector{})
 	svc.SetSnapshot(snapshotWithSurfaces(t, table))
 
-	if _, err := svc.ForCLI().ListTemplates(context.Background(), ListTemplatesInput{}); err != nil {
+	if _, err := svc.ForCLI().ListTemplates(context.Background(), contract.ListTemplatesInput{}); err != nil {
 		t.Fatalf("ForCLI ListTemplates = %v", err)
 	}
-	_, err := svc.ForTUI().ListTemplates(context.Background(), ListTemplatesInput{})
+	_, err := svc.ForTUI().ListTemplates(context.Background(), contract.ListTemplatesInput{})
 	var denied OperationDenied
 	if !errors.As(err, &denied) {
 		t.Fatalf("ForTUI err = %v, want OperationDenied", err)
@@ -125,7 +126,7 @@ func TestForMCPListCommandsDenied(t *testing.T) {
 	row.Reason = "commands hidden from agents"
 	table["command.list"] = row
 
-	svc := NewService(nil, ProjectSelector{}).ForMCP()
+	svc := NewService(nil, contract.ProjectSelector{}).ForMCP()
 	svc.SetSnapshot(snapshotWithSurfaces(t, table))
 	_, err := svc.ListCommands(context.Background())
 	var denied OperationDenied
@@ -145,9 +146,9 @@ func TestForCLIAssignTaskDenied(t *testing.T) {
 	row.Reason = "assignee hidden on cli"
 	table["task.assign"] = row
 
-	svc := NewService(nil, ProjectSelector{}).ForCLI()
+	svc := NewService(nil, contract.ProjectSelector{}).ForCLI()
 	svc.SetSnapshot(snapshotWithSurfaces(t, table))
-	_, err := svc.AssignTask(context.Background(), AssignTaskInput{TaskID: 1, Assignee: "alice"})
+	_, err := svc.AssignTask(context.Background(), contract.AssignTaskInput{TaskID: 1, Assignee: "alice"})
 	var denied OperationDenied
 	if !errors.As(err, &denied) {
 		t.Fatalf("AssignTask err = %v, want OperationDenied", err)

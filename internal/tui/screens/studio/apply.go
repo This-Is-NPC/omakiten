@@ -11,6 +11,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 
 	"omakiten/internal/config"
+	bundledraft "omakiten/internal/config/bundledraft"
 	"omakiten/internal/domain"
 	"omakiten/internal/studioprojection"
 	"omakiten/internal/tui/components/overlay"
@@ -84,7 +85,7 @@ func (s *Screen) setApplyMessage(msg string) {
 	}
 }
 
-func (s *Screen) applyStudioCandidate(report StudioDraftReport) {
+func (s *Screen) applyStudioCandidate(report bundledraft.Report) {
 	if s.studioDraft == nil {
 		s.setApplyMessage(s.tr("tui.studio.preview.msg.no_changes", "no Studio changes to apply"))
 		return
@@ -134,7 +135,7 @@ func (s *Screen) applyStudioCandidate(report StudioDraftReport) {
 	s.setApplyMessage(s.tr("tui.studio.preview.msg.applied", "Studio candidate applied and runtime reloaded"))
 }
 
-func studioConfirmationSnapshot(report StudioDraftReport, impact []string, assurance string) string {
+func studioConfirmationSnapshot(report bundledraft.Report, impact []string, assurance string) string {
 	payload, _ := json.Marshal(struct {
 		Candidate config.Bundle
 		Impact    []string
@@ -263,18 +264,18 @@ var _ screenhost.KeyOwner = Screen{}
 
 // studioPreviewReport answers from the draft the screen opened at entry. The
 // dump Preview tab is gone; the apply overlay is the remaining consumer.
-func (m Screen) studioPreviewReport() StudioDraftReport {
+func (m Screen) studioPreviewReport() bundledraft.Report {
 	if m.studioDraft != nil {
 		return m.studioDraft.ReportText(m.t)
 	}
 	if snap := m.repos.activeSnapshot(); snap != nil {
 		bundle := config.Bundle{MCPCommands: snap.MCPCommands(), Skills: snap.Skills(), AllSkills: snap.AllSkills(), Laws: snap.Laws(), AllLaws: snap.AllLaws(), Personas: snap.Personas(), AllPersonas: snap.AllPersonas(), Templates: snap.Templates(), AllTemplates: snap.AllTemplates(), Workflows: []config.Workflow{snapshotWorkflowToConfig(snap.Workflow())}, Config: config.Settings{Workflow: config.WorkflowSettings{Active: snap.Workflow().Key}}}
-		return StudioDraftReport{Original: bundle, Candidate: bundle, DiffSummary: []string{m.tr("tui.studio.diff.no_changes", "No changes")}}
+		return bundledraft.Report{Original: bundle, Candidate: bundle, DiffSummary: []string{m.tr("tui.studio.diff.no_changes", "No changes")}}
 	}
-	return StudioDraftReport{DiffSummary: []string{m.tr("tui.studio.diff.no_changes", "No changes")}}
+	return bundledraft.Report{DiffSummary: []string{m.tr("tui.studio.diff.no_changes", "No changes")}}
 }
 
-func studioImpactLines(text Text, impact StudioImpactPreview) []string {
+func studioImpactLines(text bundledraft.Text, impact bundledraft.ImpactPreview) []string {
 	var lines []string
 	for _, bucket := range impact.RemovedBuckets {
 		lines = append(lines, tr(text, "tui.studio.preview.impact.bucket_removed", "bucket removed: %s (%d active tasks)", bucket.Key, bucket.ActiveTaskCount))

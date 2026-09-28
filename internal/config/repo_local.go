@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+
+	"omakiten/internal/paths"
 )
 
 // RepoLocalDirName is the directory FindRepoLocal looks for during walk-up
@@ -37,7 +39,7 @@ func FindRepoLocal(startDir string) (string, bool, error) {
 	if err != nil {
 		return "", false, err
 	}
-	if err := validateNoSymlinkComponents(cur); err != nil {
+	if err := paths.ValidateNoSymlinkComponents(cur); err != nil {
 		return "", false, err
 	}
 	home := repoLocalHome()
@@ -84,7 +86,7 @@ func repoLocalAt(dir string) (string, bool, error) {
 	if !info.IsDir() {
 		return "", false, nil
 	}
-	if err := validateNoSymlinkComponents(candidate); err != nil {
+	if err := paths.ValidateNoSymlinkComponents(candidate); err != nil {
 		return "", false, err
 	}
 	return candidate, true, nil
@@ -95,37 +97,5 @@ func repoLocalAt(dir string) (string, bool, error) {
 // install use this before any materialization so a malicious pre-existing root
 // cannot redirect writes into another tree.
 func ValidateRepoLocalRoot(root string) error {
-	return validateNoSymlinkComponents(root)
-}
-
-// validateNoSymlinkComponents checks every existing component of path without
-// following links. A missing leaf is allowed so callers can retain their
-// existing first-run behavior while still rejecting a symlinked ancestor.
-func validateNoSymlinkComponents(path string) error {
-	abs, err := filepath.Abs(path)
-	if err != nil {
-		return err
-	}
-	var components []string
-	for cur := filepath.Clean(abs); ; cur = filepath.Dir(cur) {
-		components = append(components, cur)
-		parent := filepath.Dir(cur)
-		if parent == cur {
-			break
-		}
-	}
-	for index := len(components) - 1; index >= 0; index-- {
-		component := components[index]
-		info, err := os.Lstat(component)
-		if err != nil {
-			if os.IsNotExist(err) {
-				continue
-			}
-			return fmt.Errorf("inspect path component %s: %w", component, err)
-		}
-		if info.Mode()&os.ModeSymlink != 0 {
-			return fmt.Errorf("refusing path through symlink component %s", component)
-		}
-	}
-	return nil
+	return paths.ValidateNoSymlinkComponents(root)
 }

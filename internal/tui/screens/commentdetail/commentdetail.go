@@ -67,7 +67,7 @@ func New() Screen {
 	input.ShowLineNumbers = false
 	input.CharLimit = 0
 	input.KeyMap.InsertNewline = key.NewBinding(key.WithKeys("alt+enter", "shift+enter", "ctrl+j"))
-	return Screen{input: input, grid: screengrid.NewState(), md: markdown.New(markdown.Tokens{}), rendered: true}
+	return Screen{input: input, grid: screengrid.NewState(), md: markdown.New(screenkit.MarkdownTokens{}), rendered: true}
 }
 
 func (s Screen) ID() screenhost.ID     { return screenhost.CommentDetail }

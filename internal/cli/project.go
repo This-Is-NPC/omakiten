@@ -5,7 +5,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"omakiten/internal/operation"
+	"omakiten/internal/contract"
 )
 
 func newProjectCommand(opts *runtimeOptions) *cobra.Command {
@@ -19,8 +19,8 @@ func newProjectCommand(opts *runtimeOptions) *cobra.Command {
 	return cmd
 }
 
-func (o *runtimeOptions) projectSelector() operation.ProjectSelector {
-	return operation.ProjectSelector{Project: o.project, ProjectID: o.projectID}
+func (o *runtimeOptions) projectSelector() contract.ProjectSelector {
+	return contract.ProjectSelector{Project: o.project, ProjectID: o.projectID}
 }
 
 func newProjectOverviewCommand(opts *runtimeOptions) *cobra.Command {
@@ -34,7 +34,7 @@ func newProjectOverviewCommand(opts *runtimeOptions) *cobra.Command {
 					return nil, err
 				}
 				defer rt.close()
-				return rt.operationService().Overview(ctx, operation.OverviewInput{
+				return rt.operationService().Overview(ctx, contract.OverviewInput{
 					ProjectSelector: opts.projectSelector(),
 				})
 			})
@@ -53,7 +53,7 @@ func newProjectResumeCommand(opts *runtimeOptions) *cobra.Command {
 					return nil, err
 				}
 				defer rt.close()
-				return rt.operationService().ResumeProject(ctx, operation.ResumeProjectInput{
+				return rt.operationService().ResumeProject(ctx, contract.ResumeProjectInput{
 					ProjectSelector: opts.projectSelector(),
 				})
 			})
@@ -73,7 +73,7 @@ func newProjectEditCommand(opts *runtimeOptions) *cobra.Command {
 					return nil, err
 				}
 				defer rt.close()
-				return rt.operationService().EditProject(ctx, operation.EditProjectInput{
+				return rt.operationService().EditProject(ctx, contract.EditProjectInput{
 					ProjectSelector: opts.projectSelector(),
 					Description:     description,
 				})

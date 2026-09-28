@@ -1,9 +1,14 @@
+// Package runtimecache wires runtime fixtures for delivery tests.
 package runtimecache
 
 import (
+	"context"
+	"fmt"
+
 	"omakiten/internal/agentruntime"
 	"omakiten/internal/app"
 	"omakiten/internal/config"
+	"omakiten/internal/contract"
 	"omakiten/internal/operation"
 )
 
@@ -17,34 +22,25 @@ type snapshotRepo interface {
 // Repositories.ProjectID the test sets — TUI tests that leave
 // ProjectID at its zero value should pass 0 here so the cache lookup
 // hits the installed entry.
-func Install(projectID int64, snap *config.Snapshot) *agentruntime.BundleCache {
+func Install(projectID int64, snap *config.Snapshot) *FixtureCache {
 	cache := agentruntime.NewBundleCache(nil, nil, nil)
 	cache.Install(projectID, &agentruntime.ProjectRuntime{Snapshot: snap})
-	return cache
+	return &FixtureCache{BundleCache: cache}
 }
 
 // InstallWithStore wires Snapshot + operation.Service so TUI tests that
 // route mutations through the facade have a Service on the cache entry.
-func InstallWithStore(projectID int64, store snapshotRepo) *agentruntime.BundleCache {
+func InstallWithStore(projectID int64, store snapshotRepo) *FixtureCache {
 	return InstallWithStoreSnap(projectID, store, store.Snapshot())
 }
 
 // InstallWithStoreSnap is InstallWithStore with an explicit snapshot.
-func InstallWithStoreSnap(projectID int64, store operation.Repository, snap *config.Snapshot) *agentruntime.BundleCache {
-	svc := operation.NewService(store, operation.ProjectSelector{})
+func InstallWithStoreSnap(projectID int64, store operation.Repository, snap *config.Snapshot) *FixtureCache {
+	svc := operation.NewService(store, contract.ProjectSelector{})
 	svc.SetSnapshot(snap)
 	cache := agentruntime.NewBundleCache(nil, nil, nil)
 	cache.Install(projectID, &agentruntime.ProjectRuntime{Snapshot: snap, Service: svc})
-	return cache
-}
-
-// InstallWithPrevious extends Install with the previous Snapshot pointer
-// so orphan-flow tests can exercise both snapshot reads through the
-// same runtime accessor.
-func InstallWithPrevious(projectID int64, current, previous *config.Snapshot) *agentruntime.BundleCache {
-	cache := agentruntime.NewBundleCache(nil, nil, nil)
-	cache.Install(projectID, &agentruntime.ProjectRuntime{Snapshot: current, PreviousSnapshot: previous})
-	return cache
+	return &FixtureCache{BundleCache: cache}
 }
 
 // bundleLoader is the Load surface RefreshFromEditor needs. *app.BundleEditor
@@ -59,14 +55,14 @@ type bundleLoader interface {
 // loop call this to mirror production's BundleCache.Reload effect.
 // The existing operation.Service (if any) is preserved and rotated onto
 // the new snapshot so facade-backed TUI tests keep working.
-func RefreshFromEditor(cache *agentruntime.BundleCache, projectID int64, editor bundleLoader) error {
+func RefreshFromEditor(cache any, projectID int64, editor bundleLoader) error {
 	bundle, err := editor.Load()
 	if err != nil {
 		return err
 	}
 	snap := config.BuildSnapshot(bundle)
 	runtime := &agentruntime.ProjectRuntime{Snapshot: snap}
-	if existing := cache.Get(projectID); existing != nil {
+	if existing := underlying(cache).Get(projectID); existing != nil {
 		runtime.Service = existing.Service
 		runtime.Editor = existing.Editor
 		runtime.PreviousSnapshot = existing.PreviousSnapshot
@@ -74,7 +70,7 @@ func RefreshFromEditor(cache *agentruntime.BundleCache, projectID int64, editor 
 			runtime.Service.SetSnapshot(snap)
 		}
 	}
-	return cache.Install(projectID, runtime)
+	return underlying(cache).Install(projectID, runtime)
 }
 
 // SetEntityRepos wires authoring ports onto the facade so TUI tests can
@@ -85,3 +81,35 @@ func SetEntityRepos(svc *operation.Service, editor *app.BundleEditor, files app.
 	}
 	svc.SetEntityRepos(editor, files, slugger)
 }
+
+// FixtureCache reloads an in-memory editor without a production SQLite connection.
+type FixtureCache struct{ *agentruntime.BundleCache }
+
+func (c *FixtureCache) ReloadView(ctx context.Context, id int64, path string) (*contract.RuntimeView, error) {
+	entry := c.Get(id)
+	if entry == nil || entry.Editor == nil {
+		return nil, fmt.Errorf("fixture editor is not installed")
+	}
+	if err := RefreshFromEditor(c, id, entry.Editor); err != nil {
+		return nil, err
+	}
+	return c.View(id), nil
+}
+func underlying(cache any) *agentruntime.BundleCache {
+	switch c := cache.(type) {
+	case *FixtureCache:
+		return c.BundleCache
+	case *agentruntime.BundleCache:
+		return c
+	default:
+		panic("unexpected fixture cache")
+	}
+}
+
+// InstallRuntime replaces one fixture entry through its concrete runtime owner.
+func InstallRuntime(cache any, id int64, entry *agentruntime.ProjectRuntime) error {
+	return underlying(cache).Install(id, entry)
+}
+
+// Service returns the concrete service for fixture setup only.
+func Service(cache any, id int64) *operation.Service { return underlying(cache).Get(id).Service }

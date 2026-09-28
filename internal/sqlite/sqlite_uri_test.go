@@ -1,6 +1,8 @@
 package sqlite
 
-import "testing"
+import (
+	"testing"
+)
 
 func TestSQLiteFileURIIsPlatformAware(t *testing.T) {
 	t.Parallel()

@@ -6,8 +6,8 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"omakiten/internal/contract"
 	"omakiten/internal/domain"
-	"omakiten/internal/operation"
 )
 
 func newCommentCommand(opts *runtimeOptions) *cobra.Command {
@@ -57,7 +57,7 @@ func newCommentAddCommand(opts *runtimeOptions) *cobra.Command {
 				}
 				defer rt.close()
 
-				return rt.operationService().AddComment(ctx, operation.AddCommentInput{
+				return rt.operationService().AddComment(ctx, contract.AddCommentInput{
 					ProjectSelector: opts.projectSelector(),
 					TaskID:          taskID,
 					Scope:           scope,
@@ -116,7 +116,7 @@ func newCommentListCommand(opts *runtimeOptions) *cobra.Command {
 				}
 				defer rt.close()
 
-				return rt.operationService().ListComments(ctx, operation.ListCommentsInput{
+				return rt.operationService().ListComments(ctx, contract.ListCommentsInput{
 					ProjectSelector: opts.projectSelector(),
 					TaskID:          taskID,
 					CommentID:       commentID,
@@ -182,8 +182,8 @@ func newCommentEditCommand(opts *runtimeOptions) *cobra.Command {
 	return edit
 }
 
-func commentEditInput(cmd *cobra.Command, opts *runtimeOptions, commentID int64, body string, tags []string, title, kind string, pinned bool) operation.EditCommentInput {
-	input := operation.EditCommentInput{
+func commentEditInput(cmd *cobra.Command, opts *runtimeOptions, commentID int64, body string, tags []string, title, kind string, pinned bool) contract.EditCommentInput {
+	input := contract.EditCommentInput{
 		ProjectSelector: opts.projectSelector(),
 		CommentID:       commentID,
 	}
@@ -228,7 +228,7 @@ func newCommentDeleteCommand(opts *runtimeOptions) *cobra.Command {
 				}
 				defer rt.close()
 
-				return rt.operationService().DeleteComment(ctx, operation.DeleteCommentInput{
+				return rt.operationService().DeleteComment(ctx, contract.DeleteCommentInput{
 					ProjectSelector: opts.projectSelector(),
 					CommentID:       commentID,
 					Confirmed:       deleteConfirmed,

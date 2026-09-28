@@ -1,6 +1,8 @@
 package screenlayout
 
-import "testing"
+import (
+	"testing"
+)
 
 // ---------------------------------------------------------------------------
 // Spec.MaxWidth (#2445).

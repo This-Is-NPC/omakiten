@@ -9,6 +9,7 @@ import (
 
 	"omakiten/internal/app"
 	"omakiten/internal/config"
+	"omakiten/internal/contract"
 	"omakiten/internal/domain"
 )
 
@@ -35,23 +36,23 @@ const logsSinceLayout = "2006-01-02T15:04:05Z"
 // silently dropped (the SQL layer returns no rows for them), an
 // unparseable `since` surfaces as a validation error so the caller
 // can correct the input rather than receive a silent wrong-window.
-func (s *Service) ListLogs(ctx context.Context, input ListLogsInput) (ListLogsResponse, error) {
+func (s *Service) ListLogs(ctx context.Context, input contract.ListLogsInput) (contract.ListLogsResponse, error) {
 	if err := s.allow("logs.list"); err != nil {
-		return ListLogsResponse{}, err
+		return contract.ListLogsResponse{}, err
 	}
 	project, err := s.resolveProject(ctx, input.ProjectSelector)
 	if err != nil {
-		return ListLogsResponse{}, err
+		return contract.ListLogsResponse{}, err
 	}
 
 	categories, err := normalizeLogsCategories(input.Categories)
 	if err != nil {
-		return ListLogsResponse{}, err
+		return contract.ListLogsResponse{}, err
 	}
 
 	since, err := resolveLogsSince(input.Since, s.snapshot, s.nowFunc())
 	if err != nil {
-		return ListLogsResponse{}, err
+		return contract.ListLogsResponse{}, err
 	}
 
 	rows, err := app.NewEventService(s.repo).ListEvents(ctx, project, app.ListEventsParams{
@@ -61,7 +62,7 @@ func (s *Service) ListLogs(ctx context.Context, input ListLogsInput) (ListLogsRe
 		Order:      input.Order,
 	})
 	if err != nil {
-		return ListLogsResponse{}, err
+		return contract.ListLogsResponse{}, err
 	}
 
 	resolvedOrder := strings.ToLower(strings.TrimSpace(input.Order))
@@ -69,7 +70,7 @@ func (s *Service) ListLogs(ctx context.Context, input ListLogsInput) (ListLogsRe
 		resolvedOrder = "desc"
 	}
 
-	resp := ListLogsResponse{
+	resp := contract.ListLogsResponse{
 		Project: projectSummary(project),
 		Rows:    logsRows(rows),
 		Order:   resolvedOrder,

@@ -49,16 +49,6 @@ type Labels struct {
 	Parent      string
 }
 
-// Theme is the form chrome this screen paints with, owned by components/field
-// and named here only so the host's Deps keep one spelling.
-//
-// It used to be six bare style fields declared right here, which made the
-// screen the author of a style vocabulary instead of a consumer of one — and
-// left its fixture free to invent a palette out of hex literals that no theme
-// could reach. Build one with [field.Form] from the Styles the Kit carries;
-// nothing constructs the fields by hand any more.
-type Theme = field.FormTheme
-
 // form owns all mutable widget state for one task create/edit session.
 type form struct {
 	title        textinput.Model
@@ -74,7 +64,7 @@ type form struct {
 	parentError  string
 }
 
-func newForm(values Values, width int, theme Theme) form {
+func newForm(values Values, width int, theme field.FormTheme) form {
 	m := form{
 		title:       newTextInput(values.Title),
 		description: newDescriptionInput(values.Description),
@@ -190,7 +180,7 @@ func (m form) withParentError(message string) form {
 
 func (m form) confirmingDiscard() bool { return m.discardArmed }
 
-func (m form) resize(width int, theme Theme) form {
+func (m form) resize(width int, theme field.FormTheme) form {
 	inputWidth := width - theme.Input.GetHorizontalFrameSize()
 	if inputWidth < 8 {
 		inputWidth = 8

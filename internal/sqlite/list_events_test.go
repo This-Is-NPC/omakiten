@@ -7,7 +7,9 @@ import (
 	"testing"
 	"time"
 
+	"omakiten/internal/config"
 	"omakiten/internal/domain"
+	"omakiten/internal/testutil"
 )
 
 // seedEvent inserts a minimal events row with a custom created_at so
@@ -16,7 +18,7 @@ import (
 func seedEvent(ctx context.Context, t *testing.T, store *storeFixture, projectID int64, eventType string, createdAt time.Time) int64 {
 	t.Helper()
 	entity := domain.EventEntitySystem
-	if domain.EventCategoryOf(eventType) == domain.EventCategoryTask || eventType == domain.EventTypeComment {
+	if testutil.EventRegistry().CategoryOf(eventType) == domain.EventCategoryTask || eventType == domain.EventTypeComment {
 		// Task / comment rows want entity_type='task' in the schema —
 		// keep the seed consistent so any future schema check fires.
 		entity = domain.EventEntityTask
@@ -80,9 +82,9 @@ func TestListEventsSingleCategoryFilter(t *testing.T) {
 		t.Fatalf("len = %d, want 2 (task category only)", len(got))
 	}
 	for _, row := range got {
-		if domain.EventCategoryOf(row.EventType) != domain.EventCategoryTask {
+		if testutil.EventRegistry().CategoryOf(row.EventType) != domain.EventCategoryTask {
 			t.Errorf("row.EventType = %q maps to %q, want task category",
-				row.EventType, domain.EventCategoryOf(row.EventType))
+				row.EventType, testutil.EventRegistry().CategoryOf(row.EventType))
 		}
 	}
 }
@@ -110,7 +112,7 @@ func TestListEventsMultiCategoryFilter(t *testing.T) {
 		t.Fatalf("len = %d, want 2 (task + comment)", len(got))
 	}
 	for _, row := range got {
-		c := domain.EventCategoryOf(row.EventType)
+		c := testutil.EventRegistry().CategoryOf(row.EventType)
 		if c != domain.EventCategoryTask && c != domain.EventCategoryComment {
 			t.Errorf("row.EventType = %q maps to %q, want task or comment", row.EventType, c)
 		}
@@ -241,7 +243,7 @@ func TestListEventsCombinedFilters(t *testing.T) {
 		if row.ProjectID != 1 {
 			t.Errorf("row.ProjectID = %d, want 1", row.ProjectID)
 		}
-		if domain.EventCategoryOf(row.EventType) != domain.EventCategoryTask {
+		if testutil.EventRegistry().CategoryOf(row.EventType) != domain.EventCategoryTask {
 			t.Errorf("row.EventType = %q not task category", row.EventType)
 		}
 	}
@@ -299,6 +301,49 @@ func TestListEventsProjectScope(t *testing.T) {
 	}
 }
 
+func TestProjectEventSettingsIsolation(t *testing.T) {
+	ctx := context.Background()
+	store := openStoreFixture(t, t.TempDir()+"/omakiten.db")
+	for _, projectID := range []int64{1, 1, 2, 2} {
+		seedEvent(ctx, t, store, projectID, domain.EventTypeTaskCreated, time.Now())
+	}
+	policy := cloneEventsSettings(config.MustLoadKitConfig().Events)
+	definition := policy.Definitions[domain.EventTypeTaskCreated]
+	definition.Category, definition.Display = string(domain.EventCategoryAudit), "private"
+	policy.Definitions[domain.EventTypeTaskCreated] = definition
+	disabled, one := false, 1
+	if policy.Overrides == nil {
+		policy.Overrides = map[string]config.EventChannelSettings{}
+	}
+	if policy.Retention.Overrides == nil {
+		policy.Retention.Overrides = map[string]config.EventRetentionSettings{}
+	}
+	policy.Overrides[domain.EventTypeTaskCreated] = config.EventChannelSettings{Log: &disabled}
+	policy.Retention.Overrides[domain.EventTypeTaskCreated] = config.EventRetentionSettings{MaxRows: &one}
+	if err := store.ApplyConfig(ctx, ConfigKnobs{ProjectID: 2, EventsPolicy: policy}); err != nil {
+		t.Fatal(err)
+	}
+	for _, projectID := range []int64{1, 2} {
+		if err := store.RecordEntityEvent(ctx, domain.EventEntitySystem, 0, projectID, domain.EventTypeTaskCreated, "{}"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	counts, err := store.EventCategoryCounts(ctx, 0, time.Time{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if counts[domain.EventCategoryTask] != 3 || counts[domain.EventCategoryAudit] != 1 {
+		t.Fatalf("project policy changed another project's logging, retention or category: %v", counts)
+	}
+	rows, err := store.ListEvents(ctx, domain.EventFilter{Categories: []domain.EventCategory{domain.EventCategoryAudit}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 1 || rows[0].ProjectID != 2 || rows[0].Display != "private" {
+		t.Fatalf("global category query lost project metadata: %+v", rows)
+	}
+}
+
 // TestListEventsUsesIndex documents AC#6 — the planner must use
 // idx_events_type_started for category-filtered queries; no full scan.
 // The check is split in two: (1) the plan reports USING INDEX (no full
@@ -313,7 +358,7 @@ func TestListEventsUsesIndex(t *testing.T) {
 
 	// Build the category-filtered shape EXPLAIN sees so the arg list
 	// exactly matches the production query.
-	eventTypes := domain.EventTypesForCategory(domain.EventCategoryTask)
+	eventTypes := testutil.EventRegistry().TypesForCategory(domain.EventCategoryTask)
 	ph := make([]string, len(eventTypes))
 	args := []any{int64(1)}
 	for i, et := range eventTypes {

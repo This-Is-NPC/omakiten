@@ -40,16 +40,3 @@ func AgentAttributedFilterFor(alias string) string {
 func ConditionalCount(predicate string) string {
 	return "SUM(CASE WHEN " + predicate + " THEN 1 ELSE 0 END)"
 }
-
-// ConditionalCounts maps ConditionalCount over a slice of predicates,
-// preserving order. It is a convenience for the common case where a
-// query emits one conditional count per metric bucket and the scan loop
-// reads the results back in the same order. Returns an empty slice for
-// an empty input.
-func ConditionalCounts(predicates []string) []string {
-	out := make([]string, len(predicates))
-	for i, p := range predicates {
-		out[i] = ConditionalCount(p)
-	}
-	return out
-}

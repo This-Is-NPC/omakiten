@@ -1,6 +1,8 @@
 package screenlayout
 
-import "slices"
+import (
+	"slices"
+)
 
 // BlockMemo is the one place a section body keeps what it composed, so the next
 // screen does not design a sixth.
@@ -63,13 +65,6 @@ import "slices"
 // rows pad the end, which is cheap and belongs outside the memo. A body that
 // genuinely composes differently at different heights needs two memos or none —
 // never one key that thrashes between them.
-//
-// # This is not the only defence
-//
-// A memo is what a screen does about the cost. Finding out it HAS one is
-// screentest.Budgets, which records what a keystroke allocates and fails when the
-// number moves. The two are meant to be used together: the gate says a body got
-// expensive, this says where to put the answer.
 type BlockMemo[K comparable] struct {
 	key     K
 	inputs  []string

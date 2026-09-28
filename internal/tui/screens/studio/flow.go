@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"omakiten/internal/config"
+	bundledraft "omakiten/internal/config/bundledraft"
 	"omakiten/internal/domain"
 	"omakiten/internal/studioprojection"
 	"omakiten/internal/tui/components/screenkit"
@@ -25,14 +26,14 @@ func (m *Screen) ensureStudioDraft() error {
 	return nil
 }
 
-func studioDraftReportMessage(report StudioDraftReport, ok string) string {
+func studioDraftReportMessage(report bundledraft.Report, ok string) string {
 	if report.ValidationError != nil {
 		return report.ValidationError.Error()
 	}
 	return ok
 }
 
-func StudioFlowWarnings(workflow config.Workflow, text Text) []string {
+func StudioFlowWarnings(workflow config.Workflow, text bundledraft.Text) []string {
 	return studioprojection.FlowWarnings(workflow, projectionText(text))
 }
 

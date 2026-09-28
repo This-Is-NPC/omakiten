@@ -14,16 +14,12 @@ import (
 	"omakiten/internal/tui/screenhost"
 )
 
-type Kind = relationshipprojection.Kind
-
 const (
 	PersonaSkills   = relationshipprojection.PersonaSkills
 	TemplateDefault = relationshipprojection.TemplateDefault
 )
 
-type Option = relationshipprojection.Option
-
-func kindID(k Kind) screenhost.ID {
+func kindID(k relationshipprojection.Kind) screenhost.ID {
 	if k == relationshipprojection.PersonaSkills {
 		return screenhost.PersonaSkills
 	}
@@ -31,11 +27,11 @@ func kindID(k Kind) screenhost.ID {
 }
 
 type Payload struct {
-	Kind        Kind
+	Kind        relationshipprojection.Kind
 	EntitySlug  string
 	ProjectSlug string
 	Generation  uint64
-	Options     []Option
+	Options     []relationshipprojection.Option
 }
 
 type Screen struct {
@@ -47,7 +43,7 @@ type Screen struct {
 	confirmingCancel bool
 }
 
-func New(kind Kind) Screen {
+func New(kind relationshipprojection.Kind) Screen {
 	return Screen{payload: Payload{Kind: kind}, picker: list.NewPicker(list.Single), grid: screengrid.NewState()}
 }
 
@@ -56,13 +52,15 @@ func (s Screen) Cursor() int       { return s.picker.Cursor }
 
 // Scroll is the grid arranger's window offset. picker.Scroll is kept in sync
 // for any remaining picker readers, but the grid is authoritative.
-func (s Screen) Scroll() int            { return s.grid.Layout().Offset(sectionOptions) }
-func (s Screen) Payload() Payload       { return s.payload }
-func (s Screen) Options() []Option      { return append([]Option(nil), s.payload.Options...) }
+func (s Screen) Scroll() int      { return s.grid.Layout().Offset(sectionOptions) }
+func (s Screen) Payload() Payload { return s.payload }
+func (s Screen) Options() []relationshipprojection.Option {
+	return append([]relationshipprojection.Option(nil), s.payload.Options...)
+}
 func (s Screen) ConfirmingCancel() bool { return s.confirmingCancel }
-func (s Screen) Selected() Option {
+func (s Screen) Selected() relationshipprojection.Option {
 	if s.picker.Cursor < 0 || s.picker.Cursor >= len(s.payload.Options) {
-		return Option{}
+		return relationshipprojection.Option{}
 	}
 	return s.payload.Options[s.picker.Cursor]
 }

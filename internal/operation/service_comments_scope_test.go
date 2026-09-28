@@ -3,6 +3,7 @@ package operation
 import (
 	"testing"
 
+	"omakiten/internal/contract"
 	"omakiten/internal/domain"
 )
 
@@ -12,19 +13,19 @@ func TestAddCommentScopeValidation(t *testing.T) {
 	fixture := newAgentFixture(t)
 
 	// task scope without task_id is rejected.
-	_, err := fixture.service.AddComment(fixture.ctx, AddCommentInput{Scope: domain.CommentScopeTask, Body: "x"})
+	_, err := fixture.service.AddComment(fixture.ctx, contract.AddCommentInput{Scope: domain.CommentScopeTask, Body: "x"})
 	assertCodedError(t, err, domain.ErrValidation)
 
 	// project scope must not carry task_id.
-	_, err = fixture.service.AddComment(fixture.ctx, AddCommentInput{Scope: domain.CommentScopeProject, TaskID: fixture.taskA1.ID, Body: "x"})
+	_, err = fixture.service.AddComment(fixture.ctx, contract.AddCommentInput{Scope: domain.CommentScopeProject, TaskID: fixture.taskA1.ID, Body: "x"})
 	assertCodedError(t, err, domain.ErrValidation)
 
 	// universal scope must not carry task_id.
-	_, err = fixture.service.AddComment(fixture.ctx, AddCommentInput{Scope: domain.CommentScopeUniversal, TaskID: fixture.taskA1.ID, Body: "x"})
+	_, err = fixture.service.AddComment(fixture.ctx, contract.AddCommentInput{Scope: domain.CommentScopeUniversal, TaskID: fixture.taskA1.ID, Body: "x"})
 	assertCodedError(t, err, domain.ErrValidation)
 
 	// unknown scope is rejected.
-	_, err = fixture.service.AddComment(fixture.ctx, AddCommentInput{Scope: "bogus", Body: "x"})
+	_, err = fixture.service.AddComment(fixture.ctx, contract.AddCommentInput{Scope: "bogus", Body: "x"})
 	assertCodedError(t, err, domain.ErrValidation)
 }
 
@@ -33,7 +34,7 @@ func TestAddCommentScopeValidation(t *testing.T) {
 func TestAddCommentEachScope(t *testing.T) {
 	fixture := newAgentFixture(t)
 
-	taskC, err := fixture.service.AddComment(fixture.ctx, AddCommentInput{
+	taskC, err := fixture.service.AddComment(fixture.ctx, contract.AddCommentInput{
 		TaskID: fixture.taskA1.ID, Body: "task note", AuthorType: "agent",
 		Kind: "handoff", Title: "T", Pinned: true,
 	})
@@ -47,7 +48,7 @@ func TestAddCommentEachScope(t *testing.T) {
 		t.Fatalf("task note-like fields = %+v, want kind/title/pinned set", taskC.Comment)
 	}
 
-	projC, err := fixture.service.AddComment(fixture.ctx, AddCommentInput{
+	projC, err := fixture.service.AddComment(fixture.ctx, contract.AddCommentInput{
 		Scope: domain.CommentScopeProject, Body: "project note", AuthorType: "agent", Kind: "recap",
 	})
 	if err != nil {
@@ -57,7 +58,7 @@ func TestAddCommentEachScope(t *testing.T) {
 		t.Fatalf("project scope = %q, want project", projC.Comment.Scope)
 	}
 
-	uniC, err := fixture.service.AddComment(fixture.ctx, AddCommentInput{
+	uniC, err := fixture.service.AddComment(fixture.ctx, contract.AddCommentInput{
 		Scope: domain.CommentScopeUniversal, Body: "global note", AuthorType: "agent",
 	})
 	if err != nil {
@@ -73,20 +74,20 @@ func TestAddCommentEachScope(t *testing.T) {
 func TestListCommentsFilters(t *testing.T) {
 	fixture := newAgentFixture(t)
 
-	if _, err := fixture.service.AddComment(fixture.ctx, AddCommentInput{
+	if _, err := fixture.service.AddComment(fixture.ctx, contract.AddCommentInput{
 		Scope: domain.CommentScopeProject, Body: "deploy plan alpha", AuthorType: "agent",
 		Kind: "recap", Pinned: true, Tags: []string{"deploy"},
 	}); err != nil {
 		t.Fatalf("seed project comment: %v", err)
 	}
-	if _, err := fixture.service.AddComment(fixture.ctx, AddCommentInput{
+	if _, err := fixture.service.AddComment(fixture.ctx, contract.AddCommentInput{
 		Scope: domain.CommentScopeProject, Body: "standup beta", AuthorType: "agent", Kind: "standup",
 	}); err != nil {
 		t.Fatalf("seed project comment 2: %v", err)
 	}
 
 	// scope=project returns both project rows (not the task-scoped seed).
-	byScope, err := fixture.service.ListComments(fixture.ctx, ListCommentsInput{Scope: domain.CommentScopeProject})
+	byScope, err := fixture.service.ListComments(fixture.ctx, contract.ListCommentsInput{Scope: domain.CommentScopeProject})
 	if err != nil {
 		t.Fatalf("ListComments(scope) error = %v", err)
 	}
@@ -95,7 +96,7 @@ func TestListCommentsFilters(t *testing.T) {
 	}
 
 	// kind filter narrows to recap.
-	byKind, err := fixture.service.ListComments(fixture.ctx, ListCommentsInput{Kind: "recap"})
+	byKind, err := fixture.service.ListComments(fixture.ctx, contract.ListCommentsInput{Kind: "recap"})
 	if err != nil {
 		t.Fatalf("ListComments(kind) error = %v", err)
 	}
@@ -104,7 +105,7 @@ func TestListCommentsFilters(t *testing.T) {
 	}
 
 	// pinned-only returns the single pinned row.
-	byPinned, err := fixture.service.ListComments(fixture.ctx, ListCommentsInput{Pinned: true})
+	byPinned, err := fixture.service.ListComments(fixture.ctx, contract.ListCommentsInput{Pinned: true})
 	if err != nil {
 		t.Fatalf("ListComments(pinned) error = %v", err)
 	}
@@ -113,7 +114,7 @@ func TestListCommentsFilters(t *testing.T) {
 	}
 
 	// tag filter narrows to the deploy-tagged row.
-	byTag, err := fixture.service.ListComments(fixture.ctx, ListCommentsInput{Tag: "deploy"})
+	byTag, err := fixture.service.ListComments(fixture.ctx, contract.ListCommentsInput{Tag: "deploy"})
 	if err != nil {
 		t.Fatalf("ListComments(tag) error = %v", err)
 	}
@@ -122,7 +123,7 @@ func TestListCommentsFilters(t *testing.T) {
 	}
 
 	// FTS query matches the body token.
-	byQuery, err := fixture.service.ListComments(fixture.ctx, ListCommentsInput{Query: "alpha"})
+	byQuery, err := fixture.service.ListComments(fixture.ctx, contract.ListCommentsInput{Query: "alpha"})
 	if err != nil {
 		t.Fatalf("ListComments(query) error = %v", err)
 	}
@@ -136,7 +137,7 @@ func TestListCommentsFilters(t *testing.T) {
 func TestListCommentsDefaultUnchanged(t *testing.T) {
 	fixture := newAgentFixture(t)
 
-	resp, err := fixture.service.ListComments(fixture.ctx, ListCommentsInput{TaskID: fixture.taskA1.ID})
+	resp, err := fixture.service.ListComments(fixture.ctx, contract.ListCommentsInput{TaskID: fixture.taskA1.ID})
 	if err != nil {
 		t.Fatalf("ListComments(default) error = %v", err)
 	}
@@ -154,20 +155,20 @@ func TestListCommentsDefaultUnchanged(t *testing.T) {
 func TestListCommentsByID(t *testing.T) {
 	fixture := newAgentFixture(t)
 
-	taskC, err := fixture.service.AddComment(fixture.ctx, AddCommentInput{
+	taskC, err := fixture.service.AddComment(fixture.ctx, contract.AddCommentInput{
 		TaskID: fixture.taskA1.ID, Body: "task note", AuthorType: "agent",
 	})
 	if err != nil {
 		t.Fatalf("AddComment(task) error = %v", err)
 	}
-	uniC, err := fixture.service.AddComment(fixture.ctx, AddCommentInput{
+	uniC, err := fixture.service.AddComment(fixture.ctx, contract.AddCommentInput{
 		Scope: domain.CommentScopeUniversal, Body: "global note", AuthorType: "agent",
 	})
 	if err != nil {
 		t.Fatalf("AddComment(universal) error = %v", err)
 	}
 
-	got, err := fixture.service.ListComments(fixture.ctx, ListCommentsInput{CommentID: taskC.Comment.ID})
+	got, err := fixture.service.ListComments(fixture.ctx, contract.ListCommentsInput{CommentID: taskC.Comment.ID})
 	if err != nil {
 		t.Fatalf("ListComments(comment_id task) error = %v", err)
 	}
@@ -175,7 +176,7 @@ func TestListCommentsByID(t *testing.T) {
 		t.Fatalf("ListComments(comment_id=%d) = %+v, want exactly the task comment", taskC.Comment.ID, got.Comments)
 	}
 
-	gotUni, err := fixture.service.ListComments(fixture.ctx, ListCommentsInput{CommentID: uniC.Comment.ID})
+	gotUni, err := fixture.service.ListComments(fixture.ctx, contract.ListCommentsInput{CommentID: uniC.Comment.ID})
 	if err != nil {
 		t.Fatalf("ListComments(comment_id universal) error = %v", err)
 	}
@@ -192,21 +193,21 @@ func TestListCommentsDoesNotLeakAcrossProjects(t *testing.T) {
 	fixture := newAgentFixture(t)
 
 	// Project A's own project-scoped note (default selector resolves to A).
-	if _, err := fixture.service.AddComment(fixture.ctx, AddCommentInput{
+	if _, err := fixture.service.AddComment(fixture.ctx, contract.AddCommentInput{
 		Scope: domain.CommentScopeProject, Body: "A project note", AuthorType: "agent",
 	}); err != nil {
 		t.Fatalf("AddComment(A project) error = %v", err)
 	}
 	// Project B's project-scoped note, addressed explicitly by id.
-	if _, err := fixture.service.AddComment(fixture.ctx, AddCommentInput{
-		ProjectSelector: ProjectSelector{ProjectID: fixture.projectB.ID},
+	if _, err := fixture.service.AddComment(fixture.ctx, contract.AddCommentInput{
+		ProjectSelector: contract.ProjectSelector{ProjectID: fixture.projectB.ID},
 		Scope:           domain.CommentScopeProject, Body: "B project note", AuthorType: "agent",
 	}); err != nil {
 		t.Fatalf("AddComment(B project) error = %v", err)
 	}
 
 	// A routine scope=project list for project A must only see A's note.
-	got, err := fixture.service.ListComments(fixture.ctx, ListCommentsInput{Scope: domain.CommentScopeProject})
+	got, err := fixture.service.ListComments(fixture.ctx, contract.ListCommentsInput{Scope: domain.CommentScopeProject})
 	if err != nil {
 		t.Fatalf("ListComments(scope=project) error = %v", err)
 	}
@@ -229,8 +230,8 @@ func TestListCommentByIDDoesNotLeakAcrossProjects(t *testing.T) {
 	fixture := newAgentFixture(t)
 
 	// B's task-scoped comment (seeded "B comment" on taskB) and a B project note.
-	bTask, err := fixture.service.ListComments(fixture.ctx, ListCommentsInput{
-		ProjectSelector: ProjectSelector{ProjectID: fixture.projectB.ID},
+	bTask, err := fixture.service.ListComments(fixture.ctx, contract.ListCommentsInput{
+		ProjectSelector: contract.ProjectSelector{ProjectID: fixture.projectB.ID},
 		TaskID:          fixture.taskB.ID,
 	})
 	if err != nil {
@@ -241,8 +242,8 @@ func TestListCommentByIDDoesNotLeakAcrossProjects(t *testing.T) {
 	}
 	bTaskCommentID := bTask.Comments[0].ID
 
-	bProj, err := fixture.service.AddComment(fixture.ctx, AddCommentInput{
-		ProjectSelector: ProjectSelector{ProjectID: fixture.projectB.ID},
+	bProj, err := fixture.service.AddComment(fixture.ctx, contract.AddCommentInput{
+		ProjectSelector: contract.ProjectSelector{ProjectID: fixture.projectB.ID},
 		Scope:           domain.CommentScopeProject, Body: "B project secret", AuthorType: "agent",
 	})
 	if err != nil {
@@ -250,14 +251,14 @@ func TestListCommentByIDDoesNotLeakAcrossProjects(t *testing.T) {
 	}
 
 	// A universal note (project-less) and one of A's own project notes.
-	uni, err := fixture.service.AddComment(fixture.ctx, AddCommentInput{
-		ProjectSelector: ProjectSelector{ProjectID: fixture.projectB.ID},
+	uni, err := fixture.service.AddComment(fixture.ctx, contract.AddCommentInput{
+		ProjectSelector: contract.ProjectSelector{ProjectID: fixture.projectB.ID},
 		Scope:           domain.CommentScopeUniversal, Body: "global note", AuthorType: "agent",
 	})
 	if err != nil {
 		t.Fatalf("AddComment(universal) error = %v", err)
 	}
-	aOwn, err := fixture.service.AddComment(fixture.ctx, AddCommentInput{
+	aOwn, err := fixture.service.AddComment(fixture.ctx, contract.AddCommentInput{
 		Scope: domain.CommentScopeProject, Body: "A own note", AuthorType: "agent",
 	})
 	if err != nil {
@@ -265,7 +266,7 @@ func TestListCommentByIDDoesNotLeakAcrossProjects(t *testing.T) {
 	}
 
 	// From project A (default selector → A): B's task comment is invisible.
-	gotBTask, err := fixture.service.ListComments(fixture.ctx, ListCommentsInput{CommentID: bTaskCommentID})
+	gotBTask, err := fixture.service.ListComments(fixture.ctx, contract.ListCommentsInput{CommentID: bTaskCommentID})
 	if err != nil {
 		t.Fatalf("ListComments(comment_id=B task) error = %v", err)
 	}
@@ -274,7 +275,7 @@ func TestListCommentByIDDoesNotLeakAcrossProjects(t *testing.T) {
 	}
 
 	// B's project comment is invisible from A.
-	gotBProj, err := fixture.service.ListComments(fixture.ctx, ListCommentsInput{CommentID: bProj.Comment.ID})
+	gotBProj, err := fixture.service.ListComments(fixture.ctx, contract.ListCommentsInput{CommentID: bProj.Comment.ID})
 	if err != nil {
 		t.Fatalf("ListComments(comment_id=B project) error = %v", err)
 	}
@@ -283,7 +284,7 @@ func TestListCommentByIDDoesNotLeakAcrossProjects(t *testing.T) {
 	}
 
 	// Universal comment IS readable cross-project.
-	gotUni, err := fixture.service.ListComments(fixture.ctx, ListCommentsInput{CommentID: uni.Comment.ID})
+	gotUni, err := fixture.service.ListComments(fixture.ctx, contract.ListCommentsInput{CommentID: uni.Comment.ID})
 	if err != nil {
 		t.Fatalf("ListComments(comment_id=universal) error = %v", err)
 	}
@@ -292,7 +293,7 @@ func TestListCommentByIDDoesNotLeakAcrossProjects(t *testing.T) {
 	}
 
 	// A's own comment is readable.
-	gotOwn, err := fixture.service.ListComments(fixture.ctx, ListCommentsInput{CommentID: aOwn.Comment.ID})
+	gotOwn, err := fixture.service.ListComments(fixture.ctx, contract.ListCommentsInput{CommentID: aOwn.Comment.ID})
 	if err != nil {
 		t.Fatalf("ListComments(comment_id=A own) error = %v", err)
 	}
@@ -304,7 +305,7 @@ func TestListCommentByIDDoesNotLeakAcrossProjects(t *testing.T) {
 func TestEditCommentScopedFields(t *testing.T) {
 	fixture := newAgentFixture(t)
 
-	created, err := fixture.service.AddComment(fixture.ctx, AddCommentInput{
+	created, err := fixture.service.AddComment(fixture.ctx, contract.AddCommentInput{
 		Scope: domain.CommentScopeProject, Body: "before", AuthorType: "agent", Kind: "draft",
 	})
 	if err != nil {
@@ -314,7 +315,7 @@ func TestEditCommentScopedFields(t *testing.T) {
 	pinned := true
 	title := "Final"
 	kind := "recap"
-	edited, err := fixture.service.EditComment(fixture.ctx, EditCommentInput{
+	edited, err := fixture.service.EditComment(fixture.ctx, contract.EditCommentInput{
 		CommentID: created.Comment.ID, Body: strPtr("after"), Title: &title, Kind: &kind, Pinned: &pinned,
 	})
 	if err != nil {
@@ -336,7 +337,7 @@ func TestEditCommentPreservesNoteFieldsOnBodyOnlyEdit(t *testing.T) {
 	pinned := true
 	title := "Heading"
 	kind := "handoff"
-	created, err := fixture.service.AddComment(fixture.ctx, AddCommentInput{
+	created, err := fixture.service.AddComment(fixture.ctx, contract.AddCommentInput{
 		Scope: domain.CommentScopeProject, Body: "before", AuthorType: "agent",
 		Title: title, Kind: kind, Pinned: pinned,
 	})
@@ -345,7 +346,7 @@ func TestEditCommentPreservesNoteFieldsOnBodyOnlyEdit(t *testing.T) {
 	}
 
 	// Body-only edit: Title/Kind/Pinned omitted.
-	edited, err := fixture.service.EditComment(fixture.ctx, EditCommentInput{
+	edited, err := fixture.service.EditComment(fixture.ctx, contract.EditCommentInput{
 		CommentID: created.Comment.ID, Body: strPtr("after"),
 	})
 	if err != nil {
@@ -360,7 +361,7 @@ func TestEditCommentPreservesNoteFieldsOnBodyOnlyEdit(t *testing.T) {
 
 	// Explicit pinned=false unpins (and leaves title/kind alone).
 	unpin := false
-	edited2, err := fixture.service.EditComment(fixture.ctx, EditCommentInput{
+	edited2, err := fixture.service.EditComment(fixture.ctx, contract.EditCommentInput{
 		CommentID: created.Comment.ID, Body: strPtr("after2"), Pinned: &unpin,
 	})
 	if err != nil {
@@ -382,7 +383,7 @@ func TestEditCommentPreservesNoteFieldsOnBodyOnlyEdit(t *testing.T) {
 func TestEditCommentTriStateTags(t *testing.T) {
 	fixture := newAgentFixture(t)
 
-	created, err := fixture.service.AddComment(fixture.ctx, AddCommentInput{
+	created, err := fixture.service.AddComment(fixture.ctx, contract.AddCommentInput{
 		Scope: domain.CommentScopeProject, Body: "before", AuthorType: "agent",
 		Tags: []string{"keepme"},
 	})
@@ -390,7 +391,7 @@ func TestEditCommentTriStateTags(t *testing.T) {
 		t.Fatalf("AddComment(project) error = %v", err)
 	}
 
-	tagNames := func(c CommentSummary) []string {
+	tagNames := func(c contract.CommentSummary) []string {
 		out := make([]string, 0, len(c.Tags))
 		for _, tg := range c.Tags {
 			out = append(out, tg.Name)
@@ -399,7 +400,7 @@ func TestEditCommentTriStateTags(t *testing.T) {
 	}
 
 	// Body-only edit: Tags omitted (nil) → keepme survives.
-	bodyOnly, err := fixture.service.EditComment(fixture.ctx, EditCommentInput{
+	bodyOnly, err := fixture.service.EditComment(fixture.ctx, contract.EditCommentInput{
 		CommentID: created.Comment.ID, Body: strPtr("after"),
 	})
 	if err != nil {
@@ -410,7 +411,7 @@ func TestEditCommentTriStateTags(t *testing.T) {
 	}
 
 	// Explicit replace with [other].
-	replaced, err := fixture.service.EditComment(fixture.ctx, EditCommentInput{
+	replaced, err := fixture.service.EditComment(fixture.ctx, contract.EditCommentInput{
 		CommentID: created.Comment.ID, Tags: []string{"other"},
 	})
 	if err != nil {
@@ -421,7 +422,7 @@ func TestEditCommentTriStateTags(t *testing.T) {
 	}
 
 	// Explicit empty array clears.
-	cleared, err := fixture.service.EditComment(fixture.ctx, EditCommentInput{
+	cleared, err := fixture.service.EditComment(fixture.ctx, contract.EditCommentInput{
 		CommentID: created.Comment.ID, Tags: []string{},
 	})
 	if err != nil {
@@ -439,7 +440,7 @@ func TestEditCommentTriStateTags(t *testing.T) {
 func TestEditCommentBodyTriState(t *testing.T) {
 	fixture := newAgentFixture(t)
 
-	created, err := fixture.service.AddComment(fixture.ctx, AddCommentInput{
+	created, err := fixture.service.AddComment(fixture.ctx, contract.AddCommentInput{
 		Scope: domain.CommentScopeProject, Body: "original", AuthorType: "agent",
 	})
 	if err != nil {
@@ -448,7 +449,7 @@ func TestEditCommentBodyTriState(t *testing.T) {
 
 	// Metadata-only edit: Body omitted (nil) → body preserved, metadata applied.
 	pinned := true
-	edited, err := fixture.service.EditComment(fixture.ctx, EditCommentInput{
+	edited, err := fixture.service.EditComment(fixture.ctx, contract.EditCommentInput{
 		CommentID: created.Comment.ID, Pinned: &pinned, Title: strPtr("Heading"),
 	})
 	if err != nil {
@@ -462,14 +463,14 @@ func TestEditCommentBodyTriState(t *testing.T) {
 	}
 
 	// Explicit empty body → rejected.
-	if _, err := fixture.service.EditComment(fixture.ctx, EditCommentInput{
+	if _, err := fixture.service.EditComment(fixture.ctx, contract.EditCommentInput{
 		CommentID: created.Comment.ID, Body: strPtr("   "),
 	}); err == nil {
 		t.Fatal("EditComment(empty body) error = nil, want validation error")
 	}
 
 	// No fields at all → rejected no-op.
-	if _, err := fixture.service.EditComment(fixture.ctx, EditCommentInput{
+	if _, err := fixture.service.EditComment(fixture.ctx, contract.EditCommentInput{
 		CommentID: created.Comment.ID,
 	}); err == nil {
 		t.Fatal("EditComment(no fields) error = nil, want validation error")

@@ -8,7 +8,9 @@
 // the join because the two picker screens already disagree on how.
 package choice
 
-import "omakiten/internal/tui/components/screenkit"
+import (
+	"omakiten/internal/tui/components/screenkit"
+)
 
 // Mode is which control mark an option wears.
 type Mode int

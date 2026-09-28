@@ -77,7 +77,7 @@ func TestPersistedHookErrorIsSanitizedAtEveryHistorySink(t *testing.T) {
 	}
 }
 
-func assertPersistedHookHistorySafe(t *testing.T, deps Deps, history map[int][]HookExecuted, index, width, height int) {
+func assertPersistedHookHistorySafe(t *testing.T, deps Deps, history map[int][]studioprojection.HookExecuted, index, width, height int) {
 	t.Helper()
 	frame := screentest.FrameAt(t, width, height)
 	screen := New().Bind(screenhost.StudioHooks, deps).WithState(State{HookIndex: index})
@@ -143,7 +143,7 @@ func testCandidateCommandsSafety(t *testing.T) {
 	t.Parallel()
 	payload := "safe\x1b[31mred\x1b]0;owned\a\x00\u009b\u009dend"
 	m := Screen{}
-	assertCandidateOutputSafe(t, strings.Join(m.commandsInspectorTable(studioCommandRow{
+	assertCandidateOutputSafe(t, strings.Join(m.commandsInspectorTable(studioprojection.CommandRow{
 		Key:  payload,
 		Spec: config.MCPCommandSpec{Persona: payload, Skills: []string{payload}}}, config.Bundle{}, 80, 0), "\n"))
 	assertCandidateOutputSafe(t, "Candidate diff:\n"+strings.Join(prefixLines([]string{payload}, "- "), "\n"))

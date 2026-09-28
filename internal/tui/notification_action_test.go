@@ -6,17 +6,18 @@ import (
 	"testing"
 	"time"
 
+	"omakiten/internal/contract"
 	"omakiten/internal/domain"
 )
 
 func TestHandleNotificationAction_emptyCommandSkipsDispatch(t *testing.T) {
 	m, _ := newPickerModel(t)
 	called := false
-	m.repos.DispatchCommand = func(_ context.Context, _ []string) ([]byte, error) {
+	m.repos.DispatchAction = func(_ context.Context, _ contract.ActionRequest) (contract.ActionResult, error) {
 		called = true
-		return nil, nil
+		return contract.ActionResult{}, nil
 	}
-	m.handleNotificationAction(ActionMsg{Slug: "kit", ActionID: "skip", Command: nil})
+	m.handleNotificationAction(ActionMsg{Slug: "kit", ActionID: "skip", Operation: ""})
 	if called {
 		t.Fatal("DispatchCommand must not run for empty Command")
 	}
@@ -27,14 +28,14 @@ func TestHandleNotificationAction_emptyCommandSkipsDispatch(t *testing.T) {
 
 func TestHandleNotificationAction_dispatchSuccessRefreshes(t *testing.T) {
 	m, _ := newPickerModel(t)
-	gotArgs := []string(nil)
-	m.repos.DispatchCommand = func(_ context.Context, args []string) ([]byte, error) {
-		gotArgs = args
-		return []byte(`{"ok":true,"data":{"message":"applied"}}` + "\n"), nil
+	var gotRequest contract.ActionRequest
+	m.repos.DispatchAction = func(_ context.Context, request contract.ActionRequest) (contract.ActionResult, error) {
+		gotRequest = request
+		return contract.ActionResult{Message: "applied"}, nil
 	}
-	m.handleNotificationAction(ActionMsg{Slug: "kit", ActionID: "apply", Command: []string{"workflow", "show"}})
-	if len(gotArgs) != 2 || gotArgs[0] != "workflow" || gotArgs[1] != "show" {
-		t.Fatalf("DispatchCommand received %v, want [workflow show]", gotArgs)
+	m.handleNotificationAction(ActionMsg{Slug: "kit", ActionID: "apply", Operation: "workflow.show"})
+	if gotRequest.Operation != "workflow.show" {
+		t.Fatalf("action = %+v", gotRequest)
 	}
 	if m.status != "applied" {
 		t.Fatalf("status = %q, want envelope message", m.status)
@@ -43,10 +44,10 @@ func TestHandleNotificationAction_dispatchSuccessRefreshes(t *testing.T) {
 
 func TestHandleNotificationAction_dispatchFailureKeepsErrorInStatus(t *testing.T) {
 	m, _ := newPickerModel(t)
-	m.repos.DispatchCommand = func(_ context.Context, _ []string) ([]byte, error) {
-		return []byte(`{"ok":false,"code":"validation_error","msg":"bad args"}` + "\n"), nil
+	m.repos.DispatchAction = func(_ context.Context, _ contract.ActionRequest) (contract.ActionResult, error) {
+		return contract.ActionResult{}, domain.NewError(domain.ErrValidation, "bad args", nil)
 	}
-	m.handleNotificationAction(ActionMsg{Slug: "kit", ActionID: "apply", Command: []string{"workflow", "show"}})
+	m.handleNotificationAction(ActionMsg{Slug: "kit", ActionID: "apply", Operation: "workflow.show"})
 	if !strings.Contains(m.status, "validation_error") || !strings.Contains(m.status, "bad args") {
 		t.Fatalf("status = %q, want envelope error", m.status)
 	}
@@ -56,10 +57,10 @@ func TestHandleNotificationAction_recordsConfirmationGranted(t *testing.T) {
 	m, _ := newPickerModel(t)
 	recorder := &recordingEventRepo{inner: m.repos.Events}
 	m.repos.Events = recorder
-	m.repos.DispatchCommand = func(_ context.Context, _ []string) ([]byte, error) {
-		return []byte(`{"ok":true,"data":{"message":"applied"}}` + "\n"), nil
+	m.repos.DispatchAction = func(_ context.Context, _ contract.ActionRequest) (contract.ActionResult, error) {
+		return contract.ActionResult{Message: "applied"}, nil
 	}
-	m.handleNotificationAction(ActionMsg{Slug: "kit", ActionID: "apply", Command: []string{"workflow", "show"}})
+	m.handleNotificationAction(ActionMsg{Slug: "kit", ActionID: "apply", Operation: "workflow.show"})
 	got := recorder.countByType[domain.EventTypeConfirmationGranted]
 	if got != 1 {
 		t.Fatalf("confirmation.granted count = %d, want 1", got)

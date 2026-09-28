@@ -16,9 +16,6 @@ import (
 	"omakiten/internal/tui/components/selectlist"
 )
 
-// HookExecuted is the prepared hook history row the inspector paints.
-type HookExecuted = studioprojection.HookExecuted
-
 const (
 	sectionHooks          = screenlayout.ID("hooks")
 	sectionHooksList      = screenlayout.ID("list")
@@ -194,7 +191,7 @@ func (m Screen) hooksHistoryContent(index, width int) (kicker, columns string, b
 	return m.hooksHistoryContentFor(index, width, m.hookHistoryFor(index))
 }
 
-func (m Screen) hooksHistoryContentFor(index, width int, history []HookExecuted) (kicker, columns string, body []string) {
+func (m Screen) hooksHistoryContentFor(index, width int, history []studioprojection.HookExecuted) (kicker, columns string, body []string) {
 	kicker = m.sectionKickerKeep(m.tr("tui.studio.hooks.history.kicker", "// HISTORY · hook.executed · #%02d · %d", index+1, len(history)), m.zoneFocused(sectionHooksHistory))
 	if len(history) == 0 {
 		return kicker, "", nil
@@ -207,7 +204,7 @@ func (m Screen) hooksHistoryContentFor(index, width int, history []HookExecuted)
 	return kicker, columns, rows
 }
 
-func hookInspectorFields(m Screen, spec config.HookSpec, history []HookExecuted) [][2]string {
+func hookInspectorFields(m Screen, spec config.HookSpec, history []studioprojection.HookExecuted) [][2]string {
 	fields := [][2]string{
 		{m.tr("tui.studio.hooks.field.on", "on"), screenkit.Sanitize(valueOrDash(spec.On))},
 		{m.tr("tui.studio.hooks.field.when", "when"), screenkit.Sanitize(hookWhenFull(spec.When))},
@@ -244,14 +241,14 @@ func hookInspectorFields(m Screen, spec config.HookSpec, history []HookExecuted)
 // The heading used to be the first row, which meant the arranger windowed it:
 // scroll two lines into a long history and the table stopped saying what its
 // columns were. A heading is chrome, so it goes where chrome goes.
-func (m Screen) hookHistoryTable(history []HookExecuted, index, width int) (columns string, rows []string) {
+func (m Screen) hookHistoryTable(history []studioprojection.HookExecuted, index, width int) (columns string, rows []string) {
 	if width >= hooksHistoryWideMin {
 		return m.hookHistoryWide(history, index, width)
 	}
 	return "", m.hookHistoryCompact(history, index, width)
 }
 
-func (m Screen) hookHistoryWide(history []HookExecuted, index, width int) (columns string, rows []string) {
+func (m Screen) hookHistoryWide(history []studioprojection.HookExecuted, index, width int) (columns string, rows []string) {
 	widths := hookHistoryWidths(width)
 	columns = m.styles.Info.Render(gridtable.FormatRow([]string{
 		m.tr("tui.log.col.time", "TIME"),
@@ -273,7 +270,7 @@ func (m Screen) hookHistoryWide(history []HookExecuted, index, width int) (colum
 	return columns, lines
 }
 
-func (m Screen) hookHistoryCompact(history []HookExecuted, _, width int) []string {
+func (m Screen) hookHistoryCompact(history []studioprojection.HookExecuted, _, width int) []string {
 	lines := make([]string, 0, len(history))
 	for _, row := range history {
 		timeStr := hookHistoryTime(screenkit.Sanitize(row.CreatedAt), 8)
@@ -334,15 +331,15 @@ func hookHistoryShrinkIndex(cols []int) int {
 	return idx
 }
 
-func (m Screen) hookHistoryStatus(row HookExecuted) string {
+func (m Screen) hookHistoryStatus(row studioprojection.HookExecuted) string {
 	return studioprojection.HookStatus(row, m.tr("tui.studio.hooks.history.ok", "[ok]"), m.tr("tui.studio.hooks.history.fail", "[fail]"))
 }
 
-func hookHistoryEntity(row HookExecuted, index int) string {
+func hookHistoryEntity(row studioprojection.HookExecuted, index int) string {
 	return studioprojection.HookEntity(row, index)
 }
 
-func (m Screen) hookHistoryDetail(row HookExecuted) string {
+func (m Screen) hookHistoryDetail(row studioprojection.HookExecuted) string {
 	return screenkit.Sanitize(studioprojection.HookDetail(row, m.tr("tui.studio.hooks.history.duration", "%dms", row.DurationMs)))
 }
 
@@ -353,7 +350,7 @@ func hookHistoryTime(ts string, width int) string {
 	return studioprojection.HookHistoryTime(ts, width)
 }
 
-func (m Screen) hookHistoryFor(index int) []HookExecuted {
+func (m Screen) hookHistoryFor(index int) []studioprojection.HookExecuted {
 	return m.hookHistory[index]
 }
 
@@ -491,7 +488,7 @@ func hookTimeoutText(args map[string]interface{}) string {
 	return studioprojection.HookTimeoutText(args)
 }
 
-func (m Screen) hookLastLabel(history []HookExecuted) string {
+func (m Screen) hookLastLabel(history []studioprojection.HookExecuted) string {
 	return studioprojection.HookLastLabel(history, m.tr("tui.studio.hooks.last.fail_timeout", "fail timeout"))
 }
 

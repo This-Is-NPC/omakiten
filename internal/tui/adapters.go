@@ -3,15 +3,15 @@ package tui
 import (
 	"context"
 
+	"omakiten/internal/contract"
 	"omakiten/internal/domain"
-	"omakiten/internal/operation"
 )
 
-type metricsAdapter struct{ svc *operation.Service }
+type metricsAdapter struct{ svc contract.Operations }
 
 func (a metricsAdapter) Summary(ctx context.Context, project domain.ProjectContext, period string, projectID int64) (domain.MetricsSummary, error) {
-	resp, err := a.svc.MetricsSummary(ctx, operation.MetricsSummaryInput{
-		ProjectSelector: operation.ProjectSelector{ProjectID: project.ID},
+	resp, err := a.svc.MetricsSummary(ctx, contract.MetricsSummaryInput{
+		ProjectSelector: contract.ProjectSelector{ProjectID: project.ID},
 		Period:          period,
 		ProjectID:       projectID})
 	if err != nil {
@@ -20,17 +20,17 @@ func (a metricsAdapter) Summary(ctx context.Context, project domain.ProjectConte
 	return resp.Summary, nil
 }
 
-type insightsAdapter struct{ svc *operation.Service }
+type insightsAdapter struct{ svc contract.Operations }
 
 func (a insightsAdapter) Today(ctx context.Context, project domain.ProjectContext, projectID int64, stuckDays int, stuckBuckets []int64) (domain.Insights, error) {
 	return a.svc.InsightsToday(ctx, project, projectID, stuckDays, stuckBuckets)
 }
 
-type searchAdapter struct{ svc *operation.Service }
+type searchAdapter struct{ svc contract.Operations }
 
 func (a searchAdapter) Search(ctx context.Context, project domain.ProjectContext, query string, entityTypes []string) ([]domain.SearchHit, error) {
-	resp, err := a.svc.Search(ctx, operation.SearchInput{
-		ProjectSelector: operation.ProjectSelector{ProjectID: project.ID},
+	resp, err := a.svc.Search(ctx, contract.SearchInput{
+		ProjectSelector: contract.ProjectSelector{ProjectID: project.ID},
 		Query:           query,
 		EntityTypes:     entityTypes})
 	if err != nil {

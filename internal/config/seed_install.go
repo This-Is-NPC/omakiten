@@ -48,7 +48,7 @@ type SeedResult struct {
 // right rootDir per scope: ConfigRoot() for global, <repo>/.omakiten for
 // repo-local installs.
 func SeedInstall(rootDir, presetName string, force bool) (SeedResult, error) {
-	if err := validateNoSymlinkComponents(rootDir); err != nil {
+	if err := paths.ValidateNoSymlinkComponents(rootDir); err != nil {
 		return SeedResult{}, fmt.Errorf("refusing config install root %s: %w", rootDir, err)
 	}
 	preset, ok := PresetByName(presetName)

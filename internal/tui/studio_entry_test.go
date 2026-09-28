@@ -24,19 +24,18 @@ func TestNavigatingIntoStudioOpensTheDraftBeforeTheFirstView(t *testing.T) {
 	editor := bundleeditor.New(store, filepath.Join(t.TempDir(), "omakiten.yaml"))
 
 	m := Model{
-		styles: newStyles(tuiTestTheme()),
-		width:  120,
-		height: 40,
-		repos:  Repositories{Editor: editor},
-		top:    topStudio,
-		sub:    subStudioWorkflow,
+		styles:     newStyles(tuiTestTheme()),
+		width:      120,
+		height:     40,
+		repos:      Repositories{Editor: editor},
+		navigation: screenhost.StudioWorkflow,
 	}
 	if m.studioScreen.StudioDraftOpen() {
 		t.Fatal("the model starts with a Studio draft already open; the property is vacuous")
 	}
 
 	// Exactly what the host runs when navigation lands on a new route.
-	m.refreshAfterViewChangeCmd(navState{top: topTasks, sub: 0})
+	m.refreshAfterViewChangeCmd("")
 
 	if !m.studioScreen.StudioDraftOpen() {
 		t.Fatal("navigating into Studio stored no draft; the first View will render from the snapshot instead of the bundle")

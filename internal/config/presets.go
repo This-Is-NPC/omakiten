@@ -2,17 +2,11 @@ package config
 
 import (
 	"errors"
-	"fmt"
-	"os"
-	"path/filepath"
 	"strings"
-
-	"omakiten/defaults"
 )
 
 var (
-	ErrPresetNotFound     = errors.New("preset not found")
-	ErrPresetTargetExists = errors.New("preset target exists")
+	ErrPresetNotFound = errors.New("preset not found")
 )
 
 // Preset describes one official workflow starter file bundled with Omakiten.
@@ -47,33 +41,4 @@ func PresetByName(name string) (Preset, bool) {
 		}
 	}
 	return Preset{}, false
-}
-
-// CopyPreset writes defaults/config/<name>.yaml as <dstRoot>/config/<name>.yaml
-// and returns the preset metadata together with the absolute destination path.
-func CopyPreset(name, dstRoot string, overwrite bool) (Preset, string, error) {
-	preset, ok := PresetByName(name)
-	if !ok || name != filepath.Base(name) {
-		return Preset{}, "", fmt.Errorf("%w: %s", ErrPresetNotFound, name)
-	}
-
-	srcPath := filepath.ToSlash(filepath.Join("config", preset.Name+".yaml"))
-	data, err := defaults.FS.ReadFile(srcPath)
-	if err != nil {
-		return Preset{}, "", fmt.Errorf("%w: %s", ErrPresetNotFound, name)
-	}
-
-	dstPath := filepath.Join(dstRoot, "config", preset.Name+".yaml")
-	if _, err := os.Stat(dstPath); err == nil {
-		if !overwrite {
-			return Preset{}, "", fmt.Errorf("%w: %s", ErrPresetTargetExists, dstPath)
-		}
-	} else if !os.IsNotExist(err) {
-		return Preset{}, "", fmt.Errorf("stat preset target %s: %w", dstPath, err)
-	}
-
-	if err := WriteAtomic(dstPath, data); err != nil {
-		return Preset{}, "", fmt.Errorf("write preset file %s: %w", dstPath, err)
-	}
-	return preset, dstPath, nil
 }

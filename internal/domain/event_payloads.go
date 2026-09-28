@@ -1,6 +1,8 @@
 package domain
 
-import "encoding/json"
+import (
+	"encoding/json"
+)
 
 // NewTaskSubjectPayload composes the task-scoped event JSON used across
 // the storage and app layers. Subject metadata (task id, parent id,

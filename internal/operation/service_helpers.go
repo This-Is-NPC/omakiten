@@ -5,6 +5,7 @@ import (
 	"strings"
 	"unicode"
 
+	"omakiten/internal/contract"
 	"omakiten/internal/domain"
 )
 
@@ -33,31 +34,31 @@ func stopwordsTable(words []string) map[string]bool {
 	return set
 }
 
-func taskSummaries(tasks []domain.Task, registry *domain.EnumRegistry) []TaskSummary {
-	out := make([]TaskSummary, 0, len(tasks))
+func taskSummaries(tasks []domain.Task, registry *domain.EnumRegistry) []contract.TaskSummary {
+	out := make([]contract.TaskSummary, 0, len(tasks))
 	for _, task := range tasks {
 		out = append(out, taskSummary(task, registry))
 	}
 	return out
 }
 
-func dependencySummaries(dependencies []domain.TaskDependency) []DependencySummary {
-	out := make([]DependencySummary, 0, len(dependencies))
+func dependencySummaries(dependencies []domain.TaskDependency) []contract.DependencySummary {
+	out := make([]contract.DependencySummary, 0, len(dependencies))
 	for _, dependency := range dependencies {
 		out = append(out, dependencySummary(dependency))
 	}
 	return out
 }
 
-func commentSummaries(comments []domain.Comment) []CommentSummary {
-	out := make([]CommentSummary, 0, len(comments))
+func commentSummaries(comments []domain.Comment) []contract.CommentSummary {
+	out := make([]contract.CommentSummary, 0, len(comments))
 	for _, comment := range comments {
 		out = append(out, commentSummary(comment))
 	}
 	return out
 }
 
-func recentComments(comments []domain.Comment, limit int) []CommentSummary {
+func recentComments(comments []domain.Comment, limit int) []contract.CommentSummary {
 	if limit > 0 && len(comments) > limit {
 		comments = comments[len(comments)-limit:]
 	}
@@ -97,20 +98,20 @@ func pendingCount(workflow domain.Workflow, tasks []domain.Task) int {
 	return count
 }
 
-func bucketCounts(workflow domain.Workflow, tasks []domain.Task) []BucketCount {
+func bucketCounts(workflow domain.Workflow, tasks []domain.Task) []contract.BucketCount {
 	counts := map[string]int{}
 	for _, task := range tasks {
 		counts[task.BucketKey]++
 	}
-	out := make([]BucketCount, 0, len(workflow.Buckets))
+	out := make([]contract.BucketCount, 0, len(workflow.Buckets))
 	seen := map[string]struct{}{}
 	for _, bucket := range workflow.Buckets {
-		out = append(out, BucketCount{BucketKey: bucket.Key, Name: bucket.Name, Count: counts[bucket.Key]})
+		out = append(out, contract.BucketCount{BucketKey: bucket.Key, Name: bucket.Name, Count: counts[bucket.Key]})
 		seen[bucket.Key] = struct{}{}
 	}
 	for bucketKey, count := range counts {
 		if _, ok := seen[bucketKey]; !ok {
-			out = append(out, BucketCount{BucketKey: bucketKey, Count: count})
+			out = append(out, contract.BucketCount{BucketKey: bucketKey, Count: count})
 		}
 	}
 	return out
@@ -120,7 +121,7 @@ func bucketCounts(workflow domain.Workflow, tasks []domain.Task) []BucketCount {
 // workflow's final bucket, ordered by id ASC. Same data-driven final-bucket
 // resolution as pendingCount — no hardcoded "done" — so the suggestion
 // list survives a bucket rename.
-func likelyNextWork(workflow domain.Workflow, tasks []domain.Task, limit int, registry *domain.EnumRegistry) []TaskSummary {
+func likelyNextWork(workflow domain.Workflow, tasks []domain.Task, limit int, registry *domain.EnumRegistry) []contract.TaskSummary {
 	final := workflow.FinalBucketKey()
 	candidates := make([]domain.Task, 0, len(tasks))
 	for _, task := range tasks {
@@ -135,12 +136,12 @@ func likelyNextWork(workflow domain.Workflow, tasks []domain.Task, limit int, re
 	return taskSummaries(candidates, registry)
 }
 
-func blockedWork(tasks []domain.Task, dependencies []domain.TaskDependency, registry *domain.EnumRegistry) []TaskSummary {
+func blockedWork(tasks []domain.Task, dependencies []domain.TaskDependency, registry *domain.EnumRegistry) []contract.TaskSummary {
 	blocked := map[int64]struct{}{}
 	for _, dependency := range dependencies {
 		blocked[dependency.TaskID] = struct{}{}
 	}
-	out := []TaskSummary{}
+	out := []contract.TaskSummary{}
 	for _, task := range tasks {
 		if _, ok := blocked[task.ID]; ok {
 			out = append(out, taskSummary(task, registry))
@@ -178,7 +179,7 @@ func truncateBody(body string, maxChars int) string {
 //
 // `kind` is just an enum tag used in error messages — use the
 // TemplateKindTask / TemplateKindComment constants at callsites.
-func (s *Service) applyTemplateBody(slug, body, kind string) (string, *TaskTemplateSummary, error) {
+func (s *Service) applyTemplateBody(slug, body, kind string) (string, *contract.TaskTemplateSummary, error) {
 	slug = strings.TrimSpace(slug)
 	if slug == "" {
 		return body, nil, nil
@@ -191,7 +192,7 @@ func (s *Service) applyTemplateBody(slug, body, kind string) (string, *TaskTempl
 			continue
 		}
 		merged := mergeUserBodyWithTemplate(body, t.Body)
-		summary := &TaskTemplateSummary{
+		summary := &contract.TaskTemplateSummary{
 			Slug:        t.Slug,
 			Name:        t.Name,
 			Description: t.Description,
@@ -279,7 +280,7 @@ func taskTitleAndDescription(title, description string) (string, string) {
 // descriptions.
 const similarTasksTextCapBytes = 1024
 
-func similarTasks(query string, tasks []domain.Task, limit int, registry *domain.EnumRegistry, stops map[string]bool) []TaskSummary {
+func similarTasks(query string, tasks []domain.Task, limit int, registry *domain.EnumRegistry, stops map[string]bool) []contract.TaskSummary {
 	queryWords := wordSet(query, stops)
 	if len(queryWords) == 0 {
 		return nil
@@ -314,7 +315,7 @@ func similarTasks(query string, tasks []domain.Task, limit int, registry *domain
 	if limit > 0 && len(matches) > limit {
 		matches = matches[:limit]
 	}
-	out := make([]TaskSummary, 0, len(matches))
+	out := make([]contract.TaskSummary, 0, len(matches))
 	for _, match := range matches {
 		out = append(out, taskSummary(match.task, registry))
 	}

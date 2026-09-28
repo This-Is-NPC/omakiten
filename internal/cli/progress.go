@@ -5,7 +5,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"omakiten/internal/operation"
+	"omakiten/internal/contract"
 )
 
 func newProgressCommand(opts *runtimeOptions) *cobra.Command {
@@ -38,7 +38,7 @@ func newProgressRecordCommand(opts *runtimeOptions) *cobra.Command {
 				}
 				defer rt.close()
 
-				input := operation.RecordProgressInput{
+				input := contract.RecordProgressInput{
 					ProjectSelector: opts.projectSelector(),
 					TaskID:          taskID,
 					MoveToBucket:    moveToBucket,

@@ -18,14 +18,14 @@ import (
 // en.yaml + .docs/tui.md is out of sync with the runtime.
 func TestLogsFilterCycleForwardOrder(t *testing.T) {
 	t.Parallel()
-	want := []FilterMode{
+	want := []domain.LogsFilterMode{
 		FilterAll,
 		FilterToolCalls,
 		FilterDomain,
 		FilterSystem,
 		FilterAll, // rollover
 	}
-	got := []FilterMode{FilterAll}
+	got := []domain.LogsFilterMode{FilterAll}
 	mode := FilterAll
 	for i := 0; i < len(want)-1; i++ {
 		mode = domain.CycleLogsFilter(mode, 1)
@@ -42,14 +42,14 @@ func TestLogsFilterCycleForwardOrder(t *testing.T) {
 // scope description in the task also calls it out explicitly).
 func TestLogsFilterCycleBackwardOrder(t *testing.T) {
 	t.Parallel()
-	want := []FilterMode{
+	want := []domain.LogsFilterMode{
 		FilterAll,
 		FilterSystem,
 		FilterDomain,
 		FilterToolCalls,
 		FilterAll, // rollover
 	}
-	got := []FilterMode{FilterAll}
+	got := []domain.LogsFilterMode{FilterAll}
 	mode := FilterAll
 	for i := 0; i < len(want)-1; i++ {
 		mode = domain.CycleLogsFilter(mode, -1)
@@ -69,7 +69,7 @@ func TestLogsFilterCategoriesMapping(t *testing.T) {
 	t.Parallel()
 	cases := []struct {
 		name string
-		mode FilterMode
+		mode domain.LogsFilterMode
 		want []domain.EventCategory
 	}{
 		{
@@ -134,7 +134,7 @@ func TestLogsFilterCategoriesMapping(t *testing.T) {
 func TestLogsFilterPartitionsKnownCategories(t *testing.T) {
 	t.Parallel()
 	seen := map[domain.EventCategory]int{}
-	for _, mode := range []FilterMode{
+	for _, mode := range []domain.LogsFilterMode{
 		FilterToolCalls,
 		FilterDomain,
 		FilterSystem,
@@ -159,7 +159,7 @@ func TestLogsFilterPartitionsKnownCategories(t *testing.T) {
 // FilterMode → category partition. Every chip must resolve deterministically.
 func TestLogsFilterPartitionMapMatchesEnumeration(t *testing.T) {
 	t.Parallel()
-	for _, f := range []FilterMode{
+	for _, f := range []domain.LogsFilterMode{
 		FilterAll,
 		FilterToolCalls,
 		FilterDomain,

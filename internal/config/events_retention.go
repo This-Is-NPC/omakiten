@@ -3,8 +3,6 @@ package config
 import (
 	"fmt"
 	"sort"
-
-	"omakiten/internal/domain"
 )
 
 // EventRetentionSettings declares optional retention knobs for one layer
@@ -131,9 +129,7 @@ func (e EventsSettings) eventCategory(eventType string) string {
 	if def, ok := e.Definitions[eventType]; ok && def.Category != "" {
 		return def.Category
 	}
-	if cat := domain.EventCategoryOf(eventType); cat != domain.EventCategoryUnknown {
-		return string(cat)
-	}
+
 	return ""
 }
 

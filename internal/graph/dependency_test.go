@@ -1,6 +1,8 @@
 package graph
 
-import "testing"
+import (
+	"testing"
+)
 
 func TestHasCycle(t *testing.T) {
 	tests := []struct {

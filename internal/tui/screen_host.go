@@ -7,9 +7,9 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"omakiten/internal/contract"
 	"omakiten/internal/domain"
 	"omakiten/internal/keynav"
-	"omakiten/internal/operation"
 	"omakiten/internal/taskprojection"
 	"omakiten/internal/tui/screenhost"
 	"omakiten/internal/tui/screens/board"
@@ -66,7 +66,7 @@ func newHostedScreenFactory(id screenhost.ID) screenhost.Factory {
 }
 
 // hostedScreen returns the live, dep-bound instance for an extracted screen.
-func (h legacyScreenHost) hostedScreen(id screenhost.ID) (screenhost.Screen, bool) {
+func (h modelScreenHost) hostedScreen(id screenhost.ID) (screenhost.Screen, bool) {
 	return h.model.hostedScreen(id)
 }
 
@@ -828,7 +828,7 @@ func (m *Model) savePlanNetworkGoal(action screenhost.Action) {
 		return
 	}
 	goal := action.Value
-	if _, err := svc.EditPlan(m.ctx, operation.EditPlanInput{
+	if _, err := svc.EditPlan(m.ctx, contract.EditPlanInput{
 		ProjectSelector: m.projectSelector(),
 		PlanID:          action.PlanID,
 		GoalBody:        &goal}); err != nil {
@@ -849,7 +849,7 @@ func (m *Model) assignPlanNetworkTask(action screenhost.Action) {
 		m.applyPlanNetworkResult(planNetworkResultMsg{generation: generation, slug: action.PlanSlug, err: fmt.Errorf("%s", m.status)})
 		return
 	}
-	if _, err := svc.AssignTask(m.ctx, operation.AssignTaskInput{
+	if _, err := svc.AssignTask(m.ctx, contract.AssignTaskInput{
 		ProjectSelector: m.projectSelector(),
 		TaskID:          action.TaskID,
 		Assignee:        action.Value}); err != nil {
@@ -900,16 +900,11 @@ func (m *Model) popScreen() {
 // recording the departure point so ctrl+o can restore it. Unknown ids are
 // ignored rather than clearing the current route.
 func (m *Model) navigateToScreen(id screenhost.ID) {
-	nav, ok := legacyNavForScreen(id)
-	if !ok {
-		return
-	}
-	if nav == (navState{top: m.top, sub: m.sub}) {
+	if _, ok := screenRegistry.ByID(id); !ok || id == m.navigation {
 		return
 	}
 	m.pushHistory()
-	m.top = nav.top
-	m.sub = nav.sub
+	m.navigation = id
 }
 
 func (m Model) taskFormDeps() taskform.Deps {
@@ -1033,7 +1028,7 @@ func (m *Model) addTaskDetailComment(action screenhost.Action) {
 	if !ok {
 		return
 	}
-	if _, err := svc.AddComment(m.ctx, operation.AddCommentInput{
+	if _, err := svc.AddComment(m.ctx, contract.AddCommentInput{
 		ProjectSelector: m.projectSelector(),
 		TaskID:          action.TaskID,
 		Body:            action.Value,
@@ -1065,7 +1060,7 @@ func (m *Model) saveTaskDetailBlockers(action screenhost.Action) {
 	if !ok {
 		return
 	}
-	if err := svc.SyncBlockers(m.ctx, operation.SyncBlockersInput{
+	if err := svc.SyncBlockers(m.ctx, contract.SyncBlockersInput{
 		ProjectSelector: m.projectSelector(),
 		TaskID:          action.TaskID,
 		TaskIDs:         action.TaskIDs}); err != nil {
@@ -1150,7 +1145,7 @@ func (m *Model) saveCommentDetail(action screenhost.Action) {
 		return
 	}
 	body := action.Value
-	if _, err := svc.EditComment(m.ctx, operation.EditCommentInput{
+	if _, err := svc.EditComment(m.ctx, contract.EditCommentInput{
 		ProjectSelector: m.projectSelector(),
 		CommentID:       action.CommentID,
 		Body:            &body,
@@ -1190,7 +1185,7 @@ func (m *Model) deleteCommentDetail(action screenhost.Action) {
 	if !ok {
 		return
 	}
-	if _, err := svc.DeleteComment(m.ctx, operation.DeleteCommentInput{
+	if _, err := svc.DeleteComment(m.ctx, contract.DeleteCommentInput{
 		ProjectSelector: m.projectSelector(),
 		CommentID:       action.CommentID,
 		Confirmed:       true}); err != nil {

@@ -395,10 +395,6 @@ func OpenProjectResume(screen Screen, command tea.Cmd) Outcome {
 	return Outcome{Screen: screen, Action: Action{Kind: ActionOpenProjectResume}, Command: command}
 }
 
-func PrepareTagMerge(screen Screen, sourceSlug string, command tea.Cmd) Outcome {
-	return Outcome{Screen: screen, Action: Action{Kind: ActionPrepareTagMerge, Value: sourceSlug}, Command: command}
-}
-
 func MergeTagsAction(screen Screen, sourceSlug, targetSlug string, command tea.Cmd) Outcome {
 	return Outcome{Screen: screen, Action: Action{Kind: ActionMergeTags, SourceValue: sourceSlug, Value: targetSlug}, Command: command}
 }

@@ -71,7 +71,21 @@ const MaxListEventsLimit = 10_000
 // short-circuit and return an empty slice instead so callers receive a
 // predictable "nothing matches" result.
 func (s *Store) ListEvents(ctx context.Context, filter domain.EventFilter) ([]domain.EventRow, error) {
-	query, args, empty := listEventsQuery(filter)
+	queryFilter := filter
+	if filter.ProjectID == 0 {
+		queryFilter.Categories = nil
+	}
+	query, args, empty := listEventsQuery(queryFilter, s.eventRegistry(filter.ProjectID))
+	if filter.ProjectID == 0 && len(filter.Categories) > 0 {
+		condition, categoryArgs := s.categoryCondition(filter.Categories)
+		join := " WHERE "
+		if strings.Contains(query, " WHERE ") {
+			join = " AND "
+		}
+		query = strings.Replace(query, " ORDER BY ", join+condition+" ORDER BY ", 1)
+		limit := args[len(args)-1]
+		args = append(append(args[:len(args)-1], categoryArgs...), limit)
+	}
 	if empty {
 		return nil, nil
 	}
@@ -82,11 +96,18 @@ func (s *Store) ListEvents(ctx context.Context, filter domain.EventFilter) ([]do
 	}
 	defer func() { _ = rows.Close() }()
 
-	return scanEventRows(rows)
+	out, err := scanEventRows(rows)
+	if err != nil {
+		return nil, err
+	}
+	for i, row := range out {
+		out[i] = s.eventRegistry(row.ProjectID).Prepare(row)
+	}
+	return out, nil
 }
 
-func listEventsQuery(filter domain.EventFilter) (string, []any, bool) {
-	conds, args, empty := eventFilterConditions(filter)
+func listEventsQuery(filter domain.EventFilter, registry *domain.EventRegistry) (string, []any, bool) {
+	conds, args, empty := eventFilterConditions(filter, registry)
 	if empty {
 		return "", nil, true
 	}
@@ -108,7 +129,7 @@ func listEventsQuery(filter domain.EventFilter) (string, []any, bool) {
 	return query, args, false
 }
 
-func eventFilterConditions(filter domain.EventFilter) ([]string, []any, bool) {
+func eventFilterConditions(filter domain.EventFilter, registry *domain.EventRegistry) ([]string, []any, bool) {
 	conds := []string{}
 	args := []any{}
 	if filter.ProjectID > 0 {
@@ -116,7 +137,7 @@ func eventFilterConditions(filter domain.EventFilter) ([]string, []any, bool) {
 		args = append(args, filter.ProjectID)
 	}
 	if len(filter.Categories) > 0 {
-		eventTypes := eventTypesForCategories(filter.Categories)
+		eventTypes := eventTypesForCategories(filter.Categories, registry)
 		if len(eventTypes) == 0 {
 			return nil, nil, true
 		}
@@ -134,10 +155,10 @@ func eventFilterConditions(filter domain.EventFilter) ([]string, []any, bool) {
 	return conds, args, false
 }
 
-func eventTypesForCategories(categories []domain.EventCategory) []string {
+func eventTypesForCategories(categories []domain.EventCategory, registry *domain.EventRegistry) []string {
 	seen := make(map[string]struct{})
 	for _, category := range categories {
-		for _, eventType := range domain.EventTypesForCategory(category) {
+		for _, eventType := range registry.TypesForCategory(category) {
 			seen[eventType] = struct{}{}
 		}
 	}
@@ -194,11 +215,11 @@ func (s *Store) EventCategoryCounts(ctx context.Context, projectID int64, since 
 		args = append(args, since.UTC().Format(sqliteTimestampLayout))
 	}
 
-	query := "SELECT event_type, COUNT(*) FROM events"
+	query := "SELECT COALESCE(project_id, 0), event_type, COUNT(*) FROM events"
 	if len(conds) > 0 {
 		query += " WHERE " + strings.Join(conds, " AND ")
 	}
-	query += " GROUP BY event_type"
+	query += " GROUP BY project_id, event_type"
 
 	rows, err := s.db.QueryContext(ctx, query, args...)
 	if err != nil {
@@ -212,11 +233,12 @@ func (s *Store) EventCategoryCounts(ctx context.Context, projectID int64, since 
 	}
 	for rows.Next() {
 		var eventType string
+		var rowProjectID int64
 		var n int
-		if err := rows.Scan(&eventType, &n); err != nil {
+		if err := rows.Scan(&rowProjectID, &eventType, &n); err != nil {
 			return nil, err
 		}
-		cat := domain.EventCategoryOf(eventType)
+		cat := s.eventRegistry(rowProjectID).CategoryOf(eventType)
 		if cat == domain.EventCategoryUnknown {
 			continue
 		}

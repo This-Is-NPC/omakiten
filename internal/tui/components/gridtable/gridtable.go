@@ -205,13 +205,6 @@ func Render(rows [][]string, widths []int, border lipgloss.Style) string {
 	return out
 }
 
-// RenderWithLayout renders exactly what Render renders and additionally
-// reports where every input row landed. The two share one implementation
-// so the layout can never drift from the string it describes.
-func RenderWithLayout(rows [][]string, widths []int, border lipgloss.Style) (string, Layout) {
-	return RenderCellsWithLayout(RawRows(rows), widths, border)
-}
-
 // RenderCells renders a table containing raw and explicitly trusted cells.
 // Prefer Render for ordinary rows; this entry point is only for framework
 // output that must retain its intended styling.

@@ -394,7 +394,7 @@ func commitCommentNoOp(tx *sql.Tx) error {
 }
 
 func (s *Store) commentEditEvent(ctx context.Context, tx *sql.Tx, updated domain.Comment, projectID int64, payload string) (domain.Event, error) {
-	if s.shouldLogEvent(domain.EventTypeCommentEdited) {
+	if s.shouldLogEvent(projectID, domain.EventTypeCommentEdited) {
 		event, err := insertEntityEvent(ctx, tx, updated.Scope, entityIDForScope(updated), projectID, domain.EventTypeCommentEdited, payload)
 		if err != nil {
 			return domain.Event{}, fmt.Errorf("emit comment.edited: %w", err)
@@ -543,7 +543,7 @@ DELETE FROM events WHERE id = ? AND event_type = 'comment'
 		return domain.Event{}, marshalErr
 	}
 	var event domain.Event
-	if s.shouldLogEvent(domain.EventTypeCommentRemoved) {
+	if s.shouldLogEvent(projectID, domain.EventTypeCommentRemoved) {
 		event, err = insertEntityEvent(ctx, tx, prev.Scope, entityIDForScope(prev), projectID, domain.EventTypeCommentRemoved, string(payload))
 		if err != nil {
 			return domain.Event{}, fmt.Errorf("emit comment.removed: %w", err)

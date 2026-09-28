@@ -1,6 +1,8 @@
 package screengrid
 
-import "omakiten/internal/tui/components/screenlayout"
+import (
+	"omakiten/internal/tui/components/screenlayout"
+)
 
 // kind is what a node IS. It is unexported and set by the three constructors,
 // so there is no way to build a node that is a leaf and a container at once.

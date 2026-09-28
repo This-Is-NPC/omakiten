@@ -54,7 +54,7 @@ func (s *Store) HardDeleteTask(ctx context.Context, projectID, taskID int64, buc
 	}
 
 	var event domain.Event
-	if s.shouldLogEvent(domain.EventTypeTaskRemoved) {
+	if s.shouldLogEvent(projectID, domain.EventTypeTaskRemoved) {
 		if err := tx.QueryRowContext(ctx, `
 INSERT INTO events(entity_type, project_id, event_type, body, payload)
 VALUES ('system', ?, ?, '', ?)
@@ -216,7 +216,7 @@ func (s *Store) taskStateEvents(ctx context.Context, tx *sql.Tx, projectID, task
 		return domain.Event{}, domain.Event{}, marshalErr
 	}
 	var event domain.Event
-	if s.shouldLogEvent(eventType) {
+	if s.shouldLogEvent(projectID, eventType) {
 		var err error
 		event, err = insertTaskEvent(ctx, tx, projectID, taskID, eventType, "", payload)
 		if err != nil {
@@ -229,7 +229,7 @@ func (s *Store) taskStateEvents(ctx context.Context, tx *sql.Tx, projectID, task
 	var unassignEv domain.Event
 	if prev.BucketID != 0 && prev.BucketKey != bucketKey && prevAssignedTo.Valid && prevAssignedTo.String != "" {
 		unassignPayload := fmt.Sprintf(`{"former_assignee":%q,"source":%q}`, prevAssignedTo.String, "task."+string(state))
-		if s.shouldLogEvent(domain.EventTypeTaskUnassigned) {
+		if s.shouldLogEvent(projectID, domain.EventTypeTaskUnassigned) {
 			var err error
 			unassignEv, err = insertEntityEvent(ctx, tx, domain.EventEntityTask, taskID, projectID, domain.EventTypeTaskUnassigned, unassignPayload)
 			if err != nil {

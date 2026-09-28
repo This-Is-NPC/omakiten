@@ -2,12 +2,13 @@ package main
 
 import (
 	"fmt"
-	"omakiten/internal/tui/components/tokenstrip"
 
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
+
 	"omakiten/internal/tui/components/gridtable"
 	"omakiten/internal/tui/components/list"
+	"omakiten/internal/tui/components/tokenstrip"
 )
 
 // demo is one component under inspection.

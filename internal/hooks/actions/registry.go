@@ -1,6 +1,8 @@
 package actions
 
-import "omakiten/internal/hooks"
+import (
+	"omakiten/internal/hooks"
+)
 
 // RegisterBuiltins installs the runtime's first-party actions on the
 // supplied registry: exec for shelling out and noop for tests / smoke
