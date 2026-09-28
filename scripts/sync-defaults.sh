@@ -1,21 +1,6 @@
 #!/usr/bin/env bash
-# Mirror defaults/ into a target config root using the v2 layout:
-#
-#   <root>/config/                 (official profiles and imported fragments,
-#                                  fully mirrored every run)
-#   <root>/<entity>/<file>        (default scope — fully mirrored: stale
-#                                  files at the default scope are removed,
-#                                  fresh ones from defaults/ are copied in)
-#   <root>/<entity>/custom/       (user scope — created if missing,
-#                                  contents NEVER touched)
-#
-# The default scope is treated like a published kit: it MUST equal what
-# defaults/ ships, no more, no less. Users keep their tweaks under
-# custom/, which this script ignores.
-#
-# Usage: sync-defaults.sh <target-root>
-
 set -euo pipefail
+source "$(dirname "${BASH_SOURCE[0]}")/lib/workspace.sh"
 
 if [ "$#" -ne 1 ]; then
   printf 'usage: %s <target-root>\n' "$0" >&2
@@ -23,7 +8,10 @@ if [ "$#" -ne 1 ]; then
 fi
 
 target_root="$1"
-repo_root="$(cd "$(dirname "$0")/.." && pwd)"
+if [[ -L "$target_root" ]]; then
+  printf 'sync target must not be a symlink: %s\n' "$target_root" >&2
+  exit 1
+fi
 defaults_dir="$repo_root/defaults"
 
 if [ ! -d "$defaults_dir" ]; then
@@ -37,13 +25,24 @@ sync_managed_dir() {
   local preserve_custom="$3"
   local src dst existing name
 
+  if [[ -L "$dst_dir" ]]; then
+    printf 'managed directory must not be a symlink: %s\n' "$dst_dir" >&2
+    return 1
+  fi
   mkdir -p "$dst_dir"
+  if [[ "$preserve_custom" == true && ! -e "$dst_dir/custom" && ! -L "$dst_dir/custom" ]]; then
+    mkdir -p "$dst_dir/custom"
+  fi
 
   # Publish replacements before pruning stale entries. A failed copy can leave
   # an older managed file in place, but it cannot empty the install first.
   for src in "$src_dir"/*; do
     [ -e "$src" ] || continue
-    dst="$dst_dir/$(basename "$src")"
+    dst="$dst_dir/${src##*/}"
+    if [[ -L "$dst" ]]; then
+      printf 'managed entry must not be a symlink: %s\n' "$dst" >&2
+      return 1
+    fi
     if [ -d "$src" ]; then
       if [ -e "$dst" ] && [ ! -d "$dst" ]; then
         rm -f "$dst"
@@ -58,16 +57,14 @@ sync_managed_dir() {
   done
 
   for existing in "$dst_dir"/*; do
-    [ -e "$existing" ] || continue
-    name="$(basename "$existing")"
+    [[ -e "$existing" || -L "$existing" ]] || continue
+    name="${existing##*/}"
     if [ "$preserve_custom" = true ] && [ "$name" = custom ]; then
       continue
     fi
     [ -e "$src_dir/$name" ] || rm -rf "$existing"
   done
 }
-
-mkdir -p "$target_root/config/custom"
 
 if [ -d "$defaults_dir/config" ]; then
   # Presets import config/modules and config/themes, so replacing only the
@@ -80,7 +77,6 @@ fi
 for sub in skills laws personas templates themes notifications languages; do
   src_dir="$defaults_dir/$sub"
   dst_dir="$target_root/$sub"
-  mkdir -p "$dst_dir/custom"
   sync_managed_dir "$src_dir" "$dst_dir" true
 done
 

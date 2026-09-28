@@ -67,3 +67,43 @@ func assertSyncedFileBody(t *testing.T, path, want string) {
 		t.Fatalf("preserved file %s = %q, want %q", path, got, want)
 	}
 }
+
+func TestSyncDefaultsRejectsManagedSymlinks(t *testing.T) {
+	t.Parallel()
+	for name, relative := range map[string]string{
+		"managed directory": "config",
+		"managed file":      filepath.Join("config", "omakase.yaml"),
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			root, external := managedSymlinkFixture(t, relative, name == "managed file")
+			cmd := exec.Command("bash", filepath.Join("..", "..", "scripts", "sync-defaults.sh"), root)
+			if out, err := cmd.CombinedOutput(); err == nil {
+				t.Fatalf("managed symlink was accepted: %s", out)
+			}
+			assertSyncedFileBody(t, filepath.Join(external, "user.yaml"), "user content\n")
+			entries, err := os.ReadDir(external)
+			if err != nil || len(entries) != 1 {
+				t.Fatalf("sync wrote outside its managed root: %v, %v", entries, err)
+			}
+		})
+	}
+}
+
+func managedSymlinkFixture(t *testing.T, relative string, file bool) (string, string) {
+	t.Helper()
+	root, external := t.TempDir(), t.TempDir()
+	target := external
+	if file {
+		target = filepath.Join(external, "user.yaml")
+	}
+	writeConfigTestFile(t, filepath.Join(external, "user.yaml"), "user content\n")
+	link := filepath.Join(root, relative)
+	if err := os.MkdirAll(filepath.Dir(link), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(target, link); err != nil {
+		t.Skipf("symlink unavailable: %v", err)
+	}
+	return root, external
+}
