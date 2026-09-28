@@ -4,7 +4,7 @@ How many agents can call `plans.claim_next` against one Omakiten database at the
 
 This doc holds the measurement protocol, the reproduction command, and the environment-qualified answer. The raw machine-readable result lives beside it in [`claim-next-agent-ceiling-reference.json`](claim-next-agent-ceiling-reference.json). The harness is `internal/mcp/claim_next_ceiling_bench_test.go`.
 
-> **Status: current manual reference, not a CI benchmark.** The 2026-08-02 result was produced by a full manual run from source revision `a69613257999ca05b66ecc75a27842bb7635c104`. Ordinary MCP tests validate the committed artifact's shape, and the separate manual freshness check currently passes; CI does not rerun or certify the measured ceiling. Do not advance the revision or replace results without running the full protocol.
+> **Status: historical manual reference; a full rerun is required.** The 2026-08-02 result was produced by a full manual run from source revision `a69613257999ca05b66ecc75a27842bb7635c104`. The freshness check now rejects it because the Go toolchain, source inputs, SQLite driver, PRAGMAs and pool setup changed. Ordinary MCP tests still validate the artifact's shape; they do not certify its ceiling for the current code. Do not advance the revision or replace results without running the full protocol.
 
 The ceiling is a **correctness** number, not a latency number. Latency is recorded and reported, never used as a pass criterion — a slow claim is still a correct claim.
 
@@ -68,7 +68,7 @@ The JSON schema is versioned (`schema_version`) and validated by `validateClaimB
 
 `mise run claim-benchmark:freshness` performs a manual, non-benchmark check. It validates the JSON, compares the recorded revision with the current claim transaction, MCP/agent path, pool setup, benchmark harness, default SQLite settings, and Go module files, then compares the current Go and SQLite metadata with the reference. It does not execute any contention bursts and therefore cannot produce or renew a ceiling.
 
-The current reference passes this check. A passing check means only that no known invalidation input changed; it never substitutes for a rerun.
+The committed historical reference fails this check against the current tree. Preserve that failure until the full protocol produces a replacement. A passing check means only that no known invalidation input changed; it never substitutes for a rerun.
 
 Run the full protocol and replace both the JSON and this results section after any of these triggers:
 
