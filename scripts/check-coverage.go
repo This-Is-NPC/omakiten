@@ -21,6 +21,11 @@ const floorPercent = 780 // 78.0%, expressed in tenths of a percent.
 var profileBlock = regexp.MustCompile(`^([^\s:]+):([1-9][0-9]*)\.([1-9][0-9]*),([1-9][0-9]*)\.([1-9][0-9]*) ([0-9]+) ([0-9]+)$`)
 var totalPercent = regexp.MustCompile(`^[0-9]+(?:\.[0-9]+)?%$`)
 
+type coverageBlock struct {
+	statements uint64
+	executed   bool
+}
+
 func fail(format string, args ...any) error { return fmt.Errorf("coverage: FAIL: "+format, args...) }
 
 func parseProfile(path string) (covered, total uint64, err error) {
@@ -37,6 +42,7 @@ func parseProfile(path string) (covered, total uint64, err error) {
 		return 0, 0, fail("malformed coverage profile header")
 	}
 	rows := 0
+	blocks := map[string]coverageBlock{}
 	for s.Scan() {
 		line := s.Text()
 		m := profileBlock.FindStringSubmatch(line)
@@ -59,16 +65,24 @@ func parseProfile(path string) (covered, total uint64, err error) {
 		if e1 != nil || e2 != nil {
 			return 0, 0, fail("malformed coverage profile counts")
 		}
-		if ^uint64(0)-total < statements {
-			return 0, 0, fail("coverage profile statement count overflows")
+		key := strings.Join(m[1:6], ":")
+		previous, duplicate := blocks[key]
+		if duplicate && previous.statements != statements {
+			return 0, 0, fail("conflicting statement counts for coverage block")
 		}
-		total += statements
-		if executions > 0 {
+		if !duplicate {
+			if ^uint64(0)-total < statements {
+				return 0, 0, fail("coverage profile statement count overflows")
+			}
+			total += statements
+		}
+		if executions > 0 && !previous.executed {
 			if ^uint64(0)-covered < statements {
 				return 0, 0, fail("coverage profile statement count overflows")
 			}
 			covered += statements
 		}
+		blocks[key] = coverageBlock{statements: statements, executed: previous.executed || executions > 0}
 		rows++
 	}
 	if e := s.Err(); e != nil {

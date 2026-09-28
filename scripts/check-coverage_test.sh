@@ -30,6 +30,13 @@ run_case above-floor 781 1000 78.1 0
 run_case rounded-below-floor 779 1000 78.0 1
 
 expect_fail() { if "${checker[@]}" "$profile" "$summary" "$tmp" >/dev/null 2>&1; then echo "FAIL: $1 unexpectedly passed" >&2; exit 1; fi; }
+printf 'mode: set\nseed-a:1.1,1.2 80 0\nseed-a:1.1,1.2 80 1\nseed-b:2.1,2.2 20 0\n' >"$profile"
+printf 'seed\ntotal: (statements) 80.0%%\n' >"$summary"; touch "$profile" "$summary"
+output=$("${checker[@]}" "$profile" "$summary" "$tmp" 2>&1); [[ $output == *"80.000%"* ]]
+printf 'mode: set\nseed-a:1.1,1.2 60 1\nseed-a:1.1,1.2 60 1\nseed-a:1.1,1.2 60 1\nseed-b:2.1,2.2 40 0\n' >"$profile"
+touch "$profile"; expect_fail duplicate-block-inflation
+printf 'mode: set\nseed-a:1.1,1.2 80 1\nseed-a:1.1,1.2 81 1\n' >"$profile"
+touch "$profile"; expect_fail conflicting-block-counts
 printf 'mode: set\nseed-zero:1.1,1.2 0 1\nseed-covered:2.1,2.2 10 1\n' >"$profile"
 printf 'seed\ntotal: (statements) 100.0%%\n' >"$summary"; touch "$profile" "$summary"; output=$("${checker[@]}" "$profile" "$summary" "$tmp" 2>&1); [[ $output == *"100.000%"* ]]
 printf 'mode: set\nseed-zero:1.1,1.2 0 1\n' >"$profile"; touch "$profile"; expect_fail all-zero-total
