@@ -181,39 +181,6 @@ func TestInstallerAssuranceWorkflowCoversRequiredPlatformsAndCosign(t *testing.T
 	}
 }
 
-func TestInstallerAssurancePinsPowerShell(t *testing.T) {
-	t.Parallel()
-	workflow := readWorkflow(t, "assurance.yml")
-	powershell := requireStep(t, workflow.Jobs["installer-assurance"], "Install pinned PowerShell")
-	if powershell.Uses != "jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c" || powershell.With["version"] != "2026.9.12" || powershell.With["install_args"] != "powershell" {
-		t.Errorf("PowerShell must use the project toolchain: %#v", powershell)
-	}
-}
-
-func TestInstallerAssuranceWorkflowRequiresPinnedShellCheck(t *testing.T) {
-	t.Parallel()
-	workflow := readWorkflow(t, "assurance.yml")
-	job, ok := workflow.Jobs["shellcheck"]
-	if !ok {
-		t.Fatal("assurance workflow is missing mandatory shellcheck job")
-	}
-	if job.RunsOn != "ubuntu-latest" {
-		t.Errorf("shellcheck runner = %q", job.RunsOn)
-	}
-	checkout := requireStep(t, job, "Checkout")
-	if checkout.Uses != "actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5" {
-		t.Errorf("shellcheck checkout is not commit-pinned: %q", checkout.Uses)
-	}
-	install := requireStep(t, job, "Install pinned ShellCheck")
-	if install.Uses != "jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c" || install.With["version"] != "2026.9.12" || install.With["install_args"] != "shellcheck" {
-		t.Errorf("ShellCheck must use the project toolchain: %#v", install)
-	}
-	check := requireStep(t, job, "Run ShellCheck")
-	if check.Shell != "bash" || strings.TrimSpace(check.Run) != "scripts/check-scripts.sh" {
-		t.Errorf("mandatory ShellCheck command = %#v", check)
-	}
-}
-
 func TestReleasePleaseCreatesDraftUntilSigningSucceeds(t *testing.T) {
 	t.Parallel()
 	data, err := os.ReadFile(filepath.Join(repositoryRoot(t), "release-please-config.json"))

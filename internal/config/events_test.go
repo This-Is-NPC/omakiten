@@ -4,6 +4,24 @@ import (
 	"testing"
 )
 
+func TestBundledEventRegistries(t *testing.T) {
+	for _, preset := range ListPresets() {
+		t.Run(preset.Name, func(t *testing.T) {
+			settings, err := LoadKitConfigByKey(preset.Name)
+			if err != nil {
+				t.Fatal(err)
+			}
+			registry, err := BuildEventRegistry(settings.Events)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(registry.Types()) == 0 {
+				t.Fatal("bundled event registry is empty")
+			}
+		})
+	}
+}
+
 func TestEventsSettingsResolveLog(t *testing.T) {
 	tru := true
 	fal := false

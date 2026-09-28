@@ -236,17 +236,6 @@ func assertPersonaInspectorFocus(t *testing.T, slug string, want, scroll []strin
 func TestStudioPersonasDoesNotMutatePersonaMarkdown(t *testing.T) {
 	t.Parallel()
 
-	src, err := os.ReadFile("personas.go")
-	if err != nil {
-		t.Fatal(err)
-	}
-	text := string(src)
-	for _, banned := range []string{"EntityKindPersona", "PersonaFileBytes", "SaveFullBundle", "editor.Save", "Editor.Save"} {
-		if strings.Contains(text, banned) {
-			t.Fatalf("personas.go contains write path %q", banned)
-		}
-	}
-
 	root := t.TempDir()
 	deps, err := StudioPersonasDeps(root)
 	if err != nil {

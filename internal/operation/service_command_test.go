@@ -94,23 +94,12 @@ func TestResolveCommandEmptyName(t *testing.T) {
 	}
 }
 
-// The REST-style handoff contract (every command's playbook names the next
-// command in the cycle) is now an entity-sourced property of the bound
-// okt-<slug>-playbook skills, asserted against the rendered default kit by
-// agentruntime.TestRestHandoffsPresent — the Go layer no longer carries the
-// action prose to check here.
-
 // TestResolveCommandTemplatesJITRendering pins the just-in-time pattern:
 // when a command has a bound template, the rendered Markdown must list the
 // template metadata (slug, name when divergent, default kind, description),
 // but it must NOT embed the template body. Embedding the body would defeat
 // the entire point of JIT — the body is large and the agent only needs it
 // at the moment of materialization.
-//
-// The `templates.show` fetch hint itself is covered against the default kit
-// by `agentruntime.TestTemplateBoundCommandsCarryFetchHint`, which asserts
-// every command that binds templates surfaces the hint via its action text or
-// persona body.
 func TestResolveCommandTemplatesJITRendering(t *testing.T) {
 	fixture := newAgentFixture(t)
 	wireBindingFixtures(t, fixture)
@@ -354,12 +343,6 @@ func TestResolveCommandFallsBackToSkillRepertoire(t *testing.T) {
 		t.Fatalf("rendered markdown missing repertoire skill Go:\n%s", resp.Markdown)
 	}
 }
-
-// The persona-agnostic contract (command playbooks carry no persona-specific
-// role prose, since the bound persona is configurable) is now an entity-sourced
-// property of the bound okt-<slug>-playbook skills, asserted against the
-// rendered default kit by agentruntime.TestCommandPlaybooksArePersonaAgnostic —
-// the Go layer no longer carries the action prose to check here.
 
 // TestResolveCommandWithoutCatalogsDegradesGracefully guards the degraded path:
 // when the runtime is unwired (no skills/laws/personas/commands catalogs),

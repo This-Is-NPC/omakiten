@@ -6,12 +6,6 @@ import (
 
 // TestNoteCommandSlugsRegistered pins that the okt-note-* slugs stay registered
 // and tier-decodable — the mcp_test note group + command count depend on them.
-// The operational prose contract (#386: bodies free of the removed notes.* tool,
-// note-family commands drive the scope-aware comments.* surface) is now an
-// entity-sourced property of the bound okt-<slug>-playbook skills, asserted
-// against the rendered default kit by
-// agentruntime.TestNoteCommandsTargetScopedComments — the Go layer no longer
-// carries that prose to check here.
 func TestNoteCommandSlugsRegistered(t *testing.T) {
 	for _, slug := range []string{"okt-note-free", "okt-note-recap", "okt-note-list", "okt-note-show"} {
 		if _, ok := DescribeCommand(slug); !ok {

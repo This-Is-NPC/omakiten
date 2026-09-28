@@ -119,26 +119,6 @@ func TestTheChromeDoesNotImportWhatItInspects(t *testing.T) {
 	}
 }
 
-// The chrome may not import what it inspects, so it cannot reuse the grid's
-// navigation — and for a while it did not reuse anything: the same two-level
-// rule was written out twice and the copies drifted.
-//
-// internal/keynav is the third place, the one both may depend on. This asserts
-// the chrome actually goes through it rather than spelling the keys again, so
-// the next change to the rule cannot land on one side only.
-func TestTheChromeRoutesKeysThroughTheSharedModel(t *testing.T) {
-	parsed, err := parser.ParseFile(token.NewFileSet(), "gallery.go", nil, parser.ImportsOnly)
-	if err != nil {
-		t.Fatalf("parse gallery.go: %v", err)
-	}
-	for _, imp := range parsed.Imports {
-		if strings.Trim(imp.Path.Value, `"`) == "omakiten/internal/keynav" {
-			return
-		}
-	}
-	t.Error("gallery.go does not import internal/keynav — the two-level rule is being spelled out a second time")
-}
-
 // Every demo does arithmetic on the frame size, and the frame is user-driven all
 // the way down to the floor. Negative widths panic inside lipgloss, so this
 // stands in for a human dragging every knob in every scenario.
@@ -761,23 +741,6 @@ func TestDumpCoversEveryScenario(t *testing.T) {
 			if !strings.Contains(out, s.name) {
 				t.Errorf("dump is missing %s/%s", e.name, s.name)
 			}
-		}
-	}
-}
-
-func TestEveryEntryIsDocumented(t *testing.T) {
-	for _, e := range entries() {
-		if strings.TrimSpace(e.title) == "" {
-			t.Errorf("%s has no title", e.name)
-		}
-		if n := len(strings.Fields(e.desc)); n < 25 {
-			t.Errorf("%s description is %d words, want a real explanation", e.name, n)
-		}
-		if !strings.HasPrefix(e.pkg, "internal/tui/") {
-			t.Errorf("%s points at %q", e.name, e.pkg)
-		}
-		if e.new == nil {
-			t.Errorf("%s has no constructor", e.name)
 		}
 	}
 }

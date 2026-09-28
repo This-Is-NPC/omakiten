@@ -64,7 +64,7 @@ func TestKaisekiAragornBuilderIdentity(t *testing.T) {
 
 	// Skills — bullet-with-body for the declared subset (and the entity-sourced
 	// playbook renders here too; there is no hardcoded Action section).
-	assertBulletWithBody(t, "okt-task-implement", resp)
+	assertCommandSkills(t, "okt-task-implement", resp)
 
 	// Themed law — "Map before the road" must reach the implement loop and
 	// render its neutral SE body.

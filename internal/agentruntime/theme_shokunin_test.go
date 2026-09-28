@@ -79,9 +79,6 @@ func assertSkillsBulletWithBody(t *testing.T, name string, resp contract.Resolve
 // a wired themed Persona, the entity-sourced playbook in the Skills section + a
 // prompts/list description, a Laws section (the global floor reaches every
 // command), and bullet-with-body Skills.
-// It is the shokunin sibling of the omakase TestFullCommandSurfaceSmoke — scoped
-// to the representative set named in AC#7, not the full 40, so it stays cheap and
-// preset-local while still proving the themed wiring resolves end-to-end.
 func TestShokuninPresetSmoke(t *testing.T) {
 	rt := openShokunin(t)
 
