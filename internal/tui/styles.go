@@ -10,7 +10,6 @@ import (
 	"omakiten/internal/config"
 	"omakiten/internal/tui/components/field"
 	"omakiten/internal/tui/components/screenkit"
-	"omakiten/internal/tui/screens/taskform"
 )
 
 // kicker renders a section label in dev-editorial style. Structural labels use
@@ -30,7 +29,7 @@ func (s styles) multilineFormTheme() field.Theme { return field.Multiline(s.kit)
 
 // taskEditTheme is the same story one size up: the task form's chrome, derived
 // by components/field from the styles a screen is allowed to see.
-func (s styles) taskEditTheme() taskform.Theme { return field.Form(s.kit) }
+func (s styles) taskEditTheme() field.FormTheme { return field.Form(s.kit) }
 
 // Status messages share one terminal boundary. Keep the visible copy to one
 // logical line and at most maxStatusTextCells cells. The secondary rune bound

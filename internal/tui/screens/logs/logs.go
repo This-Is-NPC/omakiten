@@ -48,7 +48,7 @@ type Deps struct {
 type Screen struct {
 	deps Deps
 
-	filter   FilterMode
+	filter   domain.LogsFilterMode
 	selected int
 	rows     []domain.EventRow
 	stats    domain.EventStats
@@ -86,7 +86,7 @@ func (s Screen) Bind(deps Deps) Screen {
 func (s Screen) ID() screenhost.ID { return screenhost.StatsLogs }
 
 // Filter is the active chip selection.
-func (s Screen) Filter() FilterMode { return s.filter }
+func (s Screen) Filter() domain.LogsFilterMode { return s.filter }
 
 // Selected is the cursor row index.
 func (s Screen) Selected() int { return s.selected }

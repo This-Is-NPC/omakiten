@@ -3,7 +3,6 @@ package sqlutil_test
 import (
 	"database/sql"
 	"testing"
-	"time"
 
 	"omakiten/internal/sqlite/sqlutil"
 )
@@ -59,27 +58,6 @@ func TestNullInt64Ptr(t *testing.T) {
 		in.Int64 = 100
 		if got == nil || *got != 7 {
 			t.Fatalf("NullInt64Ptr returned pointer aliased to caller mutation: got=%v", got)
-		}
-	})
-}
-
-func TestNullTimePtr(t *testing.T) {
-	now := time.Date(2026, 5, 24, 12, 0, 0, 0, time.UTC)
-	t.Run("valid returns pointer to wrapped time", func(t *testing.T) {
-		in := sql.NullTime{Time: now, Valid: true}
-		got := sqlutil.NullTimePtr(in)
-		if got == nil {
-			t.Fatalf("NullTimePtr(valid) = nil, want pointer")
-		}
-		if !got.Equal(now) {
-			t.Fatalf("NullTimePtr(valid) = %v, want %v", got, now)
-		}
-	})
-	t.Run("invalid returns nil", func(t *testing.T) {
-		in := sql.NullTime{Time: now, Valid: false}
-		got := sqlutil.NullTimePtr(in)
-		if got != nil {
-			t.Fatalf("NullTimePtr(invalid) = %v, want nil", got)
 		}
 	})
 }

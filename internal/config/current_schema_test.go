@@ -68,7 +68,7 @@ func TestLoadSkillsRejectsLegacySchemaWithoutRewriting(t *testing.T) {
 		t.Fatalf("write legacy skill: %v", err)
 	}
 
-	_, _, err := LoadSkills(dir)
+	_, _, err := loadSkillsReader(dir, nil)
 	if err == nil || !strings.Contains(err.Error(), "schema_version") {
 		t.Fatalf("LoadSkills() error = %v, want schema rejection", err)
 	}
@@ -90,7 +90,7 @@ func TestLoadPersonasRejectsLegacySchemaWithoutRewriting(t *testing.T) {
 		t.Fatalf("write legacy persona: %v", err)
 	}
 
-	_, _, err := LoadPersonas(dir)
+	_, _, err := loadPersonasReader(dir, nil)
 	if err == nil || !strings.Contains(err.Error(), "schema_version") {
 		t.Fatalf("LoadPersonas() error = %v, want schema rejection", err)
 	}

@@ -5,7 +5,9 @@
 // CanonicalRegistry, so an app import in the parent package cycles them.
 package bundleeditor
 
-import "omakiten/internal/app"
+import (
+	"omakiten/internal/app"
+)
 
 // New constructs an app.BundleEditor without forcing TUI tests to
 // import internal/app (D1 / 3.2).

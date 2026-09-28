@@ -98,13 +98,7 @@ func (m *Model) jumpToRoute(route palette.Route) error {
 	if !ok {
 		return fmt.Errorf("palette: route %q has no binding", route)
 	}
-	target, ok := legacyNavForScreen(descriptor.ID)
-	if !ok {
-		return fmt.Errorf("palette: route %q has no legacy binding", route)
-	}
-	m.pushHistory()
-	m.top = target.top
-	m.sub = target.sub
+	m.navigateToScreen(descriptor.ID)
 	return nil
 }
 

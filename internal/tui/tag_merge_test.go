@@ -8,6 +8,7 @@ import (
 
 	"omakiten/internal/agentruntime"
 	"omakiten/internal/config"
+	"omakiten/internal/contract"
 	"omakiten/internal/domain"
 	"omakiten/internal/operation"
 	"omakiten/internal/testfixtures/snapstore"
@@ -42,7 +43,7 @@ func TestTagMergeViaFacade(t *testing.T) {
 		t.Fatalf("AddTaskTag: %v", err)
 	}
 
-	svc := operation.NewService(store, operation.ProjectSelector{ProjectID: project.ID})
+	svc := operation.NewService(store, contract.ProjectSelector{ProjectID: project.ID})
 	svc.SetSnapshot(snap)
 	svc.SetSettings(operation.ServiceSettings{
 		RecentCommentLimit: 5,
@@ -151,7 +152,7 @@ func TestTagMergeScreenActions(t *testing.T) {
 	if _, err := store.FindOrCreateTag(ctx, "beta", "Beta"); err != nil {
 		t.Fatalf("FindOrCreateTag beta: %v", err)
 	}
-	svc := operation.NewService(store, operation.ProjectSelector{ProjectID: project.ID})
+	svc := operation.NewService(store, contract.ProjectSelector{ProjectID: project.ID})
 	svc.SetSnapshot(snap)
 	cache := agentruntime.NewBundleCache(nil, nil, nil)
 	cache.Install(project.ID, &agentruntime.ProjectRuntime{Service: svc, Snapshot: snap})

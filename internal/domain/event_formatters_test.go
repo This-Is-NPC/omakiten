@@ -1,6 +1,8 @@
 package domain
 
-import "testing"
+import (
+	"testing"
+)
 
 func TestRegisterFormatter_RegistersAndResolves(t *testing.T) {
 	const id = "__test.fmt.unique1"

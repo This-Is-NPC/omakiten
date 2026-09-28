@@ -9,7 +9,9 @@ import (
 
 	"omakiten/internal/agentruntime"
 	"omakiten/internal/config"
+	"omakiten/internal/config/bundledraft"
 	"omakiten/internal/configstore"
+	"omakiten/internal/contract"
 	"omakiten/internal/domain"
 	"omakiten/internal/events"
 	"omakiten/internal/testfixtures/bundleeditor"
@@ -139,11 +141,11 @@ func TestReloadBundleIfChangedAppliesMtimeReload(t *testing.T) {
 	}
 }
 
-func dirtyStudioDraft(t *testing.T, editor BundleEditor, name string) StudioDraft {
+func dirtyStudioDraft(t *testing.T, editor contract.BundleEditor, name string) studio.StudioDraft {
 	t.Helper()
-	draft, err := NewStudioDraft(editor)
+	draft, err := bundledraft.New(editor)
 	if err != nil {
-		t.Fatalf("NewStudioDraft: %v", err)
+		t.Fatalf("bundledraft.New: %v", err)
 	}
 	draft.RenameBucket(1, name)
 	return draft
@@ -154,7 +156,7 @@ type reloadBundleFixture struct {
 	configPath string
 	store      *snapstore.Store
 	files      *configstore.Adapter
-	editor     BundleEditor
+	editor     contract.BundleEditor
 	project    domain.Project
 	cache      *agentruntime.BundleCache
 }
@@ -171,7 +173,7 @@ func newReloadBundleFixture(t *testing.T) reloadBundleFixture {
 	store := snapstore.Open(t, filepath.Join(tmp, "omakiten.db"))
 	files := configstore.New()
 	editor := bundleeditor.New(files, configPath)
-	if _, err := applyBundleEditor(ctx, editor, nil); err != nil {
+	if _, err := bundledraft.ApplyPlanned(ctx, editor, nil); err != nil {
 		t.Fatalf("editor.Apply: %v", err)
 	}
 	project, err := store.UpsertProject(ctx, "Project", "project", "/work/project")

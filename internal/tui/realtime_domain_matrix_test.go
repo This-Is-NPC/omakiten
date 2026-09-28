@@ -13,6 +13,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"omakiten/internal/config"
+	"omakiten/internal/contract"
 	"omakiten/internal/domain"
 	"omakiten/internal/operation"
 	"omakiten/internal/testfixtures/runtimecache"
@@ -253,17 +254,16 @@ func allRealtimeReloadDomains() []realtimeReloadKind {
 
 func openPlanNetworkFixture(t *testing.T, f *realtimeMatrixFixture, m *Model) {
 	t.Helper()
-	svc := operation.NewService(f.store, operation.ProjectSelector{ProjectID: f.project.ID})
+	svc := operation.NewService(f.store, contract.ProjectSelector{ProjectID: f.project.ID})
 	svc.SetSnapshot(f.store.Snapshot())
-	show, err := svc.ShowPlanView(f.ctx, operation.ShowPlanInput{
-		ProjectSelector: operation.ProjectSelector{ProjectID: f.project.ID},
+	show, err := svc.ShowPlanView(f.ctx, contract.ShowPlanInput{
+		ProjectSelector: contract.ProjectSelector{ProjectID: f.project.ID},
 		Slug:            f.plan.Slug,
 	})
 	if err != nil {
 		t.Fatalf("PlanService.Show() error = %v", err)
 	}
-	m.top = topTasks
-	m.sub = subPlans
+	m.navigation = screenhost.TasksPlans
 	m.planNetworkScreen = plannetwork.New().Open(m.planNetworkPayload(show))
 	m.screenStack = []screenhost.ID{screenhost.PlanNetwork}
 }
@@ -277,19 +277,16 @@ func setRealtimeDomainView(t *testing.T, f *realtimeMatrixFixture, m *Model, kin
 	m.boardScreen = m.boardScreen.CancelMove()
 	switch kind {
 	case realtimeReloadBundle:
-		m.top = topTasks
-		m.sub = subBoard
+		m.navigation = screenhost.TasksBoard
 	case realtimeReloadActivity:
 		m.openTaskView(f.task)
 		m.taskDetailScreen = m.taskDetailScreen.WithFocus(taskdetail.FocusActivity)
 	case realtimeReloadPlanShow:
 		openPlanNetworkFixture(t, f, m)
 	case realtimeReloadStats:
-		m.top = topStats
-		m.sub = subStatsGeneral
+		m.navigation = screenhost.StatsGeneral
 	case realtimeReloadLogs:
-		m.top = topStats
-		m.sub = subStatsLogs
+		m.navigation = screenhost.StatsLogs
 	default:
 		t.Fatalf("unsupported realtime kind %v", kind)
 	}
@@ -397,7 +394,7 @@ func validRealtimeReloadMsg(kind realtimeReloadKind, version int64) realtimeRelo
 	msg := realtimeReloadMsg{kind: kind, dataVersion: version, dataVersionValid: true}
 	switch kind {
 	case realtimeReloadBundle:
-		msg.snap = operation.BoardSnapshot{Tasks: []domain.Task{{ID: 1, Title: "bundle"}}}
+		msg.snap = contract.BoardSnapshot{Tasks: []domain.Task{{ID: 1, Title: "bundle"}}}
 		msg.snapValid = true
 	case realtimeReloadActivity:
 		msg.activity = []domain.Event{{ID: 1, Body: "activity"}}
@@ -809,8 +806,8 @@ func testRealtimeWorkerIsolation(t *testing.T) {
 
 func testRealtimeGenerationGuard(t *testing.T) {
 	var model Model
-	newer := realtimeReloadMsg{kind: realtimeReloadBundle, gen: 2, dataVersion: 20, dataVersionValid: true, snap: operation.BoardSnapshot{Tasks: []domain.Task{{ID: 1, Title: "newer"}, {ID: 2, Title: "newer-2"}}}, snapValid: true}
-	older := realtimeReloadMsg{kind: realtimeReloadBundle, gen: 1, dataVersion: 10, dataVersionValid: true, snap: operation.BoardSnapshot{Tasks: []domain.Task{{ID: 1, Title: "older"}}}, snapValid: true}
+	newer := realtimeReloadMsg{kind: realtimeReloadBundle, gen: 2, dataVersion: 20, dataVersionValid: true, snap: contract.BoardSnapshot{Tasks: []domain.Task{{ID: 1, Title: "newer"}, {ID: 2, Title: "newer-2"}}}, snapValid: true}
+	older := realtimeReloadMsg{kind: realtimeReloadBundle, gen: 1, dataVersion: 10, dataVersionValid: true, snap: contract.BoardSnapshot{Tasks: []domain.Task{{ID: 1, Title: "older"}}}, snapValid: true}
 	model.applyRealtimeReload(newer)
 	model.applyRealtimeReload(older)
 	if len(model.tasks) != 2 || model.tasks[0].Title != "newer" {

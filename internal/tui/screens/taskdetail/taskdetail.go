@@ -255,7 +255,7 @@ func New() Screen {
 	comment.KeyMap.InsertNewline = bubblekey.NewBinding(bubblekey.WithKeys("alt+enter", "shift+enter", "ctrl+j"))
 	move := textinput.New()
 	move.Prompt = ""
-	return Screen{grid: screengrid.NewState(), subtasks: list.NewCards(), comment: comment, move: move, details: list.NewViewport(), md: markdown.New(markdown.Tokens{}), body: &taskDetailBlockCache{}}
+	return Screen{grid: screengrid.NewState(), subtasks: list.NewCards(), comment: comment, move: move, details: list.NewViewport(), md: markdown.New(screenkit.MarkdownTokens{}), body: &taskDetailBlockCache{}}
 }
 
 func (s Screen) ID() screenhost.ID     { return screenhost.TaskDetail }

@@ -13,7 +13,7 @@ import (
 func TestModelFocusRotationAndParentBlur(t *testing.T) {
 	t.Parallel()
 
-	m := newForm(Values{Title: "Task", Description: "Body", TagsCSV: "one, two", Parent: "7"}, 80, Theme{})
+	m := newForm(Values{Title: "Task", Description: "Body", TagsCSV: "one, two", Parent: "7"}, 80, field.FormTheme{})
 	if got := m.activeSection(); got != SectionTitle {
 		t.Fatalf("initial section = %v, want title", got)
 	}
@@ -46,7 +46,7 @@ func TestModelFocusRotationAndParentBlur(t *testing.T) {
 func TestModelSaveAndDirtyCancellation(t *testing.T) {
 	t.Parallel()
 
-	m := newForm(Values{Title: "Task"}, 80, Theme{})
+	m := newForm(Values{Title: "Task"}, 80, field.FormTheme{})
 	m, _, _ = m.update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'!'}})
 	if !m.dirty() {
 		t.Fatal("Dirty() = false after title edit, want true")
@@ -73,7 +73,7 @@ func TestModelSaveAndDirtyCancellation(t *testing.T) {
 func TestModelPrioritySectionCyclesAndParticipatesInDirtyState(t *testing.T) {
 	t.Parallel()
 
-	m := newForm(Values{Title: "Task", Priority: "2"}, 60, Theme{}).withPriorities([]PriorityOption{
+	m := newForm(Values{Title: "Task", Priority: "2"}, 60, field.FormTheme{}).withPriorities([]PriorityOption{
 		{Value: "1", Label: "low"}, {Value: "2", Label: "normal"}, {Value: "3", Label: "high"},
 	})
 	if !m.isActive() || m.parentError != "" || m.confirmingDiscard() {
@@ -89,7 +89,7 @@ func TestModelPrioritySectionCyclesAndParticipatesInDirtyState(t *testing.T) {
 	if m.values().Priority != "3" || !m.dirty() {
 		t.Fatalf("priority=%q dirty=%v, want 3/true", m.values().Priority, m.dirty())
 	}
-	view := m.view(60, Labels{Title: "Title", Description: "Description", Priority: "Priority", Tags: "Tags", Parent: "Parent"}, Theme{})
+	view := m.view(60, Labels{Title: "Title", Description: "Description", Priority: "Priority", Tags: "Tags", Parent: "Parent"}, field.FormTheme{})
 	for _, want := range []string{"PRIORITY", "low", "normal", "[high]"} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("priority view missing %q\n%s", want, view)
@@ -105,7 +105,7 @@ func TestModelPrioritySectionCyclesAndParticipatesInDirtyState(t *testing.T) {
 func TestModelCleanCancelAndEmptyParentMeansRoot(t *testing.T) {
 	t.Parallel()
 
-	m := newForm(Values{Title: "Task"}, 80, Theme{})
+	m := newForm(Values{Title: "Task"}, 80, field.FormTheme{})
 	m, _, event := m.update(tea.KeyMsg{Type: tea.KeyEsc})
 	if event.Kind != EventCancel {
 		t.Fatalf("clean esc event = %v, want cancel", event.Kind)
@@ -123,7 +123,7 @@ func TestModelCleanCancelAndEmptyParentMeansRoot(t *testing.T) {
 func TestDirtyIgnoresTagOrderAndWhitespace(t *testing.T) {
 	t.Parallel()
 
-	m := newForm(Values{Title: "Task", TagsCSV: "alpha, beta"}, 80, Theme{})
+	m := newForm(Values{Title: "Task", TagsCSV: "alpha, beta"}, 80, field.FormTheme{})
 	for range 2 {
 		m, _, _ = m.update(tea.KeyMsg{Type: tea.KeyTab})
 	}
@@ -141,7 +141,7 @@ func TestDirtyIgnoresTagOrderAndWhitespace(t *testing.T) {
 func TestViewMarksOnlyActiveSectionAndShowsParentError(t *testing.T) {
 	t.Parallel()
 
-	theme := Theme{
+	theme := field.FormTheme{
 		Label:        lipgloss.NewStyle(),
 		LabelActive:  lipgloss.NewStyle(),
 		Input:        lipgloss.NewStyle().Border(lipgloss.NormalBorder()),
@@ -165,7 +165,7 @@ func TestViewMarksOnlyActiveSectionAndShowsParentError(t *testing.T) {
 func TestViewUsesAvailableWidthForSingleLineInputs(t *testing.T) {
 	t.Parallel()
 
-	theme := Theme{Input: lipgloss.NewStyle().Border(lipgloss.NormalBorder())}
+	theme := field.FormTheme{Input: lipgloss.NewStyle().Border(lipgloss.NormalBorder())}
 	title := "A title longer than twenty columns"
 	m := newForm(Values{Title: title}, 60, theme)
 	got := m.view(60, Labels{Title: "Title", Description: "Description", Tags: "Tags", Parent: "Parent"}, theme)
@@ -178,7 +178,7 @@ func TestViewUsesAvailableWidthForSingleLineInputs(t *testing.T) {
 func TestResizeRecalibratesDescriptionInput(t *testing.T) {
 	t.Parallel()
 
-	theme := Theme{Multiline: field.Theme{Border: lipgloss.NewStyle().Padding(0, 2)}}
+	theme := field.FormTheme{Multiline: field.Theme{Border: lipgloss.NewStyle().Padding(0, 2)}}
 	m := newForm(Values{Description: "Body"}, 80, theme)
 	m = m.resize(44, theme)
 
@@ -203,7 +203,7 @@ func TestResizeAppliesCursorStyleToSingleLineInputs(t *testing.T) {
 	t.Parallel()
 
 	cursor := lipgloss.NewStyle().Foreground(lipgloss.Color("2"))
-	m := newForm(Values{Title: "Task"}, 60, Theme{Cursor: cursor})
+	m := newForm(Values{Title: "Task"}, 60, field.FormTheme{Cursor: cursor})
 	if got := m.title.Cursor.Style.GetForeground(); got != cursor.GetForeground() {
 		t.Fatalf("title cursor foreground = %v, want %v", got, cursor.GetForeground())
 	}

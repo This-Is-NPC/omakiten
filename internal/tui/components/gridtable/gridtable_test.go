@@ -291,7 +291,7 @@ func TestRenderWithLayoutOffsetsLandOnContentRows(t *testing.T) {
 	}
 	widths := []int{9, 12}
 
-	out, layout := RenderWithLayout(rows, widths, border)
+	out, layout := RenderCellsWithLayout(RawRows(rows), widths, border)
 	lines := strings.Split(out, "\n")
 
 	assertLayoutShape(t, rows, widths, border, out, lines, layout)
@@ -380,7 +380,7 @@ func TestRenderWithLayoutEmptyInputs(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
-			out, layout := RenderWithLayout(tc.rows, tc.widths, border)
+			out, layout := RenderCellsWithLayout(RawRows(tc.rows), tc.widths, border)
 			if out != "" {
 				t.Fatalf("expected empty render, got %q", out)
 			}
@@ -400,7 +400,7 @@ func TestRenderWithLayoutEmptyInputs(t *testing.T) {
 func TestLayoutRowLineRejectsOutOfRange(t *testing.T) {
 	t.Parallel()
 
-	_, layout := RenderWithLayout([][]string{{"a", "b"}, {"c", "d"}}, []int{4, 4}, lipgloss.NewStyle())
+	_, layout := RenderCellsWithLayout(RawRows([][]string{{"a", "b"}, {"c", "d"}}), []int{4, 4}, lipgloss.NewStyle())
 	for _, row := range []int{-1, 2, 99} {
 		if line, ok := layout.RowLine(row); ok {
 			t.Fatalf("RowLine(%d) = (%d, true), want ok=false", row, line)

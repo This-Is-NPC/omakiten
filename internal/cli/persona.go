@@ -5,8 +5,8 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"omakiten/internal/contract"
 	"omakiten/internal/domain"
-	"omakiten/internal/operation"
 )
 
 func newPersonaCommand(opts *runtimeOptions) *cobra.Command {
@@ -34,7 +34,7 @@ func newPersonaListCommand(opts *runtimeOptions) *cobra.Command {
 				}
 				defer rt.close()
 
-				return rt.operationService().ListPersonas(ctx, operation.ListPersonasInput{})
+				return rt.operationService().ListPersonas(ctx, contract.ListPersonasInput{})
 			})
 		},
 	}
@@ -53,7 +53,7 @@ func newPersonaShowCommand(opts *runtimeOptions) *cobra.Command {
 				}
 				defer rt.close()
 
-				return rt.operationService().ShowPersona(ctx, operation.ShowPersonaInput{Slug: args[0]})
+				return rt.operationService().ShowPersona(ctx, contract.ShowPersonaInput{Slug: args[0]})
 			})
 		},
 	}

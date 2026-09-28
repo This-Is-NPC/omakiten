@@ -7,8 +7,9 @@ import (
 	"strings"
 	"testing"
 
+	"omakiten/internal/commandcatalog"
+	"omakiten/internal/contract"
 	"omakiten/internal/mcp"
-	"omakiten/internal/operation"
 )
 
 // promptBudgets caps each `okt-*` prompt's resolved markdown size in bytes,
@@ -124,9 +125,9 @@ func TestTemplateBoundCommandsCarryFetchHint(t *testing.T) {
 	}
 	defer func() { _ = rt.Close() }()
 
-	for _, name := range operation.CommandNames() {
+	for _, name := range commandcatalog.CommandNames() {
 		t.Run(name, func(t *testing.T) {
-			resp, err := rt.Service().ResolveCommand(ctx, operation.ResolveCommandInput{Name: name})
+			resp, err := rt.Service().ResolveCommand(ctx, contract.ResolveCommandInput{Name: name})
 			if err != nil {
 				t.Fatalf("ResolveCommand(%s) error = %v", name, err)
 			}
@@ -149,7 +150,7 @@ func TestPromptPlaybooksReferenceOnlyKnownMCPTools(t *testing.T) {
 	ignored := map[string]struct{}{"omakiten.yaml": {}, "package.json": {}, "task.assigned": {}}
 	dottedBacktick := regexp.MustCompile("`([a-z_]+(?:\\.[a-z_]+)+)(?:\\s|`)")
 
-	for _, name := range operation.CommandNames() {
+	for _, name := range commandcatalog.CommandNames() {
 		resp := resolveForSmoke(t, name)
 		matches := dottedBacktick.FindAllStringSubmatch(resp.Markdown, -1)
 		for _, match := range matches {
@@ -222,7 +223,7 @@ var orchestratorCommands = map[string]struct{}{
 }
 
 // TestFullCommandSurfaceSmoke is the AC#2 closeout gate: it renders EVERY
-// command in operation.CommandNames() against the canonical omakase kit and asserts
+// command in commandcatalog.CommandNames() against the canonical omakase kit and asserts
 // each one carries its expected sections. This is the consolidation of the
 // per-wave CW3-CW7 subset gates (the prior TestCW5/TestCW6 *RenderNonEmpty
 // tests) into one coherent full-surface contract so a command that registers
@@ -260,14 +261,14 @@ func TestFullCommandSurfaceSmoke(t *testing.T) {
 	}
 	defer func() { _ = rt.Close() }()
 
-	names := operation.CommandNames()
+	names := commandcatalog.CommandNames()
 	if len(names) != 40 {
 		t.Fatalf("expected the v2 surface to carry 40 commands, got %d — update this gate and the docs if the surface changed deliberately", len(names))
 	}
 
 	for _, name := range names {
 		t.Run(name, func(t *testing.T) {
-			resp, err := rt.Service().ResolveCommand(ctx, operation.ResolveCommandInput{Name: name})
+			resp, err := rt.Service().ResolveCommand(ctx, contract.ResolveCommandInput{Name: name})
 			if err != nil {
 				t.Fatalf("ResolveCommand(%s) error = %v", name, err)
 			}
@@ -276,7 +277,7 @@ func TestFullCommandSurfaceSmoke(t *testing.T) {
 	}
 }
 
-func assertFullCommandSurface(t *testing.T, name string, resp operation.ResolveCommandResponse) {
+func assertFullCommandSurface(t *testing.T, name string, resp contract.ResolveCommandResponse) {
 	t.Helper()
 	assertCommandPersona(t, name, resp)
 	assertCommandPlaybook(t, name, resp)
@@ -288,7 +289,7 @@ func assertFullCommandSurface(t *testing.T, name string, resp operation.ResolveC
 	}
 }
 
-func assertCommandPersona(t *testing.T, name string, resp operation.ResolveCommandResponse) {
+func assertCommandPersona(t *testing.T, name string, resp contract.ResolveCommandResponse) {
 	t.Helper()
 	if resp.Persona == nil {
 		t.Fatalf("%s resolved with no persona — the role slot is not wired in the preset YAML", name)
@@ -298,7 +299,7 @@ func assertCommandPersona(t *testing.T, name string, resp operation.ResolveComma
 	}
 }
 
-func assertCommandPlaybook(t *testing.T, name string, resp operation.ResolveCommandResponse) {
+func assertCommandPlaybook(t *testing.T, name string, resp contract.ResolveCommandResponse) {
 	t.Helper()
 	if !strings.Contains(resp.Markdown, "## Skills\n") {
 		t.Fatalf("%s markdown missing the Skills section that carries the entity-sourced playbook:\n%s", name, resp.Markdown)
@@ -308,14 +309,14 @@ func assertCommandPlaybook(t *testing.T, name string, resp operation.ResolveComm
 	}
 }
 
-func assertCommandLaws(t *testing.T, name string, resp operation.ResolveCommandResponse) {
+func assertCommandLaws(t *testing.T, name string, resp contract.ResolveCommandResponse) {
 	t.Helper()
 	if !strings.Contains(resp.Markdown, "## Laws\n") || len(resp.Laws) == 0 {
 		t.Fatalf("%s markdown missing non-empty Laws section (the global law floor should reach every command):\n%s", name, resp.Markdown)
 	}
 }
 
-func assertCommandSkills(t *testing.T, name string, resp operation.ResolveCommandResponse) {
+func assertCommandSkills(t *testing.T, name string, resp contract.ResolveCommandResponse) {
 	t.Helper()
 	if len(resp.Skills) == 0 {
 		t.Fatalf("%s resolved with no skills — the command-level skill subset is not wired (or the persona repertoire is empty)", name)
@@ -328,7 +329,7 @@ func assertCommandSkills(t *testing.T, name string, resp operation.ResolveComman
 	}
 }
 
-func assertCommandSkillBullet(t *testing.T, name, markdown string, sk operation.SkillInfo) {
+func assertCommandSkillBullet(t *testing.T, name, markdown string, sk contract.SkillInfo) {
 	t.Helper()
 	label := sk.Name
 	if label == "" {
@@ -351,7 +352,7 @@ func assertCommandSkillBullet(t *testing.T, name, markdown string, sk operation.
 	}
 }
 
-func assertCommandTemplates(t *testing.T, name string, resp operation.ResolveCommandResponse) {
+func assertCommandTemplates(t *testing.T, name string, resp contract.ResolveCommandResponse) {
 	t.Helper()
 	if len(resp.Templates) == 0 {
 		return
@@ -364,13 +365,13 @@ func assertCommandTemplates(t *testing.T, name string, resp operation.ResolveCom
 	}
 }
 
-func assertOrchestratorGuidance(t *testing.T, name string, resp operation.ResolveCommandResponse) {
+func assertOrchestratorGuidance(t *testing.T, name string, resp contract.ResolveCommandResponse) {
 	t.Helper()
 	if !strings.Contains(resp.Markdown, "okt-") {
 		t.Fatalf("orchestrator %s carries no downstream okt- command suggestion in its guidance block:\n%s", name, resp.Markdown)
 	}
-	desc, ok := operation.DescribeCommand(name)
-	if !ok || desc.Tier != operation.CommandTierOrchestrator {
+	desc, ok := commandcatalog.DescribeCommand(name)
+	if !ok || desc.Tier != commandcatalog.CommandTierOrchestrator {
 		t.Fatalf("orchestrator %s must decode as the orchestrator tier, got %+v ok=%v", name, desc, ok)
 	}
 }
@@ -405,7 +406,7 @@ var defaultPresets = []string{"omakase", "izakaya", "kaiseki", "shokunin"}
 // breadth complement to the depth phrase-pins in the CW3-CW7 gates (which run
 // against omakase only).
 func TestDefaultKitCoversAllCommandsEntitySourced(t *testing.T) {
-	names := operation.CommandNames()
+	names := commandcatalog.CommandNames()
 	if len(names) != 40 {
 		t.Fatalf("expected the v2 surface to carry 40 commands, got %d — update this gate and the docs if the surface changed deliberately", len(names))
 	}
@@ -434,7 +435,7 @@ func assertPresetCommands(t *testing.T, preset string, names []string) {
 	for _, name := range names {
 		name := name
 		t.Run(name, func(t *testing.T) {
-			resp, err := rt.Service().ResolveCommand(ctx, operation.ResolveCommandInput{Name: name})
+			resp, err := rt.Service().ResolveCommand(ctx, contract.ResolveCommandInput{Name: name})
 			if err != nil {
 				t.Fatalf("ResolveCommand(%s) error = %v", name, err)
 			}
@@ -443,7 +444,7 @@ func assertPresetCommands(t *testing.T, preset string, names []string) {
 	}
 }
 
-func assertEntitySourcedPrompt(t *testing.T, preset, name string, resp operation.ResolveCommandResponse) {
+func assertEntitySourcedPrompt(t *testing.T, preset, name string, resp contract.ResolveCommandResponse) {
 	t.Helper()
 	if strings.TrimSpace(resp.Markdown) == "" {
 		t.Fatalf("%s/%s resolved to an empty prompt", preset, name)
@@ -466,16 +467,16 @@ func assertEntitySourcedPrompt(t *testing.T, preset, name string, resp operation
 	assertEntitySourcedBullet(t, preset, name, resp.Markdown, wantPlaybook, playbook)
 }
 
-func findSkill(skills []operation.SkillInfo, slug string) operation.SkillInfo {
+func findSkill(skills []contract.SkillInfo, slug string) contract.SkillInfo {
 	for _, skill := range skills {
 		if skill.Slug == slug {
 			return skill
 		}
 	}
-	return operation.SkillInfo{}
+	return contract.SkillInfo{}
 }
 
-func assertEntitySourcedBullet(t *testing.T, preset, name, markdown, slug string, skill operation.SkillInfo) {
+func assertEntitySourcedBullet(t *testing.T, preset, name, markdown, slug string, skill contract.SkillInfo) {
 	t.Helper()
 	body := strings.TrimSpace(skill.Body)
 	head := body
@@ -562,7 +563,7 @@ func TestCW3OktRunDelegationPlaybook(t *testing.T) {
 	}
 	defer func() { _ = rt.Close() }()
 
-	resp, err := rt.Service().ResolveCommand(ctx, operation.ResolveCommandInput{Name: "okt-run"})
+	resp, err := rt.Service().ResolveCommand(ctx, contract.ResolveCommandInput{Name: "okt-run"})
 	if err != nil {
 		t.Fatalf("ResolveCommand(okt-run) error = %v", err)
 	}
@@ -585,8 +586,8 @@ func TestCW3OktRunDelegationPlaybook(t *testing.T) {
 
 	// okt-run decodes as a bare orchestrator (not granular) — the engine is
 	// subagents, not a workflow.
-	desc, ok := operation.DescribeCommand("okt-run")
-	if !ok || desc.Tier != operation.CommandTierOrchestrator {
+	desc, ok := commandcatalog.DescribeCommand("okt-run")
+	if !ok || desc.Tier != commandcatalog.CommandTierOrchestrator {
 		t.Fatalf("okt-run must decode as the orchestrator tier, got %+v ok=%v", desc, ok)
 	}
 
@@ -633,7 +634,7 @@ func TestCW3OktRunDelegationPlaybook(t *testing.T) {
 // omakase default kit and resolves one command, failing the test on any error.
 // It centralises the boilerplate the four guiding-orchestrator smoke gates
 // share, mirroring the single-command resolve the okt-run gate does inline.
-func resolveForSmoke(t *testing.T, name string) operation.ResolveCommandResponse {
+func resolveForSmoke(t *testing.T, name string) contract.ResolveCommandResponse {
 	t.Helper()
 	ctx := context.Background()
 	tmp := t.TempDir()
@@ -646,7 +647,7 @@ func resolveForSmoke(t *testing.T, name string) operation.ResolveCommandResponse
 	}
 	t.Cleanup(func() { _ = rt.Close() })
 
-	resp, err := rt.Service().ResolveCommand(ctx, operation.ResolveCommandInput{Name: name})
+	resp, err := rt.Service().ResolveCommand(ctx, contract.ResolveCommandInput{Name: name})
 	if err != nil {
 		t.Fatalf("ResolveCommand(%s) error = %v", name, err)
 	}
@@ -681,7 +682,7 @@ func playbookBodyForSmoke(t *testing.T, name string) string {
 // load-bearing phrase (case-insensitive). Each phrase pins a clause of the
 // guiding playbook so a future edit that erodes the next-move/coaching contract
 // surfaces here — same phrase-pinning style as TestCW3OktRunDelegationPlaybook.
-func assertGuidingOrchestrator(t *testing.T, name string, resp operation.ResolveCommandResponse, phrases []string) {
+func assertGuidingOrchestrator(t *testing.T, name string, resp contract.ResolveCommandResponse, phrases []string) {
 	t.Helper()
 	if resp.Persona == nil {
 		t.Fatalf("%s resolved with no persona — the role slot is not wired in the preset YAML", name)
@@ -697,8 +698,8 @@ func assertGuidingOrchestrator(t *testing.T, name string, resp operation.Resolve
 	if strings.TrimSpace(resp.Description) == "" {
 		t.Fatalf("%s carries no prompts/list description (the bound playbook skill's frontmatter)", name)
 	}
-	desc, ok := operation.DescribeCommand(name)
-	if !ok || desc.Tier != operation.CommandTierOrchestrator {
+	desc, ok := commandcatalog.DescribeCommand(name)
+	if !ok || desc.Tier != commandcatalog.CommandTierOrchestrator {
 		t.Fatalf("%s must decode as the orchestrator tier, got %+v ok=%v", name, desc, ok)
 	}
 	lower := strings.ToLower(resp.Markdown)
@@ -747,7 +748,7 @@ func TestCW4OktStartIsOktShortcut(t *testing.T) {
 	okt := resolveForSmoke(t, "okt")
 	start := resolveForSmoke(t, "okt-start")
 
-	playbookBody := func(resp operation.ResolveCommandResponse) string {
+	playbookBody := func(resp contract.ResolveCommandResponse) string {
 		for _, sk := range resp.Skills {
 			if sk.Slug == "okt-start-playbook" {
 				return strings.TrimSpace(sk.Body)
@@ -875,7 +876,7 @@ func TestCW4OktPauseHandoffNote(t *testing.T) {
 // prompt must contain every pinned load-bearing phrase (case-insensitive).
 // Mirrors assertGuidingOrchestrator but pins the system tier instead of the
 // orchestrator tier.
-func assertSystemCommand(t *testing.T, name string, resp operation.ResolveCommandResponse, phrases []string) {
+func assertSystemCommand(t *testing.T, name string, resp contract.ResolveCommandResponse, phrases []string) {
 	t.Helper()
 	if resp.Persona == nil {
 		t.Fatalf("%s resolved with no persona — the role slot is not wired in the preset YAML", name)
@@ -891,8 +892,8 @@ func assertSystemCommand(t *testing.T, name string, resp operation.ResolveComman
 	if strings.TrimSpace(resp.Description) == "" {
 		t.Fatalf("%s carries no prompts/list description (the bound playbook skill's frontmatter)", name)
 	}
-	desc, ok := operation.DescribeCommand(name)
-	if !ok || desc.Tier != operation.CommandTierSystem {
+	desc, ok := commandcatalog.DescribeCommand(name)
+	if !ok || desc.Tier != commandcatalog.CommandTierSystem {
 		t.Fatalf("%s must decode as the system tier, got %+v ok=%v", name, desc, ok)
 	}
 	lower := strings.ToLower(resp.Markdown)
@@ -938,7 +939,7 @@ func TestCW7OktHelpTierGuide(t *testing.T) {
 // config-orientation template, so the JIT fetch hint must be present.
 func TestCW7OktConfigReachable(t *testing.T) {
 	registered := false
-	for _, n := range operation.CommandNames() {
+	for _, n := range commandcatalog.CommandNames() {
 		if n == "okt-config" {
 			registered = true
 			break
@@ -1016,7 +1017,7 @@ func TestRestHandoffsPresent(t *testing.T) {
 	defer func() { _ = rt.Close() }()
 
 	for name, hints := range expectedHandoffs {
-		resp, err := rt.Service().ResolveCommand(ctx, operation.ResolveCommandInput{Name: name})
+		resp, err := rt.Service().ResolveCommand(ctx, contract.ResolveCommandInput{Name: name})
 		if err != nil {
 			t.Fatalf("ResolveCommand(%s) error = %v", name, err)
 		}
@@ -1044,7 +1045,7 @@ func TestCommandPlaybooksArePersonaAgnostic(t *testing.T) {
 		"documentation curator",
 		"honoring every law",
 	}
-	for _, name := range operation.CommandNames() {
+	for _, name := range commandcatalog.CommandNames() {
 		body := playbookBodyForSmoke(t, name)
 		if body == "" {
 			t.Fatalf("%s has no entity-sourced playbook body", name)
@@ -1086,14 +1087,14 @@ func TestNoteCommandsTargetScopedComments(t *testing.T) {
 	defer func() { _ = rt.Close() }()
 
 	render := func(name string) string {
-		resp, err := rt.Service().ResolveCommand(ctx, operation.ResolveCommandInput{Name: name})
+		resp, err := rt.Service().ResolveCommand(ctx, contract.ResolveCommandInput{Name: name})
 		if err != nil {
 			t.Fatalf("ResolveCommand(%s) error = %v", name, err)
 		}
 		return resp.Markdown
 	}
 
-	for _, name := range operation.CommandNames() {
+	for _, name := range commandcatalog.CommandNames() {
 		if strings.Contains(render(name), "notes.") {
 			t.Errorf("command %q prompt still references the removed notes.* tool", name)
 		}
@@ -1122,13 +1123,13 @@ func TestPromptBudgets(t *testing.T) {
 	}
 	defer func() { _ = rt.Close() }()
 
-	for _, name := range operation.CommandNames() {
+	for _, name := range commandcatalog.CommandNames() {
 		t.Run(name, func(t *testing.T) {
 			budget, ok := promptBudgets[name]
 			if !ok {
 				t.Fatalf("missing budget for prompt %q — add it to promptBudgets", name)
 			}
-			resp, err := rt.Service().ResolveCommand(ctx, operation.ResolveCommandInput{Name: name})
+			resp, err := rt.Service().ResolveCommand(ctx, contract.ResolveCommandInput{Name: name})
 			if err != nil {
 				t.Fatalf("ResolveCommand(%s) error = %v", name, err)
 			}

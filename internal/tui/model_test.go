@@ -44,8 +44,8 @@ func TestModelSwitchesViews(t *testing.T) {
 	}
 	updated, _ := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'2'}})
 	got := updated.(Model)
-	if got.top != topStats || got.sub != subStatsGeneral {
-		t.Fatalf("(top, sub) = (%d, %d), want (topStats, subStatsGeneral)", got.top, got.sub)
+	if got.navigationTop() != screenhost.TopStats || got.navigation != screenhost.StatsGeneral {
+		t.Fatalf("(top, sub) = (%s, %s), want (screenhost.TopStats, screenhost.StatsGeneral)", got.navigationTop(), got.navigation)
 	}
 }
 
@@ -204,8 +204,8 @@ func TestModelLoadsActivityLogsWhenOpeningLogsView(t *testing.T) {
 
 	got := pressRune(t, model, '2')
 	got = pressRune(t, got, '/')
-	if got.top != topStats || got.sub != subStatsLogs {
-		t.Fatalf("(top, sub) = (%d, %d), want (topStats, subStatsLogs)", got.top, got.sub)
+	if got.navigationTop() != screenhost.TopStats || got.navigation != screenhost.StatsLogs {
+		t.Fatalf("(top, sub) = (%s, %s), want (screenhost.TopStats, screenhost.StatsLogs)", got.navigationTop(), got.navigation)
 	}
 	view := ansi.Strip(got.View())
 	// SummarizeEvent renders the tool_call row as
@@ -1080,33 +1080,33 @@ func TestSubCycleBindings(t *testing.T) {
 	}
 
 	got := pressStringKey(t, model, "/")
-	if got.top != topTasks || got.sub != subTable {
-		t.Fatalf("after first '/': (top, sub) = (%d, %d), want (topTasks, subTable)", got.top, got.sub)
+	if got.navigationTop() != screenhost.TopTasks || got.navigation != screenhost.TasksTable {
+		t.Fatalf("after first '/': (top, sub) = (%s, %s), want (screenhost.TopTasks, screenhost.TasksTable)", got.navigationTop(), got.navigation)
 	}
 	got = pressStringKey(t, got, "/")
-	if got.sub != subGraph {
-		t.Fatalf("after second '/': sub = %d, want subGraph", got.sub)
+	if got.navigation != screenhost.TasksGraph {
+		t.Fatalf("after second '/': sub = %s, want screenhost.TasksGraph", got.navigation)
 	}
 	got = pressStringKey(t, got, "/")
-	if got.sub != subPlans {
-		t.Fatalf("after third '/': sub = %d, want subPlans", got.sub)
+	if got.navigation != screenhost.TasksPlans {
+		t.Fatalf("after third '/': sub = %s, want screenhost.TasksPlans", got.navigation)
 	}
 	got = pressStringKey(t, got, "/")
-	if got.sub != subBoard {
-		t.Fatalf("after fourth '/': sub = %d, want subBoard (wrap-around)", got.sub)
+	if got.navigation != screenhost.TasksBoard {
+		t.Fatalf("after fourth '/': sub = %s, want screenhost.TasksBoard (wrap-around)", got.navigation)
 	}
 	got = pressStringKey(t, got, ",")
-	if got.sub != subPlans {
-		t.Fatalf("after ',' from board: sub = %d, want subPlans (wrap-around)", got.sub)
+	if got.navigation != screenhost.TasksPlans {
+		t.Fatalf("after ',' from board: sub = %s, want screenhost.TasksPlans (wrap-around)", got.navigation)
 	}
 
 	got = pressRune(t, model, '4')
-	if got.top != topSettings || got.sub != subSettingsGeneral {
-		t.Fatalf("after '4': (top, sub) = (%d, %d), want (topSettings, subSettingsGeneral)", got.top, got.sub)
+	if got.navigationTop() != screenhost.TopSettings || got.navigation != screenhost.SettingsGeneral {
+		t.Fatalf("after '4': (top, sub) = (%s, %s), want (screenhost.TopSettings, screenhost.SettingsGeneral)", got.navigationTop(), got.navigation)
 	}
 	got = pressStringKey(t, got, "/")
-	if got.top != topSettings || got.sub != subSettingsLaws {
-		t.Fatalf("'/' on Settings/general should advance to Settings/laws: (top, sub) = (%d, %d)", got.top, got.sub)
+	if got.navigationTop() != screenhost.TopSettings || got.navigation != screenhost.SettingsLaws {
+		t.Fatalf("'/' on Settings/general should advance to Settings/laws: (top, sub) = (%s, %s)", got.navigationTop(), got.navigation)
 	}
 }
 
@@ -1128,30 +1128,30 @@ func TestShiftTabCyclesTops(t *testing.T) {
 		t.Fatalf("NewModel() error = %v", err)
 	}
 
-	if model.top != topTasks || model.sub != subBoard {
-		t.Fatalf("start: (top, sub) = (%d, %d), want (topTasks, subBoard)", model.top, model.sub)
+	if model.navigationTop() != screenhost.TopTasks || model.navigation != screenhost.TasksBoard {
+		t.Fatalf("start: (top, sub) = (%s, %s), want (screenhost.TopTasks, screenhost.TasksBoard)", model.navigationTop(), model.navigation)
 	}
 
 	unchanged := pressKey(t, model, tea.KeyTab)
-	if unchanged.top != topTasks || unchanged.sub != subBoard {
-		t.Fatalf("tab on board mutated nav: (top, sub) = (%d, %d), want (topTasks, subBoard)", unchanged.top, unchanged.sub)
+	if unchanged.navigationTop() != screenhost.TopTasks || unchanged.navigation != screenhost.TasksBoard {
+		t.Fatalf("tab on board mutated nav: (top, sub) = (%s, %s), want (screenhost.TopTasks, screenhost.TasksBoard)", unchanged.navigationTop(), unchanged.navigation)
 	}
 
 	got := pressKey(t, model, tea.KeyShiftTab)
-	if got.top != topStats || got.sub != subStatsGeneral {
-		t.Fatalf("after shift+tab from board: (top, sub) = (%d, %d), want (topStats, subStatsGeneral)", got.top, got.sub)
+	if got.navigationTop() != screenhost.TopStats || got.navigation != screenhost.StatsGeneral {
+		t.Fatalf("after shift+tab from board: (top, sub) = (%s, %s), want (screenhost.TopStats, screenhost.StatsGeneral)", got.navigationTop(), got.navigation)
 	}
 	got = pressKey(t, got, tea.KeyShiftTab)
-	if got.top != topStudio {
-		t.Fatalf("after second shift+tab: top = %d, want topStudio", got.top)
+	if got.navigationTop() != screenhost.TopStudio {
+		t.Fatalf("after second shift+tab: top = %s, want screenhost.TopStudio", got.navigationTop())
 	}
 	got = pressKey(t, got, tea.KeyShiftTab)
-	if got.top != topSettings {
-		t.Fatalf("after third shift+tab: top = %d, want topSettings", got.top)
+	if got.navigationTop() != screenhost.TopSettings {
+		t.Fatalf("after third shift+tab: top = %s, want screenhost.TopSettings", got.navigationTop())
 	}
 	got = pressKey(t, got, tea.KeyShiftTab)
-	if got.top != topTasks || got.sub != subBoard {
-		t.Fatalf("after wrap shift+tab: (top, sub) = (%d, %d), want (topTasks, subBoard)", got.top, got.sub)
+	if got.navigationTop() != screenhost.TopTasks || got.navigation != screenhost.TasksBoard {
+		t.Fatalf("after wrap shift+tab: (top, sub) = (%s, %s), want (screenhost.TopTasks, screenhost.TasksBoard)", got.navigationTop(), got.navigation)
 	}
 }
 
@@ -1176,26 +1176,26 @@ func TestCtrlOPopsBackStack(t *testing.T) {
 
 	// Empty stack — ctrl+o is silently dropped, no nav change.
 	got := pressStringKey(t, model, "ctrl+o")
-	if got.top != topTasks || got.sub != subBoard {
-		t.Fatalf("ctrl+o on empty stack mutated nav: (top, sub) = (%d, %d)", got.top, got.sub)
+	if got.navigationTop() != screenhost.TopTasks || got.navigation != screenhost.TasksBoard {
+		t.Fatalf("ctrl+o on empty stack mutated nav: (top, sub) = (%s, %s)", got.navigationTop(), got.navigation)
 	}
 
 	// Tasks/board → Stats/general → Settings/general, then ctrl+o twice.
 	got = pressRune(t, model, '2')
-	if got.top != topStats || got.sub != subStatsGeneral {
-		t.Fatalf("'2' should jump to Stats/general: (top, sub) = (%d, %d)", got.top, got.sub)
+	if got.navigationTop() != screenhost.TopStats || got.navigation != screenhost.StatsGeneral {
+		t.Fatalf("'2' should jump to Stats/general: (top, sub) = (%s, %s)", got.navigationTop(), got.navigation)
 	}
 	got = pressRune(t, got, '4')
-	if got.top != topSettings || got.sub != subSettingsGeneral {
-		t.Fatalf("'4' should jump to Settings/general: (top, sub) = (%d, %d)", got.top, got.sub)
+	if got.navigationTop() != screenhost.TopSettings || got.navigation != screenhost.SettingsGeneral {
+		t.Fatalf("'4' should jump to Settings/general: (top, sub) = (%s, %s)", got.navigationTop(), got.navigation)
 	}
 	got = pressStringKey(t, got, "ctrl+o")
-	if got.top != topStats || got.sub != subStatsGeneral {
-		t.Fatalf("ctrl+o should restore Stats/general: (top, sub) = (%d, %d)", got.top, got.sub)
+	if got.navigationTop() != screenhost.TopStats || got.navigation != screenhost.StatsGeneral {
+		t.Fatalf("ctrl+o should restore Stats/general: (top, sub) = (%s, %s)", got.navigationTop(), got.navigation)
 	}
 	got = pressStringKey(t, got, "ctrl+o")
-	if got.top != topTasks || got.sub != subBoard {
-		t.Fatalf("ctrl+o should restore Tasks/board: (top, sub) = (%d, %d)", got.top, got.sub)
+	if got.navigationTop() != screenhost.TopTasks || got.navigation != screenhost.TasksBoard {
+		t.Fatalf("ctrl+o should restore Tasks/board: (top, sub) = (%s, %s)", got.navigationTop(), got.navigation)
 	}
 	if len(got.viewHistory) != 0 {
 		t.Fatalf("viewHistory should be empty after popping every entry, got %d", len(got.viewHistory))
@@ -1708,8 +1708,8 @@ func openPlansList(t *testing.T, model Model) Model {
 	got := pressStringKey(t, model, "/")
 	got = pressStringKey(t, got, "/")
 	got = pressStringKey(t, got, "/")
-	if got.sub != subPlans {
-		t.Fatalf("third '/': sub = %d, want subPlans", got.sub)
+	if got.navigation != screenhost.TasksPlans {
+		t.Fatalf("third '/': sub = %s, want screenhost.TasksPlans", got.navigation)
 	}
 	return got
 }
@@ -2484,8 +2484,8 @@ func TestPlansSubTabEmptyState(t *testing.T) {
 	got := pressStringKey(t, model, "/")
 	got = pressStringKey(t, got, "/")
 	got = pressStringKey(t, got, "/")
-	if got.sub != subPlans {
-		t.Fatalf("third '/': sub = %d, want subPlans", got.sub)
+	if got.navigation != screenhost.TasksPlans {
+		t.Fatalf("third '/': sub = %s, want screenhost.TasksPlans", got.navigation)
 	}
 	view := ansi.Strip(got.View())
 	if !strings.Contains(view, "No plans yet") {

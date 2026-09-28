@@ -79,8 +79,8 @@ func TestNormalizeTagNamePerProjectSynonyms(t *testing.T) {
 func TestTagServicePerProjectSynonymsIsolation(t *testing.T) {
 	bundleA := config.Bundle{Config: config.Settings{TagSynonyms: map[string]string{"go": "golang"}}}
 	bundleB := config.Bundle{Config: config.Settings{TagSynonyms: map[string]string{"go": "goroutine"}}}
-	svcA := NewTagService(nil, config.BuildSnapshot(bundleA))
-	svcB := NewTagService(nil, config.BuildSnapshot(bundleB))
+	svcA := NewTagServiceWithEvents(nil, nil, config.BuildSnapshot(bundleA))
+	svcB := NewTagServiceWithEvents(nil, nil, config.BuildSnapshot(bundleB))
 
 	if got := NormalizeTagName("go", svcA.snap.Synonyms()); got != "golang" {
 		t.Fatalf("svcA: %q want golang", got)

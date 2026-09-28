@@ -3,15 +3,16 @@ package operation
 import (
 	"testing"
 
+	"omakiten/internal/contract"
 	"omakiten/internal/domain"
 )
 
 func TestListPersonasOmitsBodies(t *testing.T) {
 	fixture := newAgentFixture(t)
 	fixture.service.SetSnapshot(snapshotWithEntities(t,
-		[]SkillInfo{{Slug: "go", Name: "Go", Body: "go body"}},
-		[]LawInfo{{Slug: "scope", Severity: "error", Body: "scope body"}},
-		[]PersonaInfo{{
+		[]contract.SkillInfo{{Slug: "go", Name: "Go", Body: "go body"}},
+		[]contract.LawInfo{{Slug: "scope", Severity: "error", Body: "scope body"}},
+		[]contract.PersonaInfo{{
 			Slug:            "builder",
 			Name:            "Builder",
 			Description:     "Builds things.",
@@ -22,7 +23,7 @@ func TestListPersonasOmitsBodies(t *testing.T) {
 		nil, nil,
 	))
 
-	resp, err := fixture.service.ListPersonas(fixture.ctx, ListPersonasInput{})
+	resp, err := fixture.service.ListPersonas(fixture.ctx, contract.ListPersonasInput{})
 	if err != nil {
 		t.Fatalf("ListPersonas() error = %v", err)
 	}
@@ -38,9 +39,9 @@ func TestListPersonasOmitsBodies(t *testing.T) {
 func TestShowPersonaExpandsReferences(t *testing.T) {
 	fixture := newAgentFixture(t)
 	fixture.service.SetSnapshot(snapshotWithEntities(t,
-		[]SkillInfo{{Slug: "go", Name: "Go", Description: "Go lang", Body: "go body"}},
-		[]LawInfo{{Slug: "scope", Name: "Scope", Severity: "error", Body: "scope body"}},
-		[]PersonaInfo{{
+		[]contract.SkillInfo{{Slug: "go", Name: "Go", Description: "Go lang", Body: "go body"}},
+		[]contract.LawInfo{{Slug: "scope", Name: "Scope", Severity: "error", Body: "scope body"}},
+		[]contract.PersonaInfo{{
 			Slug:            "builder",
 			Name:            "Builder",
 			Body:            "You are a builder.",
@@ -50,7 +51,7 @@ func TestShowPersonaExpandsReferences(t *testing.T) {
 		nil, nil,
 	))
 
-	resp, err := fixture.service.ShowPersona(fixture.ctx, ShowPersonaInput{Slug: "builder"})
+	resp, err := fixture.service.ShowPersona(fixture.ctx, contract.ShowPersonaInput{Slug: "builder"})
 	if err != nil {
 		t.Fatalf("ShowPersona() error = %v", err)
 	}
@@ -69,7 +70,7 @@ func TestShowPersonaRejectsUnknownSlug(t *testing.T) {
 	fixture := newAgentFixture(t)
 	fixture.service.SetSnapshot(snapshotWithEntities(t, nil, nil, nil, nil, nil))
 
-	_, err := fixture.service.ShowPersona(fixture.ctx, ShowPersonaInput{Slug: "missing"})
+	_, err := fixture.service.ShowPersona(fixture.ctx, contract.ShowPersonaInput{Slug: "missing"})
 	assertCodedError(t, err, domain.ErrValidation)
 }
 
@@ -77,11 +78,11 @@ func TestShowPersonaRejectsBrokenLawRef(t *testing.T) {
 	fixture := newAgentFixture(t)
 	fixture.service.SetSnapshot(snapshotWithEntities(t,
 		nil,
-		[]LawInfo{{Slug: "scope", Severity: "error", Body: "scope"}},
-		[]PersonaInfo{{Slug: "builder", Laws: []string{"ghost-law"}}},
+		[]contract.LawInfo{{Slug: "scope", Severity: "error", Body: "scope"}},
+		[]contract.PersonaInfo{{Slug: "builder", Laws: []string{"ghost-law"}}},
 		nil, nil,
 	))
 
-	_, err := fixture.service.ShowPersona(fixture.ctx, ShowPersonaInput{Slug: "builder"})
+	_, err := fixture.service.ShowPersona(fixture.ctx, contract.ShowPersonaInput{Slug: "builder"})
 	assertCodedError(t, err, domain.ErrValidation)
 }

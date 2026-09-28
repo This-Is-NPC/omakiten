@@ -3,6 +3,8 @@ package operation
 import (
 	"strings"
 	"testing"
+
+	"omakiten/internal/contract"
 )
 
 // TestSetSettingsStoresValuesVerbatim verifies the strict contract:
@@ -64,7 +66,7 @@ func TestContinueTaskHonorsIncludeWorkflowSetting(t *testing.T) {
 		CachePrompts:       true,
 	})
 
-	resp, err := fixture.service.ContinueTask(fixture.ctx, ContinueTaskInput{TaskID: fixture.taskA1.ID})
+	resp, err := fixture.service.ContinueTask(fixture.ctx, contract.ContinueTaskInput{TaskID: fixture.taskA1.ID})
 	if err != nil {
 		t.Fatalf("ContinueTask() error = %v", err)
 	}
@@ -84,7 +86,7 @@ func TestContinueTaskPerCallIncludeWorkflowOverride(t *testing.T) {
 
 	// Caller forces workflow ON despite default off.
 	on := true
-	resp, err := fixture.service.ContinueTask(fixture.ctx, ContinueTaskInput{
+	resp, err := fixture.service.ContinueTask(fixture.ctx, contract.ContinueTaskInput{
 		TaskID:          fixture.taskA1.ID,
 		IncludeWorkflow: &on,
 	})
@@ -101,7 +103,7 @@ func TestContinueTaskPerCallIncludeWorkflowOverride(t *testing.T) {
 		IncludeWorkflow:    true, // default on
 	})
 	off := false
-	resp, err = fixture.service.ContinueTask(fixture.ctx, ContinueTaskInput{
+	resp, err = fixture.service.ContinueTask(fixture.ctx, contract.ContinueTaskInput{
 		TaskID:          fixture.taskA1.ID,
 		IncludeWorkflow: &off,
 	})
@@ -129,7 +131,7 @@ func TestContinueTaskTruncatesCommentBodies(t *testing.T) {
 		IncludeWorkflow:    true,
 	})
 
-	resp, err := fixture.service.ContinueTask(fixture.ctx, ContinueTaskInput{TaskID: fixture.taskA1.ID})
+	resp, err := fixture.service.ContinueTask(fixture.ctx, contract.ContinueTaskInput{TaskID: fixture.taskA1.ID})
 	if err != nil {
 		t.Fatalf("ContinueTask() error = %v", err)
 	}

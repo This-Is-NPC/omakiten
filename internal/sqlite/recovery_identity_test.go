@@ -8,7 +8,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"omakiten/internal/app"
+	"omakiten/internal/contract"
+	"omakiten/internal/recovery"
 )
 
 func TestReindexWithBackupRejectsRecoveryPathChangesAtDestructiveBoundaries(t *testing.T) {
@@ -61,7 +62,7 @@ func runRecoveryPathChangeCase(t *testing.T, install func(*reindexBackupHooks, f
 		t.Fatalf("OpenSearchMaintenance: %v", err)
 	}
 	defer func() { _ = maintenance.Close() }()
-	backup := app.NewBackupService(app.BackupOptions{SourcePath: dbPath, DestDir: filepath.Join(dir, "backups")})
+	backup := recovery.NewBackupService(recovery.BackupOptions{SourcePath: dbPath, DestDir: filepath.Join(dir, "backups")})
 	var backupPath string
 	var mutationErr error
 	hooks := reindexBackupHooks{}
@@ -71,7 +72,7 @@ func runRecoveryPathChangeCase(t *testing.T, install func(*reindexBackupHooks, f
 		}
 	})
 	var resultErr error
-	err = backup.WithLease(ctx, func(lease app.BackupLease) error {
+	err = backup.WithLease(ctx, func(lease contract.BackupLease) error {
 		create := func(ctx context.Context, write func(string) error) (string, error) {
 			path, err := lease.WriteSnapshot(ctx, write)
 			backupPath = path
@@ -117,7 +118,7 @@ func TestReindexWithBackupRetainsRecoveryWhenInvalidationRollbackIsUnproven(t *t
 	if err != nil {
 		t.Fatalf("OpenSearchMaintenance: %v", err)
 	}
-	backup := app.NewBackupService(app.BackupOptions{SourcePath: dbPath, DestDir: filepath.Join(dir, "backups")})
+	backup := recovery.NewBackupService(recovery.BackupOptions{SourcePath: dbPath, DestDir: filepath.Join(dir, "backups")})
 	var backupPath, retainedPath string
 	var resultErr, hookErr error
 	movedPath := dbPath + ".original"
@@ -130,7 +131,7 @@ func TestReindexWithBackupRetainsRecoveryWhenInvalidationRollbackIsUnproven(t *t
 		}
 		hookErr = maintenance.maintenanceConn.Close()
 	}}
-	err = backup.WithLease(ctx, func(lease app.BackupLease) error {
+	err = backup.WithLease(ctx, func(lease contract.BackupLease) error {
 		create := func(ctx context.Context, write func(string) error) (string, error) {
 			path, err := lease.WriteSnapshot(ctx, write)
 			backupPath = path

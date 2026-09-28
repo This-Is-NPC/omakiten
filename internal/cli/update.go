@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"os"
 	"os/exec"
@@ -24,6 +23,7 @@ import (
 	"omakiten/internal/paths"
 	"omakiten/internal/releaseverify"
 	"omakiten/internal/sqlite"
+	"omakiten/internal/updater"
 )
 
 // updateBackupForOpts constructs the pre-swap BackupService through
@@ -47,36 +47,14 @@ func updateBackupForOpts(cmd *cobra.Command, opts *runtimeOptions) (updateBackup
 }
 
 // updateRepo is the GitHub repository the in-binary updater polls
-// for release tags. Constant — tests stub the LatestFetcher /
-// AssetDownloader interfaces instead of rewiring the repo string.
+// for release tags. Constant — tests stub the updater.LatestFetcher /
+// updater.AssetDownloader interfaces instead of rewiring the repo string.
 const updateRepo = "This-Is-NPC/omakiten"
-
-// maxAssetSize caps the per-asset download body so a compromised CDN
-// or MITM cannot OOM the host by streaming an arbitrarily large
-// payload before the SHA256 verify step runs. The published release
-// archives sit comfortably below 50 MiB; the 256 MiB ceiling leaves
-// generous headroom for future bundled assets while still rejecting
-// pathological payloads.
-const maxAssetSize int64 = 256 << 20
 
 // currentGOOS is goruntime.GOOS at process start. Kept as a package
 // var so update_test.go can swap it (e.g. force "windows") without
 // running on a real Windows host.
 var currentGOOS = goruntime.GOOS
-
-// LatestFetcher resolves the latest published release tag (e.g.
-// "0.19.0", without the "v" prefix). Injected into runUpdate so the
-// test suite can return a deterministic value without hitting GitHub.
-type LatestFetcher interface {
-	Latest(ctx context.Context) (string, error)
-}
-
-// AssetDownloader fetches a release-asset tarball/zip and returns its
-// body for atomicSwap to consume. Injected so the test suite can
-// serve a tmp file instead of hitting github.com/releases/download.
-type AssetDownloader interface {
-	Download(ctx context.Context, tag, asset string) (io.ReadCloser, error)
-}
 
 // updateValidatorResult is the parsed output of a single staged-binary
 // health check. The fields mirror the structured payload `okt config
@@ -107,8 +85,8 @@ type updateEventStoreFactory func(ctx context.Context) (healthCheckEventStore, f
 // tiny. Production wiring is built by defaultUpdateClient; tests pass
 // a struct with stubbed Fetcher / Downloader / BinaryPath fields.
 type updateClient struct {
-	Fetcher    LatestFetcher
-	Downloader AssetDownloader
+	Fetcher    updater.LatestFetcher
+	Downloader updater.AssetDownloader
 	// Current is the running binary's version, sourced from the
 	// cobra root --version flag (set at build time via
 	// `-ldflags -X main.version=...`). Tests pass a literal string.
@@ -334,7 +312,7 @@ func runUpdate(ctx context.Context, c updateClient, inputs updateInputs) (any, e
 	if err := confirmUpdate(ctx, current, latest, inputs.Yes); err != nil {
 		return nil, err
 	}
-	asset, err := assetName(currentGOOS, goruntime.GOARCH)
+	asset, err := updater.AssetName(currentGOOS, goruntime.GOARCH)
 	if err != nil {
 		return nil, domain.NewError(domain.ErrUpdateFailed, err.Error(), nil)
 	}
@@ -357,7 +335,7 @@ func runUpdate(ctx context.Context, c updateClient, inputs updateInputs) (any, e
 	if err != nil {
 		return nil, err
 	}
-	if err := swapStagedBinary(stagedPath, c.BinaryPath); err != nil {
+	if err := updater.SwapStagedBinary(stagedPath, c.BinaryPath); err != nil {
 		return nil, domain.NewError(domain.ErrUpdateFailed, fmt.Sprintf(t("cli.update.err.swap_binary"), c.BinaryPath, err.Error()), nil)
 	}
 	swapped = true
@@ -448,7 +426,7 @@ func stageUpdateBinary(ctx context.Context, c updateClient, current, latest, ass
 	if err != nil {
 		return "", releaseverify.Result{}, domain.NewError(domain.ErrUpdateFailed, fmt.Sprintf(t("cli.update.err.extract_asset"), lifecycle.BinaryName(), err.Error()), nil)
 	}
-	stagedPath, err := stageBinary(c.BinaryPath, bytes.NewReader(binary))
+	stagedPath, err := updater.StageBinary(c.BinaryPath, bytes.NewReader(binary))
 	if err != nil {
 		return "", releaseverify.Result{}, domain.NewError(domain.ErrUpdateFailed, fmt.Sprintf(t("cli.update.err.stage_binary_fmt"), err.Error()), nil)
 	}
@@ -456,13 +434,13 @@ func stageUpdateBinary(ctx context.Context, c updateClient, current, latest, ass
 }
 
 func downloadAndVerifyUpdate(ctx context.Context, c updateClient, current, latest, asset string) ([]byte, releaseverify.Result, error) {
-	archiveBytes, err := downloadAsset(ctx, c.Downloader, latest, asset)
+	archiveBytes, err := updater.DownloadAsset(ctx, c.Downloader, latest, asset)
 	if err != nil {
 		return nil, releaseverify.Result{}, domain.NewError(domain.ErrUpdateFailed, err.Error(), nil)
 	}
 	metadata := make(map[string][]byte, 5)
 	for _, name := range []string{releaseverify.ChecksumsName, releaseverify.ManifestName(latest), releaseverify.ManifestBundleName(latest), releaseverify.ChecksumsBundleName(latest), releaseverify.ProvenanceBundleName(latest)} {
-		data, err := downloadAsset(ctx, c.Downloader, latest, name)
+		data, err := updater.DownloadAsset(ctx, c.Downloader, latest, name)
 		if err != nil {
 			return nil, releaseverify.Result{}, domain.NewError(domain.ErrUpdateFailed, fmt.Sprintf(t("cli.update.err.fetch_release_metadata_fmt"), name, err.Error()), nil)
 		}
@@ -639,7 +617,7 @@ func runUpdateConfirm(ctx context.Context, current, latest string) (bool, error)
 var defaultUpdateClientFactory = defaultUpdateClient
 
 // defaultUpdateClient builds the production wiring: HTTP-backed
-// LatestFetcher + AssetDownloader pointing at the GitHub releases API,
+// updater.LatestFetcher + updater.AssetDownloader pointing at the GitHub releases API,
 // the os.Executable() binary path, and the cobra Version literal.
 //
 // BinaryPath here intentionally tracks the *running* binary rather
@@ -659,8 +637,8 @@ func defaultUpdateClient(version string) (updateClient, error) {
 	}
 	hc := &http.Client{Timeout: 30 * time.Second}
 	return updateClient{
-		Fetcher:           &githubLatestFetcher{Repo: updateRepo, HTTP: hc},
-		Downloader:        &githubAssetDownloader{Repo: updateRepo, HTTP: hc},
+		Fetcher:           &updater.GitHubLatestFetcher{Repo: updateRepo, HTTP: hc},
+		Downloader:        &updater.GitHubAssetDownloader{Repo: updateRepo, HTTP: hc},
 		Current:           version,
 		BinaryPath:        bin,
 		DefaultsRefresher: defaultUpdateDefaultsRefresher,
@@ -856,176 +834,6 @@ func parseValidatorOutput(output []byte, exitedNonZero bool) (updateValidatorRes
 		}
 	}
 	return result, nil
-}
-
-// githubLatestFetcher polls
-// `https://api.github.com/repos/<repo>/releases/latest` and parses the
-// tag_name field. The bash installer uses the same endpoint so the
-// two surfaces converge on the same release.
-//
-// GitHub's /releases/latest endpoint excludes drafts and prereleases
-// by design, so `--check` will not flap on every RC tag. If the
-// repository starts publishing prereleases through this endpoint we
-// must switch to GET /releases?per_page=10 + filter `prerelease`.
-type githubLatestFetcher struct {
-	Repo string
-	HTTP *http.Client
-}
-
-func (g *githubLatestFetcher) Latest(ctx context.Context) (string, error) {
-	url := fmt.Sprintf("https://api.github.com/repos/%s/releases/latest", g.Repo)
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-	if err != nil {
-		return "", err
-	}
-	req.Header.Set("Accept", "application/vnd.github+json")
-	resp, err := g.HTTP.Do(req)
-	if err != nil {
-		return "", err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("github api status %d", resp.StatusCode)
-	}
-	var payload struct {
-		TagName string `json:"tag_name"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
-		return "", err
-	}
-	return strings.TrimPrefix(strings.TrimSpace(payload.TagName), "v"), nil
-}
-
-// githubAssetDownloader streams the platform-matched asset from the
-// release-download URL. The body is returned untouched so atomicSwap
-// can consume the tarball directly; the caller is responsible for
-// closing it.
-type githubAssetDownloader struct {
-	Repo string
-	HTTP *http.Client
-}
-
-func (g *githubAssetDownloader) Download(ctx context.Context, tag, asset string) (io.ReadCloser, error) {
-	url := fmt.Sprintf("https://github.com/%s/releases/download/v%s/%s", g.Repo, tag, asset)
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-	if err != nil {
-		return nil, err
-	}
-	resp, err := g.HTTP.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	if resp.StatusCode != http.StatusOK {
-		_ = resp.Body.Close()
-		return nil, fmt.Errorf("download status %d", resp.StatusCode)
-	}
-	return resp.Body, nil
-}
-
-// assetName maps GOOS/GOARCH to the asset filename install.sh
-// constructs: `okt_<os>_<arch>.tar.gz`. The bash side capitalizes the
-// OS token (`Linux`, `Darwin`) and renames the architecture so the
-// goreleaser-published asset matches.
-func assetName(goos, goarch string) (string, error) {
-	osTok := ""
-	switch goos {
-	case "linux":
-		osTok = "Linux"
-	case "darwin":
-		osTok = "Darwin"
-	case "windows":
-		osTok = "Windows"
-	default:
-		return "", fmt.Errorf(t("cli.update.err.unsupported_platform"), goos, goarch)
-	}
-	archTok := ""
-	switch goarch {
-	case "amd64":
-		archTok = "x86_64"
-	case "arm64":
-		archTok = "arm64"
-	default:
-		return "", fmt.Errorf(t("cli.update.err.unsupported_platform"), goos, goarch)
-	}
-	ext := ".tar.gz"
-	if goos == "windows" {
-		ext = ".zip"
-	}
-	return fmt.Sprintf("okt_%s_%s%s", osTok, archTok, ext), nil
-}
-
-// downloadAsset streams one release asset into memory under the shared size
-// cap. Every asset the updater consumes — the archive and the four signed
-// metadata files — goes through this single reader so a compromised CDN
-// cannot OOM the host with any one of them, and so no asset can be read
-// without the cap.
-func downloadAsset(ctx context.Context, dl AssetDownloader, tag, asset string) ([]byte, error) {
-	body, err := dl.Download(ctx, tag, asset)
-	if err != nil {
-		return nil, fmt.Errorf(t("cli.update.err.download_asset"), asset, err.Error())
-	}
-	defer body.Close()
-	data, err := io.ReadAll(io.LimitReader(body, maxAssetSize+1))
-	if err != nil {
-		return nil, fmt.Errorf(t("cli.update.err.download_asset"), asset, err.Error())
-	}
-	if int64(len(data)) > maxAssetSize {
-		return nil, fmt.Errorf(t("cli.update.err.asset_too_large"), asset, maxAssetSize)
-	}
-	return data, nil
-}
-
-// stageBinary writes body to a sibling tmp file next to dst with +x
-// perms and returns its path. The two-step "stage then swap" split
-// (#365 AC 2) lets runUpdate run the validator against the staged
-// file before any atomic move clobbers the running binary: a failed
-// health check removes the tmp and leaves the install untouched.
-// Same-filesystem placement keeps the eventual rename atomic.
-func stageBinary(dst string, body io.Reader) (string, error) {
-	dir := filepath.Dir(dst)
-	tmp, err := os.CreateTemp(dir, ".okt-update-*")
-	if err != nil {
-		return "", err
-	}
-	tmpPath := tmp.Name()
-	if _, err := io.Copy(tmp, body); err != nil {
-		_ = tmp.Close()
-		_ = os.Remove(tmpPath)
-		return "", err
-	}
-	if err := tmp.Close(); err != nil {
-		_ = os.Remove(tmpPath)
-		return "", err
-	}
-	if err := os.Chmod(tmpPath, 0o755); err != nil {
-		_ = os.Remove(tmpPath)
-		return "", err
-	}
-	return tmpPath, nil
-}
-
-// swapStagedBinary atomically renames a staged file over dst. POSIX
-// same-filesystem rename is atomic; Windows callers are refused
-// upstream in runUpdate so the EXE-in-use shape doesn't surface here.
-func swapStagedBinary(stagedPath, dst string) error {
-	return os.Rename(stagedPath, dst)
-}
-
-// atomicSwap writes body to the binary path via a sibling temp file
-// then renames it over the original. Kept as a thin wrapper over
-// stageBinary + swapStagedBinary so the existing direct callers
-// (`internal/cli/update_test.go`) still compile while runUpdate uses
-// the split pair to gate the rename on the validator.
-func atomicSwap(path string, body io.Reader) error {
-	staged, err := stageBinary(path, body)
-	if err != nil {
-		return err
-	}
-	if err := swapStagedBinary(staged, path); err != nil {
-		_ = os.Remove(staged)
-		return err
-	}
-	return nil
 }
 
 // normalizeVersion strips a leading "v" so the github API tag

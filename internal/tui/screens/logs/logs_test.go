@@ -6,6 +6,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"omakiten/internal/domain"
+	"omakiten/internal/testutil"
 	"omakiten/internal/tui/screenhost"
 	"omakiten/internal/tui/screens/screentest"
 )
@@ -28,7 +29,7 @@ func sampleRows(n int) []domain.EventRow {
 func loadedScreen(t *testing.T, rows int) Screen {
 	t.Helper()
 	screen, _ := testScreen(t, 180)
-	return screen.Apply(Payload{Rows: sampleRows(rows)})
+	return screen.Apply(Payload{Rows: preparedRows(sampleRows(rows))})
 }
 
 // TestScreenIdentityAndChrome pins the contract surface: the stable id, the
@@ -247,7 +248,7 @@ func TestFilterCycleReloadsAndResetsTheCursor(t *testing.T) {
 	t.Parallel()
 	frame := screentest.FrameAt(t, 180, 40)
 
-	screen := New().Bind(Deps{Available: true}).Apply(Payload{Rows: sampleRows(3)})
+	screen := New().Bind(Deps{Available: true}).Apply(Payload{Rows: preparedRows(sampleRows(3))})
 	screen.selected = 5
 
 	outcome := screen.Update(frame, screentest.Key("f"))
@@ -287,7 +288,7 @@ func TestFilterCycleBackwardWrapsAround(t *testing.T) {
 func TestFilterCycleWithoutPortStillRotates(t *testing.T) {
 	t.Parallel()
 	frame := screentest.FrameAt(t, 180, 40)
-	screen := New().Apply(Payload{Rows: sampleRows(2)})
+	screen := New().Apply(Payload{Rows: preparedRows(sampleRows(2))})
 
 	outcome := screen.Update(frame, screentest.Key("f"))
 	got := outcome.Screen.(Screen)
@@ -302,30 +303,25 @@ func TestFilterCycleWithoutPortStillRotates(t *testing.T) {
 // TestApplyConsumesPreparedRows proves visibility policy is applied before the
 // payload reaches the screen, including for an explicit filter.
 func TestApplyHonoursTheExplicitChipOverTheRegistry(t *testing.T) {
-	prev := domain.EventDefByKey
-	cloned := make(map[string]domain.EventDef, len(prev))
-	for k, v := range prev {
-		cloned[k] = v
-	}
+	cloned := make(map[string]domain.EventDef)
 	cloned["__test.chip_hidden"] = domain.EventDef{
 		Key:        "__test.chip_hidden",
 		Category:   domain.EventCategoryDomain,
 		LogVisible: false,
 		Formatter:  func(domain.EventRow) string { return "" },
 	}
-	domain.EventDefByKey = cloned
-	t.Cleanup(func() { domain.EventDefByKey = prev })
+	registry := registryWith(cloned)
 
-	rows := []domain.EventRow{{ID: 1, EventType: "__test.chip_hidden"}}
+	rows := []domain.EventRow{registry.Prepare(domain.EventRow{ID: 1, EventType: "__test.chip_hidden"})}
 
-	prepared := New().Apply(Payload{Rows: domain.FilterLogVisibleRows(rows)})
+	prepared := New().Apply(Payload{Rows: preparedRows(domain.FilterLogVisibleRows(rows))})
 	if len(prepared.Rows()) != 0 {
 		t.Fatalf("the host-prepared all payload should omit hidden rows, got %d", len(prepared.Rows()))
 	}
 
 	narrowed := New()
 	narrowed.filter = FilterSystem
-	if got := narrowed.Apply(Payload{Rows: rows}); len(got.Rows()) != 1 {
+	if got := narrowed.Apply(Payload{Rows: preparedRows(rows)}); len(got.Rows()) != 1 {
 		t.Fatalf("an explicit payload must remain untouched, got %d rows", len(got.Rows()))
 	}
 }
@@ -334,14 +330,14 @@ func TestApplyHonoursTheExplicitChipOverTheRegistry(t *testing.T) {
 // result cannot leave the cursor addressing a row that no longer exists.
 func TestApplyClampsTheCursorIntoTheNewBuffer(t *testing.T) {
 	t.Parallel()
-	screen := New().Apply(Payload{Rows: sampleRows(10)})
+	screen := New().Apply(Payload{Rows: preparedRows(sampleRows(10))})
 	screen.selected = 9
 
-	shrunk := screen.Apply(Payload{Rows: sampleRows(3)})
+	shrunk := screen.Apply(Payload{Rows: preparedRows(sampleRows(3))})
 	if shrunk.Selected() != 2 {
 		t.Fatalf("selected = %d, want the last row of the shrunken buffer", shrunk.Selected())
 	}
-	emptied := shrunk.Apply(Payload{Rows: nil})
+	emptied := shrunk.Apply(Payload{Rows: preparedRows(nil)})
 	if emptied.Selected() != 0 {
 		t.Fatalf("selected = %d, want 0 on an emptied buffer", emptied.Selected())
 	}
@@ -352,9 +348,9 @@ func TestApplyClampsTheCursorIntoTheNewBuffer(t *testing.T) {
 // cursor while the user is reading.
 func TestApplyKeepsAnInRangeCursor(t *testing.T) {
 	t.Parallel()
-	screen := New().Apply(Payload{Rows: sampleRows(10)})
+	screen := New().Apply(Payload{Rows: preparedRows(sampleRows(10))})
 	screen.selected = 4
-	if got := screen.Apply(Payload{Rows: sampleRows(10)}); got.Selected() != 4 {
+	if got := screen.Apply(Payload{Rows: preparedRows(sampleRows(10))}); got.Selected() != 4 {
 		t.Fatalf("selected = %d, want the cursor preserved across a same-size reload", got.Selected())
 	}
 }
@@ -378,4 +374,27 @@ func TestResetDropsProjectBoundState(t *testing.T) {
 	if len(reset.Rows()) != 0 || len(stats.Categories) != 0 || stats.ToolCallOK != 0 || stats.ToolCallError != 0 || stats.ToolCallRunning != 0 {
 		t.Fatalf("Reset left project-bound data behind: rows=%d stats=%+v", len(reset.Rows()), stats)
 	}
+}
+
+func registryWith(overrides map[string]domain.EventDef) *domain.EventRegistry {
+	definitions := testutil.EventRegistry().Definitions()
+	for i, def := range definitions {
+		if override, ok := overrides[def.Key]; ok {
+			definitions[i] = override
+			delete(overrides, def.Key)
+		}
+	}
+	for _, def := range overrides {
+		definitions = append(definitions, def)
+	}
+	return domain.NewEventRegistry(definitions)
+}
+
+func preparedRows(rows []domain.EventRow) []domain.EventRow {
+	for i := range rows {
+		if rows[i].Category == "" {
+			rows[i] = testutil.EventRegistry().Prepare(rows[i])
+		}
+	}
+	return rows
 }

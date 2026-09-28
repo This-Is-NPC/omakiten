@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"omakiten/internal/config"
+	"omakiten/internal/contract"
 	"omakiten/internal/domain"
 	"omakiten/internal/operation"
 	"omakiten/internal/testfixtures/runtimecache"
@@ -81,10 +82,10 @@ func TestTaskEditTagDiffUsesCanonicalNames(t *testing.T) {
 	}
 	project, _ := store.UpsertProject(ctx, "Project", "project", "/work/project")
 	task, _ := store.CreateTask(ctx, project.ID, "Subject", "", domain.Priority(2), "backlog", nil, store.Snapshot())
-	svc := operation.NewService(store, operation.ProjectSelector{ProjectID: project.ID})
+	svc := operation.NewService(store, contract.ProjectSelector{ProjectID: project.ID})
 	svc.SetSnapshot(store.Snapshot())
-	if _, err := svc.AddTag(ctx, operation.AddTagInput{
-		ProjectSelector: operation.ProjectSelector{ProjectID: project.ID},
+	if _, err := svc.AddTag(ctx, contract.AddTagInput{
+		ProjectSelector: contract.ProjectSelector{ProjectID: project.ID},
 		EntityType:      "task",
 		EntityID:        task.ID,
 		TagName:         "alpha",

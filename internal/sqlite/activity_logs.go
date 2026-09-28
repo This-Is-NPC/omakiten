@@ -105,7 +105,7 @@ RETURNING id
 	// limits come from config.events.retention resolved through
 	// Store.SetEventsPolicy; when unset (tests that skip ApplyConfig)
 	// prune is skipped.
-	s.pruneRetentionForEventType(ctx, eventType)
+	s.pruneRetentionForEventType(ctx, activityLog.ProjectID, eventType)
 	// Opportunistic orphan reconciliation rides the same post-insert
 	// maintenance slot as retention pruning. It is due-checked (default
 	// 24h), non-blocking, and silent — no background goroutine and no TUI

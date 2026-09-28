@@ -8,6 +8,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	"omakiten/internal/config"
+	studioprojection "omakiten/internal/studioprojection"
 	"omakiten/internal/tui/components/screenkit"
 	"omakiten/internal/tui/components/screenlayout"
 	"omakiten/internal/tui/screenhost"
@@ -149,7 +150,7 @@ func TestStudioWorkflowRowsMatchOmakaseSVG(t *testing.T) {
 	}
 }
 
-func assertWorkflowRowShape(t *testing.T, row workflowRow, tagged, opens, archives int) (int, int, int) {
+func assertWorkflowRowShape(t *testing.T, row studioprojection.WorkflowRow, tagged, opens, archives int) (int, int, int) {
 	t.Helper()
 	if row.Kind == workflowRowGuard && row.Guard.Type == "comments_tagged" {
 		tagged++
@@ -224,12 +225,16 @@ func TestStudioWorkflowInspectorFoci(t *testing.T) {
 
 	cases := []struct {
 		name string
-		pred func(workflowRow) bool
+		pred func(studioprojection.WorkflowRow) bool
 		want []string
 	}{
-		{"bucket", func(row workflowRow) bool { return row.Kind == workflowRowBucket && row.Bucket.Key == "dev" }, []string{"02 // DEVELOPMENT", "key", "dev", "task edit"}},
-		{"resume", func(row workflowRow) bool { return row.Kind == workflowRowGuard && row.Guard.Tag == "resume" }, []string{"#resume", "comments_tagged", "comment-resume", "**Before**"}},
-		{"blockers", func(row workflowRow) bool { return row.Guard.Type == "blockers_in" }, []string{"blockers_in", "pending", "done", "Tiny"}},
+		{"bucket", func(row studioprojection.WorkflowRow) bool {
+			return row.Kind == workflowRowBucket && row.Bucket.Key == "dev"
+		}, []string{"02 // DEVELOPMENT", "key", "dev", "task edit"}},
+		{"resume", func(row studioprojection.WorkflowRow) bool {
+			return row.Kind == workflowRowGuard && row.Guard.Tag == "resume"
+		}, []string{"#resume", "comments_tagged", "comment-resume", "**Before**"}},
+		{"blockers", func(row studioprojection.WorkflowRow) bool { return row.Guard.Type == "blockers_in" }, []string{"blockers_in", "pending", "done", "Tiny"}},
 	}
 	for _, tc := range cases {
 		tc := tc
@@ -302,7 +307,7 @@ func TestPaintWorkflowListRowUsesThemeTokens(t *testing.T) {
 		Success: lipgloss.NewStyle().Underline(true),
 		Hint:    lipgloss.NewStyle().Italic(true),
 	}
-	tag := paintWorkflowListRow(styles, workflowRow{
+	tag := paintWorkflowListRow(styles, studioprojection.WorkflowRow{
 		Kind:  workflowRowGuard,
 		Left:  "#resume",
 		Right: "-> review",
@@ -314,13 +319,13 @@ func TestPaintWorkflowListRowUsesThemeTokens(t *testing.T) {
 	if got, want := tag.Right, styles.Warning.Render("-> review"); got != want {
 		t.Fatalf("tagged right = %q, want Warning token %q", got, want)
 	}
-	open := paintWorkflowListRow(styles, workflowRow{
+	open := paintWorkflowListRow(styles, studioprojection.WorkflowRow{
 		Kind: workflowRowOpen, Left: "open", Right: "-> dev",
 	})
 	if got, want := open.Left, styles.Success.Render("open"); got != want {
 		t.Fatalf("open left = %q, want Success token %q", got, want)
 	}
-	muted := paintWorkflowListRow(styles, workflowRow{
+	muted := paintWorkflowListRow(styles, studioprojection.WorkflowRow{
 		Kind:  workflowRowGuard,
 		Left:  "wave_gate",
 		Right: "-> dev",

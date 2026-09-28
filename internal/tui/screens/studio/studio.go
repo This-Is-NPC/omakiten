@@ -8,6 +8,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"omakiten/internal/config"
+	"omakiten/internal/contract"
 	"omakiten/internal/domain"
 	"omakiten/internal/studioprojection"
 	"omakiten/internal/tui/components/screengrid"
@@ -15,22 +16,9 @@ import (
 	"omakiten/internal/tui/screenhost"
 )
 
-// BundleEditor is the on-disk bundle mutation surface Studio needs.
-// BundleEditor satisfies it; the screen must not import internal/app (D21).
-type BundleEditor interface {
-	Path() string
-	SetPath(path string)
-	ConfigDir() string
-	RootDir() string
-	Load() (config.Bundle, error)
-	LoadPlan() (config.Bundle, string, map[string]string, error)
-	Hash() (string, error)
-	Apply(ctx context.Context, bundle config.Bundle, sourceHashes map[string]string, mutate func(*config.Bundle) error) (config.Bundle, error)
-}
-
 type Deps struct {
 	Ctx    context.Context
-	Editor BundleEditor
+	Editor contract.BundleEditor
 	// ProjectID and RuntimeGeneration scope the Studio session to the runtime
 	// that supplied its editor, snapshot, and catalog.
 	ProjectID         int64
@@ -39,7 +27,7 @@ type Deps struct {
 	// editor port. The host supplies the engine; nil — like a nil Editor —
 	// leaves the draft closed, which every caller already handles by falling
 	// back to the active snapshot.
-	OpenDraft      func(editor BundleEditor) (StudioDraft, error)
+	OpenDraft      func(editor contract.BundleEditor) (StudioDraft, error)
 	Snapshot       *config.Snapshot
 	Catalog        *config.Catalog
 	Workflow       domain.Workflow
@@ -52,10 +40,10 @@ type Deps struct {
 }
 
 type studioRepos struct {
-	Editor            BundleEditor
+	Editor            contract.BundleEditor
 	ProjectID         int64
 	RuntimeGeneration uint64
-	OpenDraft         func(editor BundleEditor) (StudioDraft, error)
+	OpenDraft         func(editor contract.BundleEditor) (StudioDraft, error)
 	Snapshot          *config.Snapshot
 	Catalog           *config.Catalog
 	ConfigPath        string
@@ -158,7 +146,7 @@ type studioFrameKey struct {
 	id    screenhost.ID
 	width int
 
-	editor   BundleEditor
+	editor   contract.BundleEditor
 	snapshot *config.Snapshot
 	catalog  *config.Catalog
 	path     string

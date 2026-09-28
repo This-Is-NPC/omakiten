@@ -1,11 +1,9 @@
 package app
 
 import (
-	"fmt"
-	"os"
-	"strings"
-
 	"context"
+	"fmt"
+	"strings"
 
 	"omakiten/internal/activity"
 	"omakiten/internal/config"
@@ -25,9 +23,8 @@ import (
 // without round-tripping through editor.Load can do so against the same
 // immutable view the rest of the app sees.
 type TemplateService struct {
-	snap   *config.Snapshot
 	editor *BundleEditor
-	files  EntityFileWriter
+	files  TemplateFiles
 }
 
 // NewTemplateService wires the template-binding service against an
@@ -35,8 +32,8 @@ type TemplateService struct {
 // disk-only flows may pass nil but production composition always supplies
 // the ProjectRuntime.Snapshot pointer so the service shares the same
 // view as Persona/Skill/Law/Workflow.
-func NewTemplateService(snap *config.Snapshot, editor *BundleEditor, files EntityFileWriter) *TemplateService {
-	return &TemplateService{snap: snap, editor: editor, files: files}
+func NewTemplateService(editor *BundleEditor, files TemplateFiles) *TemplateService {
+	return &TemplateService{editor: editor, files: files}
 }
 
 // SetDefault writes `default: <kind>` (and `project: <projectSlug>` when
@@ -61,7 +58,7 @@ func (s *TemplateService) SetDefault(ctx context.Context, slug, kind, projectSlu
 		finish(status, errMsg)
 	}()
 
-	if s.editor == nil {
+	if s.editor == nil || s.files == nil {
 		err = fmt.Errorf("template service: editor not available")
 		return
 	}
@@ -80,7 +77,7 @@ func (s *TemplateService) SetDefault(ctx context.Context, slug, kind, projectSlu
 		scopeProject = ""
 	}
 
-	ops, err := templateDefaultOps(bundle, target, slug, kind, projectSlug, scopeProject)
+	ops, err := s.templateDefaultOps(bundle, target, slug, kind, projectSlug, scopeProject)
 	if err != nil {
 		return
 	}
@@ -93,8 +90,8 @@ func (s *TemplateService) SetDefault(ctx context.Context, slug, kind, projectSlu
 	return
 }
 
-func templateDefaultOps(bundle config.Bundle, target config.TaskTemplate, slug, kind, projectSlug, scopeProject string) ([]FileOp, error) {
-	updated, err := rewriteTemplateFrontmatter(target.SourcePath, kind, scopeProject)
+func (s *TemplateService) templateDefaultOps(bundle config.Bundle, target config.TaskTemplate, slug, kind, projectSlug, scopeProject string) ([]FileOp, error) {
+	updated, err := s.rewriteTemplateFrontmatter(target.SourcePath, kind, scopeProject)
 	if err != nil {
 		return nil, err
 	}
@@ -106,7 +103,7 @@ func templateDefaultOps(bundle config.Bundle, target config.TaskTemplate, slug, 
 		if sibling.Slug == slug || sibling.Default != kind || sibling.ProjectSlug != projectSlug {
 			continue
 		}
-		cleared, err := rewriteTemplateFrontmatter(sibling.SourcePath, "", "")
+		cleared, err := s.rewriteTemplateFrontmatter(sibling.SourcePath, "", "")
 		if err != nil {
 			return nil, err
 		}
@@ -124,18 +121,12 @@ func findTemplateInBundle(bundle config.Bundle, slug string) (config.TaskTemplat
 	return config.TaskTemplate{}, false
 }
 
-// readTemplateFile is a thin wrapper around os.ReadFile factored out for
-// stubbing in tests; production reads straight from disk.
-var readTemplateFile = func(path string) ([]byte, error) {
-	return os.ReadFile(path)
-}
-
 // rewriteTemplateFrontmatter loads the template file, sets/clears the
 // `default:` and `project:` fields in the frontmatter, and returns the
 // new file bytes. Other frontmatter keys, the body, and ordering are
 // preserved so user-authored formatting survives the round-trip.
-func rewriteTemplateFrontmatter(path, kind, projectSlug string) ([]byte, error) {
-	raw, err := readTemplateFile(path)
+func (s *TemplateService) rewriteTemplateFrontmatter(path, kind, projectSlug string) ([]byte, error) {
+	raw, err := s.files.ReadTemplateFile(path)
 	if err != nil {
 		return nil, err
 	}

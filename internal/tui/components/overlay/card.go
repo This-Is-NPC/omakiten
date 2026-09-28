@@ -6,8 +6,8 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 
-	"omakiten/internal/tui/components/list"
 	"omakiten/internal/tui/components/screenkit"
+	"omakiten/internal/tui/components/scrollwindow"
 )
 
 // Closed presentation knobs for Card. Style and TailSide. Host maps
@@ -283,7 +283,7 @@ func renderBodyWithBubbleScroll(c Card, innerWidth, bodyH int) ([]string, int, i
 	if bubbleH < 1 {
 		bubbleH = 1
 	}
-	visible, above, below := list.SliceLines(bubbleLines, c.Scroll, bubbleH)
+	visible, above, below := scrollwindow.SliceLines(bubbleLines, c.Scroll, bubbleH)
 
 	rows := make([]string, 0, bodyH)
 	if side == TailTop {

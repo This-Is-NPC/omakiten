@@ -5,8 +5,8 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"omakiten/internal/contract"
 	"omakiten/internal/domain"
-	"omakiten/internal/operation"
 )
 
 func newLawCommand(opts *runtimeOptions) *cobra.Command {
@@ -35,7 +35,7 @@ func newLawListCommand(opts *runtimeOptions) *cobra.Command {
 				}
 				defer rt.close()
 
-				return rt.operationService().ListLaws(ctx, operation.ListLawsInput{
+				return rt.operationService().ListLaws(ctx, contract.ListLawsInput{
 					Scope:   scope,
 					Project: project,
 					Persona: persona,
@@ -62,7 +62,7 @@ func newLawShowCommand(opts *runtimeOptions) *cobra.Command {
 				}
 				defer rt.close()
 
-				return rt.operationService().ShowLaw(ctx, operation.ShowLawInput{Slug: args[0]})
+				return rt.operationService().ShowLaw(ctx, contract.ShowLawInput{Slug: args[0]})
 			})
 		},
 	}

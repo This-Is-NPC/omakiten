@@ -1,6 +1,8 @@
 package plan
 
-import "testing"
+import (
+	"testing"
+)
 
 // TestLanesGreedyAllocation proves overlapping cross-wave sources allocate
 // distinct lanes. Two sources whose destination ranges overlap must land in

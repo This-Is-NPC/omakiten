@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"omakiten/internal/config"
+	"omakiten/internal/tui/screenhost"
 )
 
 // TestSettingsFooterTokensMatchHandlerKeys is the regression guard for
@@ -37,7 +38,7 @@ import (
 // handler without footer hints by design.
 type settingsFooterCase struct {
 	name            string
-	sub             subID
+	sub             screenhost.ID
 	kind            entityKind
 	bindings        map[string]bool
 	primaryRequired []string
@@ -76,7 +77,7 @@ func TestSettingsFooterTokensMatchHandlerKeys(t *testing.T) {
 	cases := []settingsFooterCase{
 		{
 			name: "general",
-			sub:  subSettingsGeneral,
+			sub:  screenhost.SettingsGeneral,
 			bindings: stringSet(
 				"t", "c", "s", "e",
 				"down", "j", "up", "k",
@@ -87,7 +88,7 @@ func TestSettingsFooterTokensMatchHandlerKeys(t *testing.T) {
 		},
 		{
 			name: "guards",
-			sub:  subSettingsGuards,
+			sub:  screenhost.SettingsGuards,
 			bindings: stringSet(
 				"t", "c", "s", "e",
 				"down", "j", "up", "k",
@@ -98,7 +99,7 @@ func TestSettingsFooterTokensMatchHandlerKeys(t *testing.T) {
 		},
 		{
 			name:     "laws",
-			sub:      subSettingsLaws,
+			sub:      screenhost.SettingsLaws,
 			kind:     entityKindLaw,
 			bindings: configHandlerBindings(entityKindLaw),
 			// `p` MUST NOT be advertised (gated to Persona only) —
@@ -106,7 +107,7 @@ func TestSettingsFooterTokensMatchHandlerKeys(t *testing.T) {
 		},
 		{
 			name:     "personas",
-			sub:      subSettingsPersonas,
+			sub:      screenhost.SettingsPersonas,
 			kind:     entityKindPersona,
 			bindings: configHandlerBindings(entityKindPersona),
 			// `p` IS bound here and IS advertised.
@@ -114,13 +115,13 @@ func TestSettingsFooterTokensMatchHandlerKeys(t *testing.T) {
 		},
 		{
 			name:     "skills",
-			sub:      subSettingsSkills,
+			sub:      screenhost.SettingsSkills,
 			kind:     entityKindSkill,
 			bindings: configHandlerBindings(entityKindSkill),
 		},
 		{
 			name:     "templates",
-			sub:      subSettingsTemplates,
+			sub:      screenhost.SettingsTemplates,
 			kind:     entityKindTemplate,
 			bindings: configHandlerBindings(entityKindTemplate),
 			// `e` was previously missing — pin so it stays advertised.
@@ -128,7 +129,7 @@ func TestSettingsFooterTokensMatchHandlerKeys(t *testing.T) {
 		},
 		{
 			name:     "tags",
-			sub:      subSettingsTags,
+			sub:      screenhost.SettingsTags,
 			kind:     entityKindTag,
 			bindings: configHandlerBindings(entityKindTag),
 		},
@@ -146,11 +147,11 @@ func TestSettingsFooterTokensMatchHandlerKeys(t *testing.T) {
 func assertSettingsFooterParity(t *testing.T, tc settingsFooterCase, catalog *config.Catalog, globalNav, zoneNav, scrollKeys, forbidden map[string]bool) {
 	t.Helper()
 	m := Model{
-		styles:    newStyles(config.Theme{}),
-		width:     160,
-		height:    40,
-		top:       topSettings,
-		sub:       tc.sub,
+		styles:     newStyles(config.Theme{}),
+		width:      160,
+		height:     40,
+		navigation: tc.sub,
+
 		languages: config.LanguageSettings{CLI: "en", TUI: "en"},
 		repos:     Repositories{Catalog: catalog},
 	}
@@ -164,7 +165,7 @@ func assertSettingsFooterParity(t *testing.T, tc settingsFooterCase, catalog *co
 			t.Errorf("%s footer is missing required primary key %q", tc.name, want)
 		}
 	}
-	if tc.sub == subSettingsLaws || tc.sub == subSettingsSkills {
+	if tc.sub == screenhost.SettingsLaws || tc.sub == screenhost.SettingsSkills {
 		for key := range forbidden {
 			if _, ok := footerKeys[key]; ok {
 				t.Errorf("%s footer must not advertise %q — handler gates it to Persona only", tc.name, key)

@@ -8,10 +8,9 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 
 	"omakiten/internal/activity"
-	"omakiten/internal/agentruntime"
 	"omakiten/internal/config"
+	"omakiten/internal/contract"
 	"omakiten/internal/domain"
-	"omakiten/internal/operation"
 	"omakiten/internal/studioprojection"
 	"omakiten/internal/token"
 	"omakiten/internal/tui/components/card"
@@ -61,43 +60,43 @@ const (
 
 // Repositories is the dependency-injection bundle the TUI receives from its
 // composition root. Fields are local ports (D20) so this package does not
-// import internal/app. Production wires *sqlite.Store / BundleEditor
+// import internal/app. Production wires *sqlite.Store / contract.BundleEditor
 // which satisfy the ports structurally.
 type Repositories struct {
-	Tasks        TaskStore
-	Projects     ProjectStore
-	Comments     CommentStore
-	Dependencies interface {
+	ResolveCommandPreview func(config.Bundle, string) (string, error)
+	DeleteProject         contract.ProjectDeleter
+	Tasks                 TaskStore
+	Projects              ProjectStore
+	Comments              CommentStore
+	Dependencies          interface {
 		ListTaskDependencies(ctx context.Context, projectID, taskID int64) ([]domain.TaskDependency, error)
 	}
-	Tags           TagStore
-	Editor         BundleEditor
-	BundleStore    BundleLoader
-	ActivityLogs   activity.ActivityLogRepository
-	Events         EventStore
-	Metrics        MetricsPort
-	Insights       InsightsPort
-	Orphans        OrphanStore
-	Plans          PlanStore
-	Search         SearchPort
-	Checkpointer   Checkpointer
-	SnapshotWriter SnapshotWriter
-	Watermark      DataVersionReader
+	Tags         TagStore
+	Editor       contract.BundleEditor
+	BundleStore  BundleLoader
+	ActivityLogs activity.ActivityLogRepository
+	Events       EventStore
+	Metrics      MetricsPort
+	Insights     InsightsPort
+	Orphans      OrphanStore
+	Plans        PlanStore
+	Search       SearchPort
+	Watermark    DataVersionReader
 
-	DispatchCommand func(ctx context.Context, args []string) ([]byte, error)
+	DispatchAction func(context.Context, contract.ActionRequest) (contract.ActionResult, error)
 
 	ConfigPath   string
 	DBPath       string
 	Version      string
 	RepoLocalDir string
 
-	Cache     *agentruntime.BundleCache
+	Cache     RuntimeCache
 	ProjectID int64
 	Catalog   *config.Catalog
 	// runtimeOverride is used only by a staged reload Model. It lets refresh
 	// validate the candidate service and snapshot without publishing the
 	// candidate through BundleCache before acceptance succeeds.
-	runtimeOverride *agentruntime.ProjectRuntime
+	runtimeOverride *contract.RuntimeView
 }
 
 // t resolves the catalog key for the active TUI language. Production
@@ -144,24 +143,24 @@ func pkgTUICatalog() *config.Catalog {
 // BundleCache entry the runtime installed at boot. Returns nil when the
 // cache is not wired or the entry has no Service yet — callers must treat
 // that as "facade unavailable".
-func (r *Repositories) operationService() *operation.Service {
+func (r *Repositories) operationService() contract.Operations {
 	if r.runtimeOverride != nil {
 		if r.runtimeOverride.Service == nil {
 			return nil
 		}
-		return r.runtimeOverride.Service.ForTUI()
+		return r.runtimeOverride.Service
 	}
 	if r.Cache == nil {
 		return nil
 	}
-	pr := r.Cache.Get(r.ProjectID)
+	pr := r.Cache.View(r.ProjectID)
 	if pr == nil {
 		return nil
 	}
 	if pr.Service == nil {
 		return nil
 	}
-	return pr.Service.ForTUI()
+	return pr.Service
 }
 
 // activeSnapshot returns the per-project *config.Snapshot from the
@@ -178,28 +177,11 @@ func (r *Repositories) activeSnapshot() *config.Snapshot {
 	if r.Cache == nil {
 		return nil
 	}
-	pr := r.Cache.Get(r.ProjectID)
+	pr := r.Cache.View(r.ProjectID)
 	if pr == nil {
 		return nil
 	}
 	return pr.Snapshot
-}
-
-// activePreviousSnapshot returns the bundle view captured immediately
-// before the latest cache rotation. Only the orphan-rebind flow reads
-// it; nil when the cache has only seen one bundle for this project.
-func (r *Repositories) activePreviousSnapshot() *config.Snapshot {
-	if r.runtimeOverride != nil {
-		return r.runtimeOverride.PreviousSnapshot
-	}
-	if r.Cache == nil {
-		return nil
-	}
-	pr := r.Cache.Get(r.ProjectID)
-	if pr == nil {
-		return nil
-	}
-	return pr.PreviousSnapshot
 }
 
 // Model is the root Bubble Tea model for the TUI. It aggregates state that
@@ -221,11 +203,10 @@ type Model struct {
 	tokenBadgeYellow int
 	tokenBadgeRed    int
 
-	width  int
-	height int
-	top    topID
-	sub    subID
-	mode   inputMode
+	width      int
+	height     int
+	navigation screenhost.ID
+	mode       inputMode
 	// moveInput is the bubbles textinput powering modeMove (the modal
 	// triggered by `m` followed by typing a target bucket key). Reset
 	// on every beginInput call so prior values don't leak across moves.
@@ -259,7 +240,7 @@ type Model struct {
 	// it unbounded; `ctrl+o` (vim-style "older") pops the most recent
 	// entry. Refreshes and overlay close events do not touch this — the
 	// stack is a record of *navigation*, not of every state change.
-	viewHistory []navState
+	viewHistory []screenhost.ID
 
 	// commentInput is reused by modeComment (add) and modeCommentEdit
 	// (rewrite). Reset on every beginInput call so the placeholder and
@@ -365,10 +346,10 @@ type Model struct {
 	studioHookHistoryProjectID  int64
 	studioHookHistoryGeneration uint64
 	studioHookHistoryLoading    bool
-	// studioApplyDiff carries the DiffStudioBundles output for the apply
+	// studioApplyDiff carries the studio.DiffStudioBundles output for the apply
 	// currently in flight so emitBundleSwapped can fold it into the
 	// bundle.swapped audit payload instead of discarding it after render.
-	// Set immediately before StudioDraft.Apply and consumed/cleared inside
+	// Set immediately before studio.StudioDraft.Apply and consumed/cleared inside
 	// emitBundleSwapped; never read outside that single call chain.
 	studioApplyDiff []string
 	// views caches the resolved per-view sort/filter pulled from the active
@@ -492,73 +473,37 @@ const (
 	modeMove
 )
 
-// topID identifies a top-level navigation zone. Stable external identity lives
-// in screenhost descriptors; this integer remains the legacy root adapter's
-// compact navigation state until screen extraction completes.
-type topID int
-
-const topHome topID = -1
-
-const (
-	topTasks topID = iota
-	topStats
-	topStudio
-	topSettings
-)
-
-type subID int
-
-const (
-	subBoard subID = iota
-	subTable
-	subGraph
-	subPlans
-	subStatsGeneral
-	subStatsLogs
-	subStatsInsights
-	subStudioWorkflow
-	subStudioCommands
-	subStudioPersonas
-	subStudioHooks
-	subSettingsGeneral
-	subSettingsLaws
-	subSettingsPersonas
-	subSettingsSkills
-	subSettingsTemplates
-	subSettingsTags
-	subSettingsGuards
-)
-
-// These compatibility projections are derived from screenRegistry. Existing
-// handlers and renderers keep their established data shape while descriptor
-// declaration order becomes the only navigation source of truth.
 var (
-	topOrder  []topID
-	subsByTop map[topID][]subID
-	topLabels map[topID]string
-	subLabels map[subID]string
+	topOrder  []screenhost.TopID
+	subsByTop map[screenhost.TopID][]screenhost.ID
+	topLabels map[screenhost.TopID]string
+	subLabels map[screenhost.ID]string
 )
 
-// navState is the addressable navigation key — used to detect view
-// changes across an Update tick (so refreshAfterViewChange can re-fetch
-// only when the user actually navigated).
-type navState struct {
-	top topID
-	sub subID
+func navigationTop(id screenhost.ID) screenhost.TopID {
+	descriptor, ok := screenRegistry.ByID(id)
+	if !ok {
+		return screenhost.TopHome
+	}
+	return descriptor.Placement.Top
 }
+func (m Model) navigationTop() screenhost.TopID { return navigationTop(m.navigation) }
 
 // firstSub returns the canonical landing sub for a top — what the user
 // sees after `shift+tab`/digit-jump. Stats lands on general, Tasks
 // on board, Settings on config.
-func firstSub(t topID) subID {
+func firstSub(t screenhost.TopID) screenhost.ID {
 	if subs := subsByTop[t]; len(subs) > 0 {
 		return subs[0]
 	}
-	return subID(-1)
+	if t == screenhost.TopHome {
+		return screenhost.Home
+	}
+	return ""
 }
 
 // topIndex returns the position of t in topOrder, or -1 when not found.
-func topIndex(t topID) int {
+func topIndex(t screenhost.TopID) int {
 	for i, candidate := range topOrder {
 		if candidate == t {
 			return i
@@ -569,7 +514,7 @@ func topIndex(t topID) int {
 
 // subIndex returns the position of s within its parent top's sub list,
 // or -1 when the sub does not belong to t.
-func subIndex(t topID, s subID) int {
+func subIndex(t screenhost.TopID, s screenhost.ID) int {
 	for i, candidate := range subsByTop[t] {
 		if candidate == s {
 			return i
@@ -581,7 +526,7 @@ func subIndex(t topID, s subID) int {
 // onHome reports whether the model is currently on the multi-project
 // Home view. Centralised so callers do not have to remember the sentinel.
 func (m Model) onHome() bool {
-	return m.top == topHome
+	return m.navigation == screenhost.Home
 }
 
 // viewHistoryCap bounds how many back-stack entries the model keeps.
@@ -594,7 +539,7 @@ const viewHistoryCap = 16
 // duplicate consecutive entries (e.g. pressing `1` twice when already
 // on Tasks) and drops the oldest entry when the stack hits its cap.
 func (m *Model) pushHistory() {
-	entry := navState{top: m.top, sub: m.sub}
+	entry := m.navigation
 	if n := len(m.viewHistory); n > 0 && m.viewHistory[n-1] == entry {
 		return
 	}
@@ -614,8 +559,7 @@ func (m *Model) popHistory() bool {
 	}
 	prev := m.viewHistory[n-1]
 	m.viewHistory = m.viewHistory[:n-1]
-	m.top = prev.top
-	m.sub = prev.sub
+	m.navigation = prev
 	return true
 }
 

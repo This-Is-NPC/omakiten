@@ -11,7 +11,9 @@ import (
 	"github.com/charmbracelet/x/ansi"
 
 	"omakiten/internal/config"
+	"omakiten/internal/config/bundledraft"
 	"omakiten/internal/configstore"
+	"omakiten/internal/contract"
 	"omakiten/internal/domain"
 	"omakiten/internal/testfixtures/bundleeditor"
 	"omakiten/internal/testfixtures/runtimecache"
@@ -21,7 +23,7 @@ import (
 	"omakiten/internal/tui/screens/entitylist"
 )
 
-func newEntityModel(t *testing.T) (Model, *snapstore.Store, BundleEditor) {
+func newEntityModel(t *testing.T) (Model, *snapstore.Store, contract.BundleEditor) {
 	t.Helper()
 	tmp := t.TempDir()
 	configPath := filepath.Join(tmp, "config", "omakase.yaml")
@@ -36,7 +38,7 @@ func newEntityModel(t *testing.T) (Model, *snapstore.Store, BundleEditor) {
 
 	files := configstore.New()
 	editor := bundleeditor.New(files, configPath)
-	resolved, err := applyBundleEditor(ctx, editor, nil)
+	resolved, err := bundledraft.ApplyPlanned(ctx, editor, nil)
 	if err != nil {
 		t.Fatalf("editor.Apply() error = %v", err)
 	}
@@ -95,14 +97,14 @@ func TestEntityViewRendersFrontmatterAndBody(t *testing.T) {
 	model, _, _ := newEntityModel(t)
 
 	got := pressRune(t, model, '4')
-	if got.top != topSettings || got.sub != subSettingsGeneral {
-		t.Fatalf("(top, sub) = (%d, %d), want (topSettings, subSettingsGeneral)", got.top, got.sub)
+	if got.navigationTop() != screenhost.TopSettings || got.navigation != screenhost.SettingsGeneral {
+		t.Fatalf("(top, sub) = (%s, %s), want (screenhost.TopSettings, screenhost.SettingsGeneral)", got.navigationTop(), got.navigation)
 	}
 	// Cycle to Settings › Laws so the entity-detail flow under test still
 	// has a list to operate on (general is read-only).
 	got = pressStringKey(t, got, "/")
-	if got.sub != subSettingsLaws {
-		t.Fatalf("after '/': sub = %d, want subSettingsLaws", got.sub)
+	if got.navigation != screenhost.SettingsLaws {
+		t.Fatalf("after '/': sub = %s, want screenhost.SettingsLaws", got.navigation)
 	}
 
 	got = pressKey(t, got, tea.KeyEnter)
@@ -216,7 +218,7 @@ func newEntityModelWithTemplates(t *testing.T) Model {
 
 	files := configstore.New()
 	editor := bundleeditor.New(files, configPath)
-	resolved, err := applyBundleEditor(ctx, editor, nil)
+	resolved, err := bundledraft.ApplyPlanned(ctx, editor, nil)
 	if err != nil {
 		t.Fatalf("editor.Apply() error = %v", err)
 	}
@@ -287,7 +289,7 @@ func TestCustomBadgeAppearsOnUserOverride(t *testing.T) {
 	if err := os.WriteFile(customPath, []byte("---\nname: Go (custom)\nschema_version: 2\n---\noverride\n"), 0o644); err != nil {
 		t.Fatalf("WriteFile() error = %v", err)
 	}
-	if _, err := applyBundleEditor(model.ctx, model.repos.Editor, nil); err != nil {
+	if _, err := bundledraft.ApplyPlanned(model.ctx, model.repos.Editor, nil); err != nil {
 		t.Fatalf("editor.Apply() error = %v", err)
 	}
 	if err := runtimecache.RefreshFromEditor(model.repos.Cache, model.repos.ProjectID, model.repos.Editor); err != nil {
@@ -317,8 +319,7 @@ func TestSettingsGeneralRendersRuntimeCard(t *testing.T) {
 	model.repos.DBPath = "/tmp/omakiten.db"
 	model.width = 200
 	model.height = 40
-	model.top = topSettings
-	model.sub = subSettingsGeneral
+	model.navigation = screenhost.SettingsGeneral
 
 	view := ansi.Strip(model.View())
 	for _, want := range []string{"RUNTIME", "PROJECT", "OKT VERSION", "0.9.0-test", "SCOPE", "global", "/tmp/omakiten.yaml", "/tmp/omakiten.db", "THEME", "WORKFLOW"} {
@@ -336,8 +337,7 @@ func TestSettingsGeneralScopeBadgeNamesRepoLocalDir(t *testing.T) {
 	model.repos.RepoLocalDir = "/tmp/myrepo/.omakiten"
 	model.width = 200
 	model.height = 40
-	model.top = topSettings
-	model.sub = subSettingsGeneral
+	model.navigation = screenhost.SettingsGeneral
 
 	view := ansi.Strip(model.View())
 	for _, want := range []string{"SCOPE", "local (/tmp/myrepo/.omakiten)"} {
@@ -353,8 +353,7 @@ func TestSettingsTemplatesSubRendersColumn(t *testing.T) {
 	model.height = 60
 	// Each entity kind owns its own Settings sub. Driving to Settings ›
 	// Templates should land on a single templates column.
-	model.top = topSettings
-	model.sub = subSettingsTemplates
+	model.navigation = screenhost.SettingsTemplates
 	out := model.renderCurrentView()
 	if !strings.Contains(out, "TEMPLATES") {
 		t.Fatalf("Settings › Templates missing column header\n%s", out)
@@ -382,9 +381,9 @@ func TestTemplateCreateAndDeleteAreNoOps(t *testing.T) {
 	// Drive into Settings › Templates so 'n'/'d' route to handleConfigKey
 	// rather than the table view's create-task / delete-task handlers.
 	model = pressRune(t, model, '4')
-	for i := 0; model.sub != subSettingsTemplates; i++ {
-		if i >= len(subsByTop[topSettings]) {
-			t.Fatalf("cycled %d times without reaching subSettingsTemplates (stuck on top=%d sub=%d)", i, model.top, model.sub)
+	for i := 0; model.navigation != screenhost.SettingsTemplates; i++ {
+		if i >= len(subsByTop[screenhost.TopSettings]) {
+			t.Fatalf("cycled %d times without reaching screenhost.SettingsTemplates (stuck on top=%s sub=%s)", i, model.navigationTop(), model.navigation)
 		}
 		model = pressStringKey(t, model, "/")
 	}
@@ -423,9 +422,9 @@ func TestPersonaPickerToggleAndSave(t *testing.T) {
 	}
 
 	got := pressRune(t, model, '4')
-	for i := 0; got.sub != subSettingsPersonas; i++ {
-		if i >= len(subsByTop[topSettings]) {
-			t.Fatalf("cycled %d times without reaching subSettingsPersonas (stuck on top=%d sub=%d)", i, got.top, got.sub)
+	for i := 0; got.navigation != screenhost.SettingsPersonas; i++ {
+		if i >= len(subsByTop[screenhost.TopSettings]) {
+			t.Fatalf("cycled %d times without reaching screenhost.SettingsPersonas (stuck on top=%s sub=%s)", i, got.navigationTop(), got.navigation)
 		}
 		got = pressStringKey(t, got, "/")
 	}

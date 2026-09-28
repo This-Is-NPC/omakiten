@@ -1,6 +1,7 @@
 package studio
 
 import (
+	bundledraft "omakiten/internal/config/bundledraft"
 	"omakiten/internal/tui/components/gridtable"
 	"omakiten/internal/tui/components/screenkit"
 )
@@ -44,7 +45,7 @@ func (m Screen) activeTaskCountsByBucket() map[string]int {
 	return m.projection.TaskCounts
 }
 
-func permissionLabel(text Text, allowed bool, explicit bool) string {
+func permissionLabel(text bundledraft.Text, allowed bool, explicit bool) string {
 	if allowed {
 		if explicit {
 			return tr(text, "tui.studio.permission.allow_explicit", "allow (explicit)")

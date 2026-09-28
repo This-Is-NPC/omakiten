@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"omakiten/internal/config"
+	"omakiten/internal/config/bundledraft"
 	"omakiten/internal/tui/screenhost"
 	"omakiten/internal/tui/screens/settingspicker"
 )
@@ -129,7 +130,7 @@ func (m Model) currentSubtaskKitRelative() string {
 func (m *Model) applySubtaskKitSelection(relative string) {
 	previousActive := m.currentSubtaskKitRelative()
 
-	if _, err := applyBundleEditor(m.ctx, m.repos.Editor, func(bundle *config.Bundle) error {
+	if _, err := bundledraft.ApplyPlanned(m.ctx, m.repos.Editor, func(bundle *config.Bundle) error {
 		bundle.SubtaskKit = relative
 		return nil
 	}); err != nil {

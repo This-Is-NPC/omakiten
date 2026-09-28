@@ -5,7 +5,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"omakiten/internal/operation"
+	"omakiten/internal/contract"
 )
 
 func newTemplateCommand(opts *runtimeOptions) *cobra.Command {
@@ -32,7 +32,7 @@ func newTemplateListCommand(opts *runtimeOptions) *cobra.Command {
 				}
 				defer rt.close()
 
-				return rt.operationService().ListTemplates(ctx, operation.ListTemplatesInput{
+				return rt.operationService().ListTemplates(ctx, contract.ListTemplatesInput{
 					Kind:        kind,
 					Project:     project,
 					IncludeBody: includeBody,
@@ -59,8 +59,8 @@ func newTemplateShowCommand(opts *runtimeOptions) *cobra.Command {
 				}
 				defer rt.close()
 
-				return rt.operationService().ShowTemplate(ctx, operation.ShowTemplateInput{
-					ProjectSelector: operation.ProjectSelector{
+				return rt.operationService().ShowTemplate(ctx, contract.ShowTemplateInput{
+					ProjectSelector: contract.ProjectSelector{
 						Project:   opts.project,
 						ProjectID: opts.projectID,
 					},

@@ -67,16 +67,6 @@ func configFixtureScenarios() []screenfixture.Scenario {
 	return out
 }
 
-// FixtureScenarios returns every recorded state for the Theme, Config and
-// Subtask-kit pickers.
-func FixtureScenarios() []screenfixture.Scenario {
-	out := make([]screenfixture.Scenario, 0, 5)
-	out = append(out, themeFixtureScenarios()...)
-	out = append(out, configFixtureScenarios()...)
-	out = append(out, entryFixtureScenarios(SubtaskKit)...)
-	return out
-}
-
 // FixtureScenariosFor returns the scenarios for one screen ID, or nil when the
 // ID is not owned by this package.
 func FixtureScenariosFor(id screenhost.ID) []screenfixture.Scenario {

@@ -11,6 +11,10 @@ import (
 // that axis. Errors are returned to the caller; hot-path writers swallow
 // them so pruning never breaks business logic.
 func (s *Store) PruneEventTypes(ctx context.Context, eventTypes []string, maxAgeDays, maxRows int) error {
+	return s.pruneEventTypes(ctx, eventTypes, maxAgeDays, maxRows, "1", nil)
+}
+
+func (s *Store) pruneEventTypes(ctx context.Context, eventTypes []string, maxAgeDays, maxRows int, condition string, scopeArgs []any) error {
 	if len(eventTypes) == 0 {
 		return nil
 	}
@@ -20,10 +24,10 @@ func (s *Store) PruneEventTypes(ctx context.Context, eventTypes []string, maxAge
 
 	placeholders := strings.Repeat("?,", len(eventTypes))
 	placeholders = placeholders[:len(placeholders)-1]
-	inClause := "event_type IN (" + placeholders + ")"
-	args := make([]any, len(eventTypes))
-	for i, et := range eventTypes {
-		args[i] = et
+	inClause := "(" + condition + ") AND event_type IN (" + placeholders + ")"
+	args := append([]any(nil), scopeArgs...)
+	for _, eventType := range eventTypes {
+		args = append(args, eventType)
 	}
 
 	if maxAgeDays > 0 {

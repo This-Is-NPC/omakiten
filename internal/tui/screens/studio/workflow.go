@@ -36,8 +36,6 @@ const (
 	workflowRowOp     = studioprojection.WorkflowOperation
 )
 
-type workflowRow = studioprojection.WorkflowRow
-
 var studioWorkflowBucketFields = []string{
 	"key", "position", "task_edit", "task_delete", "comment_create", "comment_edit", "comment_delete",
 }
@@ -141,12 +139,12 @@ func workflowTransitionGuardCount(workflow config.Workflow) int {
 
 // workflowSelectedRow is the row the inspector is describing, and whether there
 // is one at all.
-func (m Screen) workflowSelectedRow() (workflowRow, config.Workflow, bool) {
+func (m Screen) workflowSelectedRow() (studioprojection.WorkflowRow, config.Workflow, bool) {
 	workflow := m.projection.Workflow
 	rows := m.projection.WorkflowRows
 	m.studioWorkflowClamp(len(rows), 0)
 	if len(rows) == 0 {
-		return workflowRow{}, workflow, false
+		return studioprojection.WorkflowRow{}, workflow, false
 	}
 	return rows[m.studioWorkflowIndex], workflow, true
 }
@@ -259,7 +257,7 @@ func (m Screen) workflowDetailBody(canvas screenlayout.Canvas) screenlayout.Bloc
 	return m.inspectorBox(canvas, kicker, "", body, m.zoneFocused(sectionWorkflowDetail))
 }
 
-func (m Screen) workflowDetailContent(row workflowRow) (kicker string, body []string) {
+func (m Screen) workflowDetailContent(row studioprojection.WorkflowRow) (kicker string, body []string) {
 	switch row.Kind {
 	case workflowRowGuard, workflowRowOp:
 		return m.workflowInspectorGuardExample(row)
@@ -314,7 +312,7 @@ func (m Screen) workflowBucketFields(bucket config.Bucket, workflow config.Workf
 	}
 }
 
-func (m Screen) workflowInspectorGuardFields(row workflowRow, width, rows int) []string {
+func (m Screen) workflowInspectorGuardFields(row studioprojection.WorkflowRow, width, rows int) []string {
 	guard := row.Guard
 	title := strings.TrimSpace(screenkit.Sanitize(row.Left))
 	if title == "" {
@@ -327,7 +325,7 @@ func (m Screen) workflowInspectorGuardFields(row workflowRow, width, rows int) [
 // workflowGuardFieldOpts is the guard table's column policy.
 var workflowGuardFieldOpts = summaryTablesOpts{LabelWidth: 12, ValueWidth: 40, Auto: true}
 
-func (m Screen) workflowGuardFields(row workflowRow) [][2]string {
+func (m Screen) workflowGuardFields(row studioprojection.WorkflowRow) [][2]string {
 	guard := row.Guard
 	on := ""
 	if row.Kind != workflowRowOp && row.Bucket.Key != "" && row.To.Key != "" {
@@ -365,7 +363,7 @@ func (m Screen) workflowGuardFields(row workflowRow) [][2]string {
 	return fields
 }
 
-func (m Screen) workflowInspectorGuardExample(row workflowRow) (kicker string, body []string) {
+func (m Screen) workflowInspectorGuardExample(row studioprojection.WorkflowRow) (kicker string, body []string) {
 	guard := row.Guard
 	switch {
 	case guard.Type == "comments_tagged" && guard.Tag == "resume":
@@ -378,7 +376,7 @@ func (m Screen) workflowInspectorGuardExample(row workflowRow) (kicker string, b
 	return "", nil
 }
 
-func (m Screen) workflowInspectorOpen(row workflowRow) (kicker string, body []string) {
+func (m Screen) workflowInspectorOpen(row studioprojection.WorkflowRow) (kicker string, body []string) {
 	kicker = m.sectionKickerKeep(m.tr("tui.studio.workflow.open_selected", "OPEN: %s -> %s", screenkit.Sanitize(row.Bucket.Key), screenkit.Sanitize(row.To.Key)), m.zoneFocused(sectionWorkflowDetail))
 	body = splitNonEmpty(m.tr("tui.studio.workflow.open_help", "Unguarded transition. Press d to remove it, a to add another outbound edge from this bucket."))
 	return kicker, body
@@ -437,7 +435,7 @@ func (m *Screen) handleStudioWorkflowKey(msg tea.KeyMsg) tea.Cmd {
 	return nil
 }
 
-func (m *Screen) applyStudioWorkflowKey(key string, workflow config.Workflow, rows []workflowRow, row workflowRow, focus screenlayout.ID) (tea.Cmd, bool) {
+func (m *Screen) applyStudioWorkflowKey(key string, workflow config.Workflow, rows []studioprojection.WorkflowRow, row studioprojection.WorkflowRow, focus screenlayout.ID) (tea.Cmd, bool) {
 	if handled := m.applyStudioWorkflowNavigation(key, rows, focus); handled {
 		return nil, true
 	}
@@ -472,7 +470,7 @@ func (m *Screen) applyStudioWorkflowKey(key string, workflow config.Workflow, ro
 	return nil, false
 }
 
-func (m *Screen) applyStudioWorkflowNavigation(key string, rows []workflowRow, focus screenlayout.ID) bool {
+func (m *Screen) applyStudioWorkflowNavigation(key string, rows []studioprojection.WorkflowRow, focus screenlayout.ID) bool {
 	switch key {
 	case "up", "k":
 		if studioZoneIsInspector(focus, sectionWorkflowList) {
@@ -565,7 +563,7 @@ func (m *Screen) studioWorkflowClamp(n, fields int) {
 	}
 }
 
-func (m *Screen) addWorkflowTransition(row workflowRow, workflow config.Workflow) {
+func (m *Screen) addWorkflowTransition(row studioprojection.WorkflowRow, workflow config.Workflow) {
 	if err := m.ensureStudioDraft(); err != nil {
 		m.studioWorkflowMsg = err.Error()
 		return
@@ -580,7 +578,7 @@ func (m *Screen) addWorkflowTransition(row workflowRow, workflow config.Workflow
 	m.refreshProjection()
 }
 
-func (m *Screen) removeWorkflowEdge(row workflowRow) {
+func (m *Screen) removeWorkflowEdge(row studioprojection.WorkflowRow) {
 	if err := m.ensureStudioDraft(); err != nil {
 		m.studioWorkflowMsg = err.Error()
 		return
@@ -603,7 +601,7 @@ func (m *Screen) removeWorkflowEdge(row workflowRow) {
 	}
 }
 
-func (m *Screen) moveWorkflowBucket(row workflowRow, delta int) {
+func (m *Screen) moveWorkflowBucket(row studioprojection.WorkflowRow, delta int) {
 	if row.Kind != workflowRowBucket {
 		return
 	}
@@ -616,7 +614,7 @@ func (m *Screen) moveWorkflowBucket(row workflowRow, delta int) {
 	m.refreshProjection()
 }
 
-func (m *Screen) cycleWorkflowBucketKey(row workflowRow) {
+func (m *Screen) cycleWorkflowBucketKey(row studioprojection.WorkflowRow) {
 	if row.Kind != workflowRowBucket {
 		return
 	}
@@ -635,7 +633,7 @@ func (m *Screen) cycleWorkflowBucketKey(row workflowRow) {
 	m.refreshProjection()
 }
 
-func (m *Screen) toggleWorkflowPermission(row workflowRow, entity StudioBucketPermissionEntity, op StudioBucketPermissionOp) {
+func (m *Screen) toggleWorkflowPermission(row studioprojection.WorkflowRow, entity bundledraft.BucketPermissionEntity, op bundledraft.BucketPermissionOp) {
 	if row.Kind != workflowRowBucket {
 		return
 	}
@@ -650,7 +648,7 @@ func (m *Screen) toggleWorkflowPermission(row workflowRow, entity StudioBucketPe
 	m.refreshProjection()
 }
 
-func workflowAddTarget(row workflowRow, workflow config.Workflow) (fromID, toID int, ok bool) {
+func workflowAddTarget(row studioprojection.WorkflowRow, workflow config.Workflow) (fromID, toID int, ok bool) {
 	buckets := bundledraft.OrderedBuckets(workflow.Buckets)
 	if len(buckets) < 2 {
 		return 0, 0, false
@@ -676,7 +674,7 @@ func firstMissingTransition(workflow config.Workflow, buckets []config.Bucket) (
 	return studioprojection.FirstMissingTransition(workflow, buckets)
 }
 
-func studioWorkflowRows(workflow config.Workflow, counts map[string]int, text Text) []workflowRow {
+func studioWorkflowRows(workflow config.Workflow, counts map[string]int, text bundledraft.Text) []studioprojection.WorkflowRow {
 	rows := studioprojection.WorkflowRows(workflow, counts, projectionText(text))
 	for i := range rows {
 		rows[i].Left = screenkit.Sanitize(rows[i].Left)
@@ -686,7 +684,7 @@ func studioWorkflowRows(workflow config.Workflow, counts map[string]int, text Te
 }
 
 // WorkflowIndexFor returns the list index of the first row matching pred, or 0.
-func WorkflowIndexFor(workflow config.Workflow, pred func(workflowRow) bool) int {
+func WorkflowIndexFor(workflow config.Workflow, pred func(studioprojection.WorkflowRow) bool) int {
 	for i, row := range studioWorkflowRows(workflow, nil, nil) {
 		if pred(row) {
 			return i
@@ -699,7 +697,7 @@ func WorkflowIndexFor(workflow config.Workflow, pred func(workflowRow) bool) int
 // comments_tagged and blockers_in use Warning; open transitions use Success;
 // muted structural rows use Hint. The selected row is left unstyled so
 // selectlist's Cursor (primary) owns the focus paint.
-func paintWorkflowListRow(s screenkit.Styles, row workflowRow) selectlist.Row {
+func paintWorkflowListRow(s screenkit.Styles, row studioprojection.WorkflowRow) selectlist.Row {
 	left, right := row.Left, row.Right
 	switch row.Kind {
 	case workflowRowOpen:
@@ -723,11 +721,11 @@ func paintWorkflowListRow(s screenkit.Styles, row workflowRow) selectlist.Row {
 	return selectlist.Row{Left: left, Right: right}
 }
 
-func workflowPermissionLabel(text Text, bucket config.Bucket, defaults *config.WorkflowDefaults, entity StudioBucketPermissionEntity, op StudioBucketPermissionOp) string {
+func workflowPermissionLabel(text bundledraft.Text, bucket config.Bucket, defaults *config.WorkflowDefaults, entity bundledraft.BucketPermissionEntity, op bundledraft.BucketPermissionOp) string {
 	allowed, explicit := workflowPermissionAllowed(bucket, defaults, entity, op)
 	return permissionLabel(text, allowed, explicit)
 }
 
-func workflowPermissionAllowed(bucket config.Bucket, defaults *config.WorkflowDefaults, entity StudioBucketPermissionEntity, op StudioBucketPermissionOp) (allowed, explicit bool) {
+func workflowPermissionAllowed(bucket config.Bucket, defaults *config.WorkflowDefaults, entity bundledraft.BucketPermissionEntity, op bundledraft.BucketPermissionOp) (allowed, explicit bool) {
 	return studioprojection.WorkflowPermissionAllowed(bucket, defaults, string(entity), string(op))
 }

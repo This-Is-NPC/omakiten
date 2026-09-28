@@ -7,6 +7,7 @@ import (
 
 	"github.com/charmbracelet/x/ansi"
 
+	relationshipprojection "omakiten/internal/relationshipprojection"
 	"omakiten/internal/tui/screenfixture"
 	"omakiten/internal/tui/screens/screentest"
 )
@@ -14,7 +15,7 @@ import (
 func TestRelationshipPickerSanitizesOptionFieldsAndKicker(t *testing.T) {
 	t.Parallel()
 	const hostile = "agent\x1b[31mred\x1b]0;owned\a\x00\u009b31m\u0085漢字"
-	payload := Payload{Kind: TemplateDefault, EntitySlug: hostile, ProjectSlug: hostile, Options: []Option{{Value: hostile, Label: hostile, Detail: hostile, Selected: true}}}
+	payload := Payload{Kind: TemplateDefault, EntitySlug: hostile, ProjectSlug: hostile, Options: []relationshipprojection.Option{{Value: hostile, Label: hostile, Detail: hostile, Selected: true}}}
 	for _, width := range []int{80, 200} {
 		frame := screentest.FrameAt(t, width, 24)
 		screen := screenfixture.Enter(New(TemplateDefault).Open(payload), frame).(Screen)

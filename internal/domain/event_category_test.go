@@ -7,18 +7,18 @@ import (
 )
 
 // TestEventCategoryOfCoversKnownEventTypes locks AC#1: every entry in
-// KnownEventTypes must map to a concrete category — never the unknown
+// fixtureRegistry().Types() must map to a concrete category — never the unknown
 // fallback. When a new event_type lands in event.go, this test fails
 // until the EventCategoryOf switch grows an arm.
 func TestEventCategoryOfCoversKnownEventTypes(t *testing.T) {
-	for _, ev := range KnownEventTypes {
+	for _, ev := range fixtureRegistry().Types() {
 		t.Run(ev, func(t *testing.T) {
-			cat := EventCategoryOf(ev)
+			cat := fixtureRegistry().CategoryOf(ev)
 			if cat == EventCategoryUnknown {
-				t.Fatalf("EventCategoryOf(%q) returned EventCategoryUnknown — add a switch arm in event_category.go", ev)
+				t.Fatalf("fixtureRegistry().CategoryOf(%q) returned EventCategoryUnknown — add a switch arm in event_category.go", ev)
 			}
 			if !categoryInKnownSet(cat) {
-				t.Fatalf("EventCategoryOf(%q) = %q which is not in KnownEventCategories", ev, cat)
+				t.Fatalf("fixtureRegistry().CategoryOf(%q) = %q which is not in KnownEventCategories", ev, cat)
 			}
 		})
 	}
@@ -28,8 +28,8 @@ func TestEventCategoryOfCoversKnownEventTypes(t *testing.T) {
 // event_type values the catalog does not know about.
 func TestEventCategoryOfUnknownReturnsUnknown(t *testing.T) {
 	for _, ev := range []string{"", "task.does_not_exist", "garbage", EventTypeOperation} {
-		if got := EventCategoryOf(ev); got != EventCategoryUnknown {
-			t.Fatalf("EventCategoryOf(%q) = %q, want EventCategoryUnknown", ev, got)
+		if got := fixtureRegistry().CategoryOf(ev); got != EventCategoryUnknown {
+			t.Fatalf("fixtureRegistry().CategoryOf(%q) = %q, want EventCategoryUnknown", ev, got)
 		}
 	}
 }
@@ -59,15 +59,15 @@ func categoryInKnownSet(c EventCategory) bool {
 }
 
 // TestEventTypesForCategoryMatchesEventCategoryOf locks the inverse
-// mapping: every event_type in KnownEventTypes must appear under the
+// mapping: every event_type in fixtureRegistry().Types() must appear under the
 // category EventCategoryOf assigns to it. Failure means the cached
 // inversion drifted from the canonical switch — should be impossible
 // because the map is computed from EventCategoryOf at init time, but
 // the assertion guards against future hand-edits of the cache.
 func TestEventTypesForCategoryMatchesEventCategoryOf(t *testing.T) {
-	for _, ev := range KnownEventTypes {
-		cat := EventCategoryOf(ev)
-		got := EventTypesForCategory(cat)
+	for _, ev := range fixtureRegistry().Types() {
+		cat := fixtureRegistry().CategoryOf(ev)
+		got := fixtureRegistry().TypesForCategory(cat)
 		found := false
 		for _, e := range got {
 			if e == ev {
@@ -76,7 +76,7 @@ func TestEventTypesForCategoryMatchesEventCategoryOf(t *testing.T) {
 			}
 		}
 		if !found {
-			t.Errorf("EventTypesForCategory(%q) = %v; missing %q (EventCategoryOf says it belongs there)",
+			t.Errorf("fixtureRegistry().TypesForCategory(%q) = %v; missing %q (EventCategoryOf says it belongs there)",
 				cat, got, ev)
 		}
 	}
@@ -88,8 +88,8 @@ func TestEventTypesForCategoryMatchesEventCategoryOf(t *testing.T) {
 // classification) yield nil so callers can treat the result as a
 // distinguishable "no matches" sentinel.
 func TestEventTypesForCategoryReturnsNilForUnknown(t *testing.T) {
-	if got := EventTypesForCategory(EventCategory("not-a-category")); got != nil {
-		t.Fatalf("EventTypesForCategory(\"not-a-category\") = %v, want nil", got)
+	if got := fixtureRegistry().TypesForCategory(EventCategory("not-a-category")); got != nil {
+		t.Fatalf("fixtureRegistry().TypesForCategory(\"not-a-category\") = %v, want nil", got)
 	}
 }
 
@@ -102,10 +102,10 @@ func TestEventTypesForCategoryReturnsNilForUnknown(t *testing.T) {
 // ordering.
 func TestEventTypesForCategoryIsDeterministic(t *testing.T) {
 	for _, c := range KnownEventCategories {
-		a := EventTypesForCategory(c)
-		b := EventTypesForCategory(c)
+		a := fixtureRegistry().TypesForCategory(c)
+		b := fixtureRegistry().TypesForCategory(c)
 		if diff := cmp.Diff(a, b); diff != "" {
-			t.Errorf("EventTypesForCategory(%q) non-deterministic (-first +second):\n%s", c, diff)
+			t.Errorf("fixtureRegistry().TypesForCategory(%q) non-deterministic (-first +second):\n%s", c, diff)
 		}
 	}
 }
@@ -123,16 +123,16 @@ func TestEventTypesForCategoryIsDeterministic(t *testing.T) {
 // rebuild-on-load contract (a stale empty index would fail here).
 func TestEventTypesForCategoryMemoizes(t *testing.T) {
 	for _, c := range KnownEventCategories {
-		first := EventTypesForCategory(c)
+		first := fixtureRegistry().TypesForCategory(c)
 		if len(first) == 0 {
-			t.Fatalf("EventTypesForCategory(%q) returned empty — categoryIndex not built", c)
+			t.Fatalf("fixtureRegistry().TypesForCategory(%q) returned empty — categoryIndex not built", c)
 		}
 		// Defensive-copy contract: mutating the returned slice must
 		// not affect later calls.
 		first[0] = "__sentinel__"
-		second := EventTypesForCategory(c)
+		second := fixtureRegistry().TypesForCategory(c)
 		if second[0] == "__sentinel__" {
-			t.Fatalf("EventTypesForCategory(%q) leaked the cached slice — mutation visible across calls", c)
+			t.Fatalf("fixtureRegistry().TypesForCategory(%q) leaked the cached slice — mutation visible across calls", c)
 		}
 	}
 }

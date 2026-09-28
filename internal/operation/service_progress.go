@@ -5,27 +5,28 @@ import (
 	"strings"
 
 	"omakiten/internal/app"
+	"omakiten/internal/contract"
 	"omakiten/internal/domain"
 )
 
-func (s *Service) RecordProgress(ctx context.Context, input RecordProgressInput) (RecordProgressResponse, error) {
+func (s *Service) RecordProgress(ctx context.Context, input contract.RecordProgressInput) (contract.RecordProgressResponse, error) {
 	if err := s.allow("progress.record"); err != nil {
-		return RecordProgressResponse{}, err
+		return contract.RecordProgressResponse{}, err
 	}
 	project, err := s.resolveProject(ctx, input.ProjectSelector)
 	if err != nil {
-		return RecordProgressResponse{}, err
+		return contract.RecordProgressResponse{}, err
 	}
 
 	if input.TaskID <= 0 {
-		return RecordProgressResponse{}, domain.NewError(domain.ErrValidation, "task_id is required for task edits, comments, and workflow moves", nil)
+		return contract.RecordProgressResponse{}, domain.NewError(domain.ErrValidation, "task_id is required for task edits, comments, and workflow moves", nil)
 	}
 
-	response := RecordProgressResponse{Project: projectSummary(project)}
+	response := contract.RecordProgressResponse{Project: projectSummary(project)}
 	if progressHasTaskEdit(input) {
 		task, err := s.updateProgressTask(ctx, project, input)
 		if err != nil {
-			return RecordProgressResponse{}, err
+			return contract.RecordProgressResponse{}, err
 		}
 		summary := taskSummary(task, s.registry)
 		response.Task = &summary
@@ -33,7 +34,7 @@ func (s *Service) RecordProgress(ctx context.Context, input RecordProgressInput)
 	if strings.TrimSpace(input.Comment) != "" {
 		comment, err := s.newCommentService().Add(ctx, project, input.TaskID, input.Comment, input.AuthorType, nil)
 		if err != nil {
-			return RecordProgressResponse{}, err
+			return contract.RecordProgressResponse{}, err
 		}
 		summary := commentSummary(comment)
 		response.Comment = &summary
@@ -42,11 +43,11 @@ func (s *Service) RecordProgress(ctx context.Context, input RecordProgressInput)
 	return response, nil
 }
 
-func progressHasTaskEdit(input RecordProgressInput) bool {
+func progressHasTaskEdit(input contract.RecordProgressInput) bool {
 	return input.Title != nil || input.Description != nil || input.Priority != nil || strings.TrimSpace(input.MoveToBucket) != ""
 }
 
-func (s *Service) updateProgressTask(ctx context.Context, project domain.ProjectContext, input RecordProgressInput) (domain.Task, error) {
+func (s *Service) updateProgressTask(ctx context.Context, project domain.ProjectContext, input contract.RecordProgressInput) (domain.Task, error) {
 	update := domain.TaskUpdate{
 		Title:       input.Title,
 		Description: input.Description,

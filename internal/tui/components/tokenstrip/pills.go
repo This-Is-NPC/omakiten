@@ -1,9 +1,3 @@
-// Pills are the card badges: priority, counts, tags, token spend, scope.
-//
-// They moved here from package `badge` when the three token families were
-// collapsed onto one packer (see pack.go). Nothing about a pill changed — the
-// tone table, the empty-at-zero rule and the uppercase weight are the same
-// decisions, in the same order.
 package tokenstrip
 
 import (

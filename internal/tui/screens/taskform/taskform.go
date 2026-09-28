@@ -9,6 +9,7 @@ import (
 
 	"omakiten/internal/keynav"
 	"omakiten/internal/taskvalidation"
+	field "omakiten/internal/tui/components/field"
 	"omakiten/internal/tui/components/screengrid"
 	"omakiten/internal/tui/components/screenkit"
 	"omakiten/internal/tui/components/screenlayout"
@@ -42,7 +43,7 @@ type LookupResult struct {
 }
 
 type Deps struct {
-	Theme  Theme
+	Theme  field.FormTheme
 	Labels Labels
 }
 

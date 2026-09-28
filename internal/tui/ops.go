@@ -4,16 +4,16 @@ import (
 	"context"
 	"fmt"
 
-	"omakiten/internal/cliutil"
+	"omakiten/internal/contract"
 	"omakiten/internal/domain"
-	"omakiten/internal/operation"
+	"omakiten/internal/processutil"
 )
 
-func (m *Model) ops() *operation.Service {
-	return m.repos.operationService().ForTUI()
+func (m *Model) ops() contract.Operations {
+	return m.repos.operationService()
 }
 
-func (m *Model) requireOps() (*operation.Service, bool) {
+func (m *Model) requireOps() (contract.Operations, bool) {
 	svc := m.ops()
 	if svc == nil {
 		m.status = m.t("tui.status.operation_unavailable")
@@ -22,16 +22,16 @@ func (m *Model) requireOps() (*operation.Service, bool) {
 	return svc, true
 }
 
-func (m *Model) projectSelector() operation.ProjectSelector {
-	return operation.ProjectSelector{ProjectID: m.project.ID}
+func (m *Model) projectSelector() contract.ProjectSelector {
+	return contract.ProjectSelector{ProjectID: m.project.ID}
 }
 
-func (m Model) loadBoardSnapshot(ctx context.Context, project domain.ProjectContext, sort domain.TaskSort, archived bool) (operation.BoardSnapshot, error) {
+func (m Model) loadBoardSnapshot(ctx context.Context, project domain.ProjectContext, sort domain.TaskSort, archived bool) (contract.BoardSnapshot, error) {
 	if svc := m.repos.operationService(); svc == nil {
-		return operation.BoardSnapshot{}, nil
+		return contract.BoardSnapshot{}, nil
 	} else {
-		return svc.BoardSnapshot(ctx, operation.BoardSnapshotInput{
-			ProjectSelector: operation.ProjectSelector{ProjectID: project.ID},
+		return svc.BoardSnapshot(ctx, contract.BoardSnapshotInput{
+			ProjectSelector: contract.ProjectSelector{ProjectID: project.ID},
 			Sort:            sort,
 			IncludeArchived: archived})
 	}
@@ -42,7 +42,7 @@ func (m Model) loadPlanRollups(ctx context.Context, project domain.ProjectContex
 	if svc == nil {
 		return nil, nil
 	}
-	return svc.ListPlanRollups(ctx, operation.ProjectSelector{ProjectID: project.ID})
+	return svc.ListPlanRollups(ctx, contract.ProjectSelector{ProjectID: project.ID})
 }
 
 func (m Model) loadPlanShow(ctx context.Context, project domain.ProjectContext, slug string) (domain.PlanShow, error) {
@@ -50,13 +50,13 @@ func (m Model) loadPlanShow(ctx context.Context, project domain.ProjectContext, 
 	if svc == nil {
 		return domain.PlanShow{}, fmt.Errorf("operation service is not wired")
 	}
-	return svc.ShowPlanView(ctx, operation.ShowPlanInput{
-		ProjectSelector: operation.ProjectSelector{ProjectID: project.ID},
+	return svc.ShowPlanView(ctx, contract.ShowPlanInput{
+		ProjectSelector: contract.ProjectSelector{ProjectID: project.ID},
 		Slug:            slug})
 }
 
 func resolveEditor() string {
-	return cliutil.ResolveEditor()
+	return processutil.ResolveEditor()
 }
 
 func (m Model) loadTaskByID(taskID int64) (domain.Task, error) {
@@ -71,7 +71,7 @@ func (m *Model) moveTask(taskID int64, bucketKey string) error {
 	if !ok {
 		return fmt.Errorf("%s", m.status)
 	}
-	_, err := svc.MoveTask(m.ctx, operation.MoveTaskInput{
+	_, err := svc.MoveTask(m.ctx, contract.MoveTaskInput{
 		ProjectSelector: m.projectSelector(),
 		TaskID:          taskID,
 		BucketKey:       bucketKey})

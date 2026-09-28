@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"omakiten/internal/config"
+	"omakiten/internal/config/bundledraft"
 	"omakiten/internal/paths"
 	"omakiten/internal/tui/screenhost"
 	"omakiten/internal/tui/screens/settingspicker"
@@ -192,7 +193,7 @@ func (m *Model) applyThemeSelection(chosen string) {
 	if chosen == "" {
 		return
 	}
-	if _, err := applyBundleEditor(m.ctx, m.repos.Editor, func(bundle *config.Bundle) error {
+	if _, err := bundledraft.ApplyPlanned(m.ctx, m.repos.Editor, func(bundle *config.Bundle) error {
 		bundle.Config.Theme.Active = chosen
 		return nil
 	}); err != nil {

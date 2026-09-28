@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"omakiten/internal/config"
+	"omakiten/internal/contract"
 	"omakiten/internal/domain"
 	"omakiten/internal/operation"
 	"omakiten/internal/testfixtures"
@@ -362,7 +363,7 @@ func TestAdapterInsightsSummaryScopesToResolvedProject(t *testing.T) {
 	projectA := createInsightsProject(t, ctx, store, "alpha", 1)
 	projectB := createInsightsProject(t, ctx, store, "bravo", 2)
 
-	svc := operation.NewService(store, operation.ProjectSelector{CWD: projectA.RootPath})
+	svc := operation.NewService(store, contract.ProjectSelector{CWD: projectA.RootPath})
 	svc.SetSnapshot(store.Snapshot())
 	adapter := NewAdapter(svc)
 
@@ -804,7 +805,7 @@ func clearTaskParent(t *testing.T, ctx context.Context, adapter *Adapter, taskID
 func TestServeHandlesToolsList(t *testing.T) {
 	input := strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"tools/list"}` + "\n")
 	var output bytes.Buffer
-	if err := Serve(context.Background(), input, &output, NewAdapter(nil)); err != nil {
+	if err := ServeNotify(context.Background(), input, &output, NewAdapter(nil), nil); err != nil {
 		t.Fatalf("Serve() error = %v", err)
 	}
 
@@ -839,7 +840,7 @@ func newMCPTestService(t *testing.T, ctx context.Context) *operation.Service {
 	if _, err := store.CreateTask(ctx, project.ID, "Task", "", domain.Priority(2), "backlog", nil, store.Snapshot()); err != nil {
 		t.Fatalf("CreateTask() error = %v", err)
 	}
-	svc := operation.NewService(store, operation.ProjectSelector{CWD: root})
+	svc := operation.NewService(store, contract.ProjectSelector{CWD: root})
 	svc.SetSnapshot(store.Snapshot())
 	return svc
 }
@@ -855,9 +856,9 @@ func TestAdapterServiceResolverRoutesByProjectArg(t *testing.T) {
 	storeA, projectA := newMCPProjectFixture(t, ctx, "alpha")
 	storeB, projectB := newMCPProjectFixture(t, ctx, "bravo")
 
-	defaultService := operation.NewService(storeA, operation.ProjectSelector{ProjectID: projectA.ID})
+	defaultService := operation.NewService(storeA, contract.ProjectSelector{ProjectID: projectA.ID})
 	defaultService.SetSnapshot(storeA.Snapshot())
-	projectBService := operation.NewService(storeB, operation.ProjectSelector{ProjectID: projectB.ID})
+	projectBService := operation.NewService(storeB, contract.ProjectSelector{ProjectID: projectB.ID})
 	projectBService.SetSnapshot(storeB.Snapshot())
 
 	adapter := NewAdapter(defaultService)
@@ -979,9 +980,9 @@ func TestAdapterServiceResolverIsolatesGuards(t *testing.T) {
 	storeA, projectA, taskA := newMCPProjectWithBundle(t, ctx, "alpha", bundleA)
 	storeB, projectB, taskB := newMCPProjectWithBundle(t, ctx, "bravo", bundleB)
 
-	serviceA := operation.NewService(storeA, operation.ProjectSelector{ProjectID: projectA.ID})
+	serviceA := operation.NewService(storeA, contract.ProjectSelector{ProjectID: projectA.ID})
 	serviceA.SetSnapshot(storeA.Snapshot())
-	serviceB := operation.NewService(storeB, operation.ProjectSelector{ProjectID: projectB.ID})
+	serviceB := operation.NewService(storeB, contract.ProjectSelector{ProjectID: projectB.ID})
 	serviceB.SetSnapshot(storeB.Snapshot())
 
 	adapter := NewAdapter(serviceA)
@@ -1048,13 +1049,13 @@ func TestAdapterServiceResolverIsolatesSettings(t *testing.T) {
 		}
 	}
 
-	serviceA := operation.NewService(storeA, operation.ProjectSelector{ProjectID: projectA.ID})
+	serviceA := operation.NewService(storeA, contract.ProjectSelector{ProjectID: projectA.ID})
 	serviceA.SetSnapshot(storeA.Snapshot())
 	includeFalse := false
 	serviceA.SetSettings(operation.ServiceSettings{RecentCommentLimit: 1, IncludeWorkflow: false, CachePrompts: false})
 	_ = includeFalse
 
-	serviceB := operation.NewService(storeB, operation.ProjectSelector{ProjectID: projectB.ID})
+	serviceB := operation.NewService(storeB, contract.ProjectSelector{ProjectID: projectB.ID})
 	serviceB.SetSnapshot(storeB.Snapshot())
 	serviceB.SetSettings(operation.ServiceSettings{RecentCommentLimit: 10, IncludeWorkflow: false, CachePrompts: false})
 
@@ -1121,9 +1122,9 @@ func TestAdapterServiceResolverIsolatesTemplateCatalog(t *testing.T) {
 	storeA, projectA, _ := newMCPProjectWithBundle(t, ctx, "alpha", bundleA)
 	storeB, projectB, _ := newMCPProjectWithBundle(t, ctx, "bravo", bundleB)
 
-	serviceA := operation.NewService(storeA, operation.ProjectSelector{ProjectID: projectA.ID})
+	serviceA := operation.NewService(storeA, contract.ProjectSelector{ProjectID: projectA.ID})
 	serviceA.SetSnapshot(storeA.Snapshot())
-	serviceB := operation.NewService(storeB, operation.ProjectSelector{ProjectID: projectB.ID})
+	serviceB := operation.NewService(storeB, contract.ProjectSelector{ProjectID: projectB.ID})
 	serviceB.SetSnapshot(storeB.Snapshot())
 
 	adapter := NewAdapter(serviceA)
@@ -1214,9 +1215,9 @@ func TestAdapterServiceResolverConcurrentRouting(t *testing.T) {
 	storeB, projectB, _ := newMCPProjectWithBundle(t, ctx, "bravo", mcpTestBundle(t))
 	seedResolverTasks(t, ctx, storeA, projectA, storeB, projectB)
 
-	serviceA := operation.NewService(storeA, operation.ProjectSelector{ProjectID: projectA.ID})
+	serviceA := operation.NewService(storeA, contract.ProjectSelector{ProjectID: projectA.ID})
 	serviceA.SetSnapshot(storeA.Snapshot())
-	serviceB := operation.NewService(storeB, operation.ProjectSelector{ProjectID: projectB.ID})
+	serviceB := operation.NewService(storeB, contract.ProjectSelector{ProjectID: projectB.ID})
 	serviceB.SetSnapshot(storeB.Snapshot())
 
 	adapter := NewAdapter(serviceA)
@@ -1317,9 +1318,9 @@ func TestAdapterDefaultServiceProviderTracksFreshService(t *testing.T) {
 	storeA, projectA, _ := newMCPProjectWithBundle(t, ctx, "alpha", mcpTestBundle(t))
 	storeB, projectB, _ := newMCPProjectWithBundle(t, ctx, "bravo", mcpTestBundle(t))
 
-	svcA := operation.NewService(storeA, operation.ProjectSelector{ProjectID: projectA.ID, CWD: filepath.Join(t.TempDir(), "a")})
+	svcA := operation.NewService(storeA, contract.ProjectSelector{ProjectID: projectA.ID, CWD: filepath.Join(t.TempDir(), "a")})
 	svcA.SetSnapshot(storeA.Snapshot())
-	svcB := operation.NewService(storeB, operation.ProjectSelector{ProjectID: projectB.ID, CWD: filepath.Join(t.TempDir(), "b")})
+	svcB := operation.NewService(storeB, contract.ProjectSelector{ProjectID: projectB.ID, CWD: filepath.Join(t.TempDir(), "b")})
 	svcB.SetSnapshot(storeB.Snapshot())
 
 	active := svcA

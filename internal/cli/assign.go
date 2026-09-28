@@ -5,7 +5,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"omakiten/internal/operation"
+	"omakiten/internal/contract"
 )
 
 // newAssignCommand wires `okt assign TASK_ID [WHO]`. Passing an empty WHO
@@ -39,7 +39,7 @@ func newAssignCommand(opts *runtimeOptions) *cobra.Command {
 				defer rt.close()
 				ctx = rt.WithActivityRepo(ctx)
 
-				return rt.operationService().AssignTask(ctx, operation.AssignTaskInput{
+				return rt.operationService().AssignTask(ctx, contract.AssignTaskInput{
 					ProjectSelector: opts.projectSelector(),
 					TaskID:          taskID,
 					Assignee:        who,

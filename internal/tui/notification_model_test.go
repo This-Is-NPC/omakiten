@@ -161,7 +161,7 @@ func TestUpdate_timeoutDismiss(t *testing.T) {
 func TestUpdate_actionKeyEmitsActionMsg(t *testing.T) {
 	bud := sampleNotification()
 	bud.Actions = []config.NotificationAction{
-		{Key: "m", ID: "migrate", Label: "Migrate", Command: []string{"workflow", "orphans", "--confirm"}},
+		{Key: "m", ID: "migrate", Label: "Migrate", Operation: "orphans.migrate", Arguments: map[string]any{"confirmed": true}},
 		{Key: "s", ID: "skip", Label: "Skip"},
 	}
 	m, _ := newNotification(notificationOptions{Notification: bud, Theme: sampleTheme(), Text: "swap?"})
@@ -177,8 +177,8 @@ func TestUpdate_actionKeyEmitsActionMsg(t *testing.T) {
 	if got.Slug != "kit" || got.ActionID != "migrate" {
 		t.Fatalf("ActionMsg = %+v, want slug=kit id=migrate", got)
 	}
-	if len(got.Command) != 3 || got.Command[0] != "workflow" {
-		t.Fatalf("Command = %v, want [workflow orphans --confirm]", got.Command)
+	if got.Operation != "orphans.migrate" || got.Arguments["confirmed"] != true {
+		t.Fatalf("action = %+v, want confirmed orphan migration", got)
 	}
 	if !next.dismissed {
 		t.Fatalf("firing an action must dismiss the notification")
@@ -201,7 +201,7 @@ func TestUpdate_actionDoesNotInterceptUnmatchedKey(t *testing.T) {
 	}
 }
 
-func TestUpdate_actionWithEmptyCommandStillDismisses(t *testing.T) {
+func TestUpdate_actionWithEmptyOperationStillDismisses(t *testing.T) {
 	bud := sampleNotification()
 	bud.Actions = []config.NotificationAction{
 		{Key: "s", ID: "skip", Label: "Skip"},
@@ -209,14 +209,14 @@ func TestUpdate_actionWithEmptyCommandStillDismisses(t *testing.T) {
 	m, _ := newNotification(notificationOptions{Notification: bud, Theme: sampleTheme(), Text: "swap?"})
 	_, cmd := m.Update(tea.KeyMsg(tea.Key{Type: tea.KeyRunes, Runes: []rune("s")}))
 	if cmd == nil {
-		t.Fatalf("expected ActionMsg even with empty command")
+		t.Fatalf("expected ActionMsg even with empty operation")
 	}
 	got, ok := cmd().(ActionMsg)
 	if !ok {
 		t.Fatalf("expected ActionMsg, got %T", cmd())
 	}
-	if got.ActionID != "skip" || len(got.Command) != 0 {
-		t.Fatalf("skip action = %+v, want id=skip and empty Command", got)
+	if got.ActionID != "skip" || got.Operation != "" {
+		t.Fatalf("skip action = %+v, want id=skip and empty operation", got)
 	}
 }
 

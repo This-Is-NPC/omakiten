@@ -1,6 +1,8 @@
 package relationshipprojection
 
-import "testing"
+import (
+	"testing"
+)
 
 func TestNormalizeOptionsAndSelection(t *testing.T) {
 	got := NormalizeOptions(PersonaSkills, []Option{

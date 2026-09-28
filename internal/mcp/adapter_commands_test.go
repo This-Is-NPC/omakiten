@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"omakiten/internal/operation"
+	"omakiten/internal/commandcatalog"
 )
 
 // TestAdapterCommandsResolveByteIdenticalToPrompt pins AC#4 (byte-stability):
@@ -69,7 +69,7 @@ func TestAdapterCommandsResolveAllReachable(t *testing.T) {
 	service := newMCPTestService(t, ctx)
 	adapter := NewAdapter(service)
 
-	names := operation.CommandNames()
+	names := commandcatalog.CommandNames()
 	if len(names) == 0 {
 		t.Fatal("CommandNames() empty")
 	}
@@ -110,13 +110,13 @@ func TestAdapterCommandsListEnumeratesAll(t *testing.T) {
 	for _, d := range listed {
 		got[d.Name] = struct{}{}
 	}
-	for _, name := range operation.CommandNames() {
+	for _, name := range commandcatalog.CommandNames() {
 		if _, ok := got[name]; !ok {
 			t.Fatalf("commands.list missing %q", name)
 		}
 	}
-	if len(listed) != len(operation.CommandNames()) {
-		t.Fatalf("commands.list count = %d, want %d", len(listed), len(operation.CommandNames()))
+	if len(listed) != len(commandcatalog.CommandNames()) {
+		t.Fatalf("commands.list count = %d, want %d", len(listed), len(commandcatalog.CommandNames()))
 	}
 }
 

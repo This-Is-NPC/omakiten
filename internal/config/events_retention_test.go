@@ -1,6 +1,8 @@
 package config
 
-import "testing"
+import (
+	"testing"
+)
 
 func TestResolveRetentionInheritance(t *testing.T) {
 	days7 := 7

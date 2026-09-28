@@ -5,14 +5,15 @@ import (
 
 	"omakiten/internal/app"
 	"omakiten/internal/config"
+	"omakiten/internal/contract"
 	"omakiten/internal/domain"
 )
 
 func TestMigrateOrphans_NoOpReturnsEmptyReport(t *testing.T) {
 	fx := newAgentFixture(t)
 
-	resp, err := fx.service.MigrateOrphans(fx.ctx, MigrateOrphansInput{
-		ProjectSelector: ProjectSelector{ProjectID: fx.projectA.ID},
+	resp, err := fx.service.MigrateOrphans(fx.ctx, contract.MigrateOrphansInput{
+		ProjectSelector: contract.ProjectSelector{ProjectID: fx.projectA.ID},
 	})
 	if err != nil {
 		t.Fatalf("MigrateOrphans: %v", err)
@@ -38,8 +39,8 @@ func TestMigrateOrphans_RequiresConfirmationOnFirstCall(t *testing.T) {
 
 	removeDevBucket(t, fx)
 
-	resp, err := fx.service.MigrateOrphans(fx.ctx, MigrateOrphansInput{
-		ProjectSelector: ProjectSelector{ProjectID: fx.projectA.ID},
+	resp, err := fx.service.MigrateOrphans(fx.ctx, contract.MigrateOrphansInput{
+		ProjectSelector: contract.ProjectSelector{ProjectID: fx.projectA.ID},
 	})
 	if err != nil {
 		t.Fatalf("MigrateOrphans: %v", err)
@@ -73,8 +74,8 @@ func TestMigrateOrphans_ConfirmedAppliesAndReports(t *testing.T) {
 	}
 	removeDevBucket(t, fx)
 
-	resp, err := fx.service.MigrateOrphans(fx.ctx, MigrateOrphansInput{
-		ProjectSelector: ProjectSelector{ProjectID: fx.projectA.ID},
+	resp, err := fx.service.MigrateOrphans(fx.ctx, contract.MigrateOrphansInput{
+		ProjectSelector: contract.ProjectSelector{ProjectID: fx.projectA.ID},
 		Confirmed:       true,
 	})
 	if err != nil {

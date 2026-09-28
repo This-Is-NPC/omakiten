@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"omakiten/internal/operation"
+	"omakiten/internal/contract"
 )
 
 // openKaiseki boots a runtime against the embedded kaiseki (LOTR) default kit
@@ -28,9 +28,9 @@ func openKaiseki(t *testing.T) *Runtime {
 	return rt
 }
 
-func resolveKaiseki(t *testing.T, rt *Runtime, name string) operation.ResolveCommandResponse {
+func resolveKaiseki(t *testing.T, rt *Runtime, name string) contract.ResolveCommandResponse {
 	t.Helper()
-	resp, err := rt.Service().ResolveCommand(context.Background(), operation.ResolveCommandInput{Name: name})
+	resp, err := rt.Service().ResolveCommand(context.Background(), contract.ResolveCommandInput{Name: name})
 	if err != nil {
 		t.Fatalf("ResolveCommand(%s) error = %v", name, err)
 	}
@@ -170,7 +170,7 @@ func TestKaisekiReviewerCouncilLaw(t *testing.T) {
 	}
 }
 
-func skillPresent(skills []operation.SkillInfo, slug string) bool {
+func skillPresent(skills []contract.SkillInfo, slug string) bool {
 	for _, s := range skills {
 		if s.Slug == slug {
 			return true

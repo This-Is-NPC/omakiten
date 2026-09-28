@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"omakiten/internal/contract"
 	"omakiten/internal/domain"
 )
 
@@ -15,8 +16,8 @@ func TestEditProjectPersistsAndEmitsProjectUpdated(t *testing.T) {
 	fixture := newAgentFixture(t)
 
 	const want = "A backlog management tool for AI-driven workflows."
-	resp, err := fixture.service.EditProject(fixture.ctx, EditProjectInput{
-		ProjectSelector: ProjectSelector{ProjectID: fixture.projectA.ID},
+	resp, err := fixture.service.EditProject(fixture.ctx, contract.EditProjectInput{
+		ProjectSelector: contract.ProjectSelector{ProjectID: fixture.projectA.ID},
 		Description:     want,
 	})
 	if err != nil {
@@ -74,8 +75,8 @@ func TestEditProjectPersistsAndEmitsProjectUpdated(t *testing.T) {
 func TestEditProjectNoChangeSkipsEvent(t *testing.T) {
 	fixture := newAgentFixture(t)
 
-	if _, err := fixture.service.EditProject(fixture.ctx, EditProjectInput{
-		ProjectSelector: ProjectSelector{ProjectID: fixture.projectA.ID},
+	if _, err := fixture.service.EditProject(fixture.ctx, contract.EditProjectInput{
+		ProjectSelector: contract.ProjectSelector{ProjectID: fixture.projectA.ID},
 		Description:     "",
 	}); err != nil {
 		t.Fatalf("EditProject() error = %v", err)

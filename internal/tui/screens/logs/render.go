@@ -173,11 +173,11 @@ func (s Screen) dataRow(kit screenkit.Kit, width, index int, selected bool) stri
 // gridtable.FormatRow so a FitWidths pass on the widths stays aligned.
 func formatWideRow(kit screenkit.Kit, marker string, row domain.EventRow, timeW, typeW, entityW, whoW, detailW int) string {
 	timeStr := ShortTime(screenkit.Sanitize(row.CreatedAt), timeW)
-	typeStr := gridtable.Truncate(screenkit.Sanitize(EventDisplayLabel(row.EventType)), typeW)
-	typeStyled := kit.Styles.Accent(CategoryAccent(domain.EventCategoryOf(row.EventType))).Render(gridtable.PadLine(typeStr, typeW))
+	typeStr := gridtable.Truncate(screenkit.Sanitize(row.Display), typeW)
+	typeStyled := kit.Styles.Accent(CategoryAccent(row.Category)).Render(gridtable.PadLine(typeStr, typeW))
 	entityStr := gridtable.Truncate(screenkit.Sanitize(FormatEntity(row)), entityW)
 	whoStr := gridtable.Truncate(screenkit.Sanitize(FormatWho(row)), whoW)
-	detailStr := gridtable.Truncate(screenkit.Sanitize(domain.SummarizeEvent(row)), detailW)
+	detailStr := gridtable.Truncate(screenkit.Sanitize(row.Summary), detailW)
 	// TYPE carries its own colour and is already padded; FormatRow would
 	// re-PadLine and break the ANSI width, so the row is assembled by hand
 	// around the shared Truncate/PadLine primitives.
@@ -197,10 +197,10 @@ func formatWideRow(kit screenkit.Kit, marker string, row domain.EventRow, timeW,
 // keeping the row plain avoids a Style.Render call for every line.
 func compactRow(kit screenkit.Kit, marker string, row domain.EventRow, width int) string {
 	timeStr := ShortTime(screenkit.Sanitize(row.CreatedAt), 8)
-	typeStr := screenkit.Sanitize(EventDisplayLabel(row.EventType))
+	typeStr := screenkit.Sanitize(row.Display)
 	prefix := fmt.Sprintf("%s %s %s ", marker, timeStr, typeStr)
 	budget := screenkit.Clamp(width-screenkit.VisibleWidth(prefix), 8, width)
-	return prefix + screenkit.Truncate(screenkit.Sanitize(domain.SummarizeEvent(row)), budget)
+	return prefix + screenkit.Truncate(screenkit.Sanitize(row.Summary), budget)
 }
 
 // renderFooterNotes composes the panel footer: retention vs display-window
@@ -266,7 +266,7 @@ func FormatEntity(row domain.EventRow) string {
 // events. Falls back to the empty string when none of those signals are
 // present — the caller pads to the column width.
 func FormatWho(row domain.EventRow) string {
-	switch domain.EventCategoryOf(row.EventType) {
+	switch row.Category {
 	case domain.EventCategoryToolCall, domain.EventCategoryHook:
 		if s := strings.TrimSpace(row.Source); s != "" {
 			return s
@@ -314,15 +314,4 @@ func CategoryAccent(cat domain.EventCategory) screenkit.Accent {
 		return screenkit.AccentToolCall
 	}
 	return screenkit.AccentNone
-}
-
-// EventDisplayLabel returns the human-friendly label for an event_type from the
-// YAML-loaded registry. When the registry has no entry for the key — unmapped
-// event_types, headless tests that never loaded YAML — the raw key is returned
-// so the row still surfaces.
-func EventDisplayLabel(eventType string) string {
-	if def, ok := domain.EventDefByKey[eventType]; ok && def.Display != "" {
-		return def.Display
-	}
-	return eventType
 }

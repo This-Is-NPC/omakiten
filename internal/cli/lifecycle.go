@@ -5,7 +5,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"omakiten/internal/operation"
+	"omakiten/internal/contract"
 )
 
 // newDeleteCommand wires `okt delete TASK_ID [--confirm]` against
@@ -30,7 +30,7 @@ func newDeleteCommand(opts *runtimeOptions) *cobra.Command {
 				}
 				defer rt.close()
 
-				return rt.operationService().DeleteTask(ctx, operation.DeleteTaskInput{
+				return rt.operationService().DeleteTask(ctx, contract.DeleteTaskInput{
 					ProjectSelector: opts.projectSelector(),
 					TaskID:          taskID,
 					Confirmed:       confirmed,
@@ -59,7 +59,7 @@ func newArchiveCommand(opts *runtimeOptions) *cobra.Command {
 				}
 				defer rt.close()
 
-				return rt.operationService().ArchiveTask(ctx, operation.ArchiveTaskInput{
+				return rt.operationService().ArchiveTask(ctx, contract.ArchiveTaskInput{
 					ProjectSelector: opts.projectSelector(),
 					TaskID:          taskID,
 				})
@@ -86,7 +86,7 @@ func newUnarchiveCommand(opts *runtimeOptions) *cobra.Command {
 				}
 				defer rt.close()
 
-				return rt.operationService().UnarchiveTask(ctx, operation.ArchiveTaskInput{
+				return rt.operationService().UnarchiveTask(ctx, contract.ArchiveTaskInput{
 					ProjectSelector: opts.projectSelector(),
 					TaskID:          taskID,
 				})

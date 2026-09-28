@@ -2,6 +2,7 @@
 // ports (BundleStore, EntityFileWriter, Slugifier). It owns the I/O and the
 // disk-layout knowledge for the on-disk omakiten config bundle, keeping the
 // app layer free of direct file-system or `internal/config` package calls
+
 // for I/O purposes (the app may still import `internal/config` for the
 // pure-data Bundle/Law/Persona/Skill model types).
 //
@@ -13,8 +14,21 @@
 package configstore
 
 import (
+	"errors"
+	"os"
+
 	"omakiten/internal/config"
+	"omakiten/internal/domain"
 )
+
+// FileExists checks the target itself, treating a symlink as an occupied path.
+func (Adapter) FileExists(path string) (bool, error) {
+	_, err := os.Lstat(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return false, nil
+	}
+	return err == nil, err
+}
 
 // Adapter is the production wiring of the BundleStore, EntityFileWriter and
 // Slugifier ports. A single zero-value instance is enough — no state lives
@@ -90,5 +104,9 @@ func (Adapter) CustomEntityFilePath(rootDir string, kind config.EntityKind, slug
 // --- Slugifier -------------------------------------------------------------
 
 func (Adapter) Slugify(s string) string {
-	return config.Slugify(s)
+	return domain.Slugify(s)
+}
+
+func (Adapter) ReadTemplateFile(path string) ([]byte, error) {
+	return config.ReadEntityFile(path)
 }

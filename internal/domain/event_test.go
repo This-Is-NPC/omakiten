@@ -1,6 +1,8 @@
 package domain
 
-import "testing"
+import (
+	"testing"
+)
 
 func TestKnownEventTypesCoversCatalog(t *testing.T) {
 	want := map[string]struct{}{
@@ -57,11 +59,11 @@ func TestKnownEventTypesCoversCatalog(t *testing.T) {
 		EventTypeUpdateSwapAborted:       {},
 		EventTypeTUIHealthCheckFailed:    {},
 	}
-	if len(KnownEventTypes) != len(want) {
-		t.Fatalf("KnownEventTypes len = %d, want %d", len(KnownEventTypes), len(want))
+	if len(fixtureRegistry().Types()) != len(want) {
+		t.Fatalf("fixtureRegistry().Types() len = %d, want %d", len(fixtureRegistry().Types()), len(want))
 	}
 	got := map[string]struct{}{}
-	for _, ev := range KnownEventTypes {
+	for _, ev := range fixtureRegistry().Types() {
 		if _, dup := got[ev]; dup {
 			t.Fatalf("duplicate event type %q", ev)
 		}
@@ -69,21 +71,21 @@ func TestKnownEventTypesCoversCatalog(t *testing.T) {
 	}
 	for ev := range want {
 		if _, ok := got[ev]; !ok {
-			t.Fatalf("KnownEventTypes missing %q", ev)
+			t.Fatalf("fixtureRegistry().Types() missing %q", ev)
 		}
 	}
 }
 
 func TestIsKnownEventType(t *testing.T) {
-	for _, ev := range KnownEventTypes {
-		if !IsKnownEventType(ev) {
+	for _, ev := range fixtureRegistry().Types() {
+		if fixtureRegistry().CategoryOf(ev) == EventCategoryUnknown {
 			t.Fatalf("IsKnownEventType(%q) = false, want true", ev)
 		}
 	}
-	// EventTypeOperation is excluded from KnownEventTypes because it's
+	// EventTypeOperation is excluded from fixtureRegistry().Types() because it's
 	// written by activity.Track, not the domain emit path.
 	for _, ev := range []string{"", "task.unknown", EventTypeOperation} {
-		if IsKnownEventType(ev) {
+		if fixtureRegistry().CategoryOf(ev) != EventCategoryUnknown {
 			t.Fatalf("IsKnownEventType(%q) = true, want false", ev)
 		}
 	}
@@ -111,7 +113,7 @@ func TestToolCallEventTypeForSource(t *testing.T) {
 
 func TestToolCallEventTypesAreKnown(t *testing.T) {
 	for _, ev := range []string{EventTypeCLIToolCall, EventTypeMCPToolCall, EventTypeTUIToolCall} {
-		if !IsKnownEventType(ev) {
+		if fixtureRegistry().CategoryOf(ev) == EventCategoryUnknown {
 			t.Fatalf("IsKnownEventType(%q) = false, want true (hooks must accept it)", ev)
 		}
 	}

@@ -23,6 +23,7 @@ import (
 	"omakiten/internal/lifecycle"
 	"omakiten/internal/releaseverify"
 	"omakiten/internal/sqlite"
+	"omakiten/internal/updater"
 )
 
 // tarGzWith builds an in-memory gzipped tar containing entries. The
@@ -331,9 +332,9 @@ func TestRunUpdate_YesSwapsBinary(t *testing.T) {
 		"README.md":       []byte("readme"),
 		"CONTRIBUTING.md": []byte("contrib"),
 	})
-	asset, err := assetName(goruntime.GOOS, goruntime.GOARCH)
+	asset, err := updater.AssetName(goruntime.GOOS, goruntime.GOARCH)
 	if err != nil {
-		t.Fatalf("assetName: %v", err)
+		t.Fatalf("updater.AssetName: %v", err)
 	}
 	c := updateClient{
 		Fetcher:         stubFetcher{Tag: "0.32.0"},
@@ -379,9 +380,9 @@ func TestRunUpdate_YesRefreshesDefaultsAfterSwap(t *testing.T) {
 		t.Fatalf("seed: %v", err)
 	}
 	archive := tarGzWith(t, map[string][]byte{"okt": []byte("NEW")})
-	asset, err := assetName(goruntime.GOOS, goruntime.GOARCH)
+	asset, err := updater.AssetName(goruntime.GOOS, goruntime.GOARCH)
 	if err != nil {
-		t.Fatalf("assetName: %v", err)
+		t.Fatalf("updater.AssetName: %v", err)
 	}
 	refresher := &recordingDefaultsRefresher{}
 	c := updateClient{
@@ -434,9 +435,9 @@ func TestRunUpdate_PostSwapRefreshReplacesManagedFilesAndPreservesCustomFiles(t 
 		t.Fatalf("seed binary: %v", err)
 	}
 	archive := tarGzWith(t, map[string][]byte{"okt": []byte("NEW")})
-	asset, err := assetName(goruntime.GOOS, goruntime.GOARCH)
+	asset, err := updater.AssetName(goruntime.GOOS, goruntime.GOARCH)
 	if err != nil {
-		t.Fatalf("assetName: %v", err)
+		t.Fatalf("updater.AssetName: %v", err)
 	}
 	c := updateClient{
 		Fetcher:    stubFetcher{Tag: "0.32.0"},
@@ -474,9 +475,9 @@ func TestRunUpdate_SkipDefaultsSkipsPostSwapRefresh(t *testing.T) {
 		t.Fatalf("seed: %v", err)
 	}
 	archive := tarGzWith(t, map[string][]byte{"okt": []byte("NEW")})
-	asset, err := assetName(goruntime.GOOS, goruntime.GOARCH)
+	asset, err := updater.AssetName(goruntime.GOOS, goruntime.GOARCH)
 	if err != nil {
-		t.Fatalf("assetName: %v", err)
+		t.Fatalf("updater.AssetName: %v", err)
 	}
 	refresher := &recordingDefaultsRefresher{}
 	c := updateClient{
@@ -511,9 +512,9 @@ func TestRunUpdate_DefaultsRefreshFailureReportsAppliedBinary(t *testing.T) {
 		t.Fatalf("seed: %v", err)
 	}
 	archive := tarGzWith(t, map[string][]byte{"okt": []byte("NEW")})
-	asset, err := assetName(goruntime.GOOS, goruntime.GOARCH)
+	asset, err := updater.AssetName(goruntime.GOOS, goruntime.GOARCH)
 	if err != nil {
-		t.Fatalf("assetName: %v", err)
+		t.Fatalf("updater.AssetName: %v", err)
 	}
 	refresher := &recordingDefaultsRefresher{err: errors.New("refresh subprocess failed")}
 	c := updateClient{
@@ -560,9 +561,9 @@ func TestRunUpdate_DefaultsRefreshFailureReportsExactConfigRepairCommand(t *test
 		t.Fatalf("seed: %v", err)
 	}
 	archive := tarGzWith(t, map[string][]byte{"okt": []byte("NEW")})
-	asset, err := assetName(goruntime.GOOS, goruntime.GOARCH)
+	asset, err := updater.AssetName(goruntime.GOOS, goruntime.GOARCH)
 	if err != nil {
-		t.Fatalf("assetName: %v", err)
+		t.Fatalf("updater.AssetName: %v", err)
 	}
 	configPath := filepath.Join(dir, "with space", "config", "omakase.yaml")
 	if err := os.MkdirAll(filepath.Dir(configPath), 0o755); err != nil {
@@ -609,9 +610,9 @@ func TestRunUpdate_DefaultsRefreshFailureUsesSetupForUnusableConfigRoot(t *testi
 		t.Fatalf("seed: %v", err)
 	}
 	archive := tarGzWith(t, map[string][]byte{"okt": []byte("NEW")})
-	asset, err := assetName(goruntime.GOOS, goruntime.GOARCH)
+	asset, err := updater.AssetName(goruntime.GOOS, goruntime.GOARCH)
 	if err != nil {
-		t.Fatalf("assetName: %v", err)
+		t.Fatalf("updater.AssetName: %v", err)
 	}
 	configPath := filepath.Join(dir, "missing-root", "config", "omakase.yaml")
 	c := updateClient{
@@ -649,9 +650,9 @@ func TestRunUpdate_ExtractFailureSurfacesCodedError(t *testing.T) {
 
 	// Archive missing the `okt` entry: extract should fail before swap.
 	archive := tarGzWith(t, map[string][]byte{"LICENSE": []byte("MIT")})
-	asset, err := assetName(goruntime.GOOS, goruntime.GOARCH)
+	asset, err := updater.AssetName(goruntime.GOOS, goruntime.GOARCH)
 	if err != nil {
-		t.Fatalf("assetName: %v", err)
+		t.Fatalf("updater.AssetName: %v", err)
 	}
 	c := updateClient{
 		Fetcher:         stubFetcher{Tag: "0.32.0"},
@@ -737,9 +738,9 @@ func TestRunUpdate_ChecksumMismatchAborts(t *testing.T) {
 		t.Fatalf("seed: %v", err)
 	}
 	archive := tarGzWith(t, map[string][]byte{"okt": []byte("PWNED")})
-	asset, err := assetName(goruntime.GOOS, goruntime.GOARCH)
+	asset, err := updater.AssetName(goruntime.GOOS, goruntime.GOARCH)
 	if err != nil {
-		t.Fatalf("assetName: %v", err)
+		t.Fatalf("updater.AssetName: %v", err)
 	}
 	// The authenticated digest disagrees with the bytes actually on the
 	// wire. runUpdate re-checks SHA-256 against the verified expectation,
@@ -788,9 +789,9 @@ func TestRunUpdate_SignatureFailureAbortsBeforeExtract(t *testing.T) {
 		t.Fatalf("seed: %v", err)
 	}
 	archive := tarGzWith(t, map[string][]byte{"okt": []byte("PWNED")})
-	asset, err := assetName(goruntime.GOOS, goruntime.GOARCH)
+	asset, err := updater.AssetName(goruntime.GOOS, goruntime.GOARCH)
 	if err != nil {
-		t.Fatalf("assetName: %v", err)
+		t.Fatalf("updater.AssetName: %v", err)
 	}
 	c := updateClient{
 		Fetcher:    stubFetcher{Tag: "0.32.0"},
@@ -909,9 +910,9 @@ func TestRunUpdate_FetchesEveryPublishedMetadataAsset(t *testing.T) {
 		t.Fatalf("seed: %v", err)
 	}
 	archive := tarGzWith(t, map[string][]byte{"okt": []byte("NEW")})
-	asset, err := assetName(goruntime.GOOS, goruntime.GOARCH)
+	asset, err := updater.AssetName(goruntime.GOOS, goruntime.GOARCH)
 	if err != nil {
-		t.Fatalf("assetName: %v", err)
+		t.Fatalf("updater.AssetName: %v", err)
 	}
 	recorder := &recordingDownloader{inner: stubDownloader{Assets: map[string][]byte{asset: archive}}}
 
@@ -1003,38 +1004,6 @@ func TestRunUpdate_DevBuildRefused(t *testing.T) {
 	}
 }
 
-func TestAssetName_PerPlatform(t *testing.T) {
-	cases := []struct {
-		os, arch string
-		want     string
-		err      bool
-	}{
-		{"linux", "amd64", "okt_Linux_x86_64.tar.gz", false},
-		{"linux", "arm64", "okt_Linux_arm64.tar.gz", false},
-		{"darwin", "amd64", "okt_Darwin_x86_64.tar.gz", false},
-		{"darwin", "arm64", "okt_Darwin_arm64.tar.gz", false},
-		{"windows", "amd64", "okt_Windows_x86_64.zip", false},
-		{"freebsd", "amd64", "", true},
-		{"linux", "riscv64", "", true},
-	}
-	for _, c := range cases {
-		got, err := assetName(c.os, c.arch)
-		if c.err {
-			if err == nil {
-				t.Errorf("assetName(%s,%s): expected error", c.os, c.arch)
-			}
-			continue
-		}
-		if err != nil {
-			t.Errorf("assetName(%s,%s): %v", c.os, c.arch, err)
-			continue
-		}
-		if got != c.want {
-			t.Errorf("assetName(%s,%s): got %q want %q", c.os, c.arch, got, c.want)
-		}
-	}
-}
-
 func TestNormalizeVersion_StripsV(t *testing.T) {
 	cases := []struct{ in, want string }{
 		{"v0.31.0", "0.31.0"},
@@ -1075,10 +1044,10 @@ func TestUpdateConfirm_DeclineOnN(t *testing.T) {
 }
 
 // TestRunUpdate_AssetTooLargeAborts pins the download size cap. A
-// compromised CDN or MITM that streams a payload above maxAssetSize
+// compromised CDN or MITM that streams a payload above updater.MaxAssetSize
 // must be rejected with a coded ErrUpdateFailed before the SHA256
 // verify step (which would itself buffer the entire body in memory).
-// The fake downloader returns maxAssetSize+1 bytes of garbage so the
+// The fake downloader returns updater.MaxAssetSize+1 bytes of garbage so the
 // LimitReader trips before checksum compare runs.
 func TestRunUpdate_AssetTooLargeAborts(t *testing.T) {
 	if goruntime.GOOS == "windows" {
@@ -1089,10 +1058,10 @@ func TestRunUpdate_AssetTooLargeAborts(t *testing.T) {
 	if err := os.WriteFile(bin, []byte("OLD"), 0o755); err != nil {
 		t.Fatalf("seed: %v", err)
 	}
-	oversized := bytes.Repeat([]byte{0x42}, int(maxAssetSize)+1)
-	asset, err := assetName(goruntime.GOOS, goruntime.GOARCH)
+	oversized := bytes.Repeat([]byte{0x42}, int(updater.MaxAssetSize)+1)
+	asset, err := updater.AssetName(goruntime.GOOS, goruntime.GOARCH)
 	if err != nil {
-		t.Fatalf("assetName: %v", err)
+		t.Fatalf("updater.AssetName: %v", err)
 	}
 	c := updateClient{
 		Fetcher: stubFetcher{Tag: "0.32.0"},
@@ -1221,9 +1190,9 @@ func TestRunUpdate_BackupFactoryErrorAbortsSwap(t *testing.T) {
 		t.Fatalf("seed: %v", err)
 	}
 	archive := tarGzWith(t, map[string][]byte{"okt": []byte("NEW")})
-	asset, err := assetName(goruntime.GOOS, goruntime.GOARCH)
+	asset, err := updater.AssetName(goruntime.GOOS, goruntime.GOARCH)
 	if err != nil {
-		t.Fatalf("assetName: %v", err)
+		t.Fatalf("updater.AssetName: %v", err)
 	}
 	factory := &recordingBackupFactory{err: errors.New("mkdir state home: permission denied")}
 	c := updateClient{
@@ -1247,21 +1216,5 @@ func TestRunUpdate_BackupFactoryErrorAbortsSwap(t *testing.T) {
 	}
 	if got, _ := os.ReadFile(bin); string(got) != "OLD" {
 		t.Fatalf("binary mutated after backup-factory failure: %q", string(got))
-	}
-}
-
-func TestAtomicSwap_OverwritesAndChmods(t *testing.T) {
-	dir := t.TempDir()
-	bin := filepath.Join(dir, "okt")
-	if err := os.WriteFile(bin, []byte("OLD"), 0o755); err != nil {
-		t.Fatalf("seed: %v", err)
-	}
-	body := strings.NewReader("REPLACED")
-	if err := atomicSwap(bin, body); err != nil {
-		t.Fatalf("atomicSwap: %v", err)
-	}
-	got, _ := os.ReadFile(bin)
-	if string(got) != "REPLACED" {
-		t.Fatalf("atomicSwap bytes: got %q want REPLACED", string(got))
 	}
 }

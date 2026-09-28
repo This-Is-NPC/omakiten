@@ -9,16 +9,17 @@ import (
 
 	"omakiten/internal/config"
 	"omakiten/internal/domain"
+	"omakiten/internal/tui/screenhost"
 )
 
 func TestGlobalHeaderRouteSanitizesProjectSlug(t *testing.T) {
 	t.Parallel()
 	const hostile = "project 漢字 \x1b[31mred\x1b]0;owned\a \x00\u009b31m\u009d"
 	m := Model{
-		styles:  newStyles(config.Theme{}),
-		width:   120,
-		top:     topTasks,
-		sub:     subBoard,
+		styles:     newStyles(config.Theme{}),
+		width:      120,
+		navigation: screenhost.TasksBoard,
+
 		project: domain.ProjectContext{Slug: hostile},
 	}
 	plain := ansi.Strip(m.renderHeader())

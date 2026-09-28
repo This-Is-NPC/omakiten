@@ -165,13 +165,13 @@ func rollupFixture(planCount int) *rollupFakeRepo {
 // referenceRollups recomputes the rollups via the legacy per-plan 1+3N loop so
 // the bulk path's output can be compared against it (and the per-plan call
 // counts recorded for the regression assertion).
-func referenceRollups(t *testing.T, repo *rollupFakeRepo, snap *config.Snapshot) []PlanRollup {
+func referenceRollups(t *testing.T, repo *rollupFakeRepo, snap *config.Snapshot) []domain.PlanRollup {
 	t.Helper()
 	ctx := context.Background()
 	project := domain.ProjectContext{ID: 7}
 	final := snap.Workflow().FinalBucketKey()
 	plans, _ := repo.ListPlans(ctx, project.ID)
-	out := make([]PlanRollup, 0, len(plans))
+	out := make([]domain.PlanRollup, 0, len(plans))
 	for _, p := range plans {
 		waves, _ := repo.ListPlanWaves(ctx, project.ID, p.ID)
 		tasks, _ := repo.ListPlanTasks(ctx, project.ID, p.ID, snap)

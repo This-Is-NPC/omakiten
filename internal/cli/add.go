@@ -5,7 +5,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"omakiten/internal/operation"
+	"omakiten/internal/contract"
 )
 
 func newAddCommand(opts *runtimeOptions) *cobra.Command {
@@ -25,7 +25,7 @@ func newAddCommand(opts *runtimeOptions) *cobra.Command {
 				}
 				defer rt.close()
 
-				input := operation.CreateTaskInput{
+				input := contract.CreateTaskInput{
 					ProjectSelector:     opts.projectSelector(),
 					Title:               title,
 					Description:         description,

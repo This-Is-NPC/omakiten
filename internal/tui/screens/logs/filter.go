@@ -1,10 +1,8 @@
 package logs
 
-import "omakiten/internal/domain"
-
-// FilterMode is local UI state. Category membership and cycle policy live in
-// domain so the screen only stores and paints the selected preset.
-type FilterMode = domain.LogsFilterMode
+import (
+	"omakiten/internal/domain"
+)
 
 const (
 	FilterAll       = domain.LogsFilterAll
@@ -16,7 +14,7 @@ const (
 var FilterModes = domain.LogsFilterModes
 
 // FilterChipKey resolves the catalog key for the visible chip label.
-func FilterChipKey(mode FilterMode) string {
+func FilterChipKey(mode domain.LogsFilterMode) string {
 	switch mode {
 	case FilterToolCalls:
 		return "tui.log.filter.tool_calls"

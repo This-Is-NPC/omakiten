@@ -3,6 +3,7 @@ package tui
 import (
 	"fmt"
 
+	"omakiten/internal/contract"
 	"omakiten/internal/relationshipprojection"
 	"omakiten/internal/tui/screenhost"
 	"omakiten/internal/tui/screens/relationshippicker"
@@ -27,7 +28,7 @@ func (m *Model) openTemplateDefaultPicker(slug string) {
 	m.pushScreen(screenhost.TemplateDefault)
 }
 
-func buildTemplateDefaultOptions(editor BundleEditor, currentKind, currentProject, activeProject string) []relationshippicker.Option {
+func buildTemplateDefaultOptions(editor contract.BundleEditor, currentKind, currentProject, activeProject string) []relationshipprojection.Option {
 	var kinds []string
 	if editor != nil {
 		if bundle, err := editor.Load(); err == nil {

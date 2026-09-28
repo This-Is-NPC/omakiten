@@ -9,6 +9,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 
 	"omakiten/internal/domain"
+	screenfixture "omakiten/internal/tui/screenfixture"
 	"omakiten/internal/tui/screenhost"
 	"omakiten/internal/tui/screens/screentest"
 )
@@ -291,7 +292,7 @@ func TestErrorLoopDegradesWhenTheLocaleDropsThePlaceholder(t *testing.T) {
 // no catalog wired: labels degrade to keys instead of crashing.
 func TestViewWithoutCatalogDoesNotPanic(t *testing.T) {
 	t.Parallel()
-	frame := screentest.Frame(t, screentest.Options{NoCatalog: true})
+	frame := screentest.Frame(t, screenfixture.Options{NoCatalog: true})
 	out := testScreen(true, domain.Insights{StuckDays: 7}).View(frame)
 	if !strings.Contains(ansi.Strip(out), "tui.insights") {
 		t.Fatalf("expected key-literal degradation, got:\n%s", ansi.Strip(out))

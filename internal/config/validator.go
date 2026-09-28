@@ -479,6 +479,9 @@ func validateBackupSettings(s BackupSettings) error {
 // behaviour is deterministic; overrides keys must be known event types
 // (typos rejected at load time, not silently ignored).
 func validateEventsSettings(e EventsSettings) error {
+	if _, err := BuildEventRegistry(e); err != nil {
+		return err
+	}
 	if e.DefaultRecentLimit <= 0 {
 		return fmt.Errorf("config.events.default_recent_limit: must be > 0 (see defaults/omakiten.yaml)")
 	}

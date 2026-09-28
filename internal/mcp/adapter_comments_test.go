@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"omakiten/internal/config"
+	"omakiten/internal/contract"
 	"omakiten/internal/operation"
 )
 
@@ -258,7 +259,7 @@ func commentCreateGuardBundle(t *testing.T) config.Bundle {
 func TestAdapterCommentsAddCreateGuardDenialViaMCP(t *testing.T) {
 	ctx := context.Background()
 	store, project, _ := newMCPProjectWithBundle(t, ctx, "guarded", commentCreateGuardBundle(t))
-	service := operation.NewService(store, operation.ProjectSelector{ProjectID: project.ID})
+	service := operation.NewService(store, contract.ProjectSelector{ProjectID: project.ID})
 	service.SetSnapshot(store.Snapshot())
 	adapter := NewAdapter(service)
 
@@ -290,7 +291,7 @@ func TestAdapterCommentsAddCreateGuardDenialViaMCP(t *testing.T) {
 func TestAdapterCommentsEditDeleteGuardDenialViaMCP(t *testing.T) {
 	ctx := context.Background()
 	store, project, task := newMCPProjectWithBundle(t, ctx, "guarded", commentGuardBundle(t))
-	service := operation.NewService(store, operation.ProjectSelector{ProjectID: project.ID})
+	service := operation.NewService(store, contract.ProjectSelector{ProjectID: project.ID})
 	service.SetSnapshot(store.Snapshot())
 	adapter := NewAdapter(service)
 

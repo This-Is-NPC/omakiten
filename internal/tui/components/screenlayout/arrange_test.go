@@ -284,7 +284,7 @@ func borderedTable(id ID, rows [][]string, widths []int) Func {
 	return Func{
 		Def: Spec{ID: id, MinWidth: 20, MinRows: 4, Scroll: ScrollItems, SelectFirst: true},
 		Body: func(Canvas) Block {
-			rendered, layout := gridtable.RenderWithLayout(rows, widths, lipgloss.NewStyle())
+			rendered, layout := gridtable.RenderCellsWithLayout(gridtable.RawRows(rows), widths, lipgloss.NewStyle())
 			all := lines(rendered)
 			items := make([]string, len(rows))
 			heights := make([]int, len(rows))

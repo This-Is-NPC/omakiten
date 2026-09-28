@@ -13,6 +13,7 @@ import (
 
 	"omakiten/internal/agentruntime"
 	"omakiten/internal/config"
+	"omakiten/internal/config/bundledraft"
 	"omakiten/internal/configstore"
 	"omakiten/internal/events"
 	"omakiten/internal/paths"
@@ -69,7 +70,7 @@ func newPickerModel(t *testing.T) (Model, string) {
 
 	files := configstore.New()
 	editor := bundleeditor.New(files, configPath)
-	if _, err := applyBundleEditor(ctx, editor, nil); err != nil {
+	if _, err := bundledraft.ApplyPlanned(ctx, editor, nil); err != nil {
 		t.Fatalf("editor.Apply() error = %v", err)
 	}
 	project, err := store.UpsertProject(ctx, "Project", "project", "/work/project")
@@ -443,7 +444,7 @@ func TestConfigPickerMarkerFailureKeepsOldRuntimeAndRestartMarker(t *testing.T) 
 	if err != nil {
 		t.Fatalf("Read old marker: %v", err)
 	}
-	oldRuntime := model.repos.Cache.Get(model.project.ID)
+	oldRuntime := model.repos.Cache.View(model.project.ID)
 	oldPath := model.repos.Editor.Path()
 	oldTheme := model.theme.Key
 
@@ -455,7 +456,7 @@ func TestConfigPickerMarkerFailureKeepsOldRuntimeAndRestartMarker(t *testing.T) 
 	model = pressStringKey(t, model, "down")
 	model = pressKey(t, model, tea.KeyEnter)
 
-	if model.repos.Cache.Get(model.project.ID) != oldRuntime {
+	if model.repos.Cache.View(model.project.ID) != oldRuntime {
 		t.Fatal("marker failure changed the live runtime")
 	}
 	if model.repos.Editor.Path() != oldPath || model.theme.Key != oldTheme {

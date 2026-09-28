@@ -39,37 +39,6 @@ type ProjectRepository interface {
 	UpdateProjectDescription(ctx context.Context, id int64, description string) (domain.Project, error)
 }
 
-// BackupRunner is the narrow port ProjectService uses to capture a
-// pre-delete snapshot. *app.BackupService satisfies it; tests pass a
-// fake that records the call or returns a pinned error to exercise
-// the "backup failure aborts delete" invariant.
-type BackupRunner interface {
-	Run(ctx context.Context) (string, error)
-}
-
-// RecoveryLease exposes only the image operations needed during destruction;
-// the app finalizer retains standalone-write and pruning ownership.
-type RecoveryLease interface {
-	WriteSnapshot(ctx context.Context, write func(destinationPath string) error) (string, error)
-	Discard(path string) error
-	Validate() error
-}
-
-// BackupLease is the full app-owned lease; operations receive RecoveryLease.
-type BackupLease interface {
-	RecoveryLease
-	Write(ctx context.Context) (string, error)
-	PruneRetaining(path string) error
-	PruneFailedRetaining(path string) error
-}
-
-// BackupLeaser serializes snapshot creation, destructive mutation, and
-// retention across processes. *BackupService implements this port; lightweight
-// fakes may implement only BackupRunner and continue through the legacy path.
-type BackupLeaser interface {
-	WithLease(ctx context.Context, run func(BackupLease) error) error
-}
-
 // AtomicProjectDeleteRepository combines an exact-generation backup with the
 // project cascade on one pinned repository connection. Function callbacks keep
 // the port adapter-neutral: SQLite supplies its connection-bound snapshot
@@ -82,25 +51,6 @@ type AtomicProjectDeleteRepository interface {
 		discardBackup func(string) error,
 		validateLease func() error,
 	) (backupPath string, err error)
-}
-
-// Checkpointer is the narrow compatibility port destructive flows may invoke
-// before BackupService.Run. It keeps generic file-copy writers compatible with
-// WAL mode; SQLite-aware snapshot writers include WAL frames without it.
-// *sqlite.Store satisfies the port via Checkpoint(ctx).
-type Checkpointer interface {
-	Checkpoint(ctx context.Context) error
-}
-
-// DataVersionReader exposes the SQLite `PRAGMA data_version` change
-// watermark the TUI's realtime tick probes to decide whether an external
-// write landed since the last tick. *sqlite.Store satisfies it via
-// DataVersion(ctx), which reads the pragma on a connection pinned out of
-// the pool for the store's lifetime (the pragma is per-connection, so a
-// pooled read would thrash). Optional collaborator — when nil the TUI
-// falls back to reloading every tick, preserving pre-watermark behaviour.
-type DataVersionReader interface {
-	DataVersion(ctx context.Context) (int64, error)
 }
 
 // EventRecorder is the narrow port ProjectService uses to emit the
@@ -441,6 +391,8 @@ type BundleStore interface {
 // EntityFileWriter renders per-entity (.md) file payloads and resolves their
 // canonical disk paths. BundleEditor applies those payloads atomically.
 type EntityFileWriter interface {
+	TemplateFiles
+	FileExists(path string) (bool, error)
 	LawFileBytes(law config.Law) ([]byte, error)
 	PersonaFileBytes(persona config.Persona) ([]byte, error)
 	SkillFileBytes(skill config.Skill) ([]byte, error)
@@ -464,4 +416,9 @@ type Slugifier interface {
 // read-model.
 type TUIQuery interface {
 	Snapshot(ctx context.Context, project domain.ProjectContext, sort domain.TaskSort, opts ...SnapshotOptions) (TUISnapshot, error)
+}
+
+// TemplateFiles supplies bounded reads of template sources.
+type TemplateFiles interface {
+	ReadTemplateFile(path string) ([]byte, error)
 }

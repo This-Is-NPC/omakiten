@@ -5,7 +5,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"omakiten/internal/operation"
+	"omakiten/internal/contract"
 )
 
 // (parsePriority lives in enums.go for cross-command reuse.)
@@ -61,7 +61,7 @@ func runTaskEdit(ctx context.Context, cmd *cobra.Command, opts *runtimeOptions, 
 	if cmd.Flags().Changed("bucket") {
 		// Bucket moves go through MoveTask so the activity log distinguishes
 		// edit vs move (EditTask omits BucketKey).
-		response, err := rt.operationService().MoveTask(ctx, operation.MoveTaskInput{
+		response, err := rt.operationService().MoveTask(ctx, contract.MoveTaskInput{
 			ProjectSelector: opts.projectSelector(),
 			TaskID:          taskID,
 			BucketKey:       bucket,
@@ -75,7 +75,7 @@ func runTaskEdit(ctx context.Context, cmd *cobra.Command, opts *runtimeOptions, 
 		return response, nil
 	}
 	// Mirror app.TaskService.Edit: empty patch is invalid.
-	_, err := rt.operationService().EditTask(ctx, operation.EditTaskInput{
+	_, err := rt.operationService().EditTask(ctx, contract.EditTaskInput{
 		ProjectSelector: opts.projectSelector(),
 		TaskID:          taskID,
 	})
@@ -89,8 +89,8 @@ func taskEditFieldsChanged(cmd *cobra.Command) bool {
 		cmd.Flags().Changed("parent")
 }
 
-func editTaskInput(cmd *cobra.Command, opts *runtimeOptions, rt *runtime, taskID int64, title, description, priority string, parent int64) (operation.EditTaskInput, error) {
-	input := operation.EditTaskInput{ProjectSelector: opts.projectSelector(), TaskID: taskID}
+func editTaskInput(cmd *cobra.Command, opts *runtimeOptions, rt *runtime, taskID int64, title, description, priority string, parent int64) (contract.EditTaskInput, error) {
+	input := contract.EditTaskInput{ProjectSelector: opts.projectSelector(), TaskID: taskID}
 	if cmd.Flags().Changed("title") {
 		input.Title = &title
 	}
@@ -100,13 +100,13 @@ func editTaskInput(cmd *cobra.Command, opts *runtimeOptions, rt *runtime, taskID
 	if cmd.Flags().Changed("priority") {
 		value, err := parsePriority(priority, rt.activeRegistry())
 		if err != nil {
-			return operation.EditTaskInput{}, err
+			return contract.EditTaskInput{}, err
 		}
 		label := rt.activeRegistry().PriorityLabel(value)
 		input.Priority = &label
 	}
 	if cmd.Flags().Changed("parent") {
-		input.ParentID = operation.OptionalInt64{Set: true}
+		input.ParentID = contract.OptionalInt64{Set: true}
 		if parent != 0 {
 			input.ParentID.Value = &parent
 		}

@@ -17,7 +17,7 @@ import (
 func TestServeInitialize(t *testing.T) {
 	input := strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"initialize"}` + "\n")
 	var output bytes.Buffer
-	if err := Serve(context.Background(), input, &output, NewAdapter(nil)); err != nil {
+	if err := ServeNotify(context.Background(), input, &output, NewAdapter(nil), nil); err != nil {
 		t.Fatalf("Serve() error = %v", err)
 	}
 	var response rpcResponse
@@ -36,7 +36,7 @@ func TestServeInitialize(t *testing.T) {
 func TestServeInitializeAdvertisesToolsListChanged(t *testing.T) {
 	input := strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"initialize"}` + "\n")
 	var output bytes.Buffer
-	if err := Serve(context.Background(), input, &output, NewAdapter(nil)); err != nil {
+	if err := ServeNotify(context.Background(), input, &output, NewAdapter(nil), nil); err != nil {
 		t.Fatalf("Serve() error = %v", err)
 	}
 	if !strings.Contains(output.String(), `"listChanged":true`) {
@@ -121,7 +121,7 @@ func waitForOutput(buf *safeBuffer, needle string, timeout time.Duration) bool {
 func TestServePing(t *testing.T) {
 	input := strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"ping"}` + "\n")
 	var output bytes.Buffer
-	if err := Serve(context.Background(), input, &output, NewAdapter(nil)); err != nil {
+	if err := ServeNotify(context.Background(), input, &output, NewAdapter(nil), nil); err != nil {
 		t.Fatalf("Serve() error = %v", err)
 	}
 	var response rpcResponse
@@ -139,7 +139,7 @@ func TestServeToolsCall(t *testing.T) {
 
 	input := strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"project.overview","arguments":{"_agent_model":"test-model"}}}` + "\n")
 	var output bytes.Buffer
-	if err := Serve(ctx, input, &output, NewAdapter(service)); err != nil {
+	if err := ServeNotify(ctx, input, &output, NewAdapter(service), nil); err != nil {
 		t.Fatalf("Serve() error = %v", err)
 	}
 	var response rpcResponse
@@ -157,7 +157,7 @@ func TestServeToolsCallInvalidParams(t *testing.T) {
 
 	input := strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":"invalid"}` + "\n")
 	var output bytes.Buffer
-	if err := Serve(ctx, input, &output, NewAdapter(service)); err != nil {
+	if err := ServeNotify(ctx, input, &output, NewAdapter(service), nil); err != nil {
 		t.Fatalf("Serve() error = %v", err)
 	}
 	var response rpcResponse
@@ -175,7 +175,7 @@ func TestServeResourcesRead(t *testing.T) {
 
 	input := strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"resources/read","params":{"uri":"omakiten://project/overview"}}` + "\n")
 	var output bytes.Buffer
-	if err := Serve(ctx, input, &output, NewAdapter(service)); err != nil {
+	if err := ServeNotify(ctx, input, &output, NewAdapter(service), nil); err != nil {
 		t.Fatalf("Serve() error = %v", err)
 	}
 	var response rpcResponse
@@ -190,7 +190,7 @@ func TestServeResourcesRead(t *testing.T) {
 func TestServePromptsGet(t *testing.T) {
 	input := strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"prompts/get","params":{"name":"okt"}}` + "\n")
 	var output bytes.Buffer
-	if err := Serve(context.Background(), input, &output, NewAdapter(nil)); err != nil {
+	if err := ServeNotify(context.Background(), input, &output, NewAdapter(nil), nil); err != nil {
 		t.Fatalf("Serve() error = %v", err)
 	}
 	var response rpcResponse
@@ -205,7 +205,7 @@ func TestServePromptsGet(t *testing.T) {
 func TestServeUnknownMethod(t *testing.T) {
 	input := strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"unknown/method"}` + "\n")
 	var output bytes.Buffer
-	if err := Serve(context.Background(), input, &output, NewAdapter(nil)); err != nil {
+	if err := ServeNotify(context.Background(), input, &output, NewAdapter(nil), nil); err != nil {
 		t.Fatalf("Serve() error = %v", err)
 	}
 	var response rpcResponse
@@ -220,7 +220,7 @@ func TestServeUnknownMethod(t *testing.T) {
 func TestServeParseError(t *testing.T) {
 	input := strings.NewReader(`not json` + "\n")
 	var output bytes.Buffer
-	if err := Serve(context.Background(), input, &output, NewAdapter(nil)); err != nil {
+	if err := ServeNotify(context.Background(), input, &output, NewAdapter(nil), nil); err != nil {
 		t.Fatalf("Serve() error = %v", err)
 	}
 	var response rpcResponse
@@ -236,7 +236,7 @@ func TestServeEmptyLineSkip(t *testing.T) {
 	input := strings.NewReader(`
 {"jsonrpc":"2.0","id":1,"method":"ping"}` + "\n")
 	var output bytes.Buffer
-	if err := Serve(context.Background(), input, &output, NewAdapter(nil)); err != nil {
+	if err := ServeNotify(context.Background(), input, &output, NewAdapter(nil), nil); err != nil {
 		t.Fatalf("Serve() error = %v", err)
 	}
 	var response rpcResponse
@@ -293,7 +293,7 @@ func TestErrorPayloadOpaqueError(t *testing.T) {
 func TestServeNotificationNoResponse(t *testing.T) {
 	input := strings.NewReader(`{"jsonrpc":"2.0","method":"notifications/initialized"}` + "\n")
 	var output bytes.Buffer
-	if err := Serve(context.Background(), input, &output, NewAdapter(nil)); err != nil {
+	if err := ServeNotify(context.Background(), input, &output, NewAdapter(nil), nil); err != nil {
 		t.Fatalf("Serve() error = %v", err)
 	}
 	if output.Len() != 0 {

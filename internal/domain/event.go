@@ -289,27 +289,6 @@ func ToolCallEventTypeForSource(source ActivitySource) string {
 	return ""
 }
 
-// KnownEventTypes is the closed set of event_type values the application
-// emits, derived from the YAML event registry at boot. Empty until
-// LoadEventRegistryFromYAML runs (typically through config.LoadDomainEventRegistry
-// during process startup). Used by config validation to reject overrides
-// referencing unknown event types (typo guard) and by tests to assert
-// catalog completeness. Sorted by the loader for deterministic output;
-// consumers may still treat the order as informational.
-//
-// EventTypeOperation is excluded because it is the pre-019 legacy value
-// no longer emitted by activity.Track — the three EventType*ToolCall
-// constants supersede it. The loader never resurrects it.
-var KnownEventTypes = []string{}
-
-// IsKnownEventType reports whether s matches one of KnownEventTypes.
-// Used by config validation. Returns false for every input until the
-// YAML registry has been loaded.
-func IsKnownEventType(s string) bool {
-	_, ok := EventDefByKey[s]
-	return ok
-}
-
 const (
 	// EventEntityTask scopes events to a task row (entity_id is the task id).
 	EventEntityTask = "task"

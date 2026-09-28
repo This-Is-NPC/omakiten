@@ -1,6 +1,8 @@
 package screenlayout
 
-import "omakiten/internal/tui/components/screenkit"
+import (
+	"omakiten/internal/tui/components/screenkit"
+)
 
 // measured is everything the resolver learns about one section BEFORE it
 // assembles the lines that section paints: the geometry it was handed, the

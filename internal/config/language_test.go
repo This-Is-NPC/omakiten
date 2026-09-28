@@ -40,7 +40,7 @@ keys:
   tui.bye: Bye
 `,
 	}, nil)
-	langs, warns, err := LoadLanguages(dir)
+	langs, warns, err := loadLanguagesReader(dir, nil)
 	if err != nil {
 		t.Fatalf("LoadLanguages: %v", err)
 	}
@@ -82,7 +82,7 @@ keys:
 `,
 		},
 	)
-	langs, _, err := LoadLanguages(dir)
+	langs, _, err := loadLanguagesReader(dir, nil)
 	if err != nil {
 		t.Fatalf("LoadLanguages: %v", err)
 	}
@@ -108,7 +108,7 @@ name: English
 native: English
 `,
 	}, nil)
-	langs, _, err := LoadLanguages(dir)
+	langs, _, err := loadLanguagesReader(dir, nil)
 	if err != nil {
 		t.Fatalf("LoadLanguages: %v", err)
 	}
@@ -129,7 +129,7 @@ func TestLoadLanguages_missingCodeRejected(t *testing.T) {
 native: English
 `,
 	}, nil)
-	_, _, err := LoadLanguages(dir)
+	_, _, err := loadLanguagesReader(dir, nil)
 	if err == nil || !strings.Contains(err.Error(), "code") {
 		t.Fatalf("expected error about missing code, got %v", err)
 	}
@@ -141,7 +141,7 @@ func TestLoadLanguages_missingNameRejected(t *testing.T) {
 native: English
 `,
 	}, nil)
-	_, _, err := LoadLanguages(dir)
+	_, _, err := loadLanguagesReader(dir, nil)
 	if err == nil || !strings.Contains(err.Error(), "name") {
 		t.Fatalf("expected error about missing name, got %v", err)
 	}
@@ -153,7 +153,7 @@ func TestLoadLanguages_missingNativeRejected(t *testing.T) {
 name: English
 `,
 	}, nil)
-	_, _, err := LoadLanguages(dir)
+	_, _, err := loadLanguagesReader(dir, nil)
 	if err == nil || !strings.Contains(err.Error(), "native") {
 		t.Fatalf("expected error about missing native, got %v", err)
 	}
@@ -166,7 +166,7 @@ name: English
 native: English
 `,
 	}, nil)
-	_, _, err := LoadLanguages(dir)
+	_, _, err := loadLanguagesReader(dir, nil)
 	if err == nil || !strings.Contains(err.Error(), "lowercase") {
 		t.Fatalf("expected lowercase error, got %v", err)
 	}
@@ -179,7 +179,7 @@ name: Portuguese
 native: Português
 `,
 	}, nil)
-	_, warns, err := LoadLanguages(dir)
+	_, warns, err := loadLanguagesReader(dir, nil)
 	if err != nil {
 		t.Fatalf("LoadLanguages: %v", err)
 	}
@@ -204,14 +204,14 @@ native: American
 `), 0o644); err != nil {
 		t.Fatalf("write second file: %v", err)
 	}
-	_, _, err := LoadLanguages(dir)
+	_, _, err := loadLanguagesReader(dir, nil)
 	if err == nil || !strings.Contains(err.Error(), "duplicate") {
 		t.Fatalf("expected duplicate error, got %v", err)
 	}
 }
 
 func TestLoadLanguages_missingDirReturnsEmpty(t *testing.T) {
-	langs, warns, err := LoadLanguages(filepath.Join(t.TempDir(), "nonexistent"))
+	langs, warns, err := loadLanguagesReader(filepath.Join(t.TempDir(), "nonexistent"), nil)
 	if err != nil {
 		t.Fatalf("missing dir should not error: %v", err)
 	}
@@ -228,7 +228,7 @@ native: English
 extra: should-not-be-allowed
 `,
 	}, nil)
-	_, _, err := LoadLanguages(dir)
+	_, _, err := loadLanguagesReader(dir, nil)
 	if err == nil {
 		t.Fatalf("expected error on unknown field")
 	}
@@ -247,7 +247,7 @@ native: English
 keys: {}
 `,
 	}, nil)
-	langs, _, err := LoadLanguages(dir)
+	langs, _, err := loadLanguagesReader(dir, nil)
 	if err != nil {
 		t.Fatalf("LoadLanguages: %v", err)
 	}
@@ -272,7 +272,7 @@ native: English
 	if err := os.WriteFile(filepath.Join(dir, "notes.txt"), []byte("notes"), 0o644); err != nil {
 		t.Fatalf("write notes: %v", err)
 	}
-	langs, _, err := LoadLanguages(dir)
+	langs, _, err := loadLanguagesReader(dir, nil)
 	if err != nil {
 		t.Fatalf("LoadLanguages: %v", err)
 	}

@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"omakiten/internal/contract"
 	"omakiten/internal/domain"
 )
 
@@ -16,7 +17,7 @@ func TestCreateTaskInputCapsSmoke(t *testing.T) {
 	f := newAgentFixture(t)
 
 	t.Run("title at cap accepted", func(t *testing.T) {
-		out, err := f.service.CreateTask(f.ctx, CreateTaskInput{
+		out, err := f.service.CreateTask(f.ctx, contract.CreateTaskInput{
 			Title:     strings.Repeat("t", domain.MaxTaskTitleRunes),
 			BucketKey: "backlog",
 		})
@@ -29,7 +30,7 @@ func TestCreateTaskInputCapsSmoke(t *testing.T) {
 	})
 
 	t.Run("title over cap rejected", func(t *testing.T) {
-		_, err := f.service.CreateTask(f.ctx, CreateTaskInput{
+		_, err := f.service.CreateTask(f.ctx, contract.CreateTaskInput{
 			Title:     strings.Repeat("t", domain.MaxTaskTitleRunes+1),
 			BucketKey: "backlog",
 		})
@@ -37,7 +38,7 @@ func TestCreateTaskInputCapsSmoke(t *testing.T) {
 	})
 
 	t.Run("description over cap rejected", func(t *testing.T) {
-		_, err := f.service.CreateTask(f.ctx, CreateTaskInput{
+		_, err := f.service.CreateTask(f.ctx, contract.CreateTaskInput{
 			Title:       "ok",
 			Description: strings.Repeat("d", domain.MaxTaskDescriptionBytes+1),
 			BucketKey:   "backlog",
@@ -53,7 +54,7 @@ func TestAddCommentInputCapSmoke(t *testing.T) {
 	f := newAgentFixture(t)
 
 	t.Run("body at cap accepted", func(t *testing.T) {
-		_, err := f.service.AddComment(f.ctx, AddCommentInput{
+		_, err := f.service.AddComment(f.ctx, contract.AddCommentInput{
 			TaskID:     f.taskA1.ID,
 			Body:       strings.Repeat("b", domain.MaxCommentBodyBytes),
 			AuthorType: "agent",
@@ -64,7 +65,7 @@ func TestAddCommentInputCapSmoke(t *testing.T) {
 	})
 
 	t.Run("body over cap rejected", func(t *testing.T) {
-		_, err := f.service.AddComment(f.ctx, AddCommentInput{
+		_, err := f.service.AddComment(f.ctx, contract.AddCommentInput{
 			TaskID:     f.taskA1.ID,
 			Body:       strings.Repeat("b", domain.MaxCommentBodyBytes+1),
 			AuthorType: "agent",

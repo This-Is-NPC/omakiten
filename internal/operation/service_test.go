@@ -10,6 +10,7 @@ import (
 
 	"omakiten/internal/app"
 	"omakiten/internal/config"
+	"omakiten/internal/contract"
 	"omakiten/internal/domain"
 	"omakiten/internal/testfixtures"
 	"omakiten/internal/testfixtures/snapstore"
@@ -18,7 +19,7 @@ import (
 func TestOverviewUsesResolvedProjectAndCompactState(t *testing.T) {
 	fixture := newAgentFixture(t)
 
-	overview, err := fixture.service.Overview(fixture.ctx, OverviewInput{})
+	overview, err := fixture.service.Overview(fixture.ctx, contract.OverviewInput{})
 	if err != nil {
 		t.Fatalf("Overview() error = %v", err)
 	}
@@ -35,6 +36,23 @@ func TestOverviewUsesResolvedProjectAndCompactState(t *testing.T) {
 	}
 }
 
+func TestExecuteActionPreservesHostProject(t *testing.T) {
+	fixture := newAgentFixture(t)
+	args := map[string]any{"task_id": fixture.taskB.ID, "project_id": fixture.projectB.ID}
+	_, err := fixture.service.ForTUI().ExecuteAction(fixture.ctx, contract.ActionRequest{
+		Operation: "task.continue", ProjectID: fixture.projectA.ID, Arguments: args,
+	})
+	assertCodedError(t, err, domain.ErrTaskNotFound)
+	if args["project_id"] != fixture.projectB.ID {
+		t.Fatal("ExecuteAction mutated the notification's stored arguments")
+	}
+	_, err = fixture.service.ForTUI().ExecuteAction(fixture.ctx, contract.ActionRequest{
+		Operation: "task.list", ProjectID: fixture.projectA.ID,
+		Arguments: map[string]any{"typo": true},
+	})
+	assertCodedError(t, err, domain.ErrValidation)
+}
+
 func TestUnregisteredProjectReturnsAgentGuidance(t *testing.T) {
 	ctx := context.Background()
 	store := newAgentStore(t, ctx)
@@ -42,10 +60,10 @@ func TestUnregisteredProjectReturnsAgentGuidance(t *testing.T) {
 	if err := os.MkdirAll(outside, 0o755); err != nil {
 		t.Fatalf("MkdirAll(outside) error = %v", err)
 	}
-	service := NewService(store, ProjectSelector{CWD: outside})
+	service := NewService(store, contract.ProjectSelector{CWD: outside})
 	service.SetSnapshot(store.Snapshot())
 
-	_, err := service.Overview(ctx, OverviewInput{})
+	_, err := service.Overview(ctx, contract.OverviewInput{})
 	if err == nil {
 		t.Fatalf("Overview() error = nil, want project_not_found")
 	}
@@ -61,14 +79,14 @@ func TestUnregisteredProjectReturnsAgentGuidance(t *testing.T) {
 func TestContinueTaskRejectsCrossProjectTask(t *testing.T) {
 	fixture := newAgentFixture(t)
 
-	_, err := fixture.service.ContinueTask(fixture.ctx, ContinueTaskInput{TaskID: fixture.taskB.ID})
+	_, err := fixture.service.ContinueTask(fixture.ctx, contract.ContinueTaskInput{TaskID: fixture.taskB.ID})
 	assertCodedError(t, err, domain.ErrTaskNotFound)
 }
 
 func TestResumeProjectDoesNotMixProjectState(t *testing.T) {
 	fixture := newAgentFixture(t)
 
-	resume, err := fixture.service.ResumeProject(fixture.ctx, ResumeProjectInput{})
+	resume, err := fixture.service.ResumeProject(fixture.ctx, contract.ResumeProjectInput{})
 	if err != nil {
 		t.Fatalf("ResumeProject() error = %v", err)
 	}
@@ -85,11 +103,11 @@ func TestResumeProjectDoesNotMixProjectState(t *testing.T) {
 func TestCreateTaskIntentRequiresConfirmationForSimilarWork(t *testing.T) {
 	fixture := newAgentFixture(t)
 
-	before, err := fixture.service.ListTasks(fixture.ctx, ListTasksInput{})
+	before, err := fixture.service.ListTasks(fixture.ctx, contract.ListTasksInput{})
 	if err != nil {
 		t.Fatalf("ListTasks(before) error = %v", err)
 	}
-	created, err := fixture.service.CreateTaskIntent(fixture.ctx, CreateTaskInput{Description: "Add MCP agent integration for AI harnesses"})
+	created, err := fixture.service.CreateTaskIntent(fixture.ctx, contract.CreateTaskInput{Description: "Add MCP agent integration for AI harnesses"})
 	if err != nil {
 		t.Fatalf("CreateTaskIntent() error = %v", err)
 	}
@@ -108,7 +126,7 @@ func TestCreateTaskIntentRequiresConfirmationForSimilarWork(t *testing.T) {
 	if created.Task != nil {
 		t.Fatalf("CreateTaskIntent().Task = %#v, want nil until confirmed", created.Task)
 	}
-	after, err := fixture.service.ListTasks(fixture.ctx, ListTasksInput{})
+	after, err := fixture.service.ListTasks(fixture.ctx, contract.ListTasksInput{})
 	if err != nil {
 		t.Fatalf("ListTasks(after) error = %v", err)
 	}
@@ -120,27 +138,27 @@ func TestCreateTaskIntentRequiresConfirmationForSimilarWork(t *testing.T) {
 func TestRecordProgressUsesWorkflowGuardrails(t *testing.T) {
 	fixture := newAgentFixture(t)
 
-	_, err := fixture.service.RecordProgress(fixture.ctx, RecordProgressInput{TaskID: fixture.taskA1.ID, MoveToBucket: "done"})
+	_, err := fixture.service.RecordProgress(fixture.ctx, contract.RecordProgressInput{TaskID: fixture.taskA1.ID, MoveToBucket: "done"})
 	assertCodedError(t, err, domain.ErrWorkflowInvalidTransition)
 }
 
 func TestMutatingIntentsAreProjectScoped(t *testing.T) {
 	fixture := newAgentFixture(t)
 
-	_, err := fixture.service.AddComment(fixture.ctx, AddCommentInput{TaskID: fixture.taskB.ID, Body: "cross project"})
+	_, err := fixture.service.AddComment(fixture.ctx, contract.AddCommentInput{TaskID: fixture.taskB.ID, Body: "cross project"})
 	assertCodedError(t, err, domain.ErrTaskNotFound)
 
-	_, err = fixture.service.AddDependency(fixture.ctx, AddDependencyInput{TaskID: fixture.taskA1.ID, DependsOnTaskID: fixture.taskB.ID})
+	_, err = fixture.service.AddDependency(fixture.ctx, contract.AddDependencyInput{TaskID: fixture.taskA1.ID, DependsOnTaskID: fixture.taskB.ID})
 	assertCodedError(t, err, domain.ErrTaskNotFound)
 }
 
 func TestContinueTaskReturnsTaskDetails(t *testing.T) {
 	fixture := newAgentFixture(t)
 
-	_, err := fixture.service.ContinueTask(fixture.ctx, ContinueTaskInput{TaskID: 0})
+	_, err := fixture.service.ContinueTask(fixture.ctx, contract.ContinueTaskInput{TaskID: 0})
 	assertCodedError(t, err, domain.ErrValidation)
 
-	cont, err := fixture.service.ContinueTask(fixture.ctx, ContinueTaskInput{TaskID: fixture.taskA1.ID})
+	cont, err := fixture.service.ContinueTask(fixture.ctx, contract.ContinueTaskInput{TaskID: fixture.taskA1.ID})
 	if err != nil {
 		t.Fatalf("ContinueTask() error = %v", err)
 	}
@@ -159,7 +177,7 @@ func TestCreateTaskDirectly(t *testing.T) {
 	fixture := newAgentFixture(t)
 
 	// CreateTask bypasses similarity check
-	created, err := fixture.service.CreateTask(fixture.ctx, CreateTaskInput{Title: "Add MCP agent integration", Description: "Expose Omakiten state"})
+	created, err := fixture.service.CreateTask(fixture.ctx, contract.CreateTaskInput{Title: "Add MCP agent integration", Description: "Expose Omakiten state"})
 	if err != nil {
 		t.Fatalf("CreateTask() error = %v", err)
 	}
@@ -168,11 +186,11 @@ func TestCreateTaskDirectly(t *testing.T) {
 	}
 
 	// Empty title/description
-	_, err = fixture.service.CreateTaskIntent(fixture.ctx, CreateTaskInput{Title: "", Description: ""})
+	_, err = fixture.service.CreateTaskIntent(fixture.ctx, contract.CreateTaskInput{Title: "", Description: ""})
 	assertCodedError(t, err, domain.ErrValidation)
 
 	// SkipSimilarityCheck path
-	intent, err := fixture.service.CreateTaskIntent(fixture.ctx, CreateTaskInput{Title: "Totally unique title", SkipSimilarityCheck: true})
+	intent, err := fixture.service.CreateTaskIntent(fixture.ctx, contract.CreateTaskInput{Title: "Totally unique title", SkipSimilarityCheck: true})
 	if err != nil {
 		t.Fatalf("CreateTaskIntent() error = %v", err)
 	}
@@ -181,7 +199,7 @@ func TestCreateTaskDirectly(t *testing.T) {
 	}
 
 	// Confirmed=true override
-	confirmed, err := fixture.service.CreateTaskIntent(fixture.ctx, CreateTaskInput{Title: "Add MCP agent integration", Confirmed: true})
+	confirmed, err := fixture.service.CreateTaskIntent(fixture.ctx, contract.CreateTaskInput{Title: "Add MCP agent integration", Confirmed: true})
 	if err != nil {
 		t.Fatalf("CreateTaskIntent() confirmed error = %v", err)
 	}
@@ -193,7 +211,7 @@ func TestCreateTaskDirectly(t *testing.T) {
 func TestMoveTaskHappyPath(t *testing.T) {
 	fixture := newAgentFixture(t)
 
-	moved, err := fixture.service.MoveTask(fixture.ctx, MoveTaskInput{TaskID: fixture.taskA1.ID, BucketKey: "dev"})
+	moved, err := fixture.service.MoveTask(fixture.ctx, contract.MoveTaskInput{TaskID: fixture.taskA1.ID, BucketKey: "dev"})
 	if err != nil {
 		t.Fatalf("MoveTask() error = %v", err)
 	}
@@ -205,7 +223,7 @@ func TestMoveTaskHappyPath(t *testing.T) {
 func TestListCommentsHappyPath(t *testing.T) {
 	fixture := newAgentFixture(t)
 
-	comments, err := fixture.service.ListComments(fixture.ctx, ListCommentsInput{TaskID: fixture.taskA1.ID})
+	comments, err := fixture.service.ListComments(fixture.ctx, contract.ListCommentsInput{TaskID: fixture.taskA1.ID})
 	if err != nil {
 		t.Fatalf("ListComments() error = %v", err)
 	}
@@ -217,7 +235,7 @@ func TestListCommentsHappyPath(t *testing.T) {
 func TestListDependenciesHappyPath(t *testing.T) {
 	fixture := newAgentFixture(t)
 
-	deps, err := fixture.service.ListDependencies(fixture.ctx, ListDependenciesInput{TaskID: fixture.taskA2.ID})
+	deps, err := fixture.service.ListDependencies(fixture.ctx, contract.ListDependenciesInput{TaskID: fixture.taskA2.ID})
 	if err != nil {
 		t.Fatalf("ListDependencies() error = %v", err)
 	}
@@ -229,7 +247,7 @@ func TestListDependenciesHappyPath(t *testing.T) {
 func TestShowWorkflowHappyPath(t *testing.T) {
 	fixture := newAgentFixture(t)
 
-	resp, err := fixture.service.ShowWorkflow(fixture.ctx, WorkflowInput{})
+	resp, err := fixture.service.ShowWorkflow(fixture.ctx, contract.WorkflowInput{})
 	if err != nil {
 		t.Fatalf("ShowWorkflow() error = %v", err)
 	}
@@ -242,7 +260,7 @@ func TestRemoveDependencyConfirmation(t *testing.T) {
 	fixture := newAgentFixture(t)
 
 	// Unconfirmed -> requires confirmation
-	resp, err := fixture.service.RemoveDependency(fixture.ctx, RemoveDependencyInput{TaskID: fixture.taskA2.ID, DependsOnTaskID: fixture.taskA1.ID})
+	resp, err := fixture.service.RemoveDependency(fixture.ctx, contract.RemoveDependencyInput{TaskID: fixture.taskA2.ID, DependsOnTaskID: fixture.taskA1.ID})
 	if err != nil {
 		t.Fatalf("RemoveDependency() error = %v", err)
 	}
@@ -251,7 +269,7 @@ func TestRemoveDependencyConfirmation(t *testing.T) {
 	}
 
 	// Confirmed -> removes
-	removed, err := fixture.service.RemoveDependency(fixture.ctx, RemoveDependencyInput{TaskID: fixture.taskA2.ID, DependsOnTaskID: fixture.taskA1.ID, Confirmed: true})
+	removed, err := fixture.service.RemoveDependency(fixture.ctx, contract.RemoveDependencyInput{TaskID: fixture.taskA2.ID, DependsOnTaskID: fixture.taskA1.ID, Confirmed: true})
 	if err != nil {
 		t.Fatalf("RemoveDependency() confirmed error = %v", err)
 	}
@@ -264,16 +282,16 @@ func TestRecordProgressScenarios(t *testing.T) {
 	fixture := newAgentFixture(t)
 
 	// TaskID <= 0 + edits -> error
-	_, err := fixture.service.RecordProgress(fixture.ctx, RecordProgressInput{Title: strPtr("new title")})
+	_, err := fixture.service.RecordProgress(fixture.ctx, contract.RecordProgressInput{Title: strPtr("new title")})
 	assertCodedError(t, err, domain.ErrValidation)
 
 	// TaskID <= 0 + no edits -> error
-	_, err = fixture.service.RecordProgress(fixture.ctx, RecordProgressInput{})
+	_, err = fixture.service.RecordProgress(fixture.ctx, contract.RecordProgressInput{})
 	assertCodedError(t, err, domain.ErrValidation)
 
 	// Edit only
 	newTitle := "Updated title"
-	editOnly, err := fixture.service.RecordProgress(fixture.ctx, RecordProgressInput{TaskID: fixture.taskA1.ID, Title: &newTitle})
+	editOnly, err := fixture.service.RecordProgress(fixture.ctx, contract.RecordProgressInput{TaskID: fixture.taskA1.ID, Title: &newTitle})
 	if err != nil {
 		t.Fatalf("RecordProgress(edit) error = %v", err)
 	}
@@ -282,7 +300,7 @@ func TestRecordProgressScenarios(t *testing.T) {
 	}
 
 	// Comment only
-	commentOnly, err := fixture.service.RecordProgress(fixture.ctx, RecordProgressInput{TaskID: fixture.taskA1.ID, Comment: "progress note"})
+	commentOnly, err := fixture.service.RecordProgress(fixture.ctx, contract.RecordProgressInput{TaskID: fixture.taskA1.ID, Comment: "progress note"})
 	if err != nil {
 		t.Fatalf("RecordProgress(comment) error = %v", err)
 	}
@@ -292,7 +310,7 @@ func TestRecordProgressScenarios(t *testing.T) {
 
 	// Combined
 	newDesc := "updated desc"
-	combined, err := fixture.service.RecordProgress(fixture.ctx, RecordProgressInput{
+	combined, err := fixture.service.RecordProgress(fixture.ctx, contract.RecordProgressInput{
 		TaskID:      fixture.taskA1.ID,
 		Description: &newDesc,
 		Comment:     "combined note",
@@ -397,7 +415,7 @@ func newAgentFixture(t *testing.T) agentFixture {
 	// kit-shape settings here. The validator at the config layer
 	// guarantees these values in production; mirroring them keeps
 	// behavioural parity in tests.
-	svc := NewService(store, ProjectSelector{CWD: rootA})
+	svc := NewService(store, contract.ProjectSelector{CWD: rootA})
 	svc.SetSnapshot(store.Snapshot())
 	svc.SetOrphanService(app.NewOrphanService(store, store.Snapshot(), nil))
 	svc.SetSettings(ServiceSettings{

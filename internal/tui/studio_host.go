@@ -3,8 +3,9 @@ package tui
 import (
 	tea "github.com/charmbracelet/bubbletea"
 
+	"omakiten/internal/commandcatalog"
 	"omakiten/internal/config/bundledraft"
-	"omakiten/internal/operation"
+	"omakiten/internal/contract"
 	"omakiten/internal/studioprojection"
 	"omakiten/internal/tui/screenhost"
 	"omakiten/internal/tui/screens/studio"
@@ -44,8 +45,8 @@ func (m Model) studioDependencies() studio.Deps {
 		Workflow:          m.workflow,
 		Tasks:             m.tasks,
 		ConfigPath:        m.repos.ConfigPath,
-		CommandNames:      operation.CommandNames(),
-		ResolveCommand:    resolveStudioCommand,
+		CommandNames:      commandcatalog.CommandNames(),
+		ResolveCommand:    m.resolveStudioCommand,
 		HookHistory:       m.studioHookHistory,
 	}
 }
@@ -58,7 +59,7 @@ type studioHookHistoryResultMsg struct {
 }
 
 func (m *Model) prepareStudioHookHistory() tea.Cmd {
-	if m.sub != subStudioWorkflow && m.sub != subStudioCommands && m.sub != subStudioPersonas && m.sub != subStudioHooks {
+	if m.navigation != screenhost.StudioWorkflow && m.navigation != screenhost.StudioCommands && m.navigation != screenhost.StudioPersonas && m.navigation != screenhost.StudioHooks {
 		return nil
 	}
 	projectID := m.project.ID
@@ -114,6 +115,6 @@ func (m *Model) applyStudioHookHistory(msg studioHookHistoryResultMsg) {
 // declares what a draft does, the host says which engine does it. Keeping the
 // choice here is what lets the screen paint a candidate without linking the
 // mutation and validation logic that produced it.
-func openStudioBundleDraft(editor studio.BundleEditor) (studio.StudioDraft, error) {
+func openStudioBundleDraft(editor contract.BundleEditor) (studio.StudioDraft, error) {
 	return bundledraft.New(editor)
 }

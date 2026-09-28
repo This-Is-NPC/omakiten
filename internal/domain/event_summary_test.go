@@ -6,22 +6,22 @@ import (
 )
 
 // TestSummarizeEventCoversKnownEventTypes locks AC#2: every entry in
-// KnownEventTypes produces a non-empty single-line summary, even with
+// fixtureRegistry().Types() produces a non-empty single-line summary, even with
 // an empty payload. New event_types added without a SummarizeEvent
 // switch arm fall into unknownFallback (which still returns the type
 // name) but the table below carries one explicit case per known type
 // so the switch coverage stays visible — the parity check inside
 // asserts the explicit branch ran, not the fallback.
 func TestSummarizeEventCoversKnownEventTypes(t *testing.T) {
-	for _, ev := range KnownEventTypes {
+	for _, ev := range fixtureRegistry().Types() {
 		t.Run(ev, func(t *testing.T) {
 			row := EventRow{EventType: ev}
-			got := SummarizeEvent(row)
+			got := fixtureRegistry().Summarize(row)
 			if got == "" {
-				t.Fatalf("SummarizeEvent(%q) = empty string", ev)
+				t.Fatalf("fixtureRegistry().Summarize(%q) = empty string", ev)
 			}
 			if strings.ContainsRune(got, '\n') {
-				t.Fatalf("SummarizeEvent(%q) = %q, must be single-line", ev, got)
+				t.Fatalf("fixtureRegistry().Summarize(%q) = %q, must be single-line", ev, got)
 			}
 			// Sanity: the catch-all fallback prepends the event_type
 			// AND condenses the payload — for an empty payload that
@@ -58,9 +58,9 @@ func TestSummarizeEventUnknownEventType(t *testing.T) {
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
-			got := SummarizeEvent(tc.row)
+			got := fixtureRegistry().Summarize(tc.row)
 			if got != tc.want {
-				t.Fatalf("SummarizeEvent(...) = %q, want %q", got, tc.want)
+				t.Fatalf("fixtureRegistry().Summarize(...) = %q, want %q", got, tc.want)
 			}
 		})
 	}
@@ -75,8 +75,8 @@ func TestSummarizeEventNeverPanics(t *testing.T) {
 		}
 	}()
 	for _, payload := range []string{"", "not json", "{not:json}", `{"x":}`, `[`, "null"} {
-		for _, ev := range append([]string{"unknown.type"}, KnownEventTypes...) {
-			_ = SummarizeEvent(EventRow{EventType: ev, Payload: payload})
+		for _, ev := range append([]string{"unknown.type"}, fixtureRegistry().Types()...) {
+			_ = fixtureRegistry().Summarize(EventRow{EventType: ev, Payload: payload})
 		}
 	}
 }
@@ -330,9 +330,9 @@ func TestSummarizeEventPerTypeRendering(t *testing.T) {
 
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
-			got := SummarizeEvent(tc.row)
+			got := fixtureRegistry().Summarize(tc.row)
 			if got != tc.want {
-				t.Fatalf("SummarizeEvent(%q) =\n  got  %q\n  want %q", tc.row.EventType, got, tc.want)
+				t.Fatalf("fixtureRegistry().Summarize(%q) =\n  got  %q\n  want %q", tc.row.EventType, got, tc.want)
 			}
 		})
 	}
@@ -344,12 +344,12 @@ func TestSummarizeEventPerTypeRendering(t *testing.T) {
 // when it runs; we approximate that by asserting equality across two
 // back-to-back calls for every known type.
 func TestSummarizeEventDeterministic(t *testing.T) {
-	for _, ev := range KnownEventTypes {
+	for _, ev := range fixtureRegistry().Types() {
 		row := EventRow{EventType: ev, Payload: `{"k":"v"}`}
-		first := SummarizeEvent(row)
-		second := SummarizeEvent(row)
+		first := fixtureRegistry().Summarize(row)
+		second := fixtureRegistry().Summarize(row)
 		if first != second {
-			t.Fatalf("SummarizeEvent(%q) non-deterministic: %q vs %q", ev, first, second)
+			t.Fatalf("fixtureRegistry().Summarize(%q) non-deterministic: %q vs %q", ev, first, second)
 		}
 	}
 }
@@ -374,27 +374,27 @@ func TestRegisterFormatterDuplicatePanics(t *testing.T) {
 }
 
 // TestRegistryCoversKnownEventTypes locks the registry-coverage rule:
-// every entry in KnownEventTypes must resolve to a non-nil Formatter
-// through EventDefByKey, and every key in EventDefByKey must appear in
-// KnownEventTypes. A miss in either direction means the YAML fixture
+// every entry in fixtureRegistry().Types() must resolve to a non-nil Formatter
+// through fixtureRegistry().byKey, and every key in fixtureRegistry().byKey must appear in
+// fixtureRegistry().Types(). A miss in either direction means the YAML fixture
 // drifted from the formatter id registrations the event_summary_*.go
 // init() functions own.
 func TestRegistryCoversKnownEventTypes(t *testing.T) {
-	known := make(map[string]struct{}, len(KnownEventTypes))
-	for _, ev := range KnownEventTypes {
+	known := make(map[string]struct{}, len(fixtureRegistry().Types()))
+	for _, ev := range fixtureRegistry().Types() {
 		known[ev] = struct{}{}
-		def, ok := EventDefByKey[ev]
+		def, ok := fixtureRegistry().byKey[ev]
 		if !ok {
-			t.Errorf("KnownEventTypes entry %q missing from EventDefByKey", ev)
+			t.Errorf("fixtureRegistry().Types() entry %q missing from fixtureRegistry().byKey", ev)
 			continue
 		}
 		if def.Formatter == nil {
-			t.Errorf("EventDefByKey[%q].Formatter is nil — formatter id never resolved", ev)
+			t.Errorf("fixtureRegistry().byKey[%q].Formatter is nil — formatter id never resolved", ev)
 		}
 	}
-	for ev := range EventDefByKey {
+	for ev := range fixtureRegistry().byKey {
 		if _, ok := known[ev]; !ok {
-			t.Errorf("EventDefByKey entry %q absent from KnownEventTypes", ev)
+			t.Errorf("fixtureRegistry().byKey entry %q absent from fixtureRegistry().Types()", ev)
 		}
 	}
 }

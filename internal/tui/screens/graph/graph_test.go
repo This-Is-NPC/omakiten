@@ -11,6 +11,7 @@ import (
 	"omakiten/internal/config"
 	"omakiten/internal/domain"
 	depgraph "omakiten/internal/graph"
+	screenfixture "omakiten/internal/tui/screenfixture"
 	"omakiten/internal/tui/screenhost"
 	"omakiten/internal/tui/screens/screentest"
 )
@@ -32,7 +33,7 @@ func graphDeps() Deps {
 }
 
 func TestScreenContractNavigationOpenAndRefresh(t *testing.T) {
-	frame := screentest.Frame(t, screentest.Options{})
+	frame := screentest.Frame(t, screenfixture.Options{})
 	screen := New().Bind(graphDeps(), frame)
 	if screen.ID() != screenhost.TasksGraph || len(selectableIndices(screen.lines)) != 5 {
 		t.Fatalf("identity/selectable = %q/%d", screen.ID(), len(selectableIndices(screen.lines)))
@@ -163,7 +164,7 @@ func TestBindClampsAfterRefreshAndLifecycleResize(t *testing.T) {
 }
 
 func TestEmptyFooterHelpNoopAndMissingTask(t *testing.T) {
-	frame := screentest.Frame(t, screentest.Options{})
+	frame := screentest.Frame(t, screenfixture.Options{})
 	empty := New().Bind(Deps{}, frame)
 	if !strings.Contains(empty.View(frame), "No task dependencies") {
 		t.Fatalf("empty view = %q", empty.View(frame))

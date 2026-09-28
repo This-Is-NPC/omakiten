@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"omakiten/internal/config"
+	"omakiten/internal/contract"
 )
 
 // snapshotWithAgentOutputLanguage builds a snapshot whose
@@ -23,7 +24,7 @@ func TestResolveCommandAppendsOutputLanguageWhenConfigured(t *testing.T) {
 	fixture := newAgentFixture(t)
 	fixture.service.SetSnapshot(snapshotWithAgentOutputLanguage(t, "English"))
 
-	resp, err := fixture.service.ResolveCommand(fixture.ctx, ResolveCommandInput{Name: "okt"})
+	resp, err := fixture.service.ResolveCommand(fixture.ctx, contract.ResolveCommandInput{Name: "okt"})
 	if err != nil {
 		t.Fatalf("ResolveCommand: %v", err)
 	}
@@ -39,7 +40,7 @@ func TestResolveCommandOmitsOutputLanguageWhenEmpty(t *testing.T) {
 	fixture := newAgentFixture(t)
 	fixture.service.SetSnapshot(snapshotWithAgentOutputLanguage(t, ""))
 
-	resp, err := fixture.service.ResolveCommand(fixture.ctx, ResolveCommandInput{Name: "okt"})
+	resp, err := fixture.service.ResolveCommand(fixture.ctx, contract.ResolveCommandInput{Name: "okt"})
 	if err != nil {
 		t.Fatalf("ResolveCommand: %v", err)
 	}
@@ -55,7 +56,7 @@ func TestResolveCommandOutputLanguageWhitespaceOnlyIsTreatedAsEmpty(t *testing.T
 	fixture := newAgentFixture(t)
 	fixture.service.SetSnapshot(snapshotWithAgentOutputLanguage(t, "   "))
 
-	resp, err := fixture.service.ResolveCommand(fixture.ctx, ResolveCommandInput{Name: "okt"})
+	resp, err := fixture.service.ResolveCommand(fixture.ctx, contract.ResolveCommandInput{Name: "okt"})
 	if err != nil {
 		t.Fatalf("ResolveCommand: %v", err)
 	}
@@ -68,7 +69,7 @@ func TestResolveCommandOutputLanguageAcceptsFreeFormValue(t *testing.T) {
 	fixture := newAgentFixture(t)
 	fixture.service.SetSnapshot(snapshotWithAgentOutputLanguage(t, "Português (Brasil)"))
 
-	resp, err := fixture.service.ResolveCommand(fixture.ctx, ResolveCommandInput{Name: "okt"})
+	resp, err := fixture.service.ResolveCommand(fixture.ctx, contract.ResolveCommandInput{Name: "okt"})
 	if err != nil {
 		t.Fatalf("ResolveCommand: %v", err)
 	}
@@ -81,7 +82,7 @@ func TestResolveCommandOutputLanguageBeforeWithoutCatalogStaysEmpty(t *testing.T
 	// Without a snapshot installed (degraded path), the renderer must not
 	// emit a directive and the response field stays empty.
 	fixture := newAgentFixture(t)
-	resp, err := fixture.service.ResolveCommand(fixture.ctx, ResolveCommandInput{Name: "okt"})
+	resp, err := fixture.service.ResolveCommand(fixture.ctx, contract.ResolveCommandInput{Name: "okt"})
 	if err != nil {
 		t.Fatalf("ResolveCommand: %v", err)
 	}

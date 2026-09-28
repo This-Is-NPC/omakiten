@@ -1,6 +1,8 @@
 package screenlayout
 
-import "omakiten/internal/tui/components/screenkit"
+import (
+	"omakiten/internal/tui/components/screenkit"
+)
 
 // State is the home of every per-section cursor and scroll offset.
 //

@@ -1,6 +1,8 @@
 package domain
 
-import "time"
+import (
+	"time"
+)
 
 // EventRow is the read shape returned by the unified Logs inspector
 // query (`internal/sqlite.Store.ListEvents`). It mirrors the Event
@@ -13,6 +15,10 @@ import "time"
 // any zero-value field as absent; SummarizeEvent encodes the per-type
 // rules for which fields it reads.
 type EventRow struct {
+	Category     EventCategory
+	Summary      string
+	Display      string
+	LogHidden    bool
 	ID           int64
 	EntityType   string
 	EntityID     int64

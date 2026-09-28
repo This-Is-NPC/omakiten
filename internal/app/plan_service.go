@@ -18,10 +18,6 @@ type PlanService struct {
 	snap *config.Snapshot
 }
 
-func NewPlanService(repo PlanRepository) *PlanService {
-	return &PlanService{repo: repo}
-}
-
 // NewPlanServiceWithSnapshot captures the per-project Snapshot the Show
 // path needs to resolve the workflow's final bucket key when computing
 // done counts. The Create/List paths do not consult it.
@@ -293,22 +289,13 @@ func (s *PlanService) UnassignTask(ctx context.Context, project domain.ProjectCo
 	return
 }
 
-// PlanShow / PlanWaveView / PlanRollup live in domain so TUI screens can
-// render them without importing internal/app (D1 / D18). Aliases keep
-// existing app call sites compiling.
-type (
-	PlanShow     = domain.PlanShow
-	PlanWaveView = domain.PlanWaveView
-	PlanRollup   = domain.PlanRollup
-)
-
 // Show resolves a plan by slug and folds its waves + tasks into a single
 // projection ready for MCP / TUI rendering. ErrPlanNotFound bubbles when
 // the slug is missing in the active project. Archived tasks are filtered
 // out of the counts but stay in the wave's Tasks list so the renderer
 // can decide whether to render them — keeps the percentage formula
 // honest ("done out of active") while preserving the audit trail.
-func (s *PlanService) Show(ctx context.Context, project domain.ProjectContext, slug string) (show PlanShow, err error) {
+func (s *PlanService) Show(ctx context.Context, project domain.ProjectContext, slug string) (show domain.PlanShow, err error) {
 	finish := activity.Track(ctx, "app.PlanService.Show", project, map[string]any{"slug": slug})
 	defer func() {
 		status := "ok"
@@ -322,23 +309,23 @@ func (s *PlanService) Show(ctx context.Context, project domain.ProjectContext, s
 
 	plan, err := s.repo.GetPlanBySlug(ctx, project.ID, strings.TrimSpace(slug))
 	if err != nil {
-		return PlanShow{}, err
+		return domain.PlanShow{}, err
 	}
 	return s.composeShow(ctx, project, plan)
 }
 
 // composeShow folds a resolved plan with its waves and tasks into the
-// aggregated PlanShow projection. Extracted so List-style callers
+// aggregated domain.PlanShow projection. Extracted so List-style callers
 // (PlanService.ListRollups) can reuse the wave-aggregation logic without
 // the slug round-trip Show pays.
-func (s *PlanService) composeShow(ctx context.Context, project domain.ProjectContext, plan domain.Plan) (PlanShow, error) {
+func (s *PlanService) composeShow(ctx context.Context, project domain.ProjectContext, plan domain.Plan) (domain.PlanShow, error) {
 	waves, err := s.repo.ListPlanWaves(ctx, project.ID, plan.ID)
 	if err != nil {
-		return PlanShow{}, err
+		return domain.PlanShow{}, err
 	}
 	tasks, err := s.repo.ListPlanTasks(ctx, project.ID, plan.ID, s.snap)
 	if err != nil {
-		return PlanShow{}, err
+		return domain.PlanShow{}, err
 	}
 
 	final := s.finalBucketKey()
@@ -348,10 +335,10 @@ func (s *PlanService) composeShow(ctx context.Context, project domain.ProjectCon
 		tasksByWave[t.WaveID] = append(tasksByWave[t.WaveID], t)
 	}
 
-	show := PlanShow{Plan: plan}
-	views := make([]PlanWaveView, 0, len(waves))
+	show := domain.PlanShow{Plan: plan}
+	views := make([]domain.PlanWaveView, 0, len(waves))
 	for _, w := range waves {
-		view := PlanWaveView{Wave: w, Tasks: tasksByWave[w.ID]}
+		view := domain.PlanWaveView{Wave: w, Tasks: tasksByWave[w.ID]}
 		view.DoneCount, view.TotalCount = countWaveTasks(view.Tasks, final)
 		views = append(views, view)
 		show.TotalCount += view.TotalCount
@@ -369,20 +356,20 @@ func (s *PlanService) composeShow(ctx context.Context, project domain.ProjectCon
 
 	deps, err := s.repo.ListPlanTaskDependencies(ctx, project.ID, plan.ID)
 	if err != nil {
-		return PlanShow{}, err
+		return domain.PlanShow{}, err
 	}
 	show.Dependencies = deps
 
 	return show, nil
 }
 
-// ListRollups returns one PlanRollup per plan in the project — the
+// ListRollups returns one domain.PlanRollup per plan in the project — the
 // lightweight projection the TUI list view consumes. Internally folds
 // the same wave-aggregation logic as Show so done/total counts and the
 // active-wave selection agree across surfaces. Requires a snapshot-bound
 // PlanService (same constraint as Show): without one, the final-bucket
 // resolver is empty and DoneCount is always 0.
-func (s *PlanService) ListRollups(ctx context.Context, project domain.ProjectContext) (rollups []PlanRollup, err error) {
+func (s *PlanService) ListRollups(ctx context.Context, project domain.ProjectContext) (rollups []domain.PlanRollup, err error) {
 	finish := activity.Track(ctx, "app.PlanService.ListRollups", project, nil)
 	defer func() {
 		status := "ok"
@@ -398,7 +385,7 @@ func (s *PlanService) ListRollups(ctx context.Context, project domain.ProjectCon
 	// tasks) folded in Go, replacing the former 1+3N loop of composeShow
 	// (which paid ListPlanWaves + ListPlanTasks + ListPlanTaskDependencies
 	// per plan). The dependency query composeShow runs is not needed here —
-	// PlanRollup carries no edges — so the rollup path drops to a constant
+	// domain.PlanRollup carries no edges — so the rollup path drops to a constant
 	// three queries regardless of plan count. The per-plan fold reuses the
 	// same wave-aggregation rule as composeShow so output is byte-identical.
 	plans, err := s.repo.ListPlans(ctx, project.ID)
@@ -422,7 +409,7 @@ func (s *PlanService) ListRollups(ctx context.Context, project domain.ProjectCon
 		tasksByPlan[t.PlanID] = append(tasksByPlan[t.PlanID], t.PlanTaskRow)
 	}
 
-	rollups = make([]PlanRollup, 0, len(plans))
+	rollups = make([]domain.PlanRollup, 0, len(plans))
 	for _, p := range plans {
 		rollups = append(rollups, foldPlanRollup(p, wavesByPlan[p.ID], tasksByPlan[p.ID], s.finalBucketKey()))
 	}
@@ -457,18 +444,18 @@ func countWaveTasks(tasks []domain.PlanTaskRow, finalBucketKey string) (done, to
 	return done, total
 }
 
-// foldPlanRollup aggregates one plan's waves + tasks into a PlanRollup using
+// foldPlanRollup aggregates one plan's waves + tasks into a domain.PlanRollup using
 // the identical done/total counting and active-wave selection rule as
 // composeShow, so ListRollups output matches the per-plan Show path exactly.
 // Extracted so both the bulk rollup fold and composeShow share the algorithm
 // rather than copy it.
-func foldPlanRollup(plan domain.Plan, waves []domain.PlanWave, tasks []domain.PlanTaskRow, finalBucketKey string) PlanRollup {
+func foldPlanRollup(plan domain.Plan, waves []domain.PlanWave, tasks []domain.PlanTaskRow, finalBucketKey string) domain.PlanRollup {
 	tasksByWave := map[int64][]domain.PlanTaskRow{}
 	for _, t := range tasks {
 		tasksByWave[t.WaveID] = append(tasksByWave[t.WaveID], t)
 	}
 
-	rollup := PlanRollup{Plan: plan}
+	rollup := domain.PlanRollup{Plan: plan}
 	type waveAgg struct {
 		id         int64
 		name       string

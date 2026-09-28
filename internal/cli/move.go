@@ -5,7 +5,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"omakiten/internal/operation"
+	"omakiten/internal/contract"
 )
 
 func newMoveCommand(opts *runtimeOptions) *cobra.Command {
@@ -28,7 +28,7 @@ func newMoveCommand(opts *runtimeOptions) *cobra.Command {
 				}
 				defer rt.close()
 
-				return rt.operationService().MoveTask(ctx, operation.MoveTaskInput{
+				return rt.operationService().MoveTask(ctx, contract.MoveTaskInput{
 					ProjectSelector: opts.projectSelector(),
 					TaskID:          taskID,
 					BucketKey:       to,

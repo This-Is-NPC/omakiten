@@ -3,6 +3,8 @@ package operation
 import (
 	"context"
 	"fmt"
+
+	"omakiten/internal/contract"
 )
 
 // MigrateOrphans previews or applies the orphan-task rebind for the active
@@ -19,26 +21,26 @@ import (
 // rebind needs to resolve task.bucket_id → previous key across a swap.
 // Tests that do not wire one will trip the explicit error rather than
 // silently exercising a half-built service.
-func (s *Service) MigrateOrphans(ctx context.Context, input MigrateOrphansInput) (MigrateOrphansResponse, error) {
+func (s *Service) MigrateOrphans(ctx context.Context, input contract.MigrateOrphansInput) (contract.MigrateOrphansResponse, error) {
 	if err := s.allow("orphans.migrate"); err != nil {
-		return MigrateOrphansResponse{}, err
+		return contract.MigrateOrphansResponse{}, err
 	}
 	project, err := s.resolveProject(ctx, input.ProjectSelector)
 	if err != nil {
-		return MigrateOrphansResponse{}, err
+		return contract.MigrateOrphansResponse{}, err
 	}
 
 	if s.orphanSvc == nil {
-		return MigrateOrphansResponse{}, fmt.Errorf("agent: orphan service not installed (call Service.SetOrphanService during runtime composition)")
+		return contract.MigrateOrphansResponse{}, fmt.Errorf("agent: orphan service not installed (call Service.SetOrphanService during runtime composition)")
 	}
 
 	preview, err := s.orphanSvc.Preview(ctx, project)
 	if err != nil {
-		return MigrateOrphansResponse{}, err
+		return contract.MigrateOrphansResponse{}, err
 	}
 
 	if preview.Total == 0 {
-		return MigrateOrphansResponse{
+		return contract.MigrateOrphansResponse{
 			Project: projectSummary(project),
 			Report:  preview,
 			Applied: false,
@@ -46,16 +48,16 @@ func (s *Service) MigrateOrphans(ctx context.Context, input MigrateOrphansInput)
 	}
 
 	if !input.Confirmed {
-		return MigrateOrphansResponse{
+		return contract.MigrateOrphansResponse{
 			Project: projectSummary(project),
 			Report:  preview,
 			Applied: false,
-			Confirmation: Confirmation{
+			Confirmation: contract.Confirmation{
 				RequiresConfirmation: true,
 				Reason: fmt.Sprintf(
 					"Workflow changed: %d task(s) will be rebinded to a new bucket. Retry with confirmed=true to apply, or skip to leave them attached to the deactivated bucket.",
 					preview.Total),
-				Options: []ConfirmationOption{
+				Options: []contract.ConfirmationOption{
 					{Action: "confirm_migrate", Label: "Retry orphans.migrate with confirmed=true to apply the rebind"},
 					{Action: "skip", Label: "Do nothing — tasks remain on the inactive bucket until re-imported"},
 				},
@@ -65,9 +67,9 @@ func (s *Service) MigrateOrphans(ctx context.Context, input MigrateOrphansInput)
 
 	applied, err := s.orphanSvc.Migrate(ctx, project)
 	if err != nil {
-		return MigrateOrphansResponse{}, err
+		return contract.MigrateOrphansResponse{}, err
 	}
-	return MigrateOrphansResponse{
+	return contract.MigrateOrphansResponse{
 		Project: projectSummary(project),
 		Report:  applied,
 		Applied: true,

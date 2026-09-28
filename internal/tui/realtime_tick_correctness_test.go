@@ -11,10 +11,11 @@ import (
 
 	"omakiten/internal/agentruntime"
 	"omakiten/internal/config"
+	"omakiten/internal/config/bundledraft"
 	"omakiten/internal/configstore"
+	"omakiten/internal/contract"
 	"omakiten/internal/domain"
 	"omakiten/internal/events"
-	"omakiten/internal/operation"
 	"omakiten/internal/testfixtures/bundleeditor"
 	"omakiten/internal/testfixtures/runtimecache"
 	"omakiten/internal/testfixtures/snapstore"
@@ -55,7 +56,7 @@ func TestRealtimeTickConfigReloadIndependentOfWatermark(t *testing.T) {
 	store := snapstore.Open(t, dbPath)
 	files := configstore.New()
 	editor := bundleeditor.New(files, configPath)
-	if _, err := applyBundleEditor(ctx, editor, nil); err != nil {
+	if _, err := bundledraft.ApplyPlanned(ctx, editor, nil); err != nil {
 		t.Fatalf("editor.Apply: %v", err)
 	}
 	project, err := store.UpsertProject(ctx, "Project", "project", "/work/project")
@@ -206,7 +207,7 @@ func TestApplyRealtimeReloadDropsStaleGeneration(t *testing.T) {
 		gen:              2,
 		dataVersion:      20,
 		dataVersionValid: true,
-		snap:             operation.BoardSnapshot{Tasks: []domain.Task{{ID: 1, Title: "a"}, {ID: 2, Title: "b"}}},
+		snap:             contract.BoardSnapshot{Tasks: []domain.Task{{ID: 1, Title: "a"}, {ID: 2, Title: "b"}}},
 		snapValid:        true,
 	}
 	older := realtimeReloadMsg{
@@ -214,7 +215,7 @@ func TestApplyRealtimeReloadDropsStaleGeneration(t *testing.T) {
 		gen:              1,
 		dataVersion:      10,
 		dataVersionValid: true,
-		snap:             operation.BoardSnapshot{Tasks: []domain.Task{{ID: 1, Title: "a"}}},
+		snap:             contract.BoardSnapshot{Tasks: []domain.Task{{ID: 1, Title: "a"}}},
 		snapValid:        true,
 	}
 
@@ -263,7 +264,7 @@ func TestApplyRealtimeReloadGenerationGuardIsPerDomain(t *testing.T) {
 		gen:              1,
 		dataVersion:      10,
 		dataVersionValid: true,
-		snap:             operation.BoardSnapshot{Tasks: []domain.Task{{ID: 1, Title: "bundle-task"}}},
+		snap:             contract.BoardSnapshot{Tasks: []domain.Task{{ID: 1, Title: "bundle-task"}}},
 		snapValid:        true,
 	}
 

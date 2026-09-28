@@ -3,17 +3,18 @@ package operation
 import (
 	"testing"
 
+	"omakiten/internal/contract"
 	"omakiten/internal/domain"
 )
 
 func TestListLawsOmitsBodies(t *testing.T) {
 	fixture := newAgentFixture(t)
 	fixture.service.SetSnapshot(snapshotWithEntities(t, nil,
-		[]LawInfo{{Slug: "scope", Name: "Scope", Severity: "error", Body: "stay scoped", Scope: "global"}},
+		[]contract.LawInfo{{Slug: "scope", Name: "Scope", Severity: "error", Body: "stay scoped", Scope: "global"}},
 		nil, nil, nil,
 	))
 
-	resp, err := fixture.service.ListLaws(fixture.ctx, ListLawsInput{})
+	resp, err := fixture.service.ListLaws(fixture.ctx, contract.ListLawsInput{})
 	if err != nil {
 		t.Fatalf("ListLaws() error = %v", err)
 	}
@@ -25,11 +26,11 @@ func TestListLawsOmitsBodies(t *testing.T) {
 func TestShowLawReturnsBody(t *testing.T) {
 	fixture := newAgentFixture(t)
 	fixture.service.SetSnapshot(snapshotWithEntities(t, nil,
-		[]LawInfo{{Slug: "scope", Severity: "error", Body: "stay scoped"}},
+		[]contract.LawInfo{{Slug: "scope", Severity: "error", Body: "stay scoped"}},
 		nil, nil, nil,
 	))
 
-	resp, err := fixture.service.ShowLaw(fixture.ctx, ShowLawInput{Slug: "scope"})
+	resp, err := fixture.service.ShowLaw(fixture.ctx, contract.ShowLawInput{Slug: "scope"})
 	if err != nil {
 		t.Fatalf("ShowLaw() error = %v", err)
 	}
@@ -42,14 +43,14 @@ func TestShowLawRejectsUnknownSlug(t *testing.T) {
 	fixture := newAgentFixture(t)
 	fixture.service.SetSnapshot(snapshotWithEntities(t, nil, nil, nil, nil, nil))
 
-	_, err := fixture.service.ShowLaw(fixture.ctx, ShowLawInput{Slug: "ghost"})
+	_, err := fixture.service.ShowLaw(fixture.ctx, contract.ShowLawInput{Slug: "ghost"})
 	assertCodedError(t, err, domain.ErrValidation)
 }
 
 func TestListLawsFilters(t *testing.T) {
 	fixture := newAgentFixture(t)
 	fixture.service.SetSnapshot(snapshotWithEntities(t, nil,
-		[]LawInfo{
+		[]contract.LawInfo{
 			{Slug: "global-rule", Name: "Global", Severity: "error", Body: "g", Scope: "global"},
 			{Slug: "project-rule", Name: "Project", Severity: "warn", Body: "p", Scope: "project", Project: "alpha"},
 			{Slug: "persona-rule", Name: "Persona", Severity: "info", Body: "x", Scope: "persona", Persona: "builder"},
@@ -57,7 +58,7 @@ func TestListLawsFilters(t *testing.T) {
 		nil, nil, nil,
 	))
 
-	resp, err := fixture.service.ListLaws(fixture.ctx, ListLawsInput{Scope: "project"})
+	resp, err := fixture.service.ListLaws(fixture.ctx, contract.ListLawsInput{Scope: "project"})
 	if err != nil {
 		t.Fatalf("ListLaws(scope=project) error = %v", err)
 	}
@@ -65,7 +66,7 @@ func TestListLawsFilters(t *testing.T) {
 		t.Fatalf("ListLaws(scope=project) = %+v, want project-rule/alpha", resp.Laws)
 	}
 
-	resp, err = fixture.service.ListLaws(fixture.ctx, ListLawsInput{Persona: "builder"})
+	resp, err = fixture.service.ListLaws(fixture.ctx, contract.ListLawsInput{Persona: "builder"})
 	if err != nil {
 		t.Fatalf("ListLaws(persona=builder) error = %v", err)
 	}
@@ -73,7 +74,7 @@ func TestListLawsFilters(t *testing.T) {
 		t.Fatalf("ListLaws(persona=builder) = %+v, want persona-rule", resp.Laws)
 	}
 
-	resp, err = fixture.service.ListLaws(fixture.ctx, ListLawsInput{Project: "missing"})
+	resp, err = fixture.service.ListLaws(fixture.ctx, contract.ListLawsInput{Project: "missing"})
 	if err != nil {
 		t.Fatalf("ListLaws(project=missing) error = %v", err)
 	}

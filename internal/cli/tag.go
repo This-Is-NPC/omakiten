@@ -5,7 +5,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"omakiten/internal/operation"
+	"omakiten/internal/contract"
 )
 
 func newTagCommand(opts *runtimeOptions) *cobra.Command {
@@ -35,8 +35,8 @@ func newTagAddCommand(opts *runtimeOptions) *cobra.Command {
 				}
 				defer rt.close()
 
-				return rt.operationService().AddTag(ctx, operation.AddTagInput{
-					ProjectSelector: operation.ProjectSelector{
+				return rt.operationService().AddTag(ctx, contract.AddTagInput{
+					ProjectSelector: contract.ProjectSelector{
 						Project:   opts.project,
 						ProjectID: opts.projectID,
 					},
@@ -69,8 +69,8 @@ func newTagListCommand(opts *runtimeOptions) *cobra.Command {
 				}
 				defer rt.close()
 
-				return rt.operationService().ListTags(ctx, operation.ListTagsInput{
-					ProjectSelector: operation.ProjectSelector{
+				return rt.operationService().ListTags(ctx, contract.ListTagsInput{
+					ProjectSelector: contract.ProjectSelector{
 						Project:   opts.project,
 						ProjectID: opts.projectID,
 					},
@@ -119,8 +119,8 @@ func newTagRemoveCommand(opts *runtimeOptions) *cobra.Command {
 				}
 				defer rt.close()
 
-				return rt.operationService().RemoveTag(ctx, operation.RemoveTagInput{
-					ProjectSelector: operation.ProjectSelector{
+				return rt.operationService().RemoveTag(ctx, contract.RemoveTagInput{
+					ProjectSelector: contract.ProjectSelector{
 						Project:   opts.project,
 						ProjectID: opts.projectID,
 					},
@@ -154,7 +154,7 @@ func newTagMergeCommand(opts *runtimeOptions) *cobra.Command {
 				}
 				defer rt.close()
 
-				return rt.operationService().MergeTags(ctx, operation.MergeTagsInput{
+				return rt.operationService().MergeTags(ctx, contract.MergeTagsInput{
 					SourceTagID: sourceTagID,
 					TargetTagID: targetTagID,
 				})

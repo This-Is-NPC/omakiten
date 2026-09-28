@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"omakiten/internal/config"
+	"omakiten/internal/contract"
 	"omakiten/internal/domain"
 	"omakiten/internal/testfixtures"
 	"omakiten/internal/testfixtures/snapstore"
@@ -23,7 +24,7 @@ import (
 func TestCreateTaskIntentRejectsOverCapBeforeSimilarity(t *testing.T) {
 	t.Run("over-cap description rejected ahead of similarity", func(t *testing.T) {
 		f := newAgentFixture(t)
-		resp, err := f.service.CreateTaskIntent(f.ctx, CreateTaskInput{
+		resp, err := f.service.CreateTaskIntent(f.ctx, contract.CreateTaskInput{
 			Title:       "Add MCP agent integration", // matches taskA1 → would trigger similarity
 			Description: strings.Repeat("d", domain.MaxTaskDescriptionBytes+1),
 		})
@@ -38,7 +39,7 @@ func TestCreateTaskIntentRejectsOverCapBeforeSimilarity(t *testing.T) {
 
 	t.Run("over-cap title rejected ahead of similarity", func(t *testing.T) {
 		f := newAgentFixture(t)
-		_, err := f.service.CreateTaskIntent(f.ctx, CreateTaskInput{
+		_, err := f.service.CreateTaskIntent(f.ctx, contract.CreateTaskInput{
 			Title: strings.Repeat("t", domain.MaxTaskTitleRunes+1),
 		})
 		assertCodedError(t, err, domain.ErrValidation)
@@ -50,7 +51,7 @@ func TestEditTaskHappyPath(t *testing.T) {
 
 	newTitle := "Updated title"
 	newDesc := "Updated description"
-	out, err := f.service.EditTask(f.ctx, EditTaskInput{
+	out, err := f.service.EditTask(f.ctx, contract.EditTaskInput{
 		TaskID:      f.taskA1.ID,
 		Title:       &newTitle,
 		Description: &newDesc,
@@ -71,17 +72,17 @@ func TestEditTaskHappyPath(t *testing.T) {
 
 func TestEditTaskRequiresAtLeastOneField(t *testing.T) {
 	f := newAgentFixture(t)
-	_, err := f.service.EditTask(f.ctx, EditTaskInput{TaskID: f.taskA1.ID})
+	_, err := f.service.EditTask(f.ctx, contract.EditTaskInput{TaskID: f.taskA1.ID})
 	assertCodedError(t, err, domain.ErrValidation)
 }
 
 func TestEditTaskRejectsArchived(t *testing.T) {
 	f := newAgentFixture(t)
-	if _, err := f.service.ArchiveTask(f.ctx, ArchiveTaskInput{TaskID: f.taskA1.ID}); err != nil {
+	if _, err := f.service.ArchiveTask(f.ctx, contract.ArchiveTaskInput{TaskID: f.taskA1.ID}); err != nil {
 		t.Fatalf("ArchiveTask() error = %v", err)
 	}
 	title := "Will not stick"
-	_, err := f.service.EditTask(f.ctx, EditTaskInput{TaskID: f.taskA1.ID, Title: &title})
+	_, err := f.service.EditTask(f.ctx, contract.EditTaskInput{TaskID: f.taskA1.ID, Title: &title})
 	assertCodedError(t, err, domain.ErrValidation)
 	failure := FailureFromError(err)
 	if !strings.Contains(failure.Message, "archived") {
@@ -92,7 +93,7 @@ func TestEditTaskRejectsArchived(t *testing.T) {
 func TestEditTaskRejectsUnknownPriorityLabel(t *testing.T) {
 	f := newAgentFixture(t)
 	bogus := "definitely-not-registered"
-	_, err := f.service.EditTask(f.ctx, EditTaskInput{TaskID: f.taskA1.ID, Priority: &bogus})
+	_, err := f.service.EditTask(f.ctx, contract.EditTaskInput{TaskID: f.taskA1.ID, Priority: &bogus})
 	assertCodedError(t, err, domain.ErrValidation)
 }
 
@@ -106,12 +107,12 @@ func TestEditTaskInLockedBucketReturnsGuardViolation(t *testing.T) {
 	f := newAgentFixtureEditLockedToBacklog(t)
 
 	// Move backlog → dev (the bundle keeps the standard backlog→dev transition).
-	if _, err := f.service.MoveTask(f.ctx, MoveTaskInput{TaskID: f.taskID, BucketKey: "dev"}); err != nil {
+	if _, err := f.service.MoveTask(f.ctx, contract.MoveTaskInput{TaskID: f.taskID, BucketKey: "dev"}); err != nil {
 		t.Fatalf("MoveTask(dev) error = %v", err)
 	}
 
 	title := "Should be denied"
-	_, err := f.service.EditTask(f.ctx, EditTaskInput{TaskID: f.taskID, Title: &title})
+	_, err := f.service.EditTask(f.ctx, contract.EditTaskInput{TaskID: f.taskID, Title: &title})
 	assertCodedError(t, err, domain.ErrGuardViolation)
 	failure := FailureFromError(err)
 	if failure.Message == "" {
@@ -175,7 +176,7 @@ func newAgentFixtureEditLockedToBacklog(t *testing.T) editLockedFixture {
 		t.Fatalf("CreateTask() error = %v", err)
 	}
 
-	svc := NewService(store, ProjectSelector{CWD: root})
+	svc := NewService(store, contract.ProjectSelector{CWD: root})
 	svc.SetSnapshot(store.Snapshot())
 	svc.SetSettings(ServiceSettings{
 		RecentCommentLimit: 5,

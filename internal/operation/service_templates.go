@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"omakiten/internal/contract"
 	"omakiten/internal/domain"
 )
 
@@ -14,23 +15,23 @@ import (
 // return the project-scoped template if one exists, otherwise the global
 // fallback, never both. When `project` is empty the call returns every matching
 // loaded template without resolving project fallback precedence.
-func (s *Service) ListTemplates(_ context.Context, input ListTemplatesInput) (ListTemplatesResponse, error) {
+func (s *Service) ListTemplates(_ context.Context, input contract.ListTemplatesInput) (contract.ListTemplatesResponse, error) {
 	if err := s.allow("template.list"); err != nil {
-		return ListTemplatesResponse{}, err
+		return contract.ListTemplatesResponse{}, err
 	}
 	if s.templateCatalog == nil {
-		return ListTemplatesResponse{Templates: []TemplateSummary{}}, nil
+		return contract.ListTemplatesResponse{Templates: []contract.TemplateSummary{}}, nil
 	}
 	all := s.templateCatalog()
 
 	if input.Project == "" {
-		return ListTemplatesResponse{Templates: listAllTemplates(all, input)}, nil
+		return contract.ListTemplatesResponse{Templates: listAllTemplates(all, input)}, nil
 	}
-	return ListTemplatesResponse{Templates: listProjectTemplates(all, input)}, nil
+	return contract.ListTemplatesResponse{Templates: listProjectTemplates(all, input)}, nil
 }
 
-func listAllTemplates(all []TemplateSummary, input ListTemplatesInput) []TemplateSummary {
-	out := make([]TemplateSummary, 0, len(all))
+func listAllTemplates(all []contract.TemplateSummary, input contract.ListTemplatesInput) []contract.TemplateSummary {
+	out := make([]contract.TemplateSummary, 0, len(all))
 	for _, t := range all {
 		if input.Kind != "" && t.Default != input.Kind {
 			continue
@@ -40,9 +41,9 @@ func listAllTemplates(all []TemplateSummary, input ListTemplatesInput) []Templat
 	return out
 }
 
-func listProjectTemplates(all []TemplateSummary, input ListTemplatesInput) []TemplateSummary {
-	scoped := map[string]TemplateSummary{}
-	global := map[string]TemplateSummary{}
+func listProjectTemplates(all []contract.TemplateSummary, input contract.ListTemplatesInput) []contract.TemplateSummary {
+	scoped := map[string]contract.TemplateSummary{}
+	global := map[string]contract.TemplateSummary{}
 	for _, t := range all {
 		if t.Default == "" {
 			continue
@@ -57,7 +58,7 @@ func listProjectTemplates(all []TemplateSummary, input ListTemplatesInput) []Tem
 			global[t.Default] = t
 		}
 	}
-	out := make([]TemplateSummary, 0, len(scoped)+len(global))
+	out := make([]contract.TemplateSummary, 0, len(scoped)+len(global))
 	for kind, t := range scoped {
 		out = append(out, templateForList(t, input.IncludeBody))
 		delete(global, kind)
@@ -68,7 +69,7 @@ func listProjectTemplates(all []TemplateSummary, input ListTemplatesInput) []Tem
 	return out
 }
 
-func templateForList(template TemplateSummary, includeBody bool) TemplateSummary {
+func templateForList(template contract.TemplateSummary, includeBody bool) contract.TemplateSummary {
 	if !includeBody {
 		template.Body = ""
 	}
@@ -84,37 +85,37 @@ func templateForList(template TemplateSummary, includeBody bool) TemplateSummary
 // round-trip — same pattern as the _agent_model coercion. Calls outside any
 // registered project (no resolution) fall back to the slug-only lookup so
 // `okt mcp tools` discovery and CLI debug calls keep working.
-func (s *Service) ShowTemplate(ctx context.Context, input ShowTemplateInput) (ShowTemplateResponse, error) {
+func (s *Service) ShowTemplate(ctx context.Context, input contract.ShowTemplateInput) (contract.ShowTemplateResponse, error) {
 	if err := s.allow("template.show"); err != nil {
-		return ShowTemplateResponse{}, err
+		return contract.ShowTemplateResponse{}, err
 	}
 	slug := strings.TrimSpace(input.Slug)
 	if slug == "" {
-		return ShowTemplateResponse{}, domain.NewError(domain.ErrValidation, "template slug is required", nil)
+		return contract.ShowTemplateResponse{}, domain.NewError(domain.ErrValidation, "template slug is required", nil)
 	}
 	if s.templateCatalog == nil {
-		return ShowTemplateResponse{}, domain.NewError(domain.ErrValidation, "template catalog not initialized", map[string]any{"slug": slug})
+		return contract.ShowTemplateResponse{}, domain.NewError(domain.ErrValidation, "template catalog not initialized", map[string]any{"slug": slug})
 	}
 
 	project, err := s.resolveTemplateProject(ctx, input)
 	if err != nil {
-		return ShowTemplateResponse{}, err
+		return contract.ShowTemplateResponse{}, err
 	}
 
 	catalog := s.templateCatalog()
 	requested := findTemplate(catalog, slug)
 	if requested == nil {
-		return ShowTemplateResponse{}, domain.NewError(domain.ErrValidation, "template not found", map[string]any{"slug": slug})
+		return contract.ShowTemplateResponse{}, domain.NewError(domain.ErrValidation, "template not found", map[string]any{"slug": slug})
 	}
 
 	if err := shadowedTemplateError(catalog, *requested, project, slug); err != nil {
-		return ShowTemplateResponse{}, err
+		return contract.ShowTemplateResponse{}, err
 	}
 
-	return ShowTemplateResponse{Template: *requested}, nil
+	return contract.ShowTemplateResponse{Template: *requested}, nil
 }
 
-func (s *Service) resolveTemplateProject(ctx context.Context, input ShowTemplateInput) (domain.ProjectContext, error) {
+func (s *Service) resolveTemplateProject(ctx context.Context, input contract.ShowTemplateInput) (domain.ProjectContext, error) {
 	project, err := s.resolveProject(ctx, input.ProjectSelector)
 	if err == nil {
 		return project, nil
@@ -127,7 +128,7 @@ func (s *Service) resolveTemplateProject(ctx context.Context, input ShowTemplate
 	return domain.ProjectContext{}, nil
 }
 
-func findTemplate(catalog []TemplateSummary, slug string) *TemplateSummary {
+func findTemplate(catalog []contract.TemplateSummary, slug string) *contract.TemplateSummary {
 	for i := range catalog {
 		if catalog[i].Slug == slug {
 			return &catalog[i]
@@ -136,7 +137,7 @@ func findTemplate(catalog []TemplateSummary, slug string) *TemplateSummary {
 	return nil
 }
 
-func shadowedTemplateError(catalog []TemplateSummary, requested TemplateSummary, project domain.ProjectContext, slug string) error {
+func shadowedTemplateError(catalog []contract.TemplateSummary, requested contract.TemplateSummary, project domain.ProjectContext, slug string) error {
 	if project.Slug == "" || requested.Project != "" || requested.Default == "" {
 		return nil
 	}

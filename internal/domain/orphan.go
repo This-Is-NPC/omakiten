@@ -1,6 +1,8 @@
 package domain
 
-import "encoding/json"
+import (
+	"encoding/json"
+)
 
 // OrphanedTask describes a single task whose current bucket no longer exists
 // in the active workflow. The task can be rebinded to a target bucket — either

@@ -29,7 +29,7 @@ var studioBenchSink string
 // the dominant cost and make the benchmark meaningless.
 //
 // The fixture is scaled to the shape a real Omakiten project ships (see
-// studioBenchBundle): the full operation.CommandNames() binding set plus personas,
+// studioBenchBundle): the full commandcatalog.CommandNames() binding set plus personas,
 // skills, laws and templates carrying prose bodies, because Report() clones and
 // diffs every one of those bodies twice per call.
 //

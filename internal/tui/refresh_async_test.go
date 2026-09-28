@@ -7,8 +7,9 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"omakiten/internal/contract"
 	"omakiten/internal/domain"
-	"omakiten/internal/operation"
+	"omakiten/internal/tui/screenhost"
 )
 
 // TestViewChangeReturnsRefreshCmdAndDefersFold pins the async refresh
@@ -21,8 +22,7 @@ import (
 // the msg back through Update populates the entity slices.
 func TestViewChangeReturnsRefreshCmdAndDefersFold(t *testing.T) {
 	model := buildRefreshHotPathModel(t)
-	model.top = topTasks
-	model.sub = subBoard
+	model.navigation = screenhost.TasksBoard
 
 	// Drive a board → table nav via the sub-cycle key. Update returns
 	// immediately with the heavy refresh captured inside the returned
@@ -30,11 +30,11 @@ func TestViewChangeReturnsRefreshCmdAndDefersFold(t *testing.T) {
 	// msg lands.
 	updated, cmd := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}})
 	got := updated.(Model)
-	if got.sub != subTable {
-		t.Fatalf("after / nav, sub = %v, want subTable (board→table)", got.sub)
+	if got.navigation != screenhost.TasksTable {
+		t.Fatalf("after / nav, sub = %v, want screenhost.TasksTable (board→table)", got.navigation)
 	}
 	if cmd == nil {
-		t.Fatalf("Update(/) returned nil cmd, want async refresh cmd; got.sub=%v", got.sub)
+		t.Fatalf("Update(/) returned nil cmd, want async refresh cmd; got.navigation=%v", got.navigation)
 	}
 	msg := cmd()
 	rmsg, ok := msg.(refreshAfterViewChangeMsg)
@@ -282,8 +282,8 @@ func TestViewChangeRefreshDropsOldRuntimeAfterProjectRoundTrip(t *testing.T) {
 	before.assertUnchanged(t, updated.(Model))
 }
 
-func viewChangeSnapshot(projectID int64, title string) operation.BoardSnapshot {
-	return operation.BoardSnapshot{
+func viewChangeSnapshot(projectID int64, title string) contract.BoardSnapshot {
+	return contract.BoardSnapshot{
 		Tasks:        []domain.Task{{ID: projectID, ProjectID: projectID, Title: title}},
 		Workflow:     domain.Workflow{ID: projectID, Key: title},
 		Dependencies: []domain.TaskDependency{{TaskID: projectID}},

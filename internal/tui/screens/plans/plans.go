@@ -150,7 +150,7 @@ type GoalScreen struct {
 }
 
 func NewGoal() GoalScreen {
-	return GoalScreen{grid: screengrid.NewState(), md: markdown.New(markdown.Tokens{}), markdownRendered: true}
+	return GoalScreen{grid: screengrid.NewState(), md: markdown.New(screenkit.MarkdownTokens{}), markdownRendered: true}
 }
 func (s GoalScreen) ID() screenhost.ID { return screenhost.PlanGoal }
 func (s GoalScreen) Apply(show domain.PlanShow, err error) GoalScreen {

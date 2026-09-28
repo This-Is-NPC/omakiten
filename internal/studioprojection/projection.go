@@ -92,11 +92,6 @@ func templateBodies(bundle config.Bundle) map[string]string {
 	return out
 }
 
-// TemplateBody returns one prepared template body by slug.
-func TemplateBody(bundle config.Bundle, slug string) string {
-	return templateBodies(bundle)[slug]
-}
-
 func bundleWorkflow(bundle config.Bundle, workflow domain.Workflow, snap *config.Snapshot) config.Workflow {
 	if active, ok := bundledraft.ActiveWorkflow(bundle); ok {
 		return active
@@ -248,16 +243,6 @@ func workflowOperationRows(workflow config.Workflow, operationNumber int, text T
 		operationNumber++
 	}
 	return rows
-}
-
-// WorkflowIndexFor returns the first row matching pred, or zero.
-func WorkflowIndexFor(workflow config.Workflow, pred func(WorkflowRow) bool) int {
-	for i, row := range WorkflowRows(workflow, nil, nil) {
-		if pred(row) {
-			return i
-		}
-	}
-	return 0
 }
 
 // GuardLabel returns the compact label used in workflow rows.

@@ -1,6 +1,8 @@
 package plan
 
-import "sort"
+import (
+	"sort"
+)
 
 // Filament is one source task's cross-wave fan-out routed into a lane: the row
 // it starts on, the ascending rows it reaches, and the lane slot it occupies.

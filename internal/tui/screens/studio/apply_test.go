@@ -7,8 +7,10 @@ import (
 	"unicode"
 
 	"github.com/charmbracelet/x/ansi"
+
 	"omakiten/internal/config"
 	"omakiten/internal/config/bundledraft"
+	"omakiten/internal/contract"
 	"omakiten/internal/tui/screenhost"
 	"omakiten/internal/tui/screens/screentest"
 )
@@ -105,7 +107,7 @@ func applyTestBundle() config.Bundle {
 	}
 }
 
-func applyTestScreen(t *testing.T, id screenhost.ID, editor BundleEditor) (Screen, screenhost.Frame) {
+func applyTestScreen(t *testing.T, id screenhost.ID, editor contract.BundleEditor) (Screen, screenhost.Frame) {
 	t.Helper()
 	frame := screentest.FrameAt(t, 120, 40)
 	screen := New().Bind(id, Deps{Ctx: context.Background(), Editor: editor, OpenDraft: openFixtureBundleDraft, Workflow: studioBenchWorkflow()})

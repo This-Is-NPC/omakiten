@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"omakiten/internal/domain"
+	"omakiten/internal/updater"
 )
 
 // stubBackupRunner counts how many times Run was called so the
@@ -54,9 +55,9 @@ func TestRunUpdate_ValidatorOKAllowsSwap(t *testing.T) {
 		t.Fatalf("seed: %v", err)
 	}
 	archive := tarGzWith(t, map[string][]byte{"okt": []byte("NEW")})
-	asset, err := assetName(goruntime.GOOS, goruntime.GOARCH)
+	asset, err := updater.AssetName(goruntime.GOOS, goruntime.GOARCH)
 	if err != nil {
-		t.Fatalf("assetName: %v", err)
+		t.Fatalf("updater.AssetName: %v", err)
 	}
 
 	validator := &stubValidator{result: updateValidatorResult{OK: true}}
@@ -113,9 +114,9 @@ func validatorFailureFixture(t *testing.T) (updateClient, *stubValidator, *stubB
 		t.Fatalf("seed: %v", err)
 	}
 	archive := tarGzWith(t, map[string][]byte{"okt": []byte("NEW")})
-	asset, err := assetName(goruntime.GOOS, goruntime.GOARCH)
+	asset, err := updater.AssetName(goruntime.GOOS, goruntime.GOARCH)
 	if err != nil {
-		t.Fatalf("assetName: %v", err)
+		t.Fatalf("updater.AssetName: %v", err)
 	}
 
 	validator := &stubValidator{result: updateValidatorResult{
@@ -205,9 +206,9 @@ func TestRunUpdate_ValidatorExecErrorAbortsSwap(t *testing.T) {
 		t.Fatalf("seed: %v", err)
 	}
 	archive := tarGzWith(t, map[string][]byte{"okt": []byte("NEW")})
-	asset, err := assetName(goruntime.GOOS, goruntime.GOARCH)
+	asset, err := updater.AssetName(goruntime.GOOS, goruntime.GOARCH)
 	if err != nil {
-		t.Fatalf("assetName: %v", err)
+		t.Fatalf("updater.AssetName: %v", err)
 	}
 
 	validator := &stubValidator{err: errors.New("fork/exec: permission denied")}
@@ -253,9 +254,9 @@ func TestRunUpdate_EmptyConfigPathFailsClosed(t *testing.T) {
 		t.Fatalf("seed: %v", err)
 	}
 	archive := tarGzWith(t, map[string][]byte{"okt": []byte("NEW")})
-	asset, err := assetName(goruntime.GOOS, goruntime.GOARCH)
+	asset, err := updater.AssetName(goruntime.GOOS, goruntime.GOARCH)
 	if err != nil {
-		t.Fatalf("assetName: %v", err)
+		t.Fatalf("updater.AssetName: %v", err)
 	}
 
 	validator := &stubValidator{result: updateValidatorResult{OK: true}}

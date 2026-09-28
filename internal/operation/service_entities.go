@@ -6,7 +6,6 @@ import (
 	"strings"
 
 	"omakiten/internal/app"
-	"omakiten/internal/config"
 	"omakiten/internal/domain"
 )
 
@@ -213,7 +212,7 @@ func resolveEntityRef[T any](ctx context.Context, raw string, list func(context.
 		}
 		return "", domain.NewError(notFound, kind+" not found", map[string]any{"id": id})
 	}
-	if config.Slugify(raw) != raw {
+	if domain.Slugify(raw) != raw {
 		return "", domain.NewError(domain.ErrValidation, kind+" slug must be lowercase, hyphenated", map[string]any{"slug": raw})
 	}
 	return raw, nil

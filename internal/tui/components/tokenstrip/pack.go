@@ -1,24 +1,3 @@
-// Package tokenstrip packs a run of pre-styled tokens into the width it was
-// given.
-//
-// # What it replaces
-//
-// Three packages had written this loop: `badge` packed pills onto a card,
-// `chipstrip` packed filter chips onto a panel row, `keyfooter` packed key
-// bindings onto the footer. Same algorithm every time — walk pieces, add a
-// separator, break when the next one would not fit — and three sets of
-// off-by-one risk around that `+1 for the separator`.
-//
-// The differences between them were never the packing. They were:
-//
-//   - what happens when it does NOT fit: wrap onto another row, or drop tokens
-//     until the row fits ([Policy]);
-//   - what the tokens LOOK like, which is a style table and a constructor per
-//     family — pills, chips and keys, all still here, in pills.go, chips.go and
-//     keys.go.
-//
-// So the policy is a field and the look is a preset, and the loop is written
-// once.
 package tokenstrip
 
 import (

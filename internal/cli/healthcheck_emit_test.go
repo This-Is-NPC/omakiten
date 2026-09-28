@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"omakiten/internal/domain"
+	"omakiten/internal/updater"
 )
 
 // stubEventStore records every RecordEntityEvent call so emission
@@ -67,9 +68,9 @@ func TestRunUpdate_EmitsHealthCheckPassedAndSwapCompletedOnSuccess(t *testing.T)
 		t.Fatalf("seed: %v", err)
 	}
 	archive := tarGzWith(t, map[string][]byte{"okt": []byte("NEW")})
-	asset, err := assetName(goruntime.GOOS, goruntime.GOARCH)
+	asset, err := updater.AssetName(goruntime.GOOS, goruntime.GOARCH)
 	if err != nil {
-		t.Fatalf("assetName: %v", err)
+		t.Fatalf("updater.AssetName: %v", err)
 	}
 
 	validator := &stubValidator{result: updateValidatorResult{OK: true}}
@@ -132,9 +133,9 @@ func TestRunUpdate_EmitsHealthCheckFailedAndSwapAbortedOnValidatorFail(t *testin
 		t.Fatalf("seed: %v", err)
 	}
 	archive := tarGzWith(t, map[string][]byte{"okt": []byte("NEW")})
-	asset, err := assetName(goruntime.GOOS, goruntime.GOARCH)
+	asset, err := updater.AssetName(goruntime.GOOS, goruntime.GOARCH)
 	if err != nil {
-		t.Fatalf("assetName: %v", err)
+		t.Fatalf("updater.AssetName: %v", err)
 	}
 
 	validator := &stubValidator{result: updateValidatorResult{
@@ -195,9 +196,9 @@ func TestRunUpdate_ActivityWriteFailureDoesNotAbort(t *testing.T) {
 		t.Fatalf("seed: %v", err)
 	}
 	archive := tarGzWith(t, map[string][]byte{"okt": []byte("NEW")})
-	asset, err := assetName(goruntime.GOOS, goruntime.GOARCH)
+	asset, err := updater.AssetName(goruntime.GOOS, goruntime.GOARCH)
 	if err != nil {
-		t.Fatalf("assetName: %v", err)
+		t.Fatalf("updater.AssetName: %v", err)
 	}
 
 	validator := &stubValidator{result: updateValidatorResult{OK: true}}

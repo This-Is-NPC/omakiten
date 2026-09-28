@@ -143,15 +143,6 @@ func goalFixtureScenarios() []screenfixture.Scenario {
 	}
 }
 
-// FixtureScenarios returns every recorded state for Tasks › Plans and the plan
-// goal reader.
-func FixtureScenarios() []screenfixture.Scenario {
-	out := make([]screenfixture.Scenario, 0, 4)
-	out = append(out, listFixtureScenarios()...)
-	out = append(out, goalFixtureScenarios()...)
-	return out
-}
-
 // FixtureScenariosFor returns the scenarios for one screen ID, or nil when the
 // ID is not owned by this package.
 func FixtureScenariosFor(id screenhost.ID) []screenfixture.Scenario {

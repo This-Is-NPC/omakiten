@@ -9,6 +9,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"omakiten/internal/config"
+	"omakiten/internal/config/bundledraft"
 	"omakiten/internal/testfixtures/runtimecache"
 	"omakiten/internal/tui/screenhost"
 	"omakiten/internal/tui/screens/relationshippicker"
@@ -42,7 +43,7 @@ func customTemplatePickerModel(t *testing.T) Model {
 	model := newEntityModelWithTemplates(t)
 	writeCustomTemplate(t, model.repos.Editor.RootDir(), "task-mine",
 		"---\nname: My Task Template\nentity: task\n---\nbody\n")
-	if _, err := applyBundleEditor(model.ctx, model.repos.Editor, nil); err != nil {
+	if _, err := bundledraft.ApplyPlanned(model.ctx, model.repos.Editor, nil); err != nil {
 		t.Fatalf("Apply() reload error = %v", err)
 	}
 	if err := runtimecacheRefresh(model); err != nil {
@@ -137,7 +138,7 @@ func TestTemplateDefaultPickerNoneClearsProjectBinding(t *testing.T) {
 	// Custom template starts already bound to (task, current-project).
 	writeCustomTemplate(t, root, "task-mine",
 		fmt.Sprintf("---\nname: My Task\nentity: task\ndefault: task\nproject: %s\n---\nbody\n", model.project.Slug))
-	if _, err := applyBundleEditor(model.ctx, model.repos.Editor, nil); err != nil {
+	if _, err := bundledraft.ApplyPlanned(model.ctx, model.repos.Editor, nil); err != nil {
 		t.Fatalf("Apply() error = %v", err)
 	}
 	if err := runtimecacheRefresh(model); err != nil {
@@ -189,7 +190,7 @@ func TestTemplateDefaultPickerOptionsAreKindOnly(t *testing.T) {
 // template_defaults from the loaded bundle, not a hardcoded list.
 func TestTemplateDefaultPickerHonorsConfigTemplateDefaults(t *testing.T) {
 	model := newEntityModelWithTemplates(t)
-	if _, err := applyBundleEditor(model.ctx, model.repos.Editor, func(bundle *config.Bundle) error {
+	if _, err := bundledraft.ApplyPlanned(model.ctx, model.repos.Editor, func(bundle *config.Bundle) error {
 		bundle.Config.TemplateDefaults = []string{"task"}
 		return nil
 	}); err != nil {

@@ -4,7 +4,6 @@ import (
 	"fmt"
 
 	"github.com/charmbracelet/bubbles/key"
-
 	tea "github.com/charmbracelet/bubbletea"
 
 	"omakiten/internal/tui/components/gridtable"

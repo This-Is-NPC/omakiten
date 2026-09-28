@@ -1,8 +1,8 @@
 package tui
 
 import (
+	"omakiten/internal/contract"
 	"omakiten/internal/domain"
-	"omakiten/internal/operation"
 	"omakiten/internal/tui/components/screenbody"
 	"omakiten/internal/tui/screenhost"
 	projectscreen "omakiten/internal/tui/screens/project"
@@ -124,8 +124,8 @@ func (m *Model) loadProjectResumePayload() (projectresume.Payload, error) {
 	if svc == nil {
 		return projectresume.Payload{Err: errResumeUnavailable{msg: m.t("tui.status.resume_unavailable")}}, errResumeUnavailable{msg: m.t("tui.status.resume_unavailable")}
 	}
-	resp, err := svc.ResumeProject(m.ctx, operation.ResumeProjectInput{
-		ProjectSelector: operation.ProjectSelector{ProjectID: m.project.ID}})
+	resp, err := svc.ResumeProject(m.ctx, contract.ResumeProjectInput{
+		ProjectSelector: contract.ProjectSelector{ProjectID: m.project.ID}})
 	if err != nil {
 		return projectresume.Payload{Err: err}, err
 	}
@@ -137,7 +137,7 @@ func (m *Model) loadProjectResumePayload() (projectresume.Payload, error) {
 		NextStepPrompt: resp.NextStepPrompt}, nil
 }
 
-func resumeBuckets(in []operation.BucketCount) []projectresume.BucketCount {
+func resumeBuckets(in []contract.BucketCount) []projectresume.BucketCount {
 	out := make([]projectresume.BucketCount, len(in))
 	for i, b := range in {
 		out[i] = projectresume.BucketCount{BucketKey: b.BucketKey, Name: b.Name, Count: b.Count}
@@ -145,7 +145,7 @@ func resumeBuckets(in []operation.BucketCount) []projectresume.BucketCount {
 	return out
 }
 
-func resumeTasks(in []operation.TaskSummary) []projectresume.TaskSummary {
+func resumeTasks(in []contract.TaskSummary) []projectresume.TaskSummary {
 	out := make([]projectresume.TaskSummary, len(in))
 	for i, t := range in {
 		out[i] = projectresume.TaskSummary{ID: t.ID, Title: t.Title, BucketKey: t.BucketKey, Priority: t.Priority}
@@ -153,7 +153,7 @@ func resumeTasks(in []operation.TaskSummary) []projectresume.TaskSummary {
 	return out
 }
 
-func resumeDeps(in []operation.DependencySummary) []projectresume.DependencySummary {
+func resumeDeps(in []contract.DependencySummary) []projectresume.DependencySummary {
 	out := make([]projectresume.DependencySummary, len(in))
 	for i, d := range in {
 		out[i] = projectresume.DependencySummary{TaskID: d.TaskID, DependsOnTaskID: d.DependsOnTaskID}

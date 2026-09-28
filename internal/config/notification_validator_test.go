@@ -305,7 +305,7 @@ func TestValidateNotification_acceptsLiteralMessage(t *testing.T) {
 func TestValidateNotification_actionsHappyPath(t *testing.T) {
 	b := validNotification()
 	b.Actions = []NotificationAction{
-		{Key: "m", ID: "migrate", Label: "Migrate", Command: []string{"workflow", "orphans", "--confirm"}},
+		{Key: "m", ID: "migrate", Label: "Migrate", Operation: "orphans.migrate", Arguments: map[string]any{"confirmed": true}},
 		{Key: "s", ID: "skip", Label: "Skip"},
 	}
 	if err := ValidateNotification(b); err != nil {
@@ -346,23 +346,24 @@ func TestValidateNotification_actionsRejectsCollisionWithDismissKey(t *testing.T
 	}
 }
 
-func TestValidateNotification_actionsRejectsBlockedCommand(t *testing.T) {
-	for _, blocked := range []string{"tui", "mcp"} {
+func TestValidateNotification_actionsRejectsDeliveryCommands(t *testing.T) {
+	for _, blocked := range []string{"tui", "mcp", "unknown.operation", "wiring.snapshot"} {
 		b := validNotification()
 		b.Actions = []NotificationAction{
-			{Key: "x", ID: "x", Label: "X", Command: []string{blocked, "show"}},
+			{Key: "x", ID: "x", Label: "X", Operation: blocked},
 		}
 		err := ValidateNotification(b)
-		if err == nil || !strings.Contains(err.Error(), "reserved") {
+		if err == nil || !strings.Contains(err.Error(), "operation") {
 			t.Fatalf("expected reserved-command error for %q, got %v", blocked, err)
 		}
 	}
 }
 
-func TestValidateNotification_actionsAllowEmptyCommand(t *testing.T) {
+func TestValidateNotification_actionsAllowEmptyOperation(t *testing.T) {
 	b := validNotification()
 	b.Actions = []NotificationAction{
 		{Key: "s", ID: "skip", Label: "Skip"},
+		{Key: "f", ID: "search", Label: "Search", Operation: "search", Arguments: map[string]any{"query": "work"}},
 	}
 	if err := ValidateNotification(b); err != nil {
 		t.Fatalf("dismiss-only label action should pass: %v", err)

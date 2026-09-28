@@ -13,15 +13,15 @@ func fKey() tea.KeyMsg  { return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'f
 
 func TestProjectRoutesUseScreenStack(t *testing.T) {
 	model, _, _ := scopedFeedModel(t)
-	prior := navState{top: model.top, sub: model.sub}
+	prior := model.navigation
 
 	next, _ := model.Update(ctrlP())
 	got := next.(Model)
 	if len(got.screenStack) != 1 || got.screenStack[0] != screenhost.Project {
 		t.Fatalf("ctrl+p stack = %v, want [project]", got.screenStack)
 	}
-	if got.top != prior.top || got.sub != prior.sub {
-		t.Fatalf("project route changed legacy nav from %+v to %+v", prior, navState{top: got.top, sub: got.sub})
+	if got.navigation != prior {
+		t.Fatalf("project route changed legacy nav from %+v to %+v", prior, got.navigation)
 	}
 	if len(got.projectScreen.Activity()) != 3 {
 		t.Fatalf("project activity = %d, want 3", len(got.projectScreen.Activity()))
@@ -43,8 +43,8 @@ func TestProjectRoutesUseScreenStack(t *testing.T) {
 	}
 	next, _ = got.Update(escKey())
 	got = next.(Model)
-	if len(got.screenStack) != 0 || got.top != prior.top || got.sub != prior.sub {
-		t.Fatalf("project esc did not restore base route: stack=%v nav=%+v", got.screenStack, navState{top: got.top, sub: got.sub})
+	if len(got.screenStack) != 0 || got.navigation != prior {
+		t.Fatalf("project esc did not restore base route: stack=%v nav=%+v", got.screenStack, got.navigation)
 	}
 }
 

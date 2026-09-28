@@ -1,6 +1,8 @@
 package list
 
-import "omakiten/internal/tui/components/scrollwindow"
+import (
+	"omakiten/internal/tui/components/scrollwindow"
+)
 
 // Window owns the cursor + scroll pair for a fixed-row viewport whose
 // content the parent renders. The cursor and scroll fields are

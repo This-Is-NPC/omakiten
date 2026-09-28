@@ -1,6 +1,8 @@
 package domain
 
-import "testing"
+import (
+	"testing"
+)
 
 func TestStuckBucketIDsPreservesWorkflowTriState(t *testing.T) {
 	if got := StuckBucketIDs(Workflow{}); got != nil {

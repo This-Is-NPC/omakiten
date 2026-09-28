@@ -1,6 +1,8 @@
 package config
 
-import "fmt"
+import (
+	"fmt"
+)
 
 // warnDanglingRefs scans every slug referenced by omakiten.yaml against the
 // loaded entity sets and returns one SourceWarning per missing ref.

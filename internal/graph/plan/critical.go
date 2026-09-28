@@ -1,6 +1,8 @@
 package plan
 
-import "omakiten/internal/domain"
+import (
+	"omakiten/internal/domain"
+)
 
 // CriticalPath is the set of task ids on the longest blocker chain inside a
 // plan. Tasks are scored by the depth of their longest blocker chain (memoised

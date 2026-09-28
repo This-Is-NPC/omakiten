@@ -1,38 +1,30 @@
 package cli
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
-	"os"
-	"path/filepath"
-	"strconv"
 
-	tea "github.com/charmbracelet/bubbletea"
 	"github.com/spf13/cobra"
 
 	"omakiten/internal/activity"
+	"omakiten/internal/agentruntime"
 	"omakiten/internal/config"
-	"omakiten/internal/configstore"
 	"omakiten/internal/domain"
-	hookactions "omakiten/internal/hooks/actions"
 	"omakiten/internal/sqlite"
-	"omakiten/internal/token"
-	"omakiten/internal/tui"
 )
 
-func newTUICommand(opts *runtimeOptions, version string) *cobra.Command {
+func newTUICommand(opts *runtimeOptions, version string, run func(context.Context, agentruntime.Session) error) *cobra.Command {
 	return &cobra.Command{
 		Use:   "tui",
 		Short: opts.t("cli.tui.short"),
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			return runTUI(cmd.Context(), opts, version)
+			return runTUI(cmd.Context(), opts, version, run)
 		},
 	}
 }
 
-func runTUI(ctx context.Context, opts *runtimeOptions, version string) error {
+func runTUI(ctx context.Context, opts *runtimeOptions, version string, run func(context.Context, agentruntime.Session) error) error {
 	rt, err := opts.open(ctx, true)
 	if err != nil {
 		emitTUIHealthCheckFailedFromOpenError(ctx, opts, err)
@@ -54,26 +46,6 @@ func runTUI(ctx context.Context, opts *runtimeOptions, version string) error {
 			return err
 		}
 	}
-	// Boot-time health check (#365 AC 5). `opts.open(_, true)`
-	// already ran EnsureDefaultFiles + LoadBundle +
-	// ValidateBundle and wrapped any failure with the structured
-	// envelope at root.go:299. The bundle handle below is consumed
-	// only for the active-theme snapshot guard — if `opts.open`
-	// returned a valid runtime, the bundle is loadable, so a fresh
-	// LoadBundle here would be redundant.
-	bundle, err := config.LoadBundle(rt.configPath)
-	if err != nil {
-		// Defensive: unreachable in the current `opts.open` flow,
-		// kept as guard against future open() refactors that might
-		// elide the in-line LoadBundle. Surfaces the same envelope
-		// the wrap-in-open path emits so the user sees one shape.
-		firstKind := classifyValidationError(err)
-		return domain.NewError(
-			domain.ErrConfigInvalid,
-			fmt.Sprintf(t("cli.tui.err.config_validation_failed_fmt"), 1, firstKind),
-			buildValidateFailureDetails(rt.configPath, err, nil),
-		)
-	}
 	snap := rt.activeSnapshot()
 	if err := snap.ThemeError(); err != nil {
 		// Theme snapshot failures aren't caught by `opts.open`'s
@@ -81,7 +53,7 @@ func runTUI(ctx context.Context, opts *runtimeOptions, version string) error {
 		// bundle, and an unresolvable theme slug surfaces here as
 		// a distinct boot guard. Reuse the same envelope shape so
 		// the user sees consistent kind + remediation copy.
-		warnings := extractBundleWarnings(bundle)
+		warnings := extractBundleWarnings(config.Bundle{Warnings: snap.Warnings()})
 		firstKind := classifyValidationError(err)
 		return domain.NewError(
 			domain.ErrConfigInvalid,
@@ -89,72 +61,10 @@ func runTUI(ctx context.Context, opts *runtimeOptions, version string) error {
 			buildValidateFailureDetails(rt.configPath, err, warnings),
 		)
 	}
-	theme := snap.Theme()
-
-	bundleStore := configstore.New()
-	model, err := tui.NewModel(ctx, project, tui.WireAppServices(tui.Repositories{
-		Tasks:        rt.store,
-		Projects:     rt.store,
-		Comments:     rt.store,
-		Dependencies: rt.store,
-		Tags:         rt.store,
-		BundleStore:  bundleStore,
-		ActivityLogs: rt.store,
-		Events:       rt.store,
-		Orphans:      rt.store,
-		Plans:        rt.store,
-		Checkpointer: rt.store,
-		SnapshotWriter: func(snapshotCtx context.Context, _, destinationPath string) error {
-			return rt.store.Snapshot(snapshotCtx, destinationPath)
-		},
-		Watermark: rt.store,
-		DispatchCommand: func(ctx context.Context, args []string) ([]byte, error) {
-			cmd := NewRootCommand(version)
-			cmd.SetContext(ctx)
-			var buf bytes.Buffer
-			cmd.SetOut(&buf)
-			cmd.SetErr(&buf)
-			cmd.SetArgs(args)
-			err := cmd.Execute()
-			return buf.Bytes(), err
-		},
-		ConfigPath:   rt.configPath,
-		DBPath:       rt.dbPath,
-		Version:      version,
-		RepoLocalDir: rt.repoLocalDir,
-		Cache:        rt.cache,
-		ProjectID:    rt.projectID,
-		Catalog:      rt.activeSnapshot().Catalog(config.SurfaceTUI),
-	}, rt.store, rt.configPath), theme, token.NewCounter(), bundle.Config.TUI.TokenBadge, bundle.Config.EffectivePriorities(), bundle.Config.EffectiveSeverities(), tui.NotificationBinding{
-		Notifications: bundle.Notifications,
-	})
-	if err != nil {
-		return err
+	if run == nil {
+		return fmt.Errorf("interactive runner is not installed")
 	}
-
-	program := tea.NewProgram(model, tea.WithAltScreen())
-	if rt.notificationAction != nil {
-		rt.notificationAction.SetSender(teaNotificationSender{program: program})
-	}
-	finalModel, runErr := program.Run()
-	// The shell wrapper installed by install.sh / install.ps1 reads the
-	// path written here and `cd`s the parent shell after the TUI exits.
-	// Without the wrapper this is a silent no-op; the TUI itself never
-	// changes the parent shell's CWD (it cannot).
-	if final, ok := finalModel.(tui.Model); ok {
-		if root := final.LastProjectRoot(); root != "" {
-			_ = writeOktCDPath(root)
-		}
-	}
-	return runErr
-}
-
-type teaNotificationSender struct {
-	program *tea.Program
-}
-
-func (s teaNotificationSender) SendNotification(msg hookactions.NotificationShowMsg) {
-	s.program.Send(msg)
+	return run(ctx, agentruntime.Session{CacheProjectID: rt.projectID, Store: rt.store, Cache: rt.cache, Project: project, ConfigPath: rt.configPath, DBPath: rt.dbPath, RepoLocalDir: rt.repoLocalDir, Version: version, Snapshot: snap})
 }
 
 // isProjectNotFoundError returns true when the resolver signalled that the
@@ -166,19 +76,6 @@ func isProjectNotFoundError(err error) bool {
 		return coded.Code == domain.ErrProjectNotFound
 	}
 	return false
-}
-
-// writeOktCDPath writes the absolute project root path to the channel the
-// shell wrapper reads after the TUI exits. Resolution order, mirroring the
-// wrapper itself: $OKT_CD_FILE → $XDG_RUNTIME_DIR/okt-cd → $TMPDIR/okt-cd-$UID
-// → /tmp/okt-cd-$UID. Best-effort: an I/O failure here is not surfaced to
-// the user because the wrapper treats a missing file as "no cd needed".
-func writeOktCDPath(root string) error {
-	target := oktCDPath()
-	if target == "" {
-		return nil
-	}
-	return os.WriteFile(target, []byte(root+"\n"), 0o600)
 }
 
 // emitTUIHealthCheckFailedFromOpenError records a tui.healthcheck.failed
@@ -256,18 +153,4 @@ func summariseValidationErrors(raw any) (int, string) {
 		return len(errs), ""
 	}
 	return 0, ""
-}
-
-func oktCDPath() string {
-	if path := os.Getenv("OKT_CD_FILE"); path != "" {
-		return path
-	}
-	if dir := os.Getenv("XDG_RUNTIME_DIR"); dir != "" {
-		return filepath.Join(dir, "okt-cd")
-	}
-	tmp := os.Getenv("TMPDIR")
-	if tmp == "" {
-		tmp = "/tmp"
-	}
-	return filepath.Join(tmp, "okt-cd-"+strconv.Itoa(os.Getuid()))
 }

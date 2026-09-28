@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"omakiten/internal/domain"
+	"omakiten/internal/paths"
 )
 
 // TestIsProjectNotFoundErrorMatchesCodedDomainError covers the helper that
@@ -40,20 +41,20 @@ func TestIsProjectNotFoundErrorMatchesCodedDomainError(t *testing.T) {
 func TestOktCDPathHonorsEnvOverrides(t *testing.T) {
 	t.Setenv("OKT_CD_FILE", "/explicit/path/okt-cd")
 	t.Setenv("XDG_RUNTIME_DIR", "/run/user/1000")
-	if got := oktCDPath(); got != "/explicit/path/okt-cd" {
-		t.Fatalf("oktCDPath() = %q, want explicit override", got)
+	if got := paths.CDPath(); got != "/explicit/path/okt-cd" {
+		t.Fatalf("paths.CDPath() = %q, want explicit override", got)
 	}
 
 	t.Setenv("OKT_CD_FILE", "")
-	if got := oktCDPath(); got != "/run/user/1000/okt-cd" {
-		t.Fatalf("oktCDPath() = %q, want XDG_RUNTIME_DIR-derived path", got)
+	if got := paths.CDPath(); got != "/run/user/1000/okt-cd" {
+		t.Fatalf("paths.CDPath() = %q, want XDG_RUNTIME_DIR-derived path", got)
 	}
 
 	t.Setenv("XDG_RUNTIME_DIR", "")
 	t.Setenv("TMPDIR", "/var/tmp")
 	want := "/var/tmp/okt-cd-" + strconv.Itoa(os.Getuid())
-	if got := oktCDPath(); got != want {
-		t.Fatalf("oktCDPath() = %q, want %q", got, want)
+	if got := paths.CDPath(); got != want {
+		t.Fatalf("paths.CDPath() = %q, want %q", got, want)
 	}
 }
 
@@ -65,8 +66,8 @@ func TestWriteOktCDPathRoundTrips(t *testing.T) {
 	target := filepath.Join(dir, "okt-cd")
 	t.Setenv("OKT_CD_FILE", target)
 
-	if err := writeOktCDPath("/work/myproject"); err != nil {
-		t.Fatalf("writeOktCDPath() error = %v", err)
+	if err := paths.WriteCDPath("/work/myproject"); err != nil {
+		t.Fatalf("paths.WriteCDPath() error = %v", err)
 	}
 
 	data, err := os.ReadFile(target)

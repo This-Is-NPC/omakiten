@@ -30,13 +30,9 @@ type rule struct {
 
 var hexagonalRules = []rule{
 	{
-		from: "internal/domain",
-		forbidden: []string{
-			"internal/sqlite", "internal/config", "internal/configstore",
-			"internal/tui", "internal/cli", "internal/mcp", "internal/operation",
-			"internal/app", "internal/agentruntime",
-		},
-		reason: "domain is the inner core; it cannot depend on adapters or application services",
+		from:      "internal/domain",
+		forbidden: []string{"internal/"},
+		reason:    "domain is the inner core; it cannot depend on adapters or application services",
 	},
 	{
 		from: "internal/app",
@@ -66,7 +62,7 @@ var hexagonalRules = []rule{
 	{
 		from: "internal/agentruntime",
 		forbidden: []string{
-			"internal/tui",
+			"internal/tui", "internal/cli", "internal/terminal",
 		},
 		reason: "agentruntime is the headless agent/MCP composition root; TUI delivery must stay behind neutral hook actions and sender ports",
 	},
@@ -78,10 +74,15 @@ var hexagonalRules = []rule{
 	ruleCLINoApp,
 	ruleTUINoApp,
 	ruleScreensNoOperation,
+	{from: "internal/tui", forbidden: []string{"internal/cli", "internal/operation", "internal/agentruntime", "internal/configstore", "internal/sqlite", "internal/recovery"}, reason: "tui receives neutral contracts and ports"},
+	{from: "internal/cli", forbidden: []string{"internal/tui", "internal/terminal"}, reason: "cli receives an injected interactive runner"},
+	{from: "internal/contract", forbidden: []string{"internal/app", "internal/operation", "internal/agentruntime", "internal/sqlite", "internal/configstore", "internal/recovery", "internal/tui", "internal/cli", "internal/mcp", "internal/terminal", "internal/updater"}, reason: "contracts contain no implementations"},
+	{from: "internal/config", forbidden: []string{"internal/tui", "internal/cli", "internal/terminal"}, reason: "configuration is independent of delivery"},
+	{from: "internal/app", forbidden: []string{"internal/recovery", "internal/terminal", "internal/hooks"}, reason: "application services use adapter ports"},
+	{from: "internal/operation", forbidden: []string{"internal/tui", "internal/cli", "internal/terminal", "internal/mcp"}, reason: "operations are independent of their consumers"},
 }
 
-// A1: cli and tui (including screens, because from is a prefix) must not
-// import application services — they consume operation.Service.
+// Delivery adapters cannot bypass their operation contracts to call application services.
 var ruleCLINoApp = rule{
 	from:      "internal/cli",
 	forbidden: []string{"internal/app"},
@@ -91,15 +92,14 @@ var ruleCLINoApp = rule{
 var ruleTUINoApp = rule{
 	from:      "internal/tui",
 	forbidden: []string{"internal/app"},
-	reason:    "tui consumes operation.Service; importing application services bypasses the facade",
+	reason:    "tui consumes neutral contracts; importing application services bypasses its ports",
 }
 
-// A2: screens stay behind the TUI host. internal/tui/*.go MAY import
-// operation (that is the facade); screens may not.
+// Screens depend on the TUI host and neutral contracts.
 var ruleScreensNoOperation = rule{
 	from:      "internal/tui/screens",
 	forbidden: []string{"internal/operation"},
-	reason:    "screens talk to the TUI host; only internal/tui (the facade) may import operation",
+	reason:    "screens talk to the TUI host and cannot import operation implementations",
 }
 
 // deliveryTestRules are A1+A2 scanned again with _test.go included. The
@@ -280,9 +280,10 @@ func TestHexagonalScanRejectsSeededImports(t *testing.T) {
 			wantIssues: true,
 		},
 		{
-			name:   "tui host production may import operation",
-			file:   "tui/host.go",
-			source: "package tui\nimport \"omakiten/internal/operation\"\n",
+			name:       "tui host production rejects operation",
+			wantIssues: true,
+			file:       "tui/host.go",
+			source:     "package tui\nimport \"omakiten/internal/operation\"\n",
 		},
 		{
 			name:   "cli production may import operation",
@@ -309,7 +310,8 @@ func TestHexagonalScanRejectsSeededImports(t *testing.T) {
 			wantIssues:   true,
 		},
 		{
-			name:         "tui host test may import operation",
+			name:         "tui host test rejects operation",
+			wantIssues:   true,
 			file:         "tui/host_test.go",
 			source:       "package tui\nimport \"omakiten/internal/operation\"\n",
 			includeTests: true,

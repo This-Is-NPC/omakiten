@@ -46,7 +46,7 @@ func New() Screen {
 		grid: screengrid.NewState(),
 		body: &descriptionBodyCache{},
 
-		md:       markdown.New(markdown.Tokens{}),
+		md:       markdown.New(screenkit.MarkdownTokens{}),
 		rendered: true,
 	}
 }

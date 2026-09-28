@@ -1,6 +1,8 @@
 package sqlutil
 
-import "database/sql"
+import (
+	"database/sql"
+)
 
 // Scanner is the narrow contract shared by `*sql.Row` and `*sql.Rows`:
 // "give me my row, fill these destinations". Accepting the interface

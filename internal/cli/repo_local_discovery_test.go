@@ -176,11 +176,7 @@ func TestCLIPerProjectBundleCacheSeeded(t *testing.T) {
 	if rt.activeRegistry() != pr.EnumRegistry {
 		t.Fatalf("activeRegistry()=%p does not match ProjectRuntime.EnumRegistry=%p — service helpers would skip the cache", rt.activeRegistry(), pr.EnumRegistry)
 	}
-	if rt.activeRegistry() != rt.registry {
-		// Boot path keeps rt.registry as a mirror of the cache entry's
-		// registry; the helper should return the same pointer either way.
-		t.Logf("note: rt.registry and ProjectRuntime.EnumRegistry are distinct pointers — acceptable as long as activeRegistry() picks the cache entry first")
-	}
+
 }
 
 // runCLIWithoutConfig mirrors runCLI but does NOT inject --config so the

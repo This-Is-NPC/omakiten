@@ -63,7 +63,7 @@ func TestScreenRegistryRepresentsEveryLegacyRouteOnce(t *testing.T) {
 			t.Errorf("descriptor %q has nil factory", descriptor.ID)
 			continue
 		}
-		screen := descriptor.Factory(legacyScreenHost{frame: screenhost.NewFrame(screenhost.FrameOptions{}), model: Model{}})
+		screen := descriptor.Factory(modelScreenHost{frame: screenhost.NewFrame(screenhost.FrameOptions{}), model: Model{}})
 		if screen.ID() != descriptor.ID {
 			t.Errorf("descriptor %q factory returned screen %q", descriptor.ID, screen.ID())
 		}
@@ -78,14 +78,14 @@ func TestScreenRegistryRepresentsEveryLegacyRouteOnce(t *testing.T) {
 func TestScreenRegistryDerivesLegacyNavigationTables(t *testing.T) {
 	t.Parallel()
 
-	if !reflect.DeepEqual(topOrder, []topID{topTasks, topStats, topStudio, topSettings}) {
+	if !reflect.DeepEqual(topOrder, []screenhost.TopID{screenhost.TopTasks, screenhost.TopStats, screenhost.TopStudio, screenhost.TopSettings}) {
 		t.Fatalf("topOrder = %v, want Tasks/Stats/Studio/Settings", topOrder)
 	}
-	wantSubs := map[topID][]subID{
-		topTasks:    {subBoard, subTable, subGraph, subPlans},
-		topStats:    {subStatsGeneral, subStatsLogs, subStatsInsights},
-		topStudio:   {subStudioWorkflow, subStudioCommands, subStudioPersonas, subStudioHooks},
-		topSettings: {subSettingsGeneral, subSettingsLaws, subSettingsPersonas, subSettingsSkills, subSettingsTemplates, subSettingsTags, subSettingsGuards},
+	wantSubs := map[screenhost.TopID][]screenhost.ID{
+		screenhost.TopTasks:    {screenhost.TasksBoard, screenhost.TasksTable, screenhost.TasksGraph, screenhost.TasksPlans},
+		screenhost.TopStats:    {screenhost.StatsGeneral, screenhost.StatsLogs, screenhost.StatsInsights},
+		screenhost.TopStudio:   {screenhost.StudioWorkflow, screenhost.StudioCommands, screenhost.StudioPersonas, screenhost.StudioHooks},
+		screenhost.TopSettings: {screenhost.SettingsGeneral, screenhost.SettingsLaws, screenhost.SettingsPersonas, screenhost.SettingsSkills, screenhost.SettingsTemplates, screenhost.SettingsTags, screenhost.SettingsGuards},
 	}
 	if !reflect.DeepEqual(subsByTop, wantSubs) {
 		t.Fatalf("subsByTop = %v, want %v", subsByTop, wantSubs)
@@ -130,13 +130,13 @@ func TestScreenRegistryOwnsNamedDriftMetadata(t *testing.T) {
 func TestBoardDescriptorResolvesHostedScreen(t *testing.T) {
 	t.Parallel()
 
-	m := Model{styles: newStyles(config.Theme{}), width: 100, height: 40, top: topTasks, sub: subBoard}
+	m := Model{styles: newStyles(config.Theme{}), width: 100, height: 40, navigation: screenhost.TasksBoard}
 	descriptor, ok := screenRegistry.ByID(screenhost.TasksBoard)
 	if !ok {
 		t.Fatal("tasks.board descriptor missing")
 	}
 	m.boardScreen = board.New()
-	screen := descriptor.Factory(legacyScreenHost{frame: m.screenFrame(), model: m})
+	screen := descriptor.Factory(modelScreenHost{frame: m.screenFrame(), model: m})
 	if screen.ID() != screenhost.TasksBoard {
 		t.Fatalf("factory screen id = %q", screen.ID())
 	}
@@ -148,7 +148,7 @@ func TestBoardDescriptorResolvesHostedScreen(t *testing.T) {
 func TestHostedScreenFactoryResolvesTheLiveInstance(t *testing.T) {
 	t.Parallel()
 
-	m := Model{styles: newStyles(config.Theme{}), width: 100, height: 40, top: topStats, sub: subStatsGeneral}
+	m := Model{styles: newStyles(config.Theme{}), width: 100, height: 40, navigation: screenhost.StatsGeneral}
 	m.statsScreen = stats.New()
 	m.statsScreen = m.boundStatsScreen().Update(m.screenFrame(), tea.KeyMsg{Type: tea.KeyRight}).Screen.(stats.Screen)
 
@@ -156,7 +156,7 @@ func TestHostedScreenFactoryResolvesTheLiveInstance(t *testing.T) {
 	if !ok {
 		t.Fatal("stats.general descriptor missing")
 	}
-	screen := descriptor.Factory(legacyScreenHost{frame: m.screenFrame(), model: m})
+	screen := descriptor.Factory(modelScreenHost{frame: m.screenFrame(), model: m})
 	resolved, ok := screen.(stats.Screen)
 	if !ok {
 		t.Fatalf("factory returned %T, want the extracted stats screen", screen)

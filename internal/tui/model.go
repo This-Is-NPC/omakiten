@@ -15,10 +15,10 @@ import (
 
 	"omakiten/internal/activity"
 	"omakiten/internal/config"
+	"omakiten/internal/contract"
 	"omakiten/internal/domain"
 	hookactions "omakiten/internal/hooks/actions"
 	"omakiten/internal/keynav"
-	"omakiten/internal/operation"
 	"omakiten/internal/token"
 	"omakiten/internal/tui/components/card"
 	"omakiten/internal/tui/components/header"
@@ -62,14 +62,6 @@ func NewModel(ctx context.Context, project domain.ProjectContext, repos Reposito
 		counter = token.ApproxCounter{}
 	}
 	yellow, red := badge.Effective()
-	priorityPairs := make([]domain.PriorityPair, len(priorities))
-	for i, p := range priorities {
-		priorityPairs[i] = domain.PriorityPair{ID: p.ID, Value: p.Value, Default: p.Default}
-	}
-	severityPairs := make([]domain.SeverityPair, len(severities))
-	for i, s := range severities {
-		severityPairs[i] = domain.SeverityPair{ID: s.ID, Value: s.Value, Default: s.Default}
-	}
 	model := Model{
 		ctx:              ctx,
 		project:          project,
@@ -81,7 +73,7 @@ func NewModel(ctx context.Context, project domain.ProjectContext, repos Reposito
 		tokenBadgeRed:    red,
 		priorities:       priorities,
 		severities:       severities,
-		registry:         domain.NewEnumRegistry(priorityPairs, severityPairs),
+		registry:         config.BuildEnumRegistry(config.Bundle{Config: config.Settings{Priorities: priorities, Severities: severities}}),
 		markdownRendered: true,
 		notifications:    notifications.Notifications,
 		// Pre-allocated card box-style cache. Value-receiver render paths
@@ -128,14 +120,13 @@ func NewModel(ctx context.Context, project domain.ProjectContext, repos Reposito
 		// Empty project — open on the multi-project Home picker.
 		// Do not call refresh() because every per-project query would 404
 		// without a resolved project_id.
-		model.top = topHome
+		model.navigation = firstSub(screenhost.TopHome)
 		if err := model.reloadHome(); err != nil {
 			return Model{}, err
 		}
 		return model, nil
 	}
-	model.top = topTasks
-	model.sub = subBoard
+	model.navigation = screenhost.TasksBoard
 	model.lastProjectRoot = project.RootPath
 	if err := model.refresh(); err != nil {
 		return Model{}, err
@@ -156,7 +147,7 @@ func (m Model) Init() tea.Cmd {
 }
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	prevNav := navState{top: m.top, sub: m.sub}
+	prevNav := m.navigation
 	if next, cmd, handled := m.dispatchNotification(msg); handled {
 		return next, cmd
 	}
@@ -277,7 +268,7 @@ func (m *Model) updateRefreshTick() tea.Cmd {
 	return tea.Batch(append(reloads, scheduleRefreshTick())...)
 }
 
-func updateKey(m Model, msg tea.KeyMsg, prevNav navState) (tea.Model, tea.Cmd) {
+func updateKey(m Model, msg tea.KeyMsg, prevNav screenhost.ID) (tea.Model, tea.Cmd) {
 	if next, cmd, handled := m.updateOverlayKey(msg); handled {
 		return next, cmd
 	}
@@ -313,7 +304,7 @@ func (m Model) updateOverlayKey(msg tea.KeyMsg) (tea.Model, tea.Cmd, bool) {
 	return m, nil, false
 }
 
-func (m Model) updateNormalKey(msg tea.KeyMsg, prevNav navState) (tea.Model, tea.Cmd) {
+func (m Model) updateNormalKey(msg tea.KeyMsg, prevNav screenhost.ID) (tea.Model, tea.Cmd) {
 	if len(m.screenStack) > 0 {
 		if cmd, handled := m.dispatchOwnedScreenKey(msg); handled {
 			return m, cmd
@@ -607,8 +598,8 @@ func (m Model) canOpenPalette() bool {
 // returns immediately. The previous view stays rendered until the
 // resulting refreshAfterViewChangeMsg lands and the Update handler
 // folds the loaded slices into the model.
-func (m *Model) refreshAfterViewChangeCmd(prev navState) tea.Cmd {
-	if m.top == prev.top && m.sub == prev.sub {
+func (m *Model) refreshAfterViewChangeCmd(prev screenhost.ID) tea.Cmd {
+	if m.navigation == prev {
 		return nil
 	}
 	historyCmd := m.prepareStudioHookHistory()
@@ -722,8 +713,8 @@ func (m *Model) refreshHeavyAfterViewChangeCmd() tea.Cmd {
 		if svc == nil {
 			return result
 		}
-		s, err := svc.BoardSnapshot(ctx, operation.BoardSnapshotInput{
-			ProjectSelector: operation.ProjectSelector{ProjectID: projectID},
+		s, err := svc.BoardSnapshot(ctx, contract.BoardSnapshotInput{
+			ProjectSelector: contract.ProjectSelector{ProjectID: projectID},
 			Sort:            sort,
 			IncludeArchived: archived,
 		})
@@ -733,7 +724,7 @@ func (m *Model) refreshHeavyAfterViewChangeCmd() tea.Cmd {
 		}
 		result.snap = s
 		result.snapValid = true
-		if rollups, perr := svc.ListPlanRollups(ctx, operation.ProjectSelector{ProjectID: projectID}); perr == nil && rollups != nil {
+		if rollups, perr := svc.ListPlanRollups(ctx, contract.ProjectSelector{ProjectID: projectID}); perr == nil && rollups != nil {
 			result.plans = rollups
 			result.plansValid = true
 		}
@@ -749,7 +740,7 @@ func (m *Model) refreshHeavyAfterViewChangeCmd() tea.Cmd {
 // this kind of data" — the fold path only updates the Plans screen when the
 // worker actually queried it.
 type refreshAfterViewChangeMsg struct {
-	snap            operation.BoardSnapshot
+	snap            contract.BoardSnapshot
 	snapValid       bool
 	plans           []domain.PlanRollup
 	plansValid      bool
@@ -878,7 +869,7 @@ type realtimeReloadMsg struct {
 	scopeSlug   string // realtimeReloadPlanShow: the plan slug this loaded
 
 	// bundle payload (kind == realtimeReloadBundle)
-	snap       operation.BoardSnapshot
+	snap       contract.BoardSnapshot
 	snapValid  bool
 	plans      []domain.PlanRollup
 	plansValid bool
@@ -1010,7 +1001,7 @@ func (m *Model) realtimePlanReloadCmd(version int64, valid bool) tea.Cmd {
 			result.status = "operation service is not wired"
 			return result
 		}
-		show, err := svc.ShowPlanView(ctx, operation.ShowPlanInput{ProjectSelector: operation.ProjectSelector{ProjectID: project.ID}, Slug: slug})
+		show, err := svc.ShowPlanView(ctx, contract.ShowPlanInput{ProjectSelector: contract.ProjectSelector{ProjectID: project.ID}, Slug: slug})
 		if err != nil {
 			result.status = err.Error()
 			return result
@@ -1109,14 +1100,14 @@ func (m *Model) realtimeBundleReloadCmd(version int64, valid bool) tea.Cmd {
 		if svc == nil {
 			return result
 		}
-		snapshot, err := svc.BoardSnapshot(ctx, operation.BoardSnapshotInput{ProjectSelector: operation.ProjectSelector{ProjectID: project.ID}, Sort: sort, IncludeArchived: archived})
+		snapshot, err := svc.BoardSnapshot(ctx, contract.BoardSnapshotInput{ProjectSelector: contract.ProjectSelector{ProjectID: project.ID}, Sort: sort, IncludeArchived: archived})
 		if err != nil {
 			result.err = err
 			return result
 		}
 		result.snap = snapshot
 		result.snapValid = true
-		if rollups, err := svc.ListPlanRollups(ctx, operation.ProjectSelector{ProjectID: project.ID}); err == nil {
+		if rollups, err := svc.ListPlanRollups(ctx, contract.ProjectSelector{ProjectID: project.ID}); err == nil {
 			result.plans = rollups
 			result.plansValid = true
 		}
@@ -1642,7 +1633,7 @@ func (m *Model) handleCommonRouteKey(key string) bool {
 		wasHome := m.onHome()
 		m.status = ""
 		m.pushHistory()
-		m.top = topHome
+		m.navigation = firstSub(screenhost.TopHome)
 		if err := m.reloadHome(); err != nil {
 			m.status = err.Error()
 		} else if wasHome {
@@ -1659,19 +1650,19 @@ func (m *Model) handleCommonRouteKey(key string) bool {
 		return true
 	case "1":
 		m.pushHistory()
-		m.jumpTop(topTasks)
+		m.jumpTop(screenhost.TopTasks)
 		return true
 	case "2":
 		m.pushHistory()
-		m.jumpTop(topStats)
+		m.jumpTop(screenhost.TopStats)
 		return true
 	case "3":
 		m.pushHistory()
-		m.jumpTop(topStudio)
+		m.jumpTop(screenhost.TopStudio)
 		return true
 	case "4":
 		m.pushHistory()
-		m.jumpTop(topSettings)
+		m.jumpTop(screenhost.TopSettings)
 		return true
 	case ",":
 		m.pushHistory()
@@ -1700,7 +1691,7 @@ func (m *Model) handleCommonTaskKey(key string) bool {
 }
 
 func (m *Model) taskKeyActive() bool {
-	if m.top != topTasks || m.inPlanNetwork() {
+	if m.navigationTop() != screenhost.TopTasks || m.inPlanNetwork() {
 		return false
 	}
 	return true
@@ -1756,7 +1747,7 @@ func (m *Model) handleRefreshKey() bool {
 }
 
 func (m *Model) handleArchivedKey() bool {
-	if m.top != topTasks {
+	if m.navigationTop() != screenhost.TopTasks {
 		return false
 	}
 	m.includeArchived = !m.includeArchived
@@ -1798,25 +1789,23 @@ func (m *Model) inPlanNetwork() bool {
 // negative backward) along topOrder. The sub always lands on the first
 // sub of the new top — there is no per-top "last sub used" memory in T1.
 func (m *Model) cycleTop(delta int) {
-	idx := topIndex(m.top)
+	idx := topIndex(m.navigationTop())
 	if idx < 0 {
 		idx = 0
 	}
 	n := len(topOrder)
 	next := topOrder[((idx+delta)%n+n)%n]
-	m.top = next
-	m.sub = firstSub(next)
+	m.navigation = firstSub(next)
 }
 
 // jumpTop moves directly to a target top (bound to the digit keys 1/2/3),
 // landing on its first sub. No-op when the model is already on that top
 // and its first sub — keeps repeated digit presses from clobbering nav.
-func (m *Model) jumpTop(target topID) {
-	if m.top == target {
+func (m *Model) jumpTop(target screenhost.TopID) {
+	if m.navigationTop() == target {
 		return
 	}
-	m.top = target
-	m.sub = firstSub(target)
+	m.navigation = firstSub(target)
 }
 
 // cycleSub moves the active sub forward (delta=1) or backward (delta=-1)
@@ -1824,16 +1813,16 @@ func (m *Model) jumpTop(target topID) {
 // binding is silently dropped so users on a single-sub top do not have
 // to learn "this only works on Tasks/Stats/Settings".
 func (m *Model) cycleSub(delta int) {
-	subs := subsByTop[m.top]
+	subs := subsByTop[m.navigationTop()]
 	if len(subs) <= 1 {
 		return
 	}
-	idx := subIndex(m.top, m.sub)
+	idx := subIndex(m.navigationTop(), m.navigation)
 	if idx < 0 {
 		idx = 0
 	}
 	n := len(subs)
-	m.sub = subs[((idx+delta)%n+n)%n]
+	m.navigation = subs[((idx+delta)%n+n)%n]
 }
 
 func (m *Model) refresh() error {
@@ -1843,7 +1832,7 @@ func (m *Model) refresh() error {
 
 	// Phase 2-bis routes every per-project view through the BundleCache —
 	// production wires one at boot, tests wire one via
-	// testfixtures/runtimecache.Install. Reads hit r.Cache.Get(r.ProjectID).Snapshot
+	// testfixtures/runtimecache.Install. Reads hit r.Cache.View(r.ProjectID).Snapshot
 	// unconditionally.
 
 	snap, err := m.loadBoardSnapshot(m.ctx, m.project, domain.TaskSort{Field: views.Board.Sort.Field, Order: views.Board.Sort.Order}, m.includeArchived)

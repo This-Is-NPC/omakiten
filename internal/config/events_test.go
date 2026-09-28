@@ -1,6 +1,8 @@
 package config
 
-import "testing"
+import (
+	"testing"
+)
 
 func TestEventsSettingsResolveLog(t *testing.T) {
 	tru := true

@@ -9,6 +9,7 @@ import (
 
 	"omakiten/internal/agentruntime"
 	"omakiten/internal/config"
+	"omakiten/internal/contract"
 	"omakiten/internal/domain"
 	"omakiten/internal/operation"
 	"omakiten/internal/testfixtures/snapstore"
@@ -95,7 +96,7 @@ func setupProjectResumeFixture(t *testing.T) projectResumeFixture {
 	if _, err := store.AddTaskDependency(ctx, project.ID, blocked.ID, task.ID); err != nil {
 		t.Fatalf("AddTaskDependency: %v", err)
 	}
-	svc := operation.NewService(store, operation.ProjectSelector{ProjectID: project.ID})
+	svc := operation.NewService(store, contract.ProjectSelector{ProjectID: project.ID})
 	svc.SetSnapshot(snap)
 	svc.SetSettings(operation.ServiceSettings{RecentCommentLimit: 5, IncludeWorkflow: true, NextWorkLimit: 5, SimilarTaskLimit: 5})
 	cache := agentruntime.NewBundleCache(nil, nil, nil)
@@ -148,7 +149,7 @@ func TestProjectResumeActionFromProjectScreen(t *testing.T) {
 		t.Fatalf("UpsertProject: %v", err)
 	}
 	snap := store.Snapshot()
-	svc := operation.NewService(store, operation.ProjectSelector{ProjectID: project.ID})
+	svc := operation.NewService(store, contract.ProjectSelector{ProjectID: project.ID})
 	svc.SetSnapshot(snap)
 	svc.SetSettings(operation.ServiceSettings{NextWorkLimit: 5})
 	cache := agentruntime.NewBundleCache(nil, nil, nil)

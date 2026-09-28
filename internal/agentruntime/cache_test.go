@@ -12,10 +12,10 @@ import (
 	"time"
 
 	"omakiten/internal/config"
+	"omakiten/internal/contract"
 	"omakiten/internal/domain"
 	"omakiten/internal/events"
 	"omakiten/internal/hooks"
-	"omakiten/internal/operation"
 	"omakiten/internal/paths"
 	"omakiten/internal/sqlite"
 )
@@ -151,7 +151,7 @@ func TestRuntimeServiceResolvesMtimeChanges(t *testing.T) {
 	if first == nil {
 		t.Fatal("Service() = nil")
 	}
-	resp, err := first.ResolveCommand(ctx, operation.ResolveCommandInput{Name: "okt"})
+	resp, err := first.ResolveCommand(ctx, contract.ResolveCommandInput{Name: "okt"})
 	if err != nil {
 		t.Fatalf("ResolveCommand before edit: %v", err)
 	}
@@ -179,7 +179,7 @@ func TestRuntimeServiceResolvesMtimeChanges(t *testing.T) {
 	if second == first {
 		t.Fatal("Service() returned stale service after config mtime changed")
 	}
-	resp, err = second.ResolveCommand(ctx, operation.ResolveCommandInput{Name: "okt"})
+	resp, err = second.ResolveCommand(ctx, contract.ResolveCommandInput{Name: "okt"})
 	if err != nil {
 		t.Fatalf("ResolveCommand after edit: %v", err)
 	}
@@ -208,7 +208,7 @@ func TestRuntimeServiceResolvesActiveProfileSwitch(t *testing.T) {
 	if first == nil {
 		t.Fatal("Service() = nil")
 	}
-	resp, err := first.ResolveCommand(ctx, operation.ResolveCommandInput{Name: "okt"})
+	resp, err := first.ResolveCommand(ctx, contract.ResolveCommandInput{Name: "okt"})
 	if err != nil {
 		t.Fatalf("ResolveCommand before active switch: %v", err)
 	}
@@ -226,7 +226,7 @@ func TestRuntimeServiceResolvesActiveProfileSwitch(t *testing.T) {
 	if second == first {
 		t.Fatal("Service() returned stale service after active profile switched")
 	}
-	resp, err = second.ResolveCommand(ctx, operation.ResolveCommandInput{Name: "okt"})
+	resp, err = second.ResolveCommand(ctx, contract.ResolveCommandInput{Name: "okt"})
 	if err != nil {
 		t.Fatalf("ResolveCommand after active switch: %v", err)
 	}
@@ -273,7 +273,7 @@ func TestRuntimeServicePreservesPriorRuntimeOnInvalidInPlaceEdit(t *testing.T) {
 	if first == nil {
 		t.Fatal("Service() = nil")
 	}
-	resp, err := first.ResolveCommand(ctx, operation.ResolveCommandInput{Name: "okt"})
+	resp, err := first.ResolveCommand(ctx, contract.ResolveCommandInput{Name: "okt"})
 	if err != nil {
 		t.Fatalf("ResolveCommand before edit: %v", err)
 	}
@@ -300,7 +300,7 @@ func TestRuntimeServicePreservesPriorRuntimeOnInvalidInPlaceEdit(t *testing.T) {
 	}
 	// The prior service still resolves the OLD (empty) language — the
 	// broken bundle was never installed.
-	resp, err = second.ResolveCommand(ctx, operation.ResolveCommandInput{Name: "okt"})
+	resp, err = second.ResolveCommand(ctx, contract.ResolveCommandInput{Name: "okt"})
 	if err != nil {
 		t.Fatalf("ResolveCommand after invalid edit: %v", err)
 	}
@@ -358,7 +358,7 @@ func TestRuntimeServiceExplicitConfigIgnoresActiveSwitch(t *testing.T) {
 	if first == nil {
 		t.Fatal("Service() = nil")
 	}
-	resp, err := first.ResolveCommand(ctx, operation.ResolveCommandInput{Name: "okt"})
+	resp, err := first.ResolveCommand(ctx, contract.ResolveCommandInput{Name: "okt"})
 	if err != nil {
 		t.Fatalf("ResolveCommand before active switch: %v", err)
 	}
@@ -375,7 +375,7 @@ func TestRuntimeServiceExplicitConfigIgnoresActiveSwitch(t *testing.T) {
 	if second == nil {
 		t.Fatal("Service() after active switch = nil")
 	}
-	resp, err = second.ResolveCommand(ctx, operation.ResolveCommandInput{Name: "okt"})
+	resp, err = second.ResolveCommand(ctx, contract.ResolveCommandInput{Name: "okt"})
 	if err != nil {
 		t.Fatalf("ResolveCommand after active switch: %v", err)
 	}

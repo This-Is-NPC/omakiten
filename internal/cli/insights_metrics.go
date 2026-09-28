@@ -5,7 +5,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"omakiten/internal/operation"
+	"omakiten/internal/contract"
 )
 
 func newInsightsCommand(opts *runtimeOptions) *cobra.Command {
@@ -29,7 +29,7 @@ func newInsightsSummaryCommand(opts *runtimeOptions) *cobra.Command {
 					return nil, err
 				}
 				defer rt.close()
-				return rt.operationService().InsightsSummary(ctx, operation.InsightsSummaryInput{
+				return rt.operationService().InsightsSummary(ctx, contract.InsightsSummaryInput{
 					ProjectSelector: opts.projectSelector(),
 					StuckDays:       stuckDays,
 				})
@@ -62,7 +62,7 @@ func newMetricsSummaryCommand(opts *runtimeOptions) *cobra.Command {
 				}
 				defer rt.close()
 				sel := opts.projectSelector()
-				return rt.operationService().MetricsSummary(ctx, operation.MetricsSummaryInput{
+				return rt.operationService().MetricsSummary(ctx, contract.MetricsSummaryInput{
 					ProjectSelector: sel,
 					Period:          period,
 					ProjectID:       sel.ProjectID,

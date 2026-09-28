@@ -1,6 +1,8 @@
 package domain
 
-import "strings"
+import (
+	"strings"
+)
 
 // LogsFilterMode is the user-facing filter preset for the unified event log.
 // The domain owns the category partition so every consumer uses the same
@@ -109,8 +111,7 @@ func FilterLogVisibleRows(rows []EventRow) []EventRow {
 	}
 	filtered := make([]EventRow, 0, len(rows))
 	for _, row := range rows {
-		definition, ok := EventDefByKey[row.EventType]
-		if ok && !definition.LogVisible {
+		if row.LogHidden {
 			continue
 		}
 		filtered = append(filtered, row)

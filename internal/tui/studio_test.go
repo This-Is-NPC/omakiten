@@ -7,7 +7,9 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
 
+	"omakiten/internal/agentruntime"
 	"omakiten/internal/config"
+	"omakiten/internal/config/bundledraft"
 	"omakiten/internal/testfixtures/bundleeditor"
 	"omakiten/internal/tui/screenhost"
 	"omakiten/internal/tui/screens/entitylist"
@@ -15,6 +17,7 @@ import (
 )
 
 func renderStudioTest(m Model, id screenhost.ID) string {
+	m.repos.ResolveCommandPreview = agentruntime.ResolveCommandPreview
 	frame := m.screenFrame()
 	screen := m.boundStudioScreen(id)
 	out := screen.Lifecycle(frame, screenhost.LifecycleEnter)
@@ -52,7 +55,7 @@ func updateStudioTest(m *Model, id screenhost.ID, msg tea.KeyMsg) screenhost.Out
 	return outcome
 }
 
-func studioState(draft StudioDraft, mutate func(*studio.State)) studio.Screen {
+func studioState(draft studio.StudioDraft, mutate func(*studio.State)) studio.Screen {
 	state := studio.State{Draft: draft}
 	if mutate != nil {
 		mutate(&state)
@@ -61,52 +64,52 @@ func studioState(draft StudioDraft, mutate func(*studio.State)) studio.Screen {
 }
 
 func TestStudioTopOrderAndSubLabels(t *testing.T) {
-	wantTop := []topID{topTasks, topStats, topStudio, topSettings}
+	wantTop := []screenhost.TopID{screenhost.TopTasks, screenhost.TopStats, screenhost.TopStudio, screenhost.TopSettings}
 	if len(topOrder) != len(wantTop) {
 		t.Fatalf("topOrder len = %d, want %d", len(topOrder), len(wantTop))
 	}
 	for i, want := range wantTop {
 		if topOrder[i] != want {
-			t.Fatalf("topOrder[%d] = %d, want %d", i, topOrder[i], want)
+			t.Fatalf("topOrder[%d] = %s, want %s", i, topOrder[i], want)
 		}
 	}
 
 	wantSubs := []struct {
-		sub   subID
+		sub   screenhost.ID
 		label string
 	}{
-		{subStudioWorkflow, "workflow"},
-		{subStudioCommands, "commands"},
-		{subStudioPersonas, "personas"},
-		{subStudioHooks, "hooks"},
+		{screenhost.StudioWorkflow, "workflow"},
+		{screenhost.StudioCommands, "commands"},
+		{screenhost.StudioPersonas, "personas"},
+		{screenhost.StudioHooks, "hooks"},
 	}
-	studioSubs := subsByTop[topStudio]
+	studioSubs := subsByTop[screenhost.TopStudio]
 	if len(studioSubs) != len(wantSubs) {
 		t.Fatalf("Studio sub count = %d, want %d", len(studioSubs), len(wantSubs))
 	}
 	for i, want := range wantSubs {
 		if studioSubs[i] != want.sub {
-			t.Fatalf("Studio sub[%d] = %d, want %d", i, studioSubs[i], want.sub)
+			t.Fatalf("Studio sub[%d] = %s, want %s", i, studioSubs[i], want.sub)
 		}
 		if subLabels[want.sub] != want.label {
-			t.Fatalf("Studio sub label %d = %q, want %q", want.sub, subLabels[want.sub], want.label)
+			t.Fatalf("Studio sub label %s = %q, want %q", want.sub, subLabels[want.sub], want.label)
 		}
 	}
 }
 
 func TestStudioSubCycleAndSettingsEntityIsolation(t *testing.T) {
-	m := Model{top: topStudio, sub: subStudioWorkflow}
+	m := Model{navigation: screenhost.StudioWorkflow}
 	m.cycleSub(1)
-	if m.top != topStudio || m.sub != subStudioCommands {
-		t.Fatalf("Studio '/' cycle = (%d, %d), want (topStudio, subStudioCommands)", m.top, m.sub)
+	if m.navigationTop() != screenhost.TopStudio || m.navigation != screenhost.StudioCommands {
+		t.Fatalf("Studio '/' cycle = (%s, %s), want (screenhost.TopStudio, screenhost.StudioCommands)", m.navigationTop(), m.navigation)
 	}
 	m.cycleSub(-1)
-	if m.sub != subStudioWorkflow {
-		t.Fatalf("Studio ',' cycle = %d, want subStudioWorkflow", m.sub)
+	if m.navigation != screenhost.StudioWorkflow {
+		t.Fatalf("Studio ',' cycle = %s, want screenhost.StudioWorkflow", m.navigation)
 	}
 	m.cycleSub(-1)
-	if m.sub != subStudioHooks {
-		t.Fatalf("Studio reverse wrap = %d, want subStudioHooks", m.sub)
+	if m.navigation != screenhost.StudioHooks {
+		t.Fatalf("Studio reverse wrap = %s, want screenhost.StudioHooks", m.navigation)
 	}
 
 	for _, id := range []screenhost.ID{screenhost.StudioCommands, screenhost.StudioWorkflow, screenhost.StudioPersonas, screenhost.StudioHooks} {
@@ -117,7 +120,7 @@ func TestStudioSubCycleAndSettingsEntityIsolation(t *testing.T) {
 }
 
 func TestStudioFlowWarningsCoverDisconnectedFinalPath(t *testing.T) {
-	warnings := StudioFlowWarnings(config.Workflow{Buckets: []config.Bucket{
+	warnings := studio.StudioFlowWarnings(config.Workflow{Buckets: []config.Bucket{
 		{ID: 1, Key: "backlog", Position: 1},
 		{ID: 2, Key: "review", Position: 2},
 		{ID: 3, Key: "done", Position: 3},
@@ -137,7 +140,7 @@ func TestStudioCommandsRendersGlobalAndWarnings(t *testing.T) {
 		config.MCPCommandsGlobalKey: {Laws: []string{"safety"}},
 		"okt-task-continue":         {Persona: "missing-persona", Skills: []string{"ghost-skill"}, Laws: []string{"missing-law"}, Templates: []string{"missing-template"}},
 	}
-	draft, err := NewStudioDraft(bundleeditor.New(&studioDraftStore{bundle: bundle}, "omakiten.yaml"))
+	draft, err := bundledraft.New(bundleeditor.New(&studioDraftStore{bundle: bundle}, "omakiten.yaml"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -167,7 +170,7 @@ func TestStudioCommandsPersonaChangeSurfacesInvalidSkills(t *testing.T) {
 	bundle.Skills = []config.Skill{{Slug: "code"}, {Slug: "review"}}
 	bundle.AllSkills = append([]config.Skill(nil), bundle.Skills...)
 	bundle.MCPCommands = map[string]config.MCPCommandSpec{"okt-task-continue": {Persona: "builder", Skills: []string{"code"}}}
-	draft, err := NewStudioDraft(bundleeditor.New(&studioDraftStore{bundle: bundle}, "omakiten.yaml"))
+	draft, err := bundledraft.New(bundleeditor.New(&studioDraftStore{bundle: bundle}, "omakiten.yaml"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -191,7 +194,7 @@ func TestStudioCommandsGlobalLawMutation(t *testing.T) {
 	bundle := studioDraftBundle()
 	bundle.Laws = []config.Law{{Slug: "safety"}}
 	bundle.AllLaws = []config.Law{{Slug: "safety"}}
-	draft, err := NewStudioDraft(bundleeditor.New(&studioDraftStore{bundle: bundle}, "omakiten.yaml"))
+	draft, err := bundledraft.New(bundleeditor.New(&studioDraftStore{bundle: bundle}, "omakiten.yaml"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -216,7 +219,7 @@ func TestStudioPreviewRendersCandidatePrompt(t *testing.T) {
 		config.MCPCommandsGlobalKey: {Laws: []string{"global-law", "disabled-law"}},
 		"okt-task-continue":         {Persona: "builder", Skills: []string{"code"}, Templates: []string{"task-template"}, LawsDisabled: []string{"disabled-law"}},
 	}
-	draft, err := NewStudioDraft(bundleeditor.New(&studioDraftStore{bundle: bundle}, "omakiten.yaml"))
+	draft, err := bundledraft.New(bundleeditor.New(&studioDraftStore{bundle: bundle}, "omakiten.yaml"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -236,6 +239,7 @@ func TestStudioPreviewRendersCandidatePrompt(t *testing.T) {
 			t.Fatalf("Studio preview chrome missing %q\n%s", want, view)
 		}
 	}
+	m.repos.ResolveCommandPreview = agentruntime.ResolveCommandPreview
 	preview := ansi.Strip(m.boundStudioScreen(screenhost.StudioCommands).PromptPreview(m.screenFrame(), draft.Report().Candidate))
 	for _, want := range []string{
 		"## Skills",
@@ -259,7 +263,7 @@ func TestStudioPreviewRendersCandidatePrompt(t *testing.T) {
 
 func TestStudioCommandsCtrlSOpensApplyOverlayWithoutApplying(t *testing.T) {
 	store := &studioDraftStore{bundle: studioDraftBundle()}
-	draft, err := NewStudioDraft(bundleeditor.New(store, "omakiten.yaml"))
+	draft, err := bundledraft.New(bundleeditor.New(store, "omakiten.yaml"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -298,13 +302,14 @@ func TestStudioPromptPreviewSanitizesControlsAndPreservesMarkdownLines(t *testin
 	bundle.Personas = []config.Persona{{Slug: "builder", Name: "Builder", Body: "first\nsecond\x00\x1b]0;owned\a\u009b31m"}}
 	bundle.AllPersonas = append([]config.Persona(nil), bundle.Personas...)
 	bundle.MCPCommands = map[string]config.MCPCommandSpec{"okt-task-continue": {Persona: "builder"}}
-	draft, err := NewStudioDraft(bundleeditor.New(&studioDraftStore{bundle: bundle}, "omakiten.yaml"))
+	draft, err := bundledraft.New(bundleeditor.New(&studioDraftStore{bundle: bundle}, "omakiten.yaml"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	m := Model{styles: newStyles(tuiTestTheme()), studioScreen: studioState(draft, func(state *studio.State) {
 		state.CommandIndex = studio.CommandIndexFor(bundle.MCPCommands, "okt-task-continue")
 	})}
+	m.repos.ResolveCommandPreview = agentruntime.ResolveCommandPreview
 	view := ansi.Strip(m.boundStudioScreen(screenhost.StudioCommands).PromptPreview(m.screenFrame(), draft.Report().Candidate))
 	if !strings.Contains(view, "first\nsecond") {
 		t.Fatalf("prompt Markdown line feeds were not preserved:\n%s", view)
@@ -333,11 +338,11 @@ func TestStudioGuardValidationBlocksInvalidFields(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			bundle := studioDraftBundle()
 			bundle.Workflows[0].Transitions[0].Guards = []config.TransitionGuard{{Type: "comments_min", Count: 1}}
-			draft, err := NewStudioDraft(bundleeditor.New(&studioDraftStore{bundle: bundle}, "omakiten.yaml"))
+			draft, err := bundledraft.New(bundleeditor.New(&studioDraftStore{bundle: bundle}, "omakiten.yaml"))
 			if err != nil {
 				t.Fatal(err)
 			}
-			report := draft.SetGuard(StudioGuardSetTransition, 1, 2, 0, tc.guard)
+			report := draft.SetGuard(studio.StudioGuardSetTransition, 1, 2, 0, tc.guard)
 			if report.ValidationError == nil || !strings.Contains(report.ValidationError.Error(), tc.want) {
 				t.Fatalf("validation error = %v, want %q", report.ValidationError, tc.want)
 			}
@@ -348,12 +353,12 @@ func TestStudioGuardValidationBlocksInvalidFields(t *testing.T) {
 func TestStudioGuardReorderPreservesDeclarationOrder(t *testing.T) {
 	bundle := studioDraftBundle()
 	bundle.Workflows[0].Transitions[0].Guards = []config.TransitionGuard{{Type: "comments_min", Count: 1}, {Type: "comments_tagged", Tag: "review", Count: 1}}
-	draft, err := NewStudioDraft(bundleeditor.New(&studioDraftStore{bundle: bundle}, "omakiten.yaml"))
+	draft, err := bundledraft.New(bundleeditor.New(&studioDraftStore{bundle: bundle}, "omakiten.yaml"))
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	report := draft.MoveGuard(StudioGuardSetTransition, 1, 2, 0, 1)
+	report := draft.MoveGuard(studio.StudioGuardSetTransition, 1, 2, 0, 1)
 	if report.ValidationError != nil {
 		t.Fatalf("move guard validation error = %v", report.ValidationError)
 	}
@@ -376,19 +381,20 @@ func TestRootForwardsAScreensOwnAsyncMessage(t *testing.T) {
 	bundle := studioDraftBundle()
 	bundle.Personas = []config.Persona{{Slug: "builder", Name: "Builder", Body: "Ship working code."}}
 	bundle.MCPCommands = map[string]config.MCPCommandSpec{"okt-task-continue": {Persona: "builder"}}
-	draft, err := NewStudioDraft(bundleeditor.New(&studioDraftStore{bundle: bundle}, "omakiten.yaml"))
+	draft, err := bundledraft.New(bundleeditor.New(&studioDraftStore{bundle: bundle}, "omakiten.yaml"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	m := Model{
 		styles: newStyles(tuiTestTheme()), width: 120, height: 40,
-		top: topStudio, sub: subStudioCommands,
+		navigation: screenhost.StudioCommands,
 		studioScreen: studioState(draft, func(state *studio.State) {
 			state.CommandIndex = studio.CommandIndexFor(bundle.MCPCommands, "okt-task-continue")
 		}),
 	}
 
 	frame := m.screenFrame()
+	m.repos.ResolveCommandPreview = agentruntime.ResolveCommandPreview
 	out := m.boundStudioScreen(screenhost.StudioCommands).Lifecycle(frame, screenhost.LifecycleEnter)
 	m.studioScreen = out.Screen.(studio.Screen)
 	if out.Command == nil {

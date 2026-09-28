@@ -8,6 +8,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 
 	"omakiten/internal/domain"
+	"omakiten/internal/testutil"
 	"omakiten/internal/tui/screenhost"
 	"omakiten/internal/tui/screens/screentest"
 )
@@ -59,7 +60,7 @@ func TestFormatWhoColumn(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			if got := FormatWho(tc.row); got != tc.want {
+			if got := FormatWho(testutil.EventRegistry().Prepare(tc.row)); got != tc.want {
 				t.Fatalf("FormatWho() = %q, want %q", got, tc.want)
 			}
 		})
@@ -151,7 +152,7 @@ func TestWidePanelEmitsFiveColumnLayout(t *testing.T) {
 	t.Parallel()
 	screen, frame := testScreen(t, 180)
 	screen = screen.Apply(Payload{
-		Rows: []domain.EventRow{
+		Rows: preparedRows([]domain.EventRow{
 			{
 				ID:         1,
 				EntityType: "system",
@@ -171,7 +172,7 @@ func TestWidePanelEmitsFiveColumnLayout(t *testing.T) {
 				CreatedAt:  "2026-05-27 13:46:00",
 				Payload:    `{"title":"Wire renderer","bucket":"backlog","priority":"normal"}`,
 			},
-		},
+		}),
 		Stats: domain.ComputeEventStats([]domain.EventRow{
 			{EventType: domain.EventTypeCLIToolCall, Status: "ok"},
 			{EventType: domain.EventTypeTaskCreated},
@@ -211,7 +212,7 @@ func TestWidePanelEmitsFiveColumnLayout(t *testing.T) {
 func TestCompactPanelDropsAuxiliaryColumns(t *testing.T) {
 	t.Parallel()
 	screen, frame := testScreen(t, 80)
-	screen = screen.Apply(Payload{Rows: []domain.EventRow{
+	screen = screen.Apply(Payload{Rows: preparedRows([]domain.EventRow{
 		{
 			ID:         1,
 			EntityType: "system",
@@ -223,7 +224,7 @@ func TestCompactPanelDropsAuxiliaryColumns(t *testing.T) {
 			CreatedAt:  "2026-05-27 13:45:08",
 			Payload:    `{"tool_name":"app.TaskService.Add","source":"cli","status":"ok","duration_ms":7}`,
 		},
-	}})
+	})})
 	view := ansi.Strip(screen.View(frame))
 	for _, want := range []string{
 		"▸ ACTIVITY · 1",
@@ -257,6 +258,7 @@ func TestRowsSanitizePersistedCellsAtTheTerminalSink(t *testing.T) {
 }
 
 func assertLogRowSafe(t *testing.T, frame screenhost.Frame, row domain.EventRow) {
+	row = testutil.EventRegistry().Prepare(row)
 	t.Helper()
 	for name, rendered := range map[string]string{
 		"wide":    formatWideRow(frame.Kit(), " ", row, 12, 40, 40, 40, 200),
@@ -349,13 +351,13 @@ func TestWidthSplitSwitchesPanels(t *testing.T) {
 	}
 
 	wide, wideFrame := testScreen(t, 180)
-	wide = wide.Apply(Payload{Rows: []domain.EventRow{row}})
+	wide = wide.Apply(Payload{Rows: preparedRows([]domain.EventRow{row})})
 	if !strings.Contains(ansi.Strip(wide.View(wideFrame)), "TIME") {
 		t.Errorf("width=180 must dispatch to the wide panel (carries the TIME header)")
 	}
 
 	compact, compactFrame := testScreen(t, 70)
-	compact = compact.Apply(Payload{Rows: []domain.EventRow{row}})
+	compact = compact.Apply(Payload{Rows: preparedRows([]domain.EventRow{row})})
 	view := ansi.Strip(compact.View(compactFrame))
 	if strings.Contains(view, "ENTITY") || strings.Contains(view, "DETAIL") {
 		t.Errorf("width=70 must dispatch to the compact panel (no wide headers)\n%s", view)
@@ -386,7 +388,7 @@ func TestRetentionNoteVariants(t *testing.T) {
 			screen := New().Bind(Deps{
 				Available: true,
 				Settings:  ViewSettings{Retention: tc.retention},
-			}).Apply(Payload{Rows: rows})
+			}).Apply(Payload{Rows: preparedRows(rows)})
 			view := ansi.Strip(screen.View(frame))
 			if !strings.Contains(view, tc.want) {
 				t.Fatalf("retention note missing %q\n%s", tc.want, view)
@@ -426,11 +428,7 @@ func TestChipStripMarksTheActiveFilter(t *testing.T) {
 // Sequential because the test mutates the package-level domain.EventDefByKey
 // map; cleanup restores the prior state.
 func TestRendersDisplayLabel(t *testing.T) {
-	prev := domain.EventDefByKey
-	cloned := make(map[string]domain.EventDef, len(prev))
-	for k, v := range prev {
-		cloned[k] = v
-	}
+	cloned := make(map[string]domain.EventDef)
 	cloned["task.created"] = domain.EventDef{
 		Key:        "task.created",
 		Category:   domain.EventCategoryTask,
@@ -441,8 +439,7 @@ func TestRendersDisplayLabel(t *testing.T) {
 		// the TYPE cell rather than colliding with the DETAIL cell.
 		Formatter: func(domain.EventRow) string { return "wired renderer" },
 	}
-	domain.EventDefByKey = cloned
-	t.Cleanup(func() { domain.EventDefByKey = prev })
+	registry := registryWith(cloned)
 
 	created := domain.EventRow{
 		ID:         1,
@@ -455,7 +452,7 @@ func TestRendersDisplayLabel(t *testing.T) {
 
 	t.Run("wide_panel_renders_display", func(t *testing.T) {
 		_, frame := testScreen(t, 180)
-		out := ansi.Strip(formatWideRow(frame.Kit(), " ", created, 12, 20, 16, 8, 40))
+		out := ansi.Strip(formatWideRow(frame.Kit(), " ", registry.Prepare(created), 12, 20, 16, 8, 40))
 		if !strings.Contains(out, "task created") {
 			t.Fatalf("wide row missing display label %q\n%s", "task created", out)
 		}
@@ -466,7 +463,7 @@ func TestRendersDisplayLabel(t *testing.T) {
 
 	t.Run("compact_panel_renders_display", func(t *testing.T) {
 		screen, frame := testScreen(t, 80)
-		screen = screen.Apply(Payload{Rows: []domain.EventRow{created}})
+		screen = screen.Apply(Payload{Rows: preparedRows([]domain.EventRow{registry.Prepare(created)})})
 		view := ansi.Strip(screen.View(frame))
 		if !strings.Contains(view, "task created") {
 			t.Fatalf("compact panel missing display label %q\n%s", "task created", view)
@@ -484,13 +481,13 @@ func TestRendersDisplayLabel(t *testing.T) {
 			CreatedAt:  "2026-05-27 13:46:00",
 		}
 		_, frame := testScreen(t, 180)
-		wide := ansi.Strip(formatWideRow(frame.Kit(), " ", unknown, 12, 20, 16, 8, 40))
+		wide := ansi.Strip(formatWideRow(frame.Kit(), " ", registry.Prepare(unknown), 12, 20, 16, 8, 40))
 		if !strings.Contains(wide, "__test.unknown") {
 			t.Fatalf("wide row missing raw fallback %q\n%s", "__test.unknown", wide)
 		}
 
 		compactScreen, compactFrame := testScreen(t, 80)
-		compactScreen = compactScreen.Apply(Payload{Rows: []domain.EventRow{unknown}})
+		compactScreen = compactScreen.Apply(Payload{Rows: preparedRows([]domain.EventRow{registry.Prepare(unknown)})})
 		compact := ansi.Strip(compactScreen.View(compactFrame))
 		if !strings.Contains(compact, "__test.unknown") {
 			t.Fatalf("compact panel missing raw fallback %q\n%s", "__test.unknown", compact)
@@ -504,11 +501,7 @@ func TestRendersDisplayLabel(t *testing.T) {
 // renders and marker lookups must never address a stale index) and the renderer
 // must hit the canonical empty-state panel — never the wide table headers.
 func TestLogVisibleFilterHidesAll(t *testing.T) {
-	prev := domain.EventDefByKey
-	cloned := make(map[string]domain.EventDef, len(prev))
-	for k, v := range prev {
-		cloned[k] = v
-	}
+	cloned := make(map[string]domain.EventDef)
 	for _, key := range []string{"__test.hide_all_a", "__test.hide_all_b"} {
 		cloned[key] = domain.EventDef{
 			Key:        key,
@@ -517,19 +510,17 @@ func TestLogVisibleFilterHidesAll(t *testing.T) {
 			Formatter:  func(domain.EventRow) string { return "" },
 		}
 	}
-	domain.EventDefByKey = cloned
-	t.Cleanup(func() { domain.EventDefByKey = prev })
 
 	frame := screentest.FrameAt(t, 180, 40)
-	screen := New().Bind(Deps{Available: true}).Apply(Payload{Rows: []domain.EventRow{
+	screen := New().Bind(Deps{Available: true}).Apply(Payload{Rows: preparedRows([]domain.EventRow{
 		{ID: 1, EventType: "__test.hide_all_a"},
 		{ID: 2, EventType: "__test.hide_all_b"},
 		{ID: 3, EventType: "__test.hide_all_a"},
-	}})
+	})})
 	// Seed a non-zero cursor so the prepared payload is proven to reset it.
 	screen.selected = 2
 
-	screen = screen.Apply(Payload{Rows: nil})
+	screen = screen.Apply(Payload{Rows: preparedRows(nil)})
 	if len(screen.Rows()) != 0 {
 		t.Fatalf("rows: got %d, want 0 (all filtered out)", len(screen.Rows()))
 	}
@@ -548,11 +539,7 @@ func TestLogVisibleFilterHidesAll(t *testing.T) {
 // to an EventDef with LogVisible == false are dropped, while registry-miss and
 // LogVisible == true rows pass through untouched and in order.
 func TestFilterLogVisibleRows(t *testing.T) {
-	prev := domain.EventDefByKey
-	cloned := make(map[string]domain.EventDef, len(prev))
-	for k, v := range prev {
-		cloned[k] = v
-	}
+	cloned := make(map[string]domain.EventDef)
 	cloned["__test.hidden"] = domain.EventDef{
 		Key:        "__test.hidden",
 		Category:   domain.EventCategoryDomain,
@@ -565,13 +552,15 @@ func TestFilterLogVisibleRows(t *testing.T) {
 		LogVisible: true,
 		Formatter:  func(domain.EventRow) string { return "" },
 	}
-	domain.EventDefByKey = cloned
-	t.Cleanup(func() { domain.EventDefByKey = prev })
+	registry := registryWith(cloned)
 
 	rows := []domain.EventRow{
 		{ID: 1, EventType: "__test.hidden"},
 		{ID: 2, EventType: "__test.visible"},
 		{ID: 3, EventType: "__test.unmapped"}, // registry miss → passes
+	}
+	for i := range rows {
+		rows[i] = registry.Prepare(rows[i])
 	}
 	got := domain.FilterLogVisibleRows(rows)
 	if len(got) != 2 {

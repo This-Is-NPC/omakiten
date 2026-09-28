@@ -2,7 +2,9 @@
 
 package sqlite
 
-import "time"
+import (
+	"time"
+)
 
 const (
 	searchIndexPerformanceLimit     = 5 * time.Second

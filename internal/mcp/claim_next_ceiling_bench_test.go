@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"omakiten/internal/config"
+	"omakiten/internal/contract"
 	"omakiten/internal/operation"
 	"omakiten/internal/sqlite"
 	"omakiten/internal/testfixtures"
@@ -911,7 +912,7 @@ func openClaimBenchmarkStacks(ctx context.Context, path string, snapshot *config
 		if err != nil {
 			return stacks, pins, fmt.Errorf("stack %d store: %w", i, err)
 		}
-		service := operation.NewService(store, operation.ProjectSelector{ProjectID: projectID})
+		service := operation.NewService(store, contract.ProjectSelector{ProjectID: projectID})
 		service.SetSnapshot(snapshot)
 		adapter := NewAdapter(service)
 		stacks = append(stacks, claimBenchmarkStack{store: store, adapter: adapter})

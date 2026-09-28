@@ -21,40 +21,28 @@ import (
 // validation logic to paint a report of it.
 type StudioDraft interface {
 	AssuranceSnapshot() (string, error)
-	BindText(text Text)
-	Report() StudioDraftReport
-	ReportText(text Text) StudioDraftReport
+	BindText(text bundledraft.Text)
+	Report() bundledraft.Report
+	ReportText(text bundledraft.Text) bundledraft.Report
 	Candidate() config.Bundle
 	Dirty() bool
-	Mutate(mutate func(*config.Bundle) error) StudioDraftReport
-	SetMCPCommandSpec(key string, spec config.MCPCommandSpec) StudioDraftReport
-	RenameBucket(bucketID int, name string) StudioDraftReport
-	ChangeBucketKey(bucketID int, key string) StudioDraftReport
-	AddBucket(key, name string) StudioDraftReport
-	MoveBucket(bucketID int, delta int) StudioDraftReport
-	SetBucketPermission(bucketID int, entity StudioBucketPermissionEntity, op StudioBucketPermissionOp, allowed bool) StudioDraftReport
-	AddTransition(fromBucketID, toBucketID int) StudioDraftReport
-	RemoveTransition(fromBucketID, toBucketID int) StudioDraftReport
-	AddGuard(kind StudioGuardSetKind, fromBucketID, toBucketID int, guard config.TransitionGuard) StudioDraftReport
-	SetGuard(kind StudioGuardSetKind, fromBucketID, toBucketID int, index int, guard config.TransitionGuard) StudioDraftReport
-	RemoveGuard(kind StudioGuardSetKind, fromBucketID, toBucketID int, index int) StudioDraftReport
-	MoveGuard(kind StudioGuardSetKind, fromBucketID, toBucketID int, index, delta int) StudioDraftReport
-	DeleteBucket(ctx context.Context, counter StudioBucketTaskCounter, bucketID int) StudioDraftReport
-	ImpactPreview(ctx context.Context, counter StudioBucketTaskCounter) StudioImpactPreview
+	Mutate(mutate func(*config.Bundle) error) bundledraft.Report
+	SetMCPCommandSpec(key string, spec config.MCPCommandSpec) bundledraft.Report
+	RenameBucket(bucketID int, name string) bundledraft.Report
+	ChangeBucketKey(bucketID int, key string) bundledraft.Report
+	AddBucket(key, name string) bundledraft.Report
+	MoveBucket(bucketID int, delta int) bundledraft.Report
+	SetBucketPermission(bucketID int, entity bundledraft.BucketPermissionEntity, op bundledraft.BucketPermissionOp, allowed bool) bundledraft.Report
+	AddTransition(fromBucketID, toBucketID int) bundledraft.Report
+	RemoveTransition(fromBucketID, toBucketID int) bundledraft.Report
+	AddGuard(kind bundledraft.GuardSetKind, fromBucketID, toBucketID int, guard config.TransitionGuard) bundledraft.Report
+	SetGuard(kind bundledraft.GuardSetKind, fromBucketID, toBucketID int, index int, guard config.TransitionGuard) bundledraft.Report
+	RemoveGuard(kind bundledraft.GuardSetKind, fromBucketID, toBucketID int, index int) bundledraft.Report
+	MoveGuard(kind bundledraft.GuardSetKind, fromBucketID, toBucketID int, index, delta int) bundledraft.Report
+	DeleteBucket(ctx context.Context, counter bundledraft.BucketTaskCounter, bucketID int) bundledraft.Report
+	ImpactPreview(ctx context.Context, counter bundledraft.BucketTaskCounter) bundledraft.ImpactPreview
 	Apply(ctx context.Context, reload func(string) error) (config.Bundle, error)
 }
-
-type (
-	StudioDraftReport            = bundledraft.Report
-	StudioImpactPreview          = bundledraft.ImpactPreview
-	StudioBucketImpact           = bundledraft.BucketImpact
-	StudioBucketKeyChange        = bundledraft.BucketKeyChange
-	StudioFinalBucketChange      = bundledraft.FinalBucketChange
-	StudioBucketPermissionEntity = bundledraft.BucketPermissionEntity
-	StudioBucketPermissionOp     = bundledraft.BucketPermissionOp
-	StudioGuardSetKind           = bundledraft.GuardSetKind
-	StudioBucketTaskCounter      = bundledraft.BucketTaskCounter
-)
 
 const (
 	StudioBucketPermissionTask    = bundledraft.BucketPermissionTask

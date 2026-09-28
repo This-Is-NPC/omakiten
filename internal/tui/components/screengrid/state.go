@@ -1,6 +1,8 @@
 package screengrid
 
-import "omakiten/internal/tui/components/screenlayout"
+import (
+	"omakiten/internal/tui/components/screenlayout"
+)
 
 // State is everything the grid persists between frames: the arranger's own
 // per-leaf cursors and offsets, the horizontal offset of each windowed row of

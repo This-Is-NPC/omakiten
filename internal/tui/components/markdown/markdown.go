@@ -37,17 +37,12 @@ import (
 // (body, width) pairs.
 const CacheCapacity = 64
 
-// Tokens is the slim subset of theme colours the renderer needs. The struct
-// lives on screenkit so Kit can carry it without importing this package; the
-// alias keeps existing markdown.Tokens call sites compiling.
-type Tokens = screenkit.MarkdownTokens
-
 // Renderer renders markdown bodies with an ansi.StyleConfig derived from Tokens.
 // The (body hash, width) cache is bounded by CacheCapacity with LRU eviction;
 // per-width *glamour.TermRenderer instances are reused across calls. Both
 // caches clear on Reload.
 type Renderer struct {
-	tokens Tokens
+	tokens screenkit.MarkdownTokens
 	style  ansi.StyleConfig
 
 	mu        sync.Mutex
@@ -68,7 +63,7 @@ type cacheEntry struct {
 
 // New builds a Renderer for the given tokens. The caller owns the instance
 // and calls Reload when the tokens rotate.
-func New(t Tokens) *Renderer {
+func New(t screenkit.MarkdownTokens) *Renderer {
 	return &Renderer{
 		tokens:    t,
 		style:     buildStyle(t),
@@ -181,7 +176,7 @@ func sanitizeSource(body string) string {
 // Reload rebuilds the StyleConfig from the new tokens and drops every cached
 // entry. Called when the active theme rotates. Same-token Reload is a no-op
 // so a paint path can call it every frame without dropping the LRU.
-func (r *Renderer) Reload(t Tokens) {
+func (r *Renderer) Reload(t screenkit.MarkdownTokens) {
 	if r == nil {
 		return
 	}
@@ -197,7 +192,7 @@ func (r *Renderer) Reload(t Tokens) {
 	r.renderers = map[int]*glamour.TermRenderer{}
 }
 
-func buildStyle(t Tokens) ansi.StyleConfig {
+func buildStyle(t screenkit.MarkdownTokens) ansi.StyleConfig {
 	primary := stringPtrIfSet(t.Primary)
 	foreground := stringPtrIfSet(t.Foreground)
 	border := stringPtrIfSet(t.Border)
@@ -306,7 +301,7 @@ func hashBody(s string) string {
 	return hex.EncodeToString(sum[:8])
 }
 
-func imageFormat(t Tokens) string {
+func imageFormat(t screenkit.MarkdownTokens) string {
 	if t.ImageFormat != "" {
 		return t.ImageFormat
 	}

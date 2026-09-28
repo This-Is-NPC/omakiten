@@ -6,11 +6,13 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+
+	"omakiten/internal/tui/components/scrollwindow"
 )
 
 func TestSliceFits(t *testing.T) {
 	lines := []string{"a", "b", "c"}
-	visible, above, below := SliceLines(lines, 0, 5)
+	visible, above, below := scrollwindow.SliceLines(lines, 0, 5)
 	if len(visible) != 3 || above != 0 || below != 0 {
 		t.Errorf("Slice fits → all %d lines, above=0, below=0; got len=%d above=%d below=%d", 3, len(visible), above, below)
 	}
@@ -18,7 +20,7 @@ func TestSliceFits(t *testing.T) {
 
 func TestSliceOverflow(t *testing.T) {
 	lines := []string{"a", "b", "c", "d", "e"}
-	visible, above, below := SliceLines(lines, 1, 2)
+	visible, above, below := scrollwindow.SliceLines(lines, 1, 2)
 	if got := strings.Join(visible, ","); got != "b,c" {
 		t.Errorf("Slice overflow visible = %q, want b,c", got)
 	}
@@ -29,7 +31,7 @@ func TestSliceOverflow(t *testing.T) {
 
 func TestSliceClampsScrollPastEnd(t *testing.T) {
 	lines := []string{"a", "b", "c", "d"}
-	visible, above, below := SliceLines(lines, 1<<20, 2)
+	visible, above, below := scrollwindow.SliceLines(lines, 1<<20, 2)
 	if strings.Join(visible, ",") != "c,d" {
 		t.Errorf("scroll sentinel should clamp to end, got %v", visible)
 	}

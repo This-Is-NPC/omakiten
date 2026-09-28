@@ -4,23 +4,24 @@ import (
 	"context"
 
 	"omakiten/internal/app"
+	"omakiten/internal/contract"
 )
 
-func (s *Service) Overview(ctx context.Context, input OverviewInput) (OverviewResponse, error) {
+func (s *Service) Overview(ctx context.Context, input contract.OverviewInput) (contract.OverviewResponse, error) {
 	if err := s.allow("project.overview"); err != nil {
-		return OverviewResponse{}, err
+		return contract.OverviewResponse{}, err
 	}
 	project, err := s.resolveProject(ctx, input.ProjectSelector)
 	if err != nil {
-		return OverviewResponse{}, err
+		return contract.OverviewResponse{}, err
 	}
 
 	tasks, workflow, err := s.projectState(ctx, project)
 	if err != nil {
-		return OverviewResponse{}, err
+		return contract.OverviewResponse{}, err
 	}
 
-	return OverviewResponse{
+	return contract.OverviewResponse{
 		Project:        projectSummary(project),
 		Workflow:       workflowSummary(workflow),
 		PendingCount:   pendingCount(workflow, tasks),
@@ -29,25 +30,25 @@ func (s *Service) Overview(ctx context.Context, input OverviewInput) (OverviewRe
 	}, nil
 }
 
-func (s *Service) ResumeProject(ctx context.Context, input ResumeProjectInput) (ResumeProjectResponse, error) {
+func (s *Service) ResumeProject(ctx context.Context, input contract.ResumeProjectInput) (contract.ResumeProjectResponse, error) {
 	if err := s.allow("project.resume"); err != nil {
-		return ResumeProjectResponse{}, err
+		return contract.ResumeProjectResponse{}, err
 	}
 	project, err := s.resolveProject(ctx, input.ProjectSelector)
 	if err != nil {
-		return ResumeProjectResponse{}, err
+		return contract.ResumeProjectResponse{}, err
 	}
 
 	tasks, workflow, err := s.projectState(ctx, project)
 	if err != nil {
-		return ResumeProjectResponse{}, err
+		return contract.ResumeProjectResponse{}, err
 	}
 	dependencies, err := app.NewDependencyService(s.repo).List(ctx, project, 0)
 	if err != nil {
-		return ResumeProjectResponse{}, err
+		return contract.ResumeProjectResponse{}, err
 	}
 
-	return ResumeProjectResponse{
+	return contract.ResumeProjectResponse{
 		Project:        projectSummary(project),
 		Workflow:       workflowSummary(workflow),
 		TaskBuckets:    bucketCounts(workflow, tasks),

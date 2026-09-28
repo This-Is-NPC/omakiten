@@ -5,6 +5,7 @@ import (
 	"errors"
 
 	"omakiten/internal/app"
+	"omakiten/internal/contract"
 	"omakiten/internal/domain"
 )
 
@@ -39,14 +40,14 @@ import (
 // query orchestration. It never moves a task, relaxes a guard, gates a
 // transition, or mutates any state. The response carries an explicit
 // schema_version so consuming agents can pin the frozen contract.
-func (s *Service) InsightsSummary(ctx context.Context, input InsightsSummaryInput) (InsightsSummaryResponse, error) {
+func (s *Service) InsightsSummary(ctx context.Context, input contract.InsightsSummaryInput) (contract.InsightsSummaryResponse, error) {
 	if err := s.allow("insights.summary"); err != nil {
-		return InsightsSummaryResponse{}, err
+		return contract.InsightsSummaryResponse{}, err
 	}
 	project, err := s.resolveProject(ctx, input.ProjectSelector)
 	if err != nil {
 		if !isProjectNotFound(err) {
-			return InsightsSummaryResponse{}, err
+			return contract.InsightsSummaryResponse{}, err
 		}
 		// Not-found only: global-view fallthrough — see godoc above.
 		project = domain.ProjectContext{}
@@ -60,14 +61,14 @@ func (s *Service) InsightsSummary(ctx context.Context, input InsightsSummaryInpu
 		// omits the identity (the data still comes back, unlabeled); any
 		// other resolver error propagates, mirroring the primary path — a db
 		// failure must not silently degrade to an omitted identity.
-		pinned, pinErr := s.resolveProject(ctx, ProjectSelector{ProjectID: projectID})
+		pinned, pinErr := s.resolveProject(ctx, contract.ProjectSelector{ProjectID: projectID})
 		switch {
 		case pinErr == nil:
 			project = pinned
 		case isProjectNotFound(pinErr):
 			project = domain.ProjectContext{}
 		default:
-			return InsightsSummaryResponse{}, pinErr
+			return contract.InsightsSummaryResponse{}, pinErr
 		}
 	}
 
@@ -82,14 +83,14 @@ func (s *Service) InsightsSummary(ctx context.Context, input InsightsSummaryInpu
 
 	insights, err := app.NewInsightsService(s.repo).Today(ctx, project, projectID, input.StuckDays, stuckBuckets)
 	if err != nil {
-		return InsightsSummaryResponse{}, err
+		return contract.InsightsSummaryResponse{}, err
 	}
-	var summary *ProjectSummary
+	var summary *contract.ProjectSummary
 	if project.ID > 0 {
 		p := projectSummary(project)
 		summary = &p
 	}
-	return InsightsSummaryResponse{
+	return contract.InsightsSummaryResponse{
 		SchemaVersion: InsightsSummarySchemaVersion,
 		Project:       summary,
 		Insights:      toInsightsSummaryBoard(insights),

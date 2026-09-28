@@ -1,6 +1,8 @@
 package taskform
 
-import tea "github.com/charmbracelet/bubbletea"
+import (
+	tea "github.com/charmbracelet/bubbletea"
+)
 
 // EventKind identifies an action that the parent TUI must handle.
 type EventKind int

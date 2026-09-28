@@ -9,6 +9,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 
 	"omakiten/internal/tui/components/markdown"
+	screenkit "omakiten/internal/tui/components/screenkit"
 )
 
 type markdownDemo struct {
@@ -18,7 +19,7 @@ type markdownDemo struct {
 
 func newMarkdownDemo(demoCtx) demo {
 	return markdownDemo{
-		md: markdown.New(markdown.Tokens{}),
+		md: markdown.New(screenkit.MarkdownTokens{}),
 		props: []prop{
 			choiceProp("mode", "rendered through glamour, or the raw source the M toggle shows", 0, "rendered", "raw"),
 			choiceProp("body", "short prose, a heading+list, or a long wrapping paragraph", 0,
@@ -42,10 +43,10 @@ func (d markdownDemo) source() string {
 	}
 }
 
-func (d markdownDemo) tokens(c demoCtx) markdown.Tokens {
+func (d markdownDemo) tokens(c demoCtx) screenkit.MarkdownTokens {
 	tokens := c.kit.Markdown
 	if tokens.ThemeKey == "" {
-		tokens = markdown.Tokens{
+		tokens = screenkit.MarkdownTokens{
 			ThemeKey: "gallery", Foreground: "#CAD3F5", Border: "#494D64",
 			Primary: "#8AADF4", Secondary: "#C6A0F6",
 		}

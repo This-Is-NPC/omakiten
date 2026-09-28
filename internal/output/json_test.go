@@ -1,6 +1,8 @@
 package output
 
-import "testing"
+import (
+	"testing"
+)
 
 func TestMarshalMinifiedEnvelope(t *testing.T) {
 	data, err := Marshal(Success(map[string]any{"id": 42}))

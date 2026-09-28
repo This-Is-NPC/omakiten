@@ -5,7 +5,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"omakiten/internal/operation"
+	"omakiten/internal/contract"
 )
 
 func newListCommand(opts *runtimeOptions) *cobra.Command {
@@ -23,7 +23,7 @@ func newListCommand(opts *runtimeOptions) *cobra.Command {
 				}
 				defer rt.close()
 
-				input := operation.ListTasksInput{
+				input := contract.ListTasksInput{
 					ProjectSelector: opts.projectSelector(),
 					BucketKey:       bucket,
 				}
@@ -33,10 +33,10 @@ func newListCommand(opts *runtimeOptions) *cobra.Command {
 					// the listing to that parent's direct children. The
 					// flag stays absent → no filter (every task surfaces).
 					if parent == 0 {
-						input.ParentID = operation.OptionalInt64{Set: true, Value: nil}
+						input.ParentID = contract.OptionalInt64{Set: true, Value: nil}
 					} else {
 						pid := parent
-						input.ParentID = operation.OptionalInt64{Set: true, Value: &pid}
+						input.ParentID = contract.OptionalInt64{Set: true, Value: &pid}
 					}
 				}
 				return rt.operationService().ListTasks(ctx, input)

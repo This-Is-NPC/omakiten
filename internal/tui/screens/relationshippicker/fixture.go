@@ -3,22 +3,23 @@ package relationshippicker
 import (
 	"fmt"
 
+	relationshipprojection "omakiten/internal/relationshipprojection"
 	"omakiten/internal/tui/screenfixture"
 	"omakiten/internal/tui/screenhost"
 )
 
-func testPayload(kind Kind) Payload {
-	options := []Option{{Value: "go", Label: "Go", Detail: "Go engineering", Selected: true}, {Value: "sqlite", Label: "SQLite", Detail: "Data persistence"}}
+func testPayload(kind relationshipprojection.Kind) Payload {
+	options := []relationshipprojection.Option{{Value: "go", Label: "Go", Detail: "Go engineering", Selected: true}, {Value: "sqlite", Label: "SQLite", Detail: "Data persistence"}}
 	if kind == TemplateDefault {
-		options = []Option{{Value: "task", Label: "task", Selected: true}, {Value: "pr", Label: "pr"}, {None: true}}
+		options = []relationshipprojection.Option{{Value: "task", Label: "task", Selected: true}, {Value: "pr", Label: "pr"}, {None: true}}
 	}
 	return Payload{Kind: kind, EntitySlug: "agent", ProjectSlug: "omakiten", Generation: 5, Options: options}
 }
 
-func relationshipGoldenOptions(count int) []Option {
-	options := make([]Option, count)
+func relationshipGoldenOptions(count int) []relationshipprojection.Option {
+	options := make([]relationshipprojection.Option, count)
 	for i := range options {
-		options[i] = Option{
+		options[i] = relationshipprojection.Option{
 			Value:    fmt.Sprintf("skill-%02d", i+1),
 			Label:    fmt.Sprintf("skill-%02d · long skill name", i+1),
 			Detail:   fmt.Sprintf("capability %02d of the repertoire", i+1),
@@ -28,11 +29,11 @@ func relationshipGoldenOptions(count int) []Option {
 	return options
 }
 
-func relationshipGoldenPayload(kind Kind, options []Option) Payload {
+func relationshipGoldenPayload(kind relationshipprojection.Kind, options []relationshipprojection.Option) Payload {
 	return Payload{Kind: kind, EntitySlug: "agent", ProjectSlug: "omakiten", Generation: 5, Options: options}
 }
 
-func relationshipGoldenBuild(kind Kind, payload Payload) func(screenhost.Frame) screenhost.Screen {
+func relationshipGoldenBuild(kind relationshipprojection.Kind, payload Payload) func(screenhost.Frame) screenhost.Screen {
 	return func(frame screenhost.Frame) screenhost.Screen {
 		return screenfixture.Enter(New(kind).Open(payload), frame)
 	}
@@ -70,15 +71,6 @@ func templateDefaultFixtureScenarios() []screenfixture.Scenario {
 			Keys:  []string{"down", "down"},
 		},
 	}
-}
-
-// FixtureScenarios returns every recorded state for Persona › skills and
-// Template › default.
-func FixtureScenarios() []screenfixture.Scenario {
-	out := make([]screenfixture.Scenario, 0, 5)
-	out = append(out, personaSkillsFixtureScenarios()...)
-	out = append(out, templateDefaultFixtureScenarios()...)
-	return out
 }
 
 // FixtureScenariosFor returns the scenarios for one screen ID, or nil when the

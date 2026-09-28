@@ -12,6 +12,7 @@ import (
 
 	"omakiten/internal/agentruntime"
 	"omakiten/internal/agentsetup"
+	"omakiten/internal/commandcatalog"
 	"omakiten/internal/mcp"
 	"omakiten/internal/operation"
 )
@@ -32,7 +33,7 @@ func newMCPCommand(opts *runtimeOptions) *cobra.Command {
 
 // newMCPPromptsCommand renders each `okt-*` prompt's resolved markdown to
 // stdout so users can preview what the agent receives without spinning up
-// an MCP client. With no argument, every prompt in `operation.CommandNames()` is
+// an MCP client. With no argument, every prompt in `commandcatalog.CommandNames()` is
 // rendered in handoff order, separated by horizontal rules and annotated
 // with byte/rune counts. A single name argument renders that prompt only.
 //
@@ -67,7 +68,7 @@ func runMCPPrompts(cmd *cobra.Command, args []string, list bool, opts *runtimeOp
 	}
 	defer func() { _ = rt.Close() }()
 	adapter := newMCPAdapter(rt)
-	names := operation.CommandNames()
+	names := commandcatalog.CommandNames()
 	if len(args) == 1 {
 		names = []string{args[0]}
 	}
@@ -89,12 +90,12 @@ func runMCPPrompts(cmd *cobra.Command, args []string, list bool, opts *runtimeOp
 }
 
 // printPromptSurface renders the command-surface listing: the full
-// operation.CommandNames() kit grouped by routing tier, with the granular tier
+// commandcatalog.CommandNames() kit grouped by routing tier, with the granular tier
 // sub-grouped by object namespace. Order within each tier follows
 // CommandNames() (the REST-style handoff order) so the listing reads the way a
 // user invokes the commands.
 func printPromptSurface(out io.Writer, opts *runtimeOptions) error {
-	names := operation.CommandNames()
+	names := commandcatalog.CommandNames()
 
 	// Descriptions are entity-sourced (the bound okt-<slug>-playbook skill's
 	// frontmatter), so the listing needs a wired runtime to resolve them. Open
@@ -123,18 +124,18 @@ type promptSurfaceGroups struct {
 func groupPromptSurface(names []string) (promptSurfaceGroups, error) {
 	groups := promptSurfaceGroups{granular: map[string][]string{}}
 	for _, name := range names {
-		desc, ok := operation.DescribeCommand(name)
+		desc, ok := commandcatalog.DescribeCommand(name)
 		if !ok {
 			// A registered command that does not decode is a surface bug; surface
 			// it loudly rather than silently dropping it from the listing.
 			return promptSurfaceGroups{}, fmt.Errorf("command %q does not decode into a known tier — the surface and the registry disagree", name)
 		}
 		switch desc.Tier {
-		case operation.CommandTierOrchestrator:
+		case commandcatalog.CommandTierOrchestrator:
 			groups.orchestrators = append(groups.orchestrators, name)
-		case operation.CommandTierSystem:
+		case commandcatalog.CommandTierSystem:
 			groups.system = append(groups.system, name)
-		case operation.CommandTierGranular:
+		case commandcatalog.CommandTierGranular:
 			if _, seen := groups.granular[desc.Object]; !seen {
 				groups.objectOrder = append(groups.objectOrder, desc.Object)
 			}

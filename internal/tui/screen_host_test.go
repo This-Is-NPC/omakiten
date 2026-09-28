@@ -10,8 +10,10 @@ import (
 
 	"omakiten/internal/agentruntime"
 	"omakiten/internal/config"
+	"omakiten/internal/contract"
 	"omakiten/internal/domain"
 	"omakiten/internal/operation"
+	"omakiten/internal/testfixtures/runtimecache"
 	"omakiten/internal/testfixtures/snapstore"
 	"omakiten/internal/tui/screenhost"
 	"omakiten/internal/tui/screens/commentdetail"
@@ -57,7 +59,7 @@ func TestUpdateDispatchesActiveRouteScreens(t *testing.T) {
 			name: "table",
 			model: Model{
 				styles: newStyles(config.Theme{}), width: 100, height: 30,
-				top: topTasks, sub: subTable, tableScreen: table.New(),
+				navigation: screenhost.TasksTable, tableScreen: table.New(),
 				tasks: []domain.Task{{ID: 1, Title: "first"}, {ID: 2, Title: "second"}},
 			},
 			assert: func(t *testing.T, got Model) {
@@ -70,7 +72,7 @@ func TestUpdateDispatchesActiveRouteScreens(t *testing.T) {
 			name: "plans",
 			model: Model{
 				styles: newStyles(config.Theme{}), width: 100, height: 30,
-				top: topTasks, sub: subPlans,
+				navigation: screenhost.TasksPlans,
 				plansScreen: plans.New().Apply([]domain.PlanRollup{
 					{Plan: domain.Plan{ID: 1, Slug: "first"}},
 					{Plan: domain.Plan{ID: 2, Slug: "second"}},
@@ -117,9 +119,9 @@ func TestCommentSaveFailurePreservesDirtyScreenBuffer(t *testing.T) {
 		t.Fatalf("Comments is %T, want *snapstore.Store", m.repos.Comments)
 	}
 	failing := failingUpdateCommentStore{Store: store}
-	svc := operation.NewService(failing, operation.ProjectSelector{ProjectID: m.project.ID})
+	svc := operation.NewService(failing, contract.ProjectSelector{ProjectID: m.project.ID})
 	svc.SetSnapshot(store.Snapshot())
-	if err := m.repos.Cache.Install(m.repos.ProjectID, &agentruntime.ProjectRuntime{Snapshot: store.Snapshot(), Service: svc}); err != nil {
+	if err := runtimecache.InstallRuntime(m.repos.Cache, m.repos.ProjectID, &agentruntime.ProjectRuntime{Snapshot: store.Snapshot(), Service: svc}); err != nil {
 		t.Fatalf("Install failing comment store: %v", err)
 	}
 	m = pressRune(t, m, 'e')

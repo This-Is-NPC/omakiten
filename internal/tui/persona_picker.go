@@ -4,6 +4,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"omakiten/internal/domain"
+	relationshipprojection "omakiten/internal/relationshipprojection"
 	"omakiten/internal/tui/screenhost"
 	"omakiten/internal/tui/screens/relationshippicker"
 )
@@ -18,9 +19,9 @@ func (m *Model) openPersonaPicker(slug string) {
 	for _, key := range persona.SkillKeys {
 		selected[key] = true
 	}
-	options := make([]relationshippicker.Option, 0, len(m.skills))
+	options := make([]relationshipprojection.Option, 0, len(m.skills))
 	for _, skill := range m.skills {
-		options = append(options, relationshippicker.Option{Value: skill.Key, Label: skill.Name, Selected: selected[skill.Key]})
+		options = append(options, relationshipprojection.Option{Value: skill.Key, Label: skill.Name, Selected: selected[skill.Key]})
 	}
 	m.relationshipPickerGeneration++
 	m.personaSkillsScreen = relationshippicker.New(relationshippicker.PersonaSkills).Open(relationshippicker.Payload{
@@ -53,8 +54,9 @@ func (m *Model) savePersonaSkills(screen relationshippicker.Screen) {
 		m.status = err.Error()
 		return
 	}
-	if resolved, err := m.repos.Editor.Load(); err == nil {
-		m.rotateSnapshotAfterEdit(resolved)
+	if err := m.rotateSnapshotAfterEdit(); err != nil {
+		m.status = err.Error()
+		return
 	}
 	if err := m.refresh(); err != nil {
 		m.status = err.Error()
@@ -76,17 +78,18 @@ func (m *Model) scaffoldRelationshipSkill(screen relationshippicker.Screen) tea.
 	for _, value := range screen.SelectedValues() {
 		selected[value] = true
 	}
-	selected[slugFromName(name)] = true
-	if resolved, loadErr := m.repos.Editor.Load(); loadErr == nil {
-		m.rotateSnapshotAfterEdit(resolved)
+	selected[domain.Slugify(name)] = true
+	if err := m.rotateSnapshotAfterEdit(); err != nil {
+		m.status = err.Error()
+		return nil
 	}
 	if err := m.refresh(); err != nil {
 		m.status = err.Error()
 		return nil
 	}
-	options := make([]relationshippicker.Option, 0, len(m.skills))
+	options := make([]relationshipprojection.Option, 0, len(m.skills))
 	for _, skill := range m.skills {
-		options = append(options, relationshippicker.Option{Value: skill.Key, Label: skill.Name, Selected: selected[skill.Key]})
+		options = append(options, relationshipprojection.Option{Value: skill.Key, Label: skill.Name, Selected: selected[skill.Key]})
 	}
 	m.relationshipPickerGeneration++
 	m.personaSkillsScreen = relationshippicker.New(relationshippicker.PersonaSkills).Open(relationshippicker.Payload{

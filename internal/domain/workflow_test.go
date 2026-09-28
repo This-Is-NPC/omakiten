@@ -1,6 +1,8 @@
 package domain
 
-import "testing"
+import (
+	"testing"
+)
 
 // boolPtr wraps a bare bool as a fully-declared CommentOpPolicy pointer — the
 // shape EntityPermission's create/edit/delete fields now take. A plain *bool is
@@ -241,7 +243,7 @@ func TestResolveCommentScopePermission(t *testing.T) {
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
-			if got := ResolveCommentScopePermission(tc.defaults, tc.scope, tc.op); got != tc.want {
+			if got := ResolveCommentScopePolicy(tc.defaults, tc.scope, tc.op).Evaluate(nil); got != tc.want {
 				t.Fatalf("ResolveCommentScopePermission(%v, %q, %q) = %v, want %v", tc.defaults, tc.scope, tc.op, got, tc.want)
 			}
 		})

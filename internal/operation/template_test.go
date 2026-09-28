@@ -7,18 +7,19 @@ import (
 	"path/filepath"
 	"testing"
 
+	"omakiten/internal/contract"
 	"omakiten/internal/domain"
 )
 
 func TestCreateTaskIncludesActiveTemplate(t *testing.T) {
 	fixture := newAgentFixture(t)
-	fixture.service.SetSnapshot(snapshotWithTaskTemplate(t, "", TaskTemplateSummary{
+	fixture.service.SetSnapshot(snapshotWithTaskTemplate(t, "", contract.TaskTemplateSummary{
 		Slug: "task-default",
 		Name: "Default",
 		Body: "**User Story**\n\nComo X.",
 	}))
 
-	resp, err := fixture.service.CreateTask(fixture.ctx, CreateTaskInput{Title: "Brand new direction", Description: "Unrelated"})
+	resp, err := fixture.service.CreateTask(fixture.ctx, contract.CreateTaskInput{Title: "Brand new direction", Description: "Unrelated"})
 	if err != nil {
 		t.Fatalf("CreateTask() error = %v", err)
 	}
@@ -35,12 +36,12 @@ func TestCreateTaskIncludesActiveTemplate(t *testing.T) {
 
 func TestCreateTaskIntentIncludesTemplateOnSimilarityFork(t *testing.T) {
 	fixture := newAgentFixture(t)
-	fixture.service.SetSnapshot(snapshotWithTaskTemplate(t, "", TaskTemplateSummary{Slug: "task-default", Body: "scaffold"}))
+	fixture.service.SetSnapshot(snapshotWithTaskTemplate(t, "", contract.TaskTemplateSummary{Slug: "task-default", Body: "scaffold"}))
 
 	// Title/description matching an existing fixture task triggers the
 	// confirmation fork — template must still be returned so the agent has
 	// the scaffold ready when the user confirms a separate task.
-	resp, err := fixture.service.CreateTaskIntent(fixture.ctx, CreateTaskInput{Description: "Add MCP agent integration for AI harnesses"})
+	resp, err := fixture.service.CreateTaskIntent(fixture.ctx, contract.CreateTaskInput{Description: "Add MCP agent integration for AI harnesses"})
 	if err != nil {
 		t.Fatalf("CreateTaskIntent() error = %v", err)
 	}
@@ -57,7 +58,7 @@ func TestCreateTaskWithoutTemplateLookupOmitsField(t *testing.T) {
 	// No task-template installed on the snapshot — the response must
 	// omit Template entirely.
 
-	resp, err := fixture.service.CreateTask(fixture.ctx, CreateTaskInput{Title: "Some unique work", Description: "x"})
+	resp, err := fixture.service.CreateTask(fixture.ctx, contract.CreateTaskInput{Title: "Some unique work", Description: "x"})
 	if err != nil {
 		t.Fatalf("CreateTask() error = %v", err)
 	}
@@ -68,12 +69,12 @@ func TestCreateTaskWithoutTemplateLookupOmitsField(t *testing.T) {
 
 func TestListTemplatesReturnsCatalog(t *testing.T) {
 	fixture := newAgentFixture(t)
-	fixture.service.SetSnapshot(snapshotWithTemplates(t, []TemplateSummary{
+	fixture.service.SetSnapshot(snapshotWithTemplates(t, []contract.TemplateSummary{
 		{Slug: "task-default", Name: "Default", Default: "task", Body: "scaffold"},
 		{Slug: "pr-default", Name: "PR", Default: "pr", IsCustom: true, Body: "checklist"},
 	}))
 
-	resp, err := fixture.service.ListTemplates(fixture.ctx, ListTemplatesInput{})
+	resp, err := fixture.service.ListTemplates(fixture.ctx, contract.ListTemplatesInput{})
 	if err != nil {
 		t.Fatalf("ListTemplates() error = %v", err)
 	}
@@ -86,7 +87,7 @@ func TestListTemplatesReturnsCatalog(t *testing.T) {
 	}
 
 	// IncludeBody=true returns the bodies.
-	full, err := fixture.service.ListTemplates(fixture.ctx, ListTemplatesInput{IncludeBody: true})
+	full, err := fixture.service.ListTemplates(fixture.ctx, contract.ListTemplatesInput{IncludeBody: true})
 	if err != nil {
 		t.Fatalf("ListTemplates() error = %v", err)
 	}
@@ -95,7 +96,7 @@ func TestListTemplatesReturnsCatalog(t *testing.T) {
 	}
 
 	// Filter by kind (no project) — non-resolving, returns every match.
-	prs, err := fixture.service.ListTemplates(fixture.ctx, ListTemplatesInput{Kind: "pr"})
+	prs, err := fixture.service.ListTemplates(fixture.ctx, contract.ListTemplatesInput{Kind: "pr"})
 	if err != nil {
 		t.Fatalf("ListTemplates(kind=pr) error = %v", err)
 	}
@@ -106,7 +107,7 @@ func TestListTemplatesReturnsCatalog(t *testing.T) {
 
 func TestListTemplatesResolvesProjectScopedOverridesServerSide(t *testing.T) {
 	fixture := newAgentFixture(t)
-	fixture.service.SetSnapshot(snapshotWithTemplates(t, []TemplateSummary{
+	fixture.service.SetSnapshot(snapshotWithTemplates(t, []contract.TemplateSummary{
 		{Slug: "pull-request", Name: "Global PR", Default: "pr"},
 		{Slug: "pr-concise", Name: "Concise", Default: "pr", Project: "omakiten", IsCustom: true},
 		{Slug: "user-story", Name: "Story", Default: "task"},
@@ -115,7 +116,7 @@ func TestListTemplatesResolvesProjectScopedOverridesServerSide(t *testing.T) {
 	// Project-aware request for kind=pr returns ONLY the project-scoped
 	// override — global is dropped server-side so the agent does not have
 	// to filter or pay tokens for the fallback.
-	resp, err := fixture.service.ListTemplates(fixture.ctx, ListTemplatesInput{Kind: "pr", Project: "omakiten"})
+	resp, err := fixture.service.ListTemplates(fixture.ctx, contract.ListTemplatesInput{Kind: "pr", Project: "omakiten"})
 	if err != nil {
 		t.Fatalf("ListTemplates() error = %v", err)
 	}
@@ -127,7 +128,7 @@ func TestListTemplatesResolvesProjectScopedOverridesServerSide(t *testing.T) {
 	}
 
 	// Different project with no scoped override falls back to the global.
-	other, err := fixture.service.ListTemplates(fixture.ctx, ListTemplatesInput{Kind: "pr", Project: "another"})
+	other, err := fixture.service.ListTemplates(fixture.ctx, contract.ListTemplatesInput{Kind: "pr", Project: "another"})
 	if err != nil {
 		t.Fatalf("ListTemplates(another) error = %v", err)
 	}
@@ -137,7 +138,7 @@ func TestListTemplatesResolvesProjectScopedOverridesServerSide(t *testing.T) {
 
 	// Project-only filter (no kind) collapses every kind to one resolved
 	// entry — pr → pr-concise, task → user-story.
-	all, err := fixture.service.ListTemplates(fixture.ctx, ListTemplatesInput{Project: "omakiten"})
+	all, err := fixture.service.ListTemplates(fixture.ctx, contract.ListTemplatesInput{Project: "omakiten"})
 	if err != nil {
 		t.Fatalf("ListTemplates(project=omakiten) error = %v", err)
 	}
@@ -158,11 +159,11 @@ func TestListTemplatesResolvesProjectScopedOverridesServerSide(t *testing.T) {
 
 func TestShowTemplateReturnsBody(t *testing.T) {
 	fixture := newAgentFixture(t)
-	fixture.service.SetSnapshot(snapshotWithTemplates(t, []TemplateSummary{
+	fixture.service.SetSnapshot(snapshotWithTemplates(t, []contract.TemplateSummary{
 		{Slug: "task-default", Name: "Default", Default: "task", Body: "scaffold"},
 	}))
 
-	resp, err := fixture.service.ShowTemplate(fixture.ctx, ShowTemplateInput{Slug: "task-default"})
+	resp, err := fixture.service.ShowTemplate(fixture.ctx, contract.ShowTemplateInput{Slug: "task-default"})
 	if err != nil {
 		t.Fatalf("ShowTemplate() error = %v", err)
 	}
@@ -170,7 +171,7 @@ func TestShowTemplateReturnsBody(t *testing.T) {
 		t.Fatalf("ShowTemplate body = %q, want scaffold", resp.Template.Body)
 	}
 
-	if _, err := fixture.service.ShowTemplate(fixture.ctx, ShowTemplateInput{Slug: "missing"}); err == nil {
+	if _, err := fixture.service.ShowTemplate(fixture.ctx, contract.ShowTemplateInput{Slug: "missing"}); err == nil {
 		t.Fatal("ShowTemplate(missing) error = nil, want not-found")
 	}
 }
@@ -179,9 +180,9 @@ func TestShowTemplateReturnsBody(t *testing.T) {
 // rigid validation is designed to disambiguate. project-a is the fixture's
 // default-resolved project (CWD = rootA), so the override applies whenever
 // the test reuses newAgentFixture's service.
-func shadowCatalog() func() []TemplateSummary {
-	return func() []TemplateSummary {
-		return []TemplateSummary{
+func shadowCatalog() func() []contract.TemplateSummary {
+	return func() []contract.TemplateSummary {
+		return []contract.TemplateSummary{
 			{Slug: "pull-request", Name: "Pull Request", Default: "pr", Body: "global"},
 			{Slug: "pr-concise", Name: "Concise PR", Default: "pr", Project: "project-a", Body: "concise", IsCustom: true},
 		}
@@ -192,7 +193,7 @@ func TestShowTemplateRejectsShadowedSlug(t *testing.T) {
 	fixture := newAgentFixture(t)
 	fixture.service.SetSnapshot(snapshotWithTemplates(t, shadowCatalog()()))
 
-	_, err := fixture.service.ShowTemplate(fixture.ctx, ShowTemplateInput{Slug: "pull-request"})
+	_, err := fixture.service.ShowTemplate(fixture.ctx, contract.ShowTemplateInput{Slug: "pull-request"})
 	if err == nil {
 		t.Fatal("ShowTemplate(shadowed) error = nil, want validation_error")
 	}
@@ -215,7 +216,7 @@ func TestShowTemplateReturnsProjectScopedSlug(t *testing.T) {
 	fixture := newAgentFixture(t)
 	fixture.service.SetSnapshot(snapshotWithTemplates(t, shadowCatalog()()))
 
-	resp, err := fixture.service.ShowTemplate(fixture.ctx, ShowTemplateInput{Slug: "pr-concise"})
+	resp, err := fixture.service.ShowTemplate(fixture.ctx, contract.ShowTemplateInput{Slug: "pr-concise"})
 	if err != nil {
 		t.Fatalf("ShowTemplate(scoped) error = %v", err)
 	}
@@ -228,11 +229,11 @@ func TestShowTemplateReturnsGlobalWhenNoOverride(t *testing.T) {
 	fixture := newAgentFixture(t)
 	// Catalog has only a global "user-story" — no project-a override, so the
 	// shadow check must fall through.
-	fixture.service.SetSnapshot(snapshotWithTemplates(t, []TemplateSummary{
+	fixture.service.SetSnapshot(snapshotWithTemplates(t, []contract.TemplateSummary{
 		{Slug: "user-story", Name: "User Story", Default: "task", Body: "task scaffold"},
 	}))
 
-	resp, err := fixture.service.ShowTemplate(fixture.ctx, ShowTemplateInput{Slug: "user-story"})
+	resp, err := fixture.service.ShowTemplate(fixture.ctx, contract.ShowTemplateInput{Slug: "user-story"})
 	if err != nil {
 		t.Fatalf("ShowTemplate(unshadowed) error = %v", err)
 	}
@@ -252,11 +253,11 @@ func TestShowTemplateAllowsShadowedSlugWithoutProjectContext(t *testing.T) {
 	if err := os.MkdirAll(outside, 0o755); err != nil {
 		t.Fatalf("MkdirAll(outside) error = %v", err)
 	}
-	service := NewService(store, ProjectSelector{CWD: outside})
+	service := NewService(store, contract.ProjectSelector{CWD: outside})
 	service.SetSnapshot(store.Snapshot())
 	service.SetSnapshot(snapshotWithTemplates(t, shadowCatalog()()))
 
-	resp, err := service.ShowTemplate(ctx, ShowTemplateInput{Slug: "pull-request"})
+	resp, err := service.ShowTemplate(ctx, contract.ShowTemplateInput{Slug: "pull-request"})
 	if err != nil {
 		t.Fatalf("ShowTemplate(no project) error = %v", err)
 	}
@@ -271,8 +272,8 @@ func TestShowTemplateRejectsExplicitMissingProject(t *testing.T) {
 	fixture := newAgentFixture(t)
 	fixture.service.SetSnapshot(snapshotWithTemplates(t, shadowCatalog()()))
 
-	_, err := fixture.service.ShowTemplate(fixture.ctx, ShowTemplateInput{
-		ProjectSelector: ProjectSelector{Project: "no-such-project"},
+	_, err := fixture.service.ShowTemplate(fixture.ctx, contract.ShowTemplateInput{
+		ProjectSelector: contract.ProjectSelector{Project: "no-such-project"},
 		Slug:            "pull-request",
 	})
 	if err == nil {

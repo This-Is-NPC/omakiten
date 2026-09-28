@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"omakiten/internal/domain"
+	screenfixture "omakiten/internal/tui/screenfixture"
 	"omakiten/internal/tui/screenhost"
 	"omakiten/internal/tui/screens/screentest"
 )
@@ -125,7 +126,7 @@ func TestListNavigationVocabularyAndBounds(t *testing.T) {
 }
 
 func TestListLoadingEmptyErrorFooterAndHelp(t *testing.T) {
-	frame := screentest.Frame(t, screentest.Options{})
+	frame := screentest.Frame(t, screenfixture.Options{})
 	if view := New().Loading().View(frame); !strings.Contains(view, "Loading") {
 		t.Fatalf("loading view = %q", view)
 	}
@@ -179,7 +180,7 @@ func TestGoalOwnsScrollToggleAndBackLifecycle(t *testing.T) {
 }
 
 func TestGoalLoadingEmptyAndError(t *testing.T) {
-	frame := screentest.Frame(t, screentest.Options{})
+	frame := screentest.Frame(t, screenfixture.Options{})
 	if view := NewGoal().Loading().View(frame); !strings.Contains(view, "Loading") {
 		t.Fatalf("loading view = %q", view)
 	}

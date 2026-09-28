@@ -160,7 +160,7 @@ func (s *LawService) Add(ctx context.Context, input domain.LawInput) (domain.Law
 		return domain.Law{}, configError(path, err)
 	}
 
-	if err := assertNoCollision(path, slug, "law"); err != nil {
+	if err := assertNoCollision(s.files, path, slug, "law"); err != nil {
 		return domain.Law{}, err
 	}
 	bundle, _, fileHashes, err := s.editor.LoadPlanWithFiles()

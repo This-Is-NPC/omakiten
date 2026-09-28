@@ -1,6 +1,8 @@
 package screenlayout
 
-import "testing"
+import (
+	"testing"
+)
 
 // ---------------------------------------------------------------------------
 // Spec.WidthPercent (#2446, shape 1 of 3).

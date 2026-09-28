@@ -7,6 +7,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"omakiten/internal/config"
+	bundledraft "omakiten/internal/config/bundledraft"
 	"omakiten/internal/studioprojection"
 	"omakiten/internal/tui/components/gridtable"
 	"omakiten/internal/tui/components/screengrid"
@@ -31,8 +32,6 @@ const (
 // schema, laws and source. Every persona has all six.
 const studioPersonaFieldCount = 6
 
-type studioPersonaRow = studioprojection.PersonaRow
-
 const (
 	relatedEmpty   = studioprojection.RelatedEmpty
 	relatedSkill   = studioprojection.RelatedSkill
@@ -47,15 +46,6 @@ const (
 	personaRelatedSkillKind = "skills"
 	personaRelatedLawKind   = "laws"
 )
-
-// personaRelatedRow is one RELATED entry as DATA — the cells, not a rendered
-// line.
-//
-// It used to carry `Left` and `Right`, already formatted, which is why the three
-// kinds could not line up: each built its own two-part string and the widths
-// were whatever the text happened to be. Cells let one width fitter size the
-// columns for every row, which is the same thing Hooks' HISTORY does.
-type personaRelatedRow = studioprojection.RelatedRow
 
 // personasZones names the inspector's two halves: the persona's fields, and the
 // RELATED list under them.
@@ -230,7 +220,7 @@ func (m Screen) personaRelatedHeader(widths []int) string {
 
 // personaRelatedLine is one table row. An EMPTY row is copy, not data — it spans
 // the table rather than being squeezed into the name column.
-func personaRelatedLine(index int, row personaRelatedRow, widths []int) string {
+func personaRelatedLine(index int, row studioprojection.RelatedRow, widths []int) string {
 	name := screenkit.Sanitize(row.Name)
 	if row.Kind == relatedEmpty {
 		return name
@@ -240,7 +230,7 @@ func personaRelatedLine(index int, row personaRelatedRow, widths []int) string {
 	}, widths)
 }
 
-func (m Screen) personasFieldsTable(row studioPersonaRow, width, rows int) []string {
+func (m Screen) personasFieldsTable(row studioprojection.PersonaRow, width, rows int) []string {
 	persona := row.Persona
 	repertoire := studioprojection.PersonaSkillList(persona)
 	fields := [][2]string{
@@ -257,7 +247,7 @@ func (m Screen) personasFieldsTable(row studioPersonaRow, width, rows int) []str
 	return m.studioFieldTable(width, rows, summaryTablesOpts{LabelWidth: 12, ValueWidth: 40, Auto: true}, cells)
 }
 
-func (m Screen) personasRelatedContent(row studioPersonaRow) (kicker string, related []personaRelatedRow) {
+func (m Screen) personasRelatedContent(row studioprojection.PersonaRow) (kicker string, related []studioprojection.RelatedRow) {
 	persona := row.Persona
 	repertoire := studioprojection.PersonaSkillList(persona)
 	kicker = m.sectionKicker(m.tr("tui.studio.personas.related.heading", "RELATED"), m.zoneFocused(sectionPersonasRelated)) + m.styles.Hint.Render(" · "+m.tr(
@@ -276,7 +266,7 @@ func (m Screen) personasRelatedContent(row studioPersonaRow) (kicker string, rel
 // the header advertised a third group with nothing behind it. A type column is
 // what makes three groups legible in one table, and once there is a type column
 // there is no reason left to leave a group out.
-func (m Screen) personaRelatedRows(row studioPersonaRow) []personaRelatedRow {
+func (m Screen) personaRelatedRows(row studioprojection.PersonaRow) []studioprojection.RelatedRow {
 	lawSeverities := m.projection.LawSeverities
 	if lawSeverities == nil && !m.projectionReady {
 		lawSeverities = studioprojection.Build(studioprojection.Input{Bundle: m.studioPersonasCandidate()}).LawSeverities
@@ -347,7 +337,7 @@ func (m *Screen) handleStudioPersonasKey(msg tea.KeyMsg) screenhost.Outcome {
 // parks studioCommandIndex on that MCP key and returns Navigate(StudioCommands).
 // The host stores this Screen (one value for every Studio sub) before
 // navigateToScreen, so Bind(StudioCommands) reuses the parked index.
-func (m *Screen) openPersonaRelated(related []personaRelatedRow) screenhost.Outcome {
+func (m *Screen) openPersonaRelated(related []studioprojection.RelatedRow) screenhost.Outcome {
 	if m.studioPersonaRelatedIndex < 0 || m.studioPersonaRelatedIndex >= len(related) {
 		return screenhost.Stay(*m, nil)
 	}
@@ -431,7 +421,7 @@ func (m Screen) studioPersonasCandidate() config.Bundle {
 	return bundle
 }
 
-func (m Screen) studioPersonasBundle() (config.Bundle, StudioDraftReport) {
+func (m Screen) studioPersonasBundle() (config.Bundle, bundledraft.Report) {
 	if m.studioDraft != nil {
 		report := m.studioDraft.ReportText(m.t)
 		return report.Candidate, report
@@ -449,9 +439,9 @@ func (m Screen) studioPersonasBundle() (config.Bundle, StudioDraftReport) {
 			AllTemplates: snap.AllTemplates(),
 			Templates:    snap.Templates(),
 		}
-		return bundle, StudioDraftReport{Candidate: bundle}
+		return bundle, bundledraft.Report{Candidate: bundle}
 	}
-	return config.Bundle{}, StudioDraftReport{}
+	return config.Bundle{}, bundledraft.Report{}
 }
 
 func (m *Screen) studioPersonasClamp(n int) {
@@ -480,7 +470,7 @@ func (m *Screen) studioPersonasRelatedClamp(n int) {
 	}
 }
 
-func studioPersonaRows(bundle config.Bundle, known []string) []studioPersonaRow {
+func studioPersonaRows(bundle config.Bundle, known []string) []studioprojection.PersonaRow {
 	return studioprojection.PersonaRows(bundle, known)
 }
 

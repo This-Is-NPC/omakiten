@@ -5,7 +5,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"omakiten/internal/operation"
+	"omakiten/internal/contract"
 )
 
 func newSearchCommand(opts *runtimeOptions) *cobra.Command {
@@ -22,8 +22,8 @@ func newSearchCommand(opts *runtimeOptions) *cobra.Command {
 				}
 				defer rt.close()
 
-				return rt.operationService().Search(ctx, operation.SearchInput{
-					ProjectSelector: operation.ProjectSelector{
+				return rt.operationService().Search(ctx, contract.SearchInput{
+					ProjectSelector: contract.ProjectSelector{
 						Project:   opts.project,
 						ProjectID: opts.projectID,
 					},

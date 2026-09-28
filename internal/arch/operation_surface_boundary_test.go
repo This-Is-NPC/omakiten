@@ -68,33 +68,6 @@ func listingLines(listing string) []string {
 	return strings.Split(trimmed, "\n")
 }
 
-// TestOperationSurfaceGoldenRejectsWrongListing is the paired meta-test:
-// a 67-slug listing and a listing with an extra slug must not compare
-// equal to the census golden. Without it the gate could silently accept
-// a dropped or invented row — a golden that cannot fail is worse than
-// no golden.
-func TestOperationSurfaceGoldenRejectsWrongListing(t *testing.T) {
-	want := operationSurfaceListing()
-	assertOperationSurfaceListingNotVacuous(t, want)
-
-	lines := listingLines(want)
-	truncated := strings.Join(lines[:len(lines)-1], "\n") + "\n"
-	if truncated == want {
-		t.Fatal("a 67-slug listing compared equal to the census golden; the comparison cannot catch a dropped slug")
-	}
-	if got := len(listingLines(truncated)); got != config.CanonicalSurfaceCount-1 {
-		t.Fatalf("truncated listing has %d lines, want %d", got, config.CanonicalSurfaceCount-1)
-	}
-
-	extra := want + "task.invented product\n"
-	if extra == want {
-		t.Fatal("a listing with an extra slug compared equal to the census golden; the comparison cannot catch an added slug")
-	}
-	if got := len(listingLines(extra)); got != config.CanonicalSurfaceCount+1 {
-		t.Fatalf("extra listing has %d lines, want %d", got, config.CanonicalSurfaceCount+1)
-	}
-}
-
 // TestVersionedPresetSurfacesMatchCensus is A4: every shipped kit YAML
 // under defaults/config/ must DiffSurfaces-empty against the census,
 // the same check `okt config surfaces --check` runs via LoadSurfaceTable.

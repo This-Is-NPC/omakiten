@@ -10,8 +10,9 @@ import (
 	"testing"
 	"time"
 
-	"omakiten/internal/app"
+	"omakiten/internal/contract"
 	"omakiten/internal/domain"
+	"omakiten/internal/recovery"
 )
 
 func TestDeleteProjectWithBackupAbortsContinuousGenerationChurnWithoutCandidates(t *testing.T) {
@@ -198,7 +199,7 @@ func atomicDeleteBackupCallbacks(t *testing.T, sourcePath string) (
 	attempts := 0
 	create := func(ctx context.Context, write func(string) error) (string, error) {
 		attempts++
-		svc := app.NewBackupService(app.BackupOptions{
+		svc := recovery.NewBackupService(recovery.BackupOptions{
 			SourcePath: sourcePath,
 			DestDir:    destDir,
 			Now: func() time.Time {
@@ -206,7 +207,7 @@ func atomicDeleteBackupCallbacks(t *testing.T, sourcePath string) (
 			},
 		})
 		var path string
-		err := svc.WithLease(ctx, func(lease app.BackupLease) error {
+		err := svc.WithLease(ctx, func(lease contract.BackupLease) error {
 			var err error
 			path, err = lease.WriteSnapshot(ctx, write)
 			return err

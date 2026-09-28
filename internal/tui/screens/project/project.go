@@ -116,7 +116,7 @@ type activityCardKey struct {
 }
 
 func New() Screen {
-	return Screen{grid: screengrid.NewState(), md: markdown.New(markdown.Tokens{}), activityCache: &activityCardsCache{cards: make(map[activityCardKey]string)}}
+	return Screen{grid: screengrid.NewState(), md: markdown.New(screenkit.MarkdownTokens{}), activityCache: &activityCardsCache{cards: make(map[activityCardKey]string)}}
 }
 
 func (s Screen) ID() screenhost.ID { return screenhost.Project }
@@ -634,7 +634,7 @@ type formBodyKey struct {
 }
 
 func NewForm() FormScreen {
-	return FormScreen{md: markdown.New(markdown.Tokens{}), markdownRendered: true, grid: screengrid.NewState(), body: &formBodyCache{}}
+	return FormScreen{md: markdown.New(screenkit.MarkdownTokens{}), markdownRendered: true, grid: screengrid.NewState(), body: &formBodyCache{}}
 }
 func (s FormScreen) ID() screenhost.ID { return screenhost.ProjectForm }
 func (s FormScreen) Apply(payload Payload) FormScreen {

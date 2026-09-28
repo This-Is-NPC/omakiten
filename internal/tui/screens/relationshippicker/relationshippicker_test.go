@@ -6,6 +6,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	relationshipprojection "omakiten/internal/relationshipprojection"
 	"omakiten/internal/tui/screenhost"
 	"omakiten/internal/tui/screens/screentest"
 )
@@ -14,7 +15,7 @@ func TestPersonaSkillsTypedSelectSaveAndCreateOutcomes(t *testing.T) {
 	frame := screentest.FrameAt(t, 90, 24)
 	screen := New(PersonaSkills).Open(Payload{
 		Kind: PersonaSkills, EntitySlug: "agent", Generation: 7,
-		Options: []Option{{Value: "sqlite", Label: "SQLite"}, {Value: "go", Label: "Go", Selected: true}},
+		Options: []relationshipprojection.Option{{Value: "sqlite", Label: "SQLite"}, {Value: "go", Label: "Go", Selected: true}},
 	})
 
 	if got := screen.Options(); len(got) != 3 || got[0].Value != "go" || !got[2].Create {
@@ -44,7 +45,7 @@ func TestTemplateDefaultTypedSelectOutcomeAndOrdering(t *testing.T) {
 	frame := screentest.FrameAt(t, 90, 24)
 	screen := New(TemplateDefault).Open(Payload{
 		Kind: TemplateDefault, EntitySlug: "task-mine", ProjectSlug: "omakiten", Generation: 11,
-		Options: []Option{{Value: "pr", Label: "pr"}, {Value: "task", Label: "task", Selected: true}, {None: true}},
+		Options: []relationshipprojection.Option{{Value: "pr", Label: "pr"}, {Value: "task", Label: "task", Selected: true}, {None: true}},
 	})
 	if screen.Selected().Value != "task" || screen.Dirty() {
 		t.Fatalf("initial selected = %+v dirty=%v", screen.Selected(), screen.Dirty())
@@ -103,10 +104,10 @@ func TestResizeClampsScrollAndChromeIsOwned(t *testing.T) {
 	}
 }
 
-func manyOptions(count int) []Option {
-	options := make([]Option, count)
+func manyOptions(count int) []relationshipprojection.Option {
+	options := make([]relationshipprojection.Option, count)
 	for i := range options {
-		options[i] = Option{Value: strings.Repeat("x", i+1), Label: strings.Repeat("row", i+1), Selected: i == 0}
+		options[i] = relationshipprojection.Option{Value: strings.Repeat("x", i+1), Label: strings.Repeat("row", i+1), Selected: i == 0}
 	}
 	return options
 }

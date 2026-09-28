@@ -425,7 +425,7 @@ WHERE project_id = ? AND id = ?
 		}
 		payload := buildOrphanPayload(eventType, task, evCtx)
 		var ev domain.Event
-		if s.shouldLogEvent(eventType) {
+		if s.shouldLogEvent(projectID, eventType) {
 			var err error
 			ev, err = insertTaskEvent(ctx, tx, projectID, task.TaskID, eventType, "", payload)
 			if err != nil {

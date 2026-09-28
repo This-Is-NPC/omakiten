@@ -2,6 +2,7 @@ package operation
 
 import (
 	"omakiten/internal/config"
+	"omakiten/internal/contract"
 )
 
 // This file holds the projections that derive the agent-facing
@@ -19,11 +20,11 @@ import (
 // snapshots taken at runtime build time).
 
 func snapshotTemplateCatalog(snap *config.Snapshot) TemplateCatalog {
-	return func() []TemplateSummary {
+	return func() []contract.TemplateSummary {
 		templates := snap.Templates()
-		out := make([]TemplateSummary, 0, len(templates))
+		out := make([]contract.TemplateSummary, 0, len(templates))
 		for _, t := range templates {
-			out = append(out, TemplateSummary{
+			out = append(out, contract.TemplateSummary{
 				Slug:        t.Slug,
 				Name:        t.Name,
 				Description: t.Description,
@@ -41,12 +42,12 @@ func snapshotTemplateCatalog(snap *config.Snapshot) TemplateCatalog {
 }
 
 func snapshotTaskTemplateLookup(snap *config.Snapshot) TaskTemplateLookup {
-	return func(projectSlug string) *TaskTemplateSummary {
+	return func(projectSlug string) *contract.TaskTemplateSummary {
 		t, ok := snap.ActiveDefault("task", projectSlug)
 		if !ok {
 			return nil
 		}
-		return &TaskTemplateSummary{
+		return &contract.TaskTemplateSummary{
 			Slug:        t.Slug,
 			Name:        t.Name,
 			Description: t.Description,
@@ -55,12 +56,12 @@ func snapshotTaskTemplateLookup(snap *config.Snapshot) TaskTemplateLookup {
 	}
 }
 
-func snapshotSkillCatalog(snap *config.Snapshot) SkillCatalog {
-	return func() []SkillInfo {
+func snapshotSkillCatalog(snap *config.Snapshot) contract.SkillCatalog {
+	return func() []contract.SkillInfo {
 		skills := snap.Skills()
-		out := make([]SkillInfo, 0, len(skills))
+		out := make([]contract.SkillInfo, 0, len(skills))
 		for _, s := range skills {
-			out = append(out, SkillInfo{
+			out = append(out, contract.SkillInfo{
 				Slug:        s.Slug,
 				Name:        s.Name,
 				Description: s.Description,
@@ -71,12 +72,12 @@ func snapshotSkillCatalog(snap *config.Snapshot) SkillCatalog {
 	}
 }
 
-func snapshotLawCatalog(snap *config.Snapshot) LawCatalog {
-	return func() []LawInfo {
+func snapshotLawCatalog(snap *config.Snapshot) contract.LawCatalog {
+	return func() []contract.LawInfo {
 		laws := snap.Laws()
-		out := make([]LawInfo, 0, len(laws))
+		out := make([]contract.LawInfo, 0, len(laws))
 		for _, l := range laws {
-			out = append(out, LawInfo{
+			out = append(out, contract.LawInfo{
 				Slug:     l.Slug,
 				Name:     l.Name,
 				Severity: l.Severity,
@@ -90,12 +91,12 @@ func snapshotLawCatalog(snap *config.Snapshot) LawCatalog {
 	}
 }
 
-func snapshotPersonaCatalog(snap *config.Snapshot) PersonaCatalog {
-	return func() []PersonaInfo {
+func snapshotPersonaCatalog(snap *config.Snapshot) contract.PersonaCatalog {
+	return func() []contract.PersonaInfo {
 		personas := snap.Personas()
-		out := make([]PersonaInfo, 0, len(personas))
+		out := make([]contract.PersonaInfo, 0, len(personas))
 		for _, p := range personas {
-			out = append(out, PersonaInfo{
+			out = append(out, contract.PersonaInfo{
 				Slug:            p.Slug,
 				Name:            p.Name,
 				Description:     p.Description,
@@ -108,12 +109,12 @@ func snapshotPersonaCatalog(snap *config.Snapshot) PersonaCatalog {
 	}
 }
 
-func snapshotCommandCatalog(snap *config.Snapshot) CommandCatalog {
-	return func() map[string]MCPCommandBinding {
+func snapshotCommandCatalog(snap *config.Snapshot) contract.CommandCatalog {
+	return func() map[string]contract.MCPCommandBinding {
 		commands := snap.MCPCommands()
-		out := make(map[string]MCPCommandBinding, len(commands))
+		out := make(map[string]contract.MCPCommandBinding, len(commands))
 		for name, spec := range commands {
-			out[name] = MCPCommandBinding{
+			out[name] = contract.MCPCommandBinding{
 				Persona:      spec.Persona,
 				Laws:         append([]string(nil), spec.Laws...),
 				LawsDisabled: append([]string(nil), spec.LawsDisabled...),

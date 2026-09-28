@@ -8,8 +8,10 @@ import (
 
 	"omakiten/internal/agentruntime"
 	"omakiten/internal/config"
+	"omakiten/internal/contract"
 	"omakiten/internal/domain"
 	"omakiten/internal/operation"
+	"omakiten/internal/testfixtures/runtimecache"
 	"omakiten/internal/testfixtures/snapstore"
 	"omakiten/internal/token"
 )
@@ -17,9 +19,9 @@ import (
 func TestHandleOrphanMigrationAction_skipIsLabeledDismissal(t *testing.T) {
 	m := newOrphanMigrationModel(t, nil)
 	called := false
-	m.repos.DispatchCommand = func(context.Context, []string) ([]byte, error) {
+	m.repos.DispatchAction = func(context.Context, contract.ActionRequest) (contract.ActionResult, error) {
 		called = true
-		return nil, nil
+		return contract.ActionResult{}, nil
 	}
 	m.handleOrphanMigrationAction(ActionMsg{
 		Slug:     "kitten_orphan_migration",
@@ -35,7 +37,7 @@ func TestHandleOrphanMigrationAction_skipIsLabeledDismissal(t *testing.T) {
 
 func TestHandleOrphanMigrationAction_requiresFacade(t *testing.T) {
 	m := newOrphanMigrationModel(t, nil)
-	m.repos.Cache.Install(m.repos.ProjectID, &agentruntime.ProjectRuntime{
+	runtimecache.InstallRuntime(m.repos.Cache, m.repos.ProjectID, &agentruntime.ProjectRuntime{
 		Snapshot: m.repos.activeSnapshot(),
 		Service:  nil,
 	})
@@ -57,8 +59,8 @@ func TestHandleOrphanMigrationAction_migratesViaFacade(t *testing.T) {
 	}
 	rotateOrphanSnapshots(t, m, store)
 
-	preview, err := m.repos.operationService().MigrateOrphans(m.ctx, operation.MigrateOrphansInput{
-		ProjectSelector: operation.ProjectSelector{ProjectID: m.project.ID},
+	preview, err := m.repos.operationService().MigrateOrphans(m.ctx, contract.MigrateOrphansInput{
+		ProjectSelector: contract.ProjectSelector{ProjectID: m.project.ID},
 	})
 	if err != nil {
 		t.Fatalf("preview: %v", err)
@@ -116,9 +118,9 @@ func TestDispatchNotification_routesOrphanMigrateBySlug(t *testing.T) {
 	rotateOrphanSnapshots(t, m, store)
 
 	dispatched := false
-	m.repos.DispatchCommand = func(context.Context, []string) ([]byte, error) {
+	m.repos.DispatchAction = func(context.Context, contract.ActionRequest) (contract.ActionResult, error) {
 		dispatched = true
-		return nil, nil
+		return contract.ActionResult{}, nil
 	}
 	next, _, handled := m.dispatchNotification(ActionMsg{
 		Slug:     "kitten_orphan_migration",
@@ -165,7 +167,7 @@ func newOrphanMigrationModel(t *testing.T, store *snapstore.Store) Model {
 		t.Fatalf("UpsertProject: %v", err)
 	}
 
-	svc := operation.NewService(store, operation.ProjectSelector{ProjectID: project.ID})
+	svc := operation.NewService(store, contract.ProjectSelector{ProjectID: project.ID})
 	svc.SetSnapshot(store.Snapshot())
 	svc.WireOrphan(store.Snapshot(), nil)
 	svc.SetSettings(operation.ServiceSettings{
@@ -213,13 +215,13 @@ func rotateOrphanSnapshots(t *testing.T, m Model, store *snapstore.Store) {
 		t.Fatalf("ImportBundle(remove dev): %v", err)
 	}
 	current := store.Snapshot()
-	svc := m.repos.operationService()
+	svc := runtimecache.Service(m.repos.Cache, m.repos.ProjectID)
 	if svc == nil {
 		t.Fatal("operationService nil after install")
 	}
 	svc.SetSnapshot(current)
 	svc.WireOrphan(current, previous)
-	m.repos.Cache.Install(m.repos.ProjectID, &agentruntime.ProjectRuntime{
+	runtimecache.InstallRuntime(m.repos.Cache, m.repos.ProjectID, &agentruntime.ProjectRuntime{
 		Service:          svc,
 		Snapshot:         current,
 		PreviousSnapshot: previous,

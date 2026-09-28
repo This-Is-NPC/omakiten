@@ -1,7 +1,5 @@
 package domain
 
-import "sort"
-
 // EventCategory is the coarse bucket the Logs inspector groups
 // event_type values into. The Logs filter chip (TUI key `F` in the
 // unified inspector) cycles through subsets composed of these
@@ -78,67 +76,4 @@ var KnownEventCategories = []EventCategory{
 	EventCategoryDomain,
 	EventCategoryUpdate,
 	EventCategoryTUI,
-}
-
-// EventCategoryOf returns the category an event_type belongs to,
-// resolved through the YAML-loaded registry (EventDefByKey). Returns
-// EventCategoryUnknown for values outside the registry — callers render
-// those rows under a generic bucket rather than panic.
-//
-// Until LoadEventRegistryFromYAML has populated the registry every input
-// resolves to EventCategoryUnknown, including known constants — boot
-// wiring must hydrate the registry before consumers run.
-func EventCategoryOf(eventType string) EventCategory {
-	def, ok := EventDefByKey[eventType]
-	if !ok {
-		return EventCategoryUnknown
-	}
-	return def.Category
-}
-
-// categoryIndex memoizes the EventCategory → sorted []event_type lookup
-// served by EventTypesForCategory. The loader rebuilds it eagerly at the
-// end of LoadEventRegistryFromYAML, so reads after boot are an O(1) map
-// hit plus an O(K) slice copy (K = entries in that category). Reads
-// before boot return nil.
-//
-// Eager rebuild keeps the cost on the boot path (where it's already
-// dominated by YAML parsing) and guarantees no first-call latency for
-// SQL-issuing call sites like sqlite.ListEvents.
-var categoryIndex map[EventCategory][]string
-
-// buildCategoryIndex walks EventDefinitions once and groups event_type
-// keys by category, sorting each bucket for deterministic SQL IN lists.
-// Called by LoadEventRegistryFromYAML after the registry is fully
-// populated. Resets categoryIndex even when EventDefinitions is empty
-// so a registry reset clears stale buckets.
-func buildCategoryIndex() {
-	idx := make(map[EventCategory][]string)
-	for _, def := range EventDefinitions {
-		idx[def.Category] = append(idx[def.Category], def.Key)
-	}
-	for c := range idx {
-		sort.Strings(idx[c])
-	}
-	categoryIndex = idx
-}
-
-// EventTypesForCategory returns every event_type that maps to the given
-// category. Backed by a memoized index rebuilt eagerly by
-// LoadEventRegistryFromYAML, so each call is a map lookup plus a defensive
-// copy of the cached slice. The output is sorted by event_type for
-// deterministic SQL IN lists. Unknown categories (including
-// EventCategoryUnknown by construction) return nil so callers can treat
-// the result as a distinguishable "no matches" sentinel.
-//
-// Used by repository layers (e.g. sqlite.ListEvents) to expand
-// EventFilter.Categories into an event_type IN (...) SQL clause.
-func EventTypesForCategory(c EventCategory) []string {
-	cached, ok := categoryIndex[c]
-	if !ok || len(cached) == 0 {
-		return nil
-	}
-	out := make([]string, len(cached))
-	copy(out, cached)
-	return out
 }

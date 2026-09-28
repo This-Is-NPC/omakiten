@@ -1,6 +1,8 @@
 package screenlayout
 
-import "omakiten/internal/tui/components/screenkit"
+import (
+	"omakiten/internal/tui/components/screenkit"
+)
 
 // hostFooterRows is the rows the host paints BELOW every screen body: a
 // separator newline and the indented keybinding row.

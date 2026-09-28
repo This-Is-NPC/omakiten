@@ -29,7 +29,7 @@ func TestCtrlKOpensPaletteFromBoard(t *testing.T) {
 func TestCtrlKBlockedOnHomeWithoutActiveProject(t *testing.T) {
 	model, _ := newPickerModel(t)
 	model.project = domain.ProjectContext{}
-	model.top = topHome
+	model.navigation = firstSub(screenhost.TopHome)
 	next, _ := model.Update(ctrlK())
 	if got := next.(Model); got.paletteOpen {
 		t.Fatal("ctrl+k opened palette on Home without an active project")

@@ -66,33 +66,12 @@ func nextScaffoldName(kind entityKind, m Model) string {
 	}
 	for n := 1; n < 1000; n++ {
 		candidate := fmt.Sprintf("%s %d", prefix, n)
-		slug := slugFromName(candidate)
+		slug := domain.Slugify(candidate)
 		if _, taken := existing[slug]; !taken {
 			return candidate
 		}
 	}
 	return prefix
-}
-
-// slugFromName mirrors config.Slugify without forcing a config import inside
-// the TUI hot path.
-func slugFromName(value string) string {
-	value = strings.ToLower(strings.TrimSpace(value))
-	var b strings.Builder
-	lastDash := false
-	for _, r := range value {
-		isWord := (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9')
-		if isWord {
-			b.WriteRune(r)
-			lastDash = false
-			continue
-		}
-		if !lastDash {
-			b.WriteByte('-')
-			lastDash = true
-		}
-	}
-	return strings.Trim(b.String(), "-")
 }
 
 // defaultSeverityID returns the configured default severity from the Model's
@@ -127,7 +106,7 @@ func (m Model) scaffoldEntity(ctx context.Context, kind entityKind, repos Reposi
 	case entityKindLaw:
 		severityID := m.defaultSeverityID()
 		law, err := svc.AddLaw(ctx, domain.LawInput{
-			Key:      slugFromName(name),
+			Key:      domain.Slugify(name),
 			Name:     name,
 			Severity: severityID,
 			Body:     "TODO: write the law body."})

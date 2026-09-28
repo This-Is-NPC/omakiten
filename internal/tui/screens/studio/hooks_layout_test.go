@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"omakiten/internal/config"
+	studioprojection "omakiten/internal/studioprojection"
 	"omakiten/internal/tui/components/screenlayout"
 	"omakiten/internal/tui/screenhost"
 	"omakiten/internal/tui/screens/screentest"
@@ -360,9 +361,9 @@ func TestStudioHooksHistoryHeadingStaysPinnedWhileRowsScroll(t *testing.T) {
 	t.Parallel()
 
 	hookIndex := HookIndexFor(studioHooksGoldenBundle().Config.Hooks, studioHookIsGuardTaskDelete)
-	history := make([]HookExecuted, 20)
+	history := make([]studioprojection.HookExecuted, 20)
 	for i := range history {
-		history[i] = HookExecuted{
+		history[i] = studioprojection.HookExecuted{
 			CreatedAt:     fmt.Sprintf("2026-08-13 14:%02d:00", i),
 			Success:       true,
 			DurationMs:    int64(i + 1),
@@ -371,7 +372,7 @@ func TestStudioHooksHistoryHeadingStaysPinnedWhileRowsScroll(t *testing.T) {
 		}
 	}
 	screen, frame := hooksScreen(t, 120, 24, State{HookIndex: hookIndex})
-	screen.hookHistory = map[int][]HookExecuted{hookIndex: history}
+	screen.hookHistory = map[int][]studioprojection.HookExecuted{hookIndex: history}
 	screen = screen.Lifecycle(frame, screenhost.LifecycleEnter).Screen.(Screen)
 	screen = studioDrive(t, screen, frame, "tab")
 	screen = studioDrive(t, screen, frame, "tab")
@@ -452,7 +453,7 @@ func TestStudioHooksDoesNotImportAppOrSQLite(t *testing.T) {
 func TestStudioHooksHistoryTableWideAndCompact(t *testing.T) {
 	t.Parallel()
 
-	m := Screen{hookHistory: map[int][]HookExecuted{
+	m := Screen{hookHistory: map[int][]studioprojection.HookExecuted{
 		0: {
 			{CreatedAt: "2026-08-13 14:33:01", Success: false, DurationMs: 3001, EventType: "task.created", Error: "exec bash timed out after 3s"},
 			{CreatedAt: "2026-08-13 14:12:08", Success: true, DurationMs: 12, EventType: "task.created", TargetEventID: 99},

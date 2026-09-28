@@ -593,7 +593,7 @@ func (b *staleCallbackBus) Subscribe(_ events.Filter, handler events.Handler) ev
 	return inertSubscription{}
 }
 
-func (*staleCallbackBus) SetSettings(config.EventsSettings) {}
+func (*staleCallbackBus) SetSettings(int64, config.EventsSettings) {}
 
 type inertSubscription struct{}
 

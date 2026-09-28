@@ -3,7 +3,7 @@ package tui
 import (
 	"fmt"
 
-	"omakiten/internal/operation"
+	"omakiten/internal/contract"
 )
 
 // handleOrphanMigrationAction applies the kitten_orphan_migration confirm
@@ -34,8 +34,8 @@ func (m *Model) handleOrphanMigrationAction(action ActionMsg) {
 
 	m.emitConfirmationGranted(action)
 
-	selector := operation.ProjectSelector{ProjectID: m.project.ID}
-	preview, err := svc.MigrateOrphans(m.ctx, operation.MigrateOrphansInput{
+	selector := contract.ProjectSelector{ProjectID: m.project.ID}
+	preview, err := svc.MigrateOrphans(m.ctx, contract.MigrateOrphansInput{
 		ProjectSelector: selector,
 	})
 	if err != nil {
@@ -47,7 +47,7 @@ func (m *Model) handleOrphanMigrationAction(action ActionMsg) {
 		return
 	}
 
-	resp, err := svc.MigrateOrphans(m.ctx, operation.MigrateOrphansInput{
+	resp, err := svc.MigrateOrphans(m.ctx, contract.MigrateOrphansInput{
 		ProjectSelector: selector,
 		Confirmed:       true,
 	})

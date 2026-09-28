@@ -83,7 +83,7 @@ func TestPlanServiceGoalBodyInputCap(t *testing.T) {
 	store, project := appTestStore(t, appTestBundle(t))
 	defer func() { _ = store.Close() }()
 
-	service := NewPlanService(store)
+	service := NewPlanServiceWithSnapshot(store, nil)
 
 	t.Run("create goal_body at cap passes", func(t *testing.T) {
 		body := strings.Repeat("g", domain.MaxPlanGoalBodyBytes)

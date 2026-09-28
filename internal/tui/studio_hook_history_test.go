@@ -11,6 +11,7 @@ import (
 
 	"omakiten/internal/domain"
 	"omakiten/internal/studioprojection"
+	"omakiten/internal/tui/screenhost"
 )
 
 type stubHookEvents struct {
@@ -123,10 +124,10 @@ func TestStudioHookHistoryCacheLoadsForSwitchedProject(t *testing.T) {
 
 	events := &stubHookEvents{rows: []domain.EventRow{{ProjectID: 2, EventType: domain.EventTypeHookExecuted, Payload: `{"hook_index":2}`}}}
 	m := Model{
-		ctx:     context.Background(),
-		project: domain.ProjectContext{ID: 1},
-		repos:   Repositories{Events: events},
-		sub:     subStudioHooks,
+		ctx:        context.Background(),
+		project:    domain.ProjectContext{ID: 1},
+		repos:      Repositories{Events: events},
+		navigation: screenhost.StudioHooks,
 	}
 	if cmd := m.prepareStudioHookHistory(); cmd == nil {
 		t.Fatal("initial history load returned no command")
@@ -155,10 +156,10 @@ func TestStudioHookHistoryFailureDoesNotBecomeReady(t *testing.T) {
 
 	events := &stubHookEvents{err: errors.New("history unavailable")}
 	m := Model{
-		ctx:     context.Background(),
-		project: domain.ProjectContext{ID: 7},
-		repos:   Repositories{Events: events},
-		sub:     subStudioHooks,
+		ctx:        context.Background(),
+		project:    domain.ProjectContext{ID: 7},
+		repos:      Repositories{Events: events},
+		navigation: screenhost.StudioHooks,
 	}
 	cmd := m.prepareStudioHookHistory()
 	if cmd == nil {
@@ -184,10 +185,10 @@ func TestStudioHookHistoryDropsDelayedResultAfterProjectSwitch(t *testing.T) {
 		started: started,
 	}
 	m := Model{
-		ctx:     context.Background(),
-		project: domain.ProjectContext{ID: 1},
-		repos:   Repositories{Events: events},
-		sub:     subStudioHooks,
+		ctx:        context.Background(),
+		project:    domain.ProjectContext{ID: 1},
+		repos:      Repositories{Events: events},
+		navigation: screenhost.StudioHooks,
 	}
 	cmd := m.prepareStudioHookHistory()
 	if cmd == nil {

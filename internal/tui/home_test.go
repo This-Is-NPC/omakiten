@@ -4,17 +4,19 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"omakiten/internal/config"
 	"strings"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
 
+	"omakiten/internal/agentruntime"
+	"omakiten/internal/config"
 	"omakiten/internal/domain"
 	"omakiten/internal/testfixtures/runtimecache"
 	"omakiten/internal/testfixtures/snapstore"
 	"omakiten/internal/token"
+	"omakiten/internal/tui/screenhost"
 	"omakiten/internal/tui/screens/home"
 )
 
@@ -38,18 +40,6 @@ func pumpAsync(t *testing.T, m Model, cmd tea.Cmd) Model {
 	return m
 }
 
-// busyCheckpointer always fails Checkpoint with a pinned error so the
-// TUI delete flow's auditWarn write path is exercised.
-type busyCheckpointer struct {
-	err   error
-	calls int
-}
-
-func (b *busyCheckpointer) Checkpoint(context.Context) error {
-	b.calls++
-	return b.err
-}
-
 // projectDeleteStore is the agentruntime.ProjectStore method set without
 // sqlite.DeleteProjectWithBackup, so wrapping it hides the atomic delete
 // path and ProjectService.Delete uses checkpoint + BackupService.Run.
@@ -63,13 +53,8 @@ type projectDeleteStore interface {
 	DeleteProject(ctx context.Context, projectID int64) error
 	UpdateProjectDescription(ctx context.Context, id int64, description string) (domain.Project, error)
 	RecordEntityEvent(ctx context.Context, entityType string, entityID, projectID int64, eventType, payload string) error
-	Checkpoint(ctx context.Context) error
+	DeleteProjectWithBackup(context.Context, int64, func(context.Context, func(string) error) (string, error), func(string) error, func() error) (string, error)
 }
-
-// legacyProjectStore satisfies agentruntime.ProjectStore without promoting
-// AtomicProjectDeleteRepository — TUI tests that pin the checkpoint /
-// SnapshotWriter / audit-event path need the legacy Delete sequence.
-type legacyProjectStore struct{ projectDeleteStore }
 
 // firstCountsFailRepo wraps a project store and fails the first
 // ProjectDeleteCounts call (mirroring a transient SQLite hiccup at
@@ -131,9 +116,9 @@ func TestNewModelWithEmptyProjectOpensHome(t *testing.T) {
 		t.Fatalf("UpsertProject(bravo) error = %v", err)
 	}
 
-	model, err := NewModel(ctx, domain.ProjectContext{}, Repositories{
+	model, err := newHomeModel(ctx, domain.ProjectContext{}, Repositories{
 		Tasks:        store,
-		Projects:     legacyProjectStore{store},
+		Projects:     store,
 		Cache:        runtimecache.InstallWithStore(0, store),
 		Comments:     store,
 		Dependencies: store,
@@ -141,10 +126,10 @@ func TestNewModelWithEmptyProjectOpensHome(t *testing.T) {
 		Tags: store,
 	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
 	if err != nil {
-		t.Fatalf("NewModel() error = %v", err)
+		t.Fatalf("newHomeModel() error = %v", err)
 	}
-	if model.top != topHome {
-		t.Fatalf("top = %d, want topHome (%d)", model.top, topHome)
+	if model.navigationTop() != screenhost.TopHome {
+		t.Fatalf("top = %s, want screenhost.TopHome (%s)", model.navigationTop(), screenhost.TopHome)
 	}
 
 	rendered := ansi.Strip(model.View())
@@ -170,9 +155,9 @@ func TestHomeHidesTabBar(t *testing.T) {
 		t.Fatalf("UpsertProject() error = %v", err)
 	}
 
-	model, err := NewModel(ctx, domain.ProjectContext{}, Repositories{
+	model, err := newHomeModel(ctx, domain.ProjectContext{}, Repositories{
 		Tasks:        store,
-		Projects:     legacyProjectStore{store},
+		Projects:     store,
 		Cache:        runtimecache.InstallWithStore(0, store),
 		Comments:     store,
 		Dependencies: store,
@@ -180,7 +165,7 @@ func TestHomeHidesTabBar(t *testing.T) {
 		Tags: store,
 	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
 	if err != nil {
-		t.Fatalf("NewModel() error = %v", err)
+		t.Fatalf("newHomeModel() error = %v", err)
 	}
 
 	rendered := ansi.Strip(model.View())
@@ -210,9 +195,9 @@ func TestCtrlHReturnsToHome(t *testing.T) {
 		t.Fatalf("CreateTask() error = %v", err)
 	}
 
-	model, err := NewModel(ctx, project.Context(), Repositories{
+	model, err := newHomeModel(ctx, project.Context(), Repositories{
 		Tasks:        store,
-		Projects:     legacyProjectStore{store},
+		Projects:     store,
 		Cache:        runtimecache.InstallWithStore(0, store),
 		Comments:     store,
 		Dependencies: store,
@@ -220,16 +205,16 @@ func TestCtrlHReturnsToHome(t *testing.T) {
 		Tags: store,
 	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
 	if err != nil {
-		t.Fatalf("NewModel() error = %v", err)
+		t.Fatalf("newHomeModel() error = %v", err)
 	}
-	if model.top != topTasks || model.sub != subBoard {
-		t.Fatalf("(top, sub) = (%d, %d), want (topTasks, subBoard)", model.top, model.sub)
+	if model.navigationTop() != screenhost.TopTasks || model.navigation != screenhost.TasksBoard {
+		t.Fatalf("(top, sub) = (%s, %s), want (screenhost.TopTasks, screenhost.TasksBoard)", model.navigationTop(), model.navigation)
 	}
 
 	updated, cmd := model.Update(tea.KeyMsg{Type: tea.KeyCtrlH})
 	got := pumpAsync(t, updated.(Model), cmd)
-	if got.top != topHome {
-		t.Fatalf("top = %d after ctrl+h, want topHome (%d)", got.top, topHome)
+	if got.navigationTop() != screenhost.TopHome {
+		t.Fatalf("top = %s after ctrl+h, want screenhost.TopHome (%s)", got.navigationTop(), screenhost.TopHome)
 	}
 }
 
@@ -245,9 +230,9 @@ func TestHomeEnterSelectsProject(t *testing.T) {
 		t.Fatalf("UpsertProject(alpha) error = %v", err)
 	}
 
-	model, err := NewModel(ctx, domain.ProjectContext{}, Repositories{
+	model, err := newHomeModel(ctx, domain.ProjectContext{}, Repositories{
 		Tasks:        store,
-		Projects:     legacyProjectStore{store},
+		Projects:     store,
 		Cache:        runtimecache.InstallWithStore(0, store),
 		Comments:     store,
 		Dependencies: store,
@@ -255,13 +240,13 @@ func TestHomeEnterSelectsProject(t *testing.T) {
 		Tags: store,
 	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
 	if err != nil {
-		t.Fatalf("NewModel() error = %v", err)
+		t.Fatalf("newHomeModel() error = %v", err)
 	}
 
 	updated, _ := model.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	got := updated.(Model)
-	if got.top != topTasks || got.sub != subBoard {
-		t.Fatalf("(top, sub) = (%d, %d) after enter, want (topTasks, subBoard)", got.top, got.sub)
+	if got.navigationTop() != screenhost.TopTasks || got.navigation != screenhost.TasksBoard {
+		t.Fatalf("(top, sub) = (%s, %s) after enter, want (screenhost.TopTasks, screenhost.TasksBoard)", got.navigationTop(), got.navigation)
 	}
 	if got.project.Slug != "alpha" {
 		t.Fatalf("project.Slug = %q, want %q", got.project.Slug, "alpha")
@@ -285,9 +270,9 @@ func TestCtrlHOnHomeReloads(t *testing.T) {
 		t.Fatalf("UpsertProject() error = %v", err)
 	}
 
-	model, err := NewModel(ctx, domain.ProjectContext{}, Repositories{
+	model, err := newHomeModel(ctx, domain.ProjectContext{}, Repositories{
 		Tasks:        store,
-		Projects:     legacyProjectStore{store},
+		Projects:     store,
 		Cache:        runtimecache.InstallWithStore(0, store),
 		Comments:     store,
 		Dependencies: store,
@@ -296,13 +281,13 @@ func TestCtrlHOnHomeReloads(t *testing.T) {
 		Catalog: newTestCatalog(t),
 	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
 	if err != nil {
-		t.Fatalf("NewModel() error = %v", err)
+		t.Fatalf("newHomeModel() error = %v", err)
 	}
 
 	updated, cmd := model.Update(tea.KeyMsg{Type: tea.KeyCtrlH})
 	got := pumpAsync(t, updated.(Model), cmd)
-	if got.top != topHome {
-		t.Fatalf("top = %d after ctrl+h on home, want topHome (%d)", got.top, topHome)
+	if got.navigationTop() != screenhost.TopHome {
+		t.Fatalf("top = %s after ctrl+h on home, want screenhost.TopHome (%s)", got.navigationTop(), screenhost.TopHome)
 	}
 	if got.status != "Refreshed" {
 		t.Fatalf("status = %q, want %q", got.status, "Refreshed")
@@ -331,9 +316,9 @@ func TestHomeProjectDeleteArmThenConfirm(t *testing.T) {
 		t.Fatalf("UpsertProject(survivor) error = %v", err)
 	}
 
-	model, err := NewModel(ctx, domain.ProjectContext{}, Repositories{
+	model, err := newHomeModel(ctx, domain.ProjectContext{}, Repositories{
 		Tasks:        store,
-		Projects:     legacyProjectStore{store},
+		Projects:     store,
 		Cache:        runtimecache.InstallWithStore(0, store),
 		Comments:     store,
 		Dependencies: store,
@@ -343,7 +328,7 @@ func TestHomeProjectDeleteArmThenConfirm(t *testing.T) {
 		Catalog:      newTestCatalog(t),
 	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
 	if err != nil {
-		t.Fatalf("NewModel() error = %v", err)
+		t.Fatalf("newHomeModel() error = %v", err)
 	}
 
 	// First `d` arms the gate but does not delete.
@@ -414,9 +399,9 @@ func TestHomeProjectDeleteOverlayConfirm(t *testing.T) {
 	}
 	binding := NotificationBinding{Notifications: map[string]config.Notification{notif.Name: notif}}
 
-	model, err := NewModel(ctx, domain.ProjectContext{}, Repositories{
+	model, err := newHomeModel(ctx, domain.ProjectContext{}, Repositories{
 		Tasks:        store,
-		Projects:     legacyProjectStore{store},
+		Projects:     store,
 		Cache:        runtimecache.InstallWithStore(0, store),
 		Comments:     store,
 		Dependencies: store,
@@ -426,7 +411,7 @@ func TestHomeProjectDeleteOverlayConfirm(t *testing.T) {
 		Catalog:      newTestCatalog(t),
 	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, binding)
 	if err != nil {
-		t.Fatalf("NewModel() error = %v", err)
+		t.Fatalf("newHomeModel() error = %v", err)
 	}
 	model.width = 80
 	model.height = 24
@@ -511,9 +496,9 @@ func TestHomeProjectDeleteOverlayEscClears(t *testing.T) {
 	}
 	binding := NotificationBinding{Notifications: map[string]config.Notification{notif.Name: notif}}
 
-	model, err := NewModel(ctx, domain.ProjectContext{}, Repositories{
+	model, err := newHomeModel(ctx, domain.ProjectContext{}, Repositories{
 		Tasks:        store,
-		Projects:     legacyProjectStore{store},
+		Projects:     store,
 		Cache:        runtimecache.InstallWithStore(0, store),
 		Comments:     store,
 		Dependencies: store,
@@ -523,7 +508,7 @@ func TestHomeProjectDeleteOverlayEscClears(t *testing.T) {
 		Catalog:      newTestCatalog(t),
 	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, binding)
 	if err != nil {
-		t.Fatalf("NewModel() error = %v", err)
+		t.Fatalf("newHomeModel() error = %v", err)
 	}
 	model.width = 80
 	model.height = 24
@@ -555,221 +540,6 @@ func TestHomeProjectDeleteOverlayEscClears(t *testing.T) {
 	}
 	if _, err := store.FindProjectByID(ctx, doomed.ID); err != nil {
 		t.Fatalf("project removed despite esc dismissal: %v", err)
-	}
-}
-
-// TestHomeProjectDeleteSurfacesAuditWarn pins #191 review finding 7959:
-// audit-trail warnings emitted from ProjectService.Delete (checkpoint
-// failure, payload marshal failure, audit emission failure) must land
-// on the TUI status surface rather than os.Stderr — stderr writes
-// leak under the bubbletea alt-screen render. Drives a forced
-// Checkpoint failure through the status-driven delete path and
-// asserts the warning text appears appended to m.status alongside
-// the success line.
-func TestHomeProjectDeleteSurfacesAuditWarn(t *testing.T) {
-	ctx := context.Background()
-	dbDir := t.TempDir()
-	t.Setenv("XDG_STATE_HOME", t.TempDir())
-
-	store := snapstore.Open(t, dbDir+"/omakiten.db")
-	if err := store.ImportBundle(ctx, tuiTestBundle(t), "test.yaml", "hash"); err != nil {
-		t.Fatalf("ImportBundle: %v", err)
-	}
-	doomed, err := store.UpsertProject(ctx, "Doomed", "doomed", "/work/doomed")
-	if err != nil {
-		t.Fatalf("UpsertProject(doomed): %v", err)
-	}
-
-	cp := &busyCheckpointer{err: errors.New("SQLITE_BUSY: foreign writer holds the WAL")}
-
-	model, err := NewModel(ctx, domain.ProjectContext{}, Repositories{
-		Tasks:        store,
-		Projects:     legacyProjectStore{store},
-		Cache:        runtimecache.InstallWithStore(0, store),
-		Comments:     store,
-		Dependencies: store,
-		Tags:         store,
-		Events:       store,
-		Checkpointer: cp,
-		DBPath:       dbDir + "/omakiten.db",
-		Catalog:      newTestCatalog(t),
-	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
-	if err != nil {
-		t.Fatalf("NewModel: %v", err)
-	}
-
-	// Empty NotificationBinding forces the status-driven fallback;
-	// two `d` presses arm then confirm. The second press now returns
-	// an async Cmd — pumpAsync drives the result Msg back through
-	// Update to land the final status.
-	updated, _ := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}})
-	updated, cmd := updated.(Model).Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}})
-	final := pumpAsync(t, updated.(Model), cmd)
-
-	if cp.calls != 1 {
-		t.Fatalf("Checkpointer.Checkpoint calls = %d, want 1", cp.calls)
-	}
-	if _, err := store.FindProjectByID(ctx, doomed.ID); err == nil {
-		t.Fatalf("project still present after confirm; auditWarn fix must not abort the cascade")
-	}
-	if !strings.Contains(final.status, "wal_checkpoint") {
-		t.Fatalf("status missing checkpoint warning; auditWarn must land on m.status not stderr.\nstatus = %q", final.status)
-	}
-	if !strings.Contains(final.status, "doomed") {
-		t.Fatalf("status missing project slug — success line dropped?\nstatus = %q", final.status)
-	}
-}
-
-// TestHomeProjectDeleteAuditWarnSurvivesBackupFailure pins #191 review
-// finding (warning): when ProjectService.Delete fires its checkpoint
-// auditWarn write but the subsequent BackupService.Run fails, the TUI
-// must NOT discard the buffered warning. Without the drainAuditWarn
-// fix, the early-return at executeHomeProjectDelete overwrites
-// m.status with the backup error and the WAL-drift signal disappears.
-// Drives a forced checkpoint failure + a forced backup failure (bogus
-// DBPath); asserts m.status carries both signals.
-func TestHomeProjectDeleteAuditWarnSurvivesBackupFailure(t *testing.T) {
-	ctx := context.Background()
-	dbDir := t.TempDir()
-	t.Setenv("XDG_STATE_HOME", t.TempDir())
-
-	store := snapstore.Open(t, dbDir+"/omakiten.db")
-	if err := store.ImportBundle(ctx, tuiTestBundle(t), "test.yaml", "hash"); err != nil {
-		t.Fatalf("ImportBundle: %v", err)
-	}
-	doomed, err := store.UpsertProject(ctx, "Doomed", "doomed", "/work/doomed")
-	if err != nil {
-		t.Fatalf("UpsertProject(doomed): %v", err)
-	}
-
-	cp := &busyCheckpointer{err: errors.New("SQLITE_BUSY: foreign writer holds the WAL")}
-
-	model, err := NewModel(ctx, domain.ProjectContext{}, Repositories{
-		Tasks:        store,
-		Projects:     legacyProjectStore{store},
-		Cache:        runtimecache.InstallWithStore(0, store),
-		Comments:     store,
-		Dependencies: store,
-		Tags:         store,
-		Events:       store,
-		Checkpointer: cp,
-		// Bogus DBPath — buildHomeBackupService threads it into
-		// BackupService.SourcePath; os.Stat fails inside Run.
-		DBPath:  dbDir + "/does-not-exist.db",
-		Catalog: newTestCatalog(t),
-	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
-	if err != nil {
-		t.Fatalf("NewModel: %v", err)
-	}
-
-	updated, _ := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}})
-	updated, cmd := updated.(Model).Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}})
-	final := pumpAsync(t, updated.(Model), cmd)
-
-	if cp.calls != 1 {
-		t.Fatalf("Checkpointer.Checkpoint calls = %d, want 1 (must fire before backup)", cp.calls)
-	}
-	if _, err := store.FindProjectByID(ctx, doomed.ID); err != nil {
-		t.Fatalf("project gone despite aborted backup: %v", err)
-	}
-	if !strings.Contains(final.status, "backup") {
-		t.Fatalf("status missing backup-failure signal.\nstatus = %q", final.status)
-	}
-	if !strings.Contains(final.status, "wal_checkpoint") {
-		t.Fatalf("status missing checkpoint warning — audit buffer was dropped on the backup-error early return.\nstatus = %q", final.status)
-	}
-}
-
-// TestHomeProjectDeleteOverlayPathSurfacesAuditWarn pins #191 review
-// finding (info): the overlay branch of executeHomeProjectDelete shares
-// the same auditWarn wiring as the status-driven branch; both must land
-// the warning on m.status. Mirrors the overlay-confirm fixture with a
-// busyCheckpointer so the audit write path fires under the action
-// dispatch.
-func TestHomeProjectDeleteOverlayPathSurfacesAuditWarn(t *testing.T) {
-	ctx := context.Background()
-	dbDir := t.TempDir()
-	t.Setenv("XDG_STATE_HOME", t.TempDir())
-
-	store := snapstore.Open(t, dbDir+"/omakiten.db")
-	if err := store.ImportBundle(ctx, tuiTestBundle(t), "test.yaml", "hash"); err != nil {
-		t.Fatalf("ImportBundle: %v", err)
-	}
-	doomed, err := store.UpsertProject(ctx, "Doomed", "doomed", "/work/doomed")
-	if err != nil {
-		t.Fatalf("UpsertProject(doomed): %v", err)
-	}
-
-	cp := &busyCheckpointer{err: errors.New("SQLITE_BUSY: foreign writer holds the WAL")}
-
-	notif := config.Notification{
-		Name:            "home-project-delete-confirm",
-		Size:            config.NotificationSize{Width: 60, Height: 12},
-		Background:      "transparent",
-		FrameIntervalMs: 100,
-		Style:           config.NotificationStyleRounded,
-		Border:          config.NotificationBorder{Visible: ptrBool(true), Width: 1, Color: "#ff0000"},
-		Animation:       []config.NotificationFrame{{Frame: 0, Value: ""}},
-		Bubble:          config.NotificationBubble{TailSide: config.NotificationTailBottom},
-		Padding:         zeroNotificationPadding(),
-		AutoHeight:      ptrBool(false),
-		PaddingInside:   ptrBool(true),
-		FooterVisible:   ptrBool(true),
-		Position:        config.NotificationPositionCenter,
-		Dismiss:         config.NotificationDismiss{Mode: config.NotificationDismissModeKey, Keys: []string{"esc"}},
-		TypingMsPerChar: ptrInt(0),
-		Actions: []config.NotificationAction{
-			{Key: "D", ID: "confirm", Label: "Delete"},
-		},
-	}
-	binding := NotificationBinding{Notifications: map[string]config.Notification{notif.Name: notif}}
-
-	model, err := NewModel(ctx, domain.ProjectContext{}, Repositories{
-		Tasks:        store,
-		Projects:     legacyProjectStore{store},
-		Cache:        runtimecache.InstallWithStore(0, store),
-		Comments:     store,
-		Dependencies: store,
-		Tags:         store,
-		Events:       store,
-		Checkpointer: cp,
-		DBPath:       dbDir + "/omakiten.db",
-		Catalog:      newTestCatalog(t),
-	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, binding)
-	if err != nil {
-		t.Fatalf("NewModel: %v", err)
-	}
-	model.width = 80
-	model.height = 24
-
-	updated, _ := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}})
-	armed := updated.(Model)
-	if armed.notification == nil {
-		t.Fatalf("overlay did not spawn")
-	}
-
-	_, cmd := armed.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'D'}})
-	if cmd == nil {
-		t.Fatalf("D on settled overlay returned no Cmd")
-	}
-	actionMsg := cmd()
-	if _, ok := actionMsg.(ActionMsg); !ok {
-		t.Fatalf("Cmd produced %T, want ActionMsg", actionMsg)
-	}
-	updated, actionCmd := armed.Update(actionMsg)
-	final := pumpAsync(t, updated.(Model), actionCmd)
-
-	if cp.calls != 1 {
-		t.Fatalf("Checkpointer.Checkpoint calls = %d, want 1", cp.calls)
-	}
-	if _, err := store.FindProjectByID(ctx, doomed.ID); err == nil {
-		t.Fatalf("project still present after overlay confirm")
-	}
-	if !strings.Contains(final.status, "wal_checkpoint") {
-		t.Fatalf("status missing checkpoint warning on the overlay path.\nstatus = %q", final.status)
-	}
-	if !strings.Contains(final.status, "doomed") {
-		t.Fatalf("status missing project slug — success line dropped?\nstatus = %q", final.status)
 	}
 }
 
@@ -806,7 +576,7 @@ func TestHomeProjectDeleteRequeriesZeroCountersForAuditTruth(t *testing.T) {
 	wrappedRepo := &firstCountsFailRepo{projectDeleteStore: store}
 	recorder := &recordingEvents{EventStore: store}
 
-	model, err := NewModel(ctx, domain.ProjectContext{}, Repositories{
+	model, err := newHomeModel(ctx, domain.ProjectContext{}, Repositories{
 		Tasks:        store,
 		Projects:     wrappedRepo,
 		Cache:        runtimecache.InstallWithStore(0, store),
@@ -878,9 +648,9 @@ func TestHomeRendersProjectTagBadges(t *testing.T) {
 		t.Fatalf("AddProjectTag() error = %v", err)
 	}
 
-	model, err := NewModel(ctx, domain.ProjectContext{}, Repositories{
+	model, err := newHomeModel(ctx, domain.ProjectContext{}, Repositories{
 		Tasks:        store,
-		Projects:     legacyProjectStore{store},
+		Projects:     store,
 		Cache:        runtimecache.InstallWithStore(0, store),
 		Comments:     store,
 		Dependencies: store,
@@ -888,7 +658,7 @@ func TestHomeRendersProjectTagBadges(t *testing.T) {
 		Tags: store,
 	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
 	if err != nil {
-		t.Fatalf("NewModel() error = %v", err)
+		t.Fatalf("newHomeModel() error = %v", err)
 	}
 
 	rendered := ansi.Strip(model.View())
@@ -898,12 +668,12 @@ func TestHomeRendersProjectTagBadges(t *testing.T) {
 }
 
 func TestHomeDropsStaleDeleteResult(t *testing.T) {
-	model := Model{top: topHome, homeScreen: home.New().Loading(2), status: "current"}
+	model := Model{navigation: screenhost.Home, homeScreen: home.New().Loading(2), status: "current"}
 	model.handleHomeProjectDeleteResult(homeProjectDeleteResultMsg{generation: 1, err: errors.New("stale failure")})
 	if model.status != "current" || !model.homeScreen.IsLoading() {
 		t.Fatalf("stale delete result applied: status=%q loading=%v", model.status, model.homeScreen.IsLoading())
 	}
-	model.top = topTasks
+	model.navigation = firstSub(screenhost.TopTasks)
 	model.handleHomeProjectDeleteResult(homeProjectDeleteResultMsg{generation: 2, err: errors.New("wrong route")})
 	if model.status != "current" {
 		t.Fatalf("off-route delete result applied: status=%q", model.status)
@@ -915,7 +685,7 @@ func TestHomeFailureFinalRenderSanitizesGlobalStatus(t *testing.T) {
 		styles:     newStyles(config.Theme{}),
 		width:      80,
 		height:     24,
-		top:        topHome,
+		navigation: screenhost.Home,
 		homeScreen: home.New().Loading(1),
 	}
 	model.applyHomeReload(homeReloadResultMsg{generation: 1, err: errors.New(hostileGlobalStatus)})
@@ -924,7 +694,7 @@ func TestHomeFailureFinalRenderSanitizesGlobalStatus(t *testing.T) {
 }
 
 func TestHomeReloadDropsResultAfterRuntimeRotation(t *testing.T) {
-	model := Model{top: topHome, homeScreen: home.New().Loading(1), status: "current", studioRuntimeGeneration: 2}
+	model := Model{navigation: screenhost.Home, homeScreen: home.New().Loading(1), status: "current", studioRuntimeGeneration: 2}
 	model.applyHomeReload(homeReloadResultMsg{
 		generation:        1,
 		runtimeGeneration: 1,
@@ -933,4 +703,15 @@ func TestHomeReloadDropsResultAfterRuntimeRotation(t *testing.T) {
 	if model.status != "current" || !model.homeScreen.IsLoading() {
 		t.Fatalf("stale runtime home result applied: status=%q loading=%v", model.status, model.homeScreen.IsLoading())
 	}
+}
+
+func newHomeModel(ctx context.Context, project domain.ProjectContext, repos Repositories, theme config.Theme, counter token.Counter, badge config.TokenBadgeThresholds, priorities []config.PriorityDefinition, severities []config.SeverityDefinition, notifications NotificationBinding) (Model, error) {
+	if store, ok := repos.Projects.(agentruntime.ProjectStore); ok {
+		retention := 0
+		if snap := repos.activeSnapshot(); snap != nil {
+			retention = snap.Settings().Backup.RetentionCount
+		}
+		repos.DeleteProject = agentruntime.ProjectDeleter(store, repos.Events, repos.DBPath, retention)
+	}
+	return NewModel(ctx, project, repos, theme, counter, badge, priorities, severities, notifications)
 }

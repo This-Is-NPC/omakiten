@@ -7,7 +7,9 @@ import (
 	"unicode"
 
 	"omakiten/internal/activity"
+	"omakiten/internal/commandcatalog"
 	"omakiten/internal/config"
+	"omakiten/internal/contract"
 	"omakiten/internal/domain"
 	"omakiten/internal/operation"
 )
@@ -348,7 +350,7 @@ func (a *Adapter) Prompts() []PromptDefinition {
 	if a != nil {
 		service = a.defaultService()
 	}
-	names := operation.CommandNames()
+	names := commandcatalog.CommandNames()
 	out := make([]PromptDefinition, 0, len(names))
 	for _, name := range names {
 		desc := ""
@@ -380,7 +382,11 @@ func (a *Adapter) CallTool(ctx context.Context, name string, args map[string]any
 
 	if a.resolver != nil {
 		project, projectID := peekProjectArg(args)
-		if resolved, err := a.resolver(ctx, project, projectID); err == nil && resolved != nil {
+		resolved, err := a.resolver(ctx, project, projectID)
+		if err != nil {
+			return ToolResult{}, err
+		}
+		if resolved != nil {
 			service = resolved
 		}
 	}
@@ -484,12 +490,12 @@ func (a *Adapter) GetPrompt(ctx context.Context, name string, args map[string]an
 		// registered-only message rather than fabricated prose, and an
 		// unregistered name still errors. The cache hint rides along: the empty
 		// body is byte-stable.
-		if !operation.IsRegisteredCommand(name) {
+		if !commandcatalog.IsRegisteredCommand(name) {
 			return PromptResult{}, fmt.Errorf("unknown MCP prompt %q", name)
 		}
 		return promptResult("", "", true), nil
 	}
-	resolved, err := service.ForMCP().ResolveCommand(ctx, operation.ResolveCommandInput{Name: name, Arguments: args})
+	resolved, err := service.ForMCP().ResolveCommand(ctx, contract.ResolveCommandInput{Name: name, Arguments: args})
 	if err != nil {
 		return PromptResult{}, err
 	}
@@ -508,7 +514,7 @@ func resolveCommandTool(ctx context.Context, service *operation.Service, args ma
 	if raw, ok := args["arguments"].(map[string]any); ok {
 		arguments = raw
 	}
-	resolved, err := service.ResolveCommand(ctx, operation.ResolveCommandInput{Name: name, Arguments: arguments})
+	resolved, err := service.ResolveCommand(ctx, contract.ResolveCommandInput{Name: name, Arguments: arguments})
 	if err != nil {
 		return resultFromData(operation.FailureFromError(err), true)
 	}

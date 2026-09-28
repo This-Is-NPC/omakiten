@@ -12,7 +12,6 @@ import (
 
 	"omakiten/internal/config"
 	"omakiten/internal/domain"
-	"omakiten/internal/testutil"
 	"omakiten/internal/tui/components/screenkit"
 	"omakiten/internal/tui/screenfixture"
 	"omakiten/internal/tui/screenhost"
@@ -25,11 +24,8 @@ const DefaultChromeRows = screenfixture.DefaultChromeRows
 // Project is the pinned project context every screen fixture runs against.
 func Project() domain.ProjectContext { return screenfixture.Project() }
 
-// Options tunes a fixture frame. See screenfixture.Options.
-type Options = screenfixture.Options
-
 // Frame builds a fixture frame for a screen under test.
-func Frame(tb testing.TB, options Options) screenhost.Frame {
+func Frame(tb testing.TB, options screenfixture.Options) screenhost.Frame {
 	tb.Helper()
 	frame, err := screenfixture.Frame(options)
 	if err != nil {
@@ -41,7 +37,7 @@ func Frame(tb testing.TB, options Options) screenhost.Frame {
 // FrameAt is the common case: a frame at the given width and height.
 func FrameAt(tb testing.TB, width, height int) screenhost.Frame {
 	tb.Helper()
-	return Frame(tb, Options{Width: width, Height: height})
+	return Frame(tb, screenfixture.Options{Width: width, Height: height})
 }
 
 // Styles is the screen-facing theme projection used by fixtures.
@@ -68,14 +64,6 @@ func Catalog(tb testing.TB) *config.Catalog {
 	}
 	return catalog
 }
-
-// HydrateEventRegistry populates the domain event registry from the embedded
-// omakase kit. Screen packages whose renderers call domain.EventCategoryOf or
-// domain.SummarizeEvent call it from TestMain.
-func HydrateEventRegistry() error { return testutil.HydrateDomainEventRegistry() }
-
-// Geometry is one terminal a baseline is recorded at.
-type Geometry = screenfixture.Geometry
 
 // Geometries are the three terminals every screen baseline is recorded at.
 var Geometries = screenfixture.Geometries

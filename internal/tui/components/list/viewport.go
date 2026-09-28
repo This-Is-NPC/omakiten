@@ -121,7 +121,7 @@ func (m Viewport) WithScroll(scroll int) Viewport {
 // struct on the Model) so the component stays decoupled from omakiten's
 // theme types.
 func (m Viewport) View(lines []string, viewport int, hintStyle lipgloss.Style) string {
-	visible, above, below := SliceLines(lines, m.Scroll, viewport)
+	visible, above, below := scrollwindow.SliceLines(lines, m.Scroll, viewport)
 	if above == 0 && below == 0 {
 		return strings.Join(visible, "\n")
 	}
@@ -166,30 +166,4 @@ func (m Viewport) WithWidth(width int) Viewport {
 	}
 	m.width = width
 	return m
-}
-
-// SliceLines clamps scroll to a valid offset for `lines` at the given viewport
-// height and returns the visible window plus counts hidden above/below.
-// Routes through scrollwindow.Slice with HintsNone — the detail-screen
-// View renders the combined-footer hint OUTSIDE the slice budget by
-// asking callers to pass viewport-1 when they need a footer row, so
-// the slicer itself reserves nothing. The pre-clamp preserves the
-// "jump to end" behavior callers depend on (sentinel scroll = 1<<20
-// resolves to len-viewport, not len-1).
-func SliceLines(lines []string, scroll, viewport int) (visible []string, above, below int) {
-	if viewport <= 0 || len(lines) <= viewport {
-		return lines, 0, 0
-	}
-	if scroll < 0 {
-		scroll = 0
-	}
-	if maxOffset := len(lines) - viewport; scroll > maxOffset {
-		scroll = maxOffset
-	}
-	heights := make([]int, len(lines))
-	for i := range heights {
-		heights[i] = 1
-	}
-	end := scrollwindow.Slice(scroll, heights, viewport, scrollwindow.HintsNone)
-	return lines[scroll:end], scrollwindow.Above(scroll), scrollwindow.Below(end, len(lines))
 }

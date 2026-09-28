@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"omakiten/internal/config"
+	"omakiten/internal/config/bundledraft"
 	"omakiten/internal/configstore"
 	"omakiten/internal/domain"
 	"omakiten/internal/testfixtures"
@@ -89,7 +90,7 @@ func buildRefreshHotPathModel(tb testing.TB) Model {
 
 	files := configstore.New()
 	editor := bundleeditor.New(files, configPath)
-	resolved, err := applyBundleEditor(ctx, editor, nil)
+	resolved, err := bundledraft.ApplyPlanned(ctx, editor, nil)
 	if err != nil {
 		tb.Fatalf("editor.Apply seed: %v", err)
 	}

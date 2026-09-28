@@ -242,7 +242,7 @@ func TestErrorServiceTagEntityIntegration(t *testing.T) {
 	store, project := appTestStore(t, appTestBundle(t))
 	defer func() { _ = store.Close() }()
 
-	tagService := NewTagService(store, store.Snapshot())
+	tagService := NewTagServiceWithEvents(store, nil, store.Snapshot())
 	errService := NewErrorService(store, store.Snapshot())
 
 	rec, _ := errService.Record(ctx, project.Context(), "boom", "", nil)
@@ -278,7 +278,7 @@ func TestErrorServiceTagEntityRequiresEntityID(t *testing.T) {
 	store, project := appTestStore(t, appTestBundle(t))
 	defer func() { _ = store.Close() }()
 
-	tagService := NewTagService(store, store.Snapshot())
+	tagService := NewTagServiceWithEvents(store, nil, store.Snapshot())
 	_, err := tagService.Add(ctx, project.Context(), TagEntityError, 0, "x")
 	if err == nil {
 		t.Fatal("TagService.Add(error, 0) error = nil")

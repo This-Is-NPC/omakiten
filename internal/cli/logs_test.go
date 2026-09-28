@@ -12,6 +12,7 @@ import (
 
 	"omakiten/internal/domain"
 	"omakiten/internal/testfakes/clock"
+	"omakiten/internal/testutil"
 )
 
 // cliFakeClockAnchor is the deterministic instant the clock-dependent
@@ -180,12 +181,15 @@ func TestProjectLogRowsCarriesSummary(t *testing.T) {
 		},
 	}
 
+	for i := range rows {
+		rows[i] = testutil.EventRegistry().Prepare(rows[i])
+	}
 	got := projectLogRows(rows)
 	if len(got) != 2 {
 		t.Fatalf("projectLogRows() len = %d, want 2", len(got))
 	}
 	for i, row := range got {
-		want := domain.SummarizeEvent(rows[i])
+		want := testutil.EventRegistry().Summarize(rows[i])
 		if row.Summary != want {
 			t.Fatalf("projectLogRows()[%d].Summary = %q, want %q", i, row.Summary, want)
 		}
