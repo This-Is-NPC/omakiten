@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
+source "$(dirname "${BASH_SOURCE[0]}")/lib/workspace.sh"
 
+if [[ $# == 0 ]]; then
+  set -- "${usage_tag:?missing release tag}" "${usage_dist:?missing release directory}"
+fi
 if [ "$#" -ne 2 ]; then
   echo "usage: release-installer-gate.sh <v-tag> <dist-dir>" >&2
   exit 2
@@ -14,10 +18,9 @@ esac
 version="${tag#v}"
 repo="This-Is-NPC/omakiten"
 asset="okt_Linux_x86_64.tar.gz"
-root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 dist="$(cd "$2" && pwd)"
 
-for tool in cosign curl jq python3 pwsh; do
+for tool in cosign curl jq go pwsh; do
   command -v "$tool" >/dev/null 2>&1 || {
     echo "error: release installer gate requires $tool" >&2
     exit 1
@@ -51,17 +54,8 @@ for name in "${required[@]}"; do
 done
 
 port_file="$tmpdir/port"
-python3 - "$tmpdir/www" "$port_file" <<'PY' &
-import http.server
-import pathlib
-import sys
-
-root, port_file = sys.argv[1:]
-handler = lambda *args, **kwargs: http.server.SimpleHTTPRequestHandler(*args, directory=root, **kwargs)
-server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), handler)
-pathlib.Path(port_file).write_text(str(server.server_port), encoding="ascii")
-server.serve_forever()
-PY
+go build -o "$tmpdir/serve-release" "$repo_root/scripts/serve-release.go"
+"$tmpdir/serve-release" "$tmpdir/www" "$port_file" &
 server_pid="$!"
 for _ in $(seq 1 100); do
   [ -s "$port_file" ] && break
@@ -85,7 +79,7 @@ GITHUB_DL_BASE="http://127.0.0.1:$port"
 export GITHUB_DL_BASE
 export OKT_INSTALLER_TEST_LIBRARY=1
 export INSTALL_DIR="$tmpdir/install"
-export OKT_GATE_ROOT="$root"
+export OKT_GATE_ROOT="$repo_root"
 export OKT_GATE_ARCHIVE="$dist/$asset"
 export OKT_GATE_ASSET="$asset"
 export OKT_GATE_VERSION="$version"
@@ -93,7 +87,7 @@ export OKT_GATE_TMP="$tmpdir/powershell"
 mkdir -p "$OKT_GATE_TMP" "$tmpdir/bash"
 
 # Source and execute the exact production strict-verification function.
-source "$root/install.sh"
+source "$repo_root/install.sh"
 COSIGN_BIN="$(command -v cosign)"
 verify_release_strict "$dist/$asset" "$asset" "$version" "$tmpdir/bash"
 echo "=> Production Bash strict installer verification passed"

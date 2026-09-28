@@ -40,6 +40,9 @@ func resolvePwsh(t *testing.T) string {
 	if candidate == "" {
 		found, err := exec.LookPath("pwsh")
 		if err != nil {
+			if os.Getenv("OKT_REQUIRE_PWSH") == "1" {
+				t.Fatal("OKT_REQUIRE_PWSH=1 but pwsh is not installed")
+			}
 			t.Skip("pwsh not available; set OKT_PWSH to run the executable PowerShell installer tests")
 		}
 		candidate = found
@@ -48,11 +51,11 @@ func resolvePwsh(t *testing.T) string {
 		"[Diagnostics.Process]::GetCurrentProcess().MainModule.FileName")
 	out, err := probe.Output()
 	if err != nil {
-		t.Skipf("pwsh at %s is not runnable (%v)", candidate, err)
+		t.Fatalf("pwsh at %s is not runnable (%v)", candidate, err)
 	}
 	real := strings.TrimSpace(string(out))
 	if real == "" {
-		t.Skipf("pwsh at %s did not report its own executable path", candidate)
+		t.Fatalf("pwsh at %s did not report its own executable path", candidate)
 	}
 	return real
 }

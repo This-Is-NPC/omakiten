@@ -16,20 +16,14 @@ jobs:
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
       - name: Install pinned ShellCheck
-        shell: bash
-        run: |
-          set -euo pipefail
-          version="0.11.0"
-          archive="shellcheck-v${version}.linux.x86_64.tar.xz"
-          cd "$RUNNER_TEMP"
-          curl -fsSLO "https://github.com/koalaman/shellcheck/releases/download/v${version}/${archive}"
-          echo "8c3be12b05d5c177a04c29e3c78ce89ac86f1595681cab149b65b97c4e227198  ${archive}" | sha256sum -c -
-          tar -xJf "$archive"
-          echo "$PWD/shellcheck-v${version}" >>"$GITHUB_PATH"
+        uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4
+        with:
+          version: "2026.9.12"
+          install_args: shellcheck
 
       - name: Run ShellCheck
         shell: bash
-        run: shellcheck install.sh scripts/release-installer-gate.sh
+        run: scripts/check-scripts.sh
 
   installer-assurance:
     strategy:
@@ -46,6 +40,12 @@ jobs:
         with:
           go-version: "1.25.13"
 
+      - name: Install pinned PowerShell
+        uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4
+        with:
+          version: "2026.9.12"
+          install_args: powershell
+
       - name: Install Cosign on Linux and macOS
         if: runner.os != 'Windows'
         uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
@@ -60,14 +60,17 @@ jobs:
       - name: Run installer and release assurance tests
         if: runner.os != 'Windows'
         shell: bash
-        run: OKT_REQUIRE_REAL_COSIGN=1 go test ./internal/installscript ./internal/releasemeta ./internal/releaseverify
+        run: OKT_REQUIRE_REAL_COSIGN=1 OKT_REQUIRE_PWSH=1 go test ./internal/installscript ./internal/installer ./internal/releasemeta ./internal/releaseverify
 
       - name: Run Windows-native installer assurance tests
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
           $env:OKT_REQUIRE_REAL_COSIGN = "1"
+          $env:OKT_REQUIRE_PWSH = "1"
           go test ./internal/installscript -run 'TestRealCosignOfflinePositivePath|TestInstallerSemVerParity/powershell'
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          go test ./internal/installer -run '^TestWrapperBootstrapUninstallRoundTrip$/powershell'
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $errors = $null
           [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path ./install.ps1), [ref]$null, [ref]$errors) > $null

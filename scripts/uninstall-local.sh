@@ -2,10 +2,7 @@
 set -euo pipefail
 source "$(dirname "${BASH_SOURCE[0]}")/lib/workspace.sh"
 
-if [ -z "${HOME:-}" ]; then
-  printf 'HOME is not set\n' >&2
-  exit 1
-fi
+: "${HOME:?HOME is not set}"
 # Use the bootstrap uninstaller when no runnable binary exists.
 installed_at="$HOME/.local/bin/okt"
 if [ -x "$installed_at" ]; then

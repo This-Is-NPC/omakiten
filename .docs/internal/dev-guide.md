@@ -22,7 +22,7 @@ This guide is for people working **on** Omakiten — building, testing, and rele
 
 - [mise-en-place](https://mise.jdx.dev/) — pins the Go toolchain, `golangci-lint`, and `govulncheck` at the exact versions the merge gate uses. `mise install` reads `.mise.toml` and provisions everything.
 - GoReleaser and Cosign are also pinned in `.mise.toml`; `mise install` provisions the exact release-dry-run versions.
-- [GitHub CLI (`gh`)](https://cli.github.com/) — `scripts/local-check.sh` calls `gh api` to post the merge-gate commit status; `gh auth login` once is enough.
+- GitHub CLI, ShellCheck, and PowerShell are pinned in `.mise.toml`. `mise install` provisions them; authenticate GitHub CLI once with `mise exec -- gh auth login`. PowerShell 7.6.4 is the tested runtime; the 7.6.3 Linux runtime aborted during startup on the development host. An installed interpreter that cannot start fails the installer tests, and the mise test tasks require PowerShell instead of silently skipping it.
 
 ### Clone and verify
 
@@ -56,7 +56,7 @@ mise run purge            # removes ~/.config/omakiten and ~/.local/share/omakit
 
 ## Mise Tasks Reference
 
-Every task is defined in `.mise.toml` at the repo root. Build, test, and formatting jobs live in executable scripts under `scripts/`. Run with `mise run <name>` (or just `mise <name>`).
+Every task is defined in `.mise.toml` at the repo root and delegates to executable scripts under `scripts/`. Aggregators compose those tasks. Run with `mise run <name>` (or just `mise <name>`).
 
 ### Build & verification
 
@@ -69,11 +69,20 @@ Every task is defined in `.mise.toml` at the repo root. Build, test, and formatt
 | `test:cross-build` | Compiles config, path, and SQLite safety tests for the six release targets, plus config/path tests for Plan 9, into `.tmp/tests/`. Each binary is named by package, OS, and architecture. |
 | `test:profile <package> --bench <pattern>` | Profiles one package, placing its test binary and CPU/memory profiles under `.tmp/profiles/<import-path>/`. |
 | `workspace:check` | Rejects misplaced generated files in the root and source directories, while allowing `.tmp/`, persistent dev state, tool configuration, and checked-in fixtures. |
+| `scripts:check` | Checks Bash syntax and runs the pinned ShellCheck over every shell entry point and shared shell library, plus the public Bash installers. |
+| `test:coverage-checker` | Runs focused coverage-profile grammar, freshness, and boundary fixtures. |
+| `test:installer` | Runs setup selection, wrapper/uninstaller round trips, local-check regressions, and installer assurance through standard Go tests. |
 | `lint` | `golangci-lint run` against `.golangci.yml`. |
 | `vuln` | `govulncheck ./...`. |
-| `check` | **PR gate.** Depends on `fmt:check`, `test`, `lint`, `vuln`, `docs:check`, and `workspace:check`. |
+| `check` | **PR gate.** Depends on `fmt:check`, `test`, `lint`, `vuln`, `docs:check`, `workspace:check`, and `scripts:check`. |
 | `docs:refresh` | Runs `go run ./cmd/okt-docs-refresh --root .` to remove legacy generated-doc artifacts and validate that `.docs/` no longer carries old include/auto markers. |
 | `docs:check` | Same binary with `--check` — exits non-zero on drift; the local merge gate runs this. |
+| `language:new <code> <native> <name>` | Scaffolds a bundled pack from English, quotes header values, and adds translation TODO markers. Existing packs are never overwritten. |
+| `local-check` | Checks a clean HEAD and reports its result to GitHub. `--sha` must resolve to HEAD; `--dry-run` prints planned operations. |
+| `release:installer-gate <tag> <dist>` | Serves signed release files over loopback and executes both production installers' strict verification paths. |
+
+The local build always runs because its version embeds Git tags, HEAD, and dirty
+state; source-file timestamps alone do not establish that the binary is current.
 
 ### Install & local state
 
@@ -83,10 +92,10 @@ Every task is defined in `.mise.toml` at the repo root. Build, test, and formatt
 | `install:mcp:claude` | `build` → wires the local `.tmp/build/okt` into Claude Code's MCP config (`~/.claude.json`). |
 | `install:mcp:claude-desktop` | Same, for Claude Desktop. |
 | `install:mcp:opencode` | Same, for OpenCode. |
-| `uninstall` | Removes `~/.local/bin/okt` and the shell wrapper. **Does not** touch config or data. |
-| `purge` | Wipes `~/.config/omakiten` and `~/.local/share/omakiten`. Use after `uninstall` for a fresh-machine simulation. |
+| `uninstall` | Confirms before removing `~/.local/bin/okt` and the shell wrapper. **Does not** touch config or data. |
+| `purge` | Confirms before deleting `~/.config/omakiten` and `~/.local/share/omakiten`. Use after `uninstall` for a fresh-machine simulation. |
 | `dev:sync` | Mirrors `defaults/` into `dev_env/` (overwrites root, leaves `dev_env/custom/`). |
-| `dev:install` | `dev:sync` + builds `.tmp/build/okt`, resets dev-only `custom/` overlays, and runs `okt setup --update --skip-wrapper --skip-harnesses` so repeated fresh-install runs cannot load stale config/entity schemas. Use `tui:bare` when custom overlays or seeded fixtures must survive. |
+| `dev:install` | Confirms the reset of dev-only `custom/` overlays, then syncs defaults, builds `.tmp/build/okt`, and runs `okt setup --update --skip-wrapper --skip-harnesses`. Use `tui:bare` when custom overlays or seeded fixtures must survive. |
 | `tui` | Runs `dev:install` inside its raw-terminal task, then opens the TUI against the synchronized `dev_env/config/omakase.yaml`; `tui:bare` skips installation and opens the preset named by `dev_env/config/.active` so seeded fixtures survive without repo-local config discovery. |
 | `gallery` | Opens the dev-only TUI component gallery (`cmd/okt-gallery`) — one shared component at a time, against the shipped theme. Not part of `build`; nothing in the `okt` binary imports it. |
 | `gallery:dump` | Renders every component variant to stdout with no TTY, so it pipes to a file and diffs across a refactor. |
@@ -299,12 +308,10 @@ mise run build
 |---|---|
 | Go unit + integration tests | `go test -race -count=1 ./...` (or `mise run test`) |
 | Hexagonal boundary check | `go test ./internal/arch/...` |
-| `install.sh` shell-wrapper idempotency | `bash scripts/wrapper_idempotency_test.sh` |
-| `install.sh` harness selection | `bash scripts/installer_select_test.sh` |
-| `install.ps1` harness selection | `pwsh -NoProfile -File scripts/installer_select_test.ps1` |
+| Setup selection and Bash/PowerShell wrapper round trips | `mise run test:installer` — includes LF/CRLF idempotence and preservation of unrelated profile whitespace. |
 | Release archive/metadata fixture | `mise run release:dry-run` |
 
-The shell tests do **not** depend on Go; they extract helper functions from `install.sh` / `install.ps1` via awk / PowerShell AST and exercise them in-process. Run them whenever you touch the installers.
+The installer tests use Go's standard `testing` package and execute the production Bash and PowerShell entry points against isolated user directories. Run `mise run test:installer` whenever you touch the installers.
 
 Installer checksum coverage is split by runner availability. `internal/installscript` executes the `install.sh` tamper-abort and positive paths hermetically. When a real PowerShell/Windows runner is unavailable, `install.ps1` is covered only by `[assumption]`-grade Go parity tests that statically assert the same checksum trust-root and verify-before-extract/copy/PATH/exec ordering as `install.sh`; those tests do not prove Windows execution. Treat real `install.ps1` tamper-abort as an integration gate to run when `pwsh` or Windows CI is available.
 
@@ -377,7 +384,7 @@ Coverage is enforced as one aggregate all-package run. The checker compares the 
 
 ```bash
 mise run test
-scripts/check-coverage_test.sh
+mise run test:coverage-checker
 ```
 
 ## Conventions
@@ -389,21 +396,22 @@ scripts/check-coverage_test.sh
 
 ## Merge gate
 
-The project runs its merge gate locally instead of on GitHub Actions. The two former workflows (`ci.yml` and the `ci-docs.yml` companion) are gone; the gate is now `scripts/local-check.sh` driven by a tracked pre-push hook.
+The merge gate runs locally through `mise run local-check`, backed by
+`scripts/local-check.sh` and the tracked pre-push hook.
 
 ### How it works
 
 1. `scripts/hooks/pre-push` fires for every `git push`. For each non-deletion ref, it invokes `scripts/local-check.sh --pre-push` with the pushed SHA.
-2. In `--pre-push` mode the script runs `mise run check` (`test` + `lint` + `vuln` + `docs:check`) synchronously — a red check aborts the push.
-3. On green, the script spawns a detached background poller (`setsid nohup …`) that waits up to 60 seconds for the SHA to be reachable on `origin` (`gh api repos/<slug>/commits/<sha>`), then posts the final `success` status via `gh api -X POST repos/<slug>/statuses/<sha>`. This indirection is required because `git push` uploads the commit *after* the hook returns; posting in the hook itself hits HTTP 422 (`No commit found for SHA`).
-4. For manual reruns (e.g. when the hook was skipped or the background post timed out), invoke `scripts/local-check.sh` directly — the default foreground mode posts `pending` → `success`/`failure` against the already-pushed SHA.
+2. The script requires the pushed SHA to equal HEAD in a clean checkout, runs `mise run check` synchronously, and checks the checkout again before reporting. A failed check aborts the push even when GitHub authentication is unavailable.
+3. On green, `scripts/post-check-status.sh` waits up to 60 seconds for the commit to become reachable on GitHub, then reports `success`. The hook starts it with `nohup`; its diagnostics live under `.tmp/local-check/`. Missing authentication leaves the remote status unset and emits a warning after the checks have run.
+4. Manual reruns use `mise run local-check` to report `success` or `failure` for an already-pushed HEAD. There is no mode that stamps a successful status without running checks.
 5. `master` branch protection requires `local-check` to be `success` for the PR's HEAD SHA before the merge button enables.
 
 ### Enabling for a fresh clone
 
 ```bash
 git config core.hooksPath scripts/hooks
-gh auth status              # ensure gh CLI is authenticated
+mise exec -- gh auth status  # ensure gh CLI is authenticated
 ```
 
 `core.hooksPath` is per-clone (not committed); set it once after cloning. Skipping it disables the gate locally, which means `git push` will hand off a SHA with no `local-check` status — branch protection will refuse to merge it until the script is rerun manually.
@@ -419,10 +427,9 @@ OKT_SKIP_LOCAL_CHECK=1 git push
 If the hook was skipped, the background poll timed out, or you just want to refresh the status:
 
 ```bash
-scripts/local-check.sh                              # full run for HEAD (SHA must be on origin)
-scripts/local-check.sh --sha=<sha>                  # full run for a specific SHA
-scripts/local-check.sh --post-only --state=success  # skip the check, just stamp the status
-scripts/local-check.sh --dry-run                    # print API calls, do not POST
+mise run local-check                    # clean HEAD must already be on GitHub
+mise run local-check --sha HEAD          # explicit commit must resolve to HEAD
+mise run local-check --dry-run           # print planned operations
 ```
 
 The script is idempotent: re-running on the same SHA simply overwrites the latest status of the `local-check` context.

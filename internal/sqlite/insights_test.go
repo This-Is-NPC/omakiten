@@ -11,9 +11,8 @@ import (
 )
 
 // seedInsightsFixture lays a deterministic, fixed-offset history into a fresh
-// store so each insight has known expected values. It mirrors the shape of
-// scripts/seed_insights.sql but in miniature, using relative datetime offsets
-// so the assertions are stable regardless of wall-clock.
+// store so each insight has known expected values, using relative datetime
+// offsets so assertions are stable regardless of wall-clock.
 //
 // Board after seeding (project_id = 1):
 //   - task 1: dev,    last move 10d ago  -> STUCK (10 > 7)
