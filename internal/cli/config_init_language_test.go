@@ -1,10 +1,38 @@
 package cli
 
 import (
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 )
+
+func TestCLIConfigInitUsesDefaultsWithDevNullInput(t *testing.T) {
+	root := t.TempDir()
+	t.Chdir(root)
+	input, err := os.Open(os.DevNull)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer input.Close()
+	output, err := os.Create(filepath.Join(root, "output"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer output.Close()
+	stdin, stdout := os.Stdin, os.Stdout
+	os.Stdin, os.Stdout = input, output
+	defer func() { os.Stdin, os.Stdout = stdin, stdout }()
+	cmd := NewRootCommand("test")
+	cmd.SetArgs([]string{"--db", filepath.Join(root, "state.db"), "--config", filepath.Join(root, "config", "omakase.yaml"), "config", "init", "--scope", "global", "--preset", "omakase"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	text := readFile(t, output.Name())
+	if strings.Contains(text, "CLI language") || strings.Contains(text, `"languages"`) {
+		t.Fatalf("nonterminal input prompted or changed defaults: %s", text)
+	}
+}
 
 func TestCLIConfigInitFlagsSetLanguages(t *testing.T) {
 	tmp := t.TempDir()

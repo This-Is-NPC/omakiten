@@ -168,6 +168,7 @@ func applyLanguageSelections(cmd *cobra.Command, configPath string, inputs langu
 }
 
 func resolveInitLanguages(cmd *cobra.Command, inputs languagePromptInputs, available []string, defaults config.LanguageSettings) (config.LanguageSettings, error) {
+	cmd.SetIn(bufio.NewReader(cmd.InOrStdin()))
 	next := defaults
 	var err error
 	next.CLI, err = resolveLanguageCode(cmd, inputs.CLILangSet, inputs.CLILang, defaults.CLI, available, "cli")
@@ -227,21 +228,9 @@ func validateInitLanguageChoice(flag, value string, available []string) error {
 	return domain.NewError(domain.ErrValidation, fmt.Sprintf(t("cli.err.unknown_language_code"), flag, v), map[string]any{"available": available})
 }
 
-// isInteractive reports whether the command should issue TTY prompts.
-// True only when (a) the cobra command still writes to os.Stdout
-// (tests always SetOut to a buffer, so this turns prompts off in the
-// test harness) and (b) stdin is attached to a character device. Both
-// gates together mean "real terminal session, not a piped script and
-// not a captured-output test run".
+// isInteractive enables prompts when input and output belong to a terminal session.
 func isInteractive(cmd *cobra.Command) bool {
-	if cmd.OutOrStdout() != os.Stdout {
-		return false
-	}
-	stat, err := os.Stdin.Stat()
-	if err != nil {
-		return false
-	}
-	return stat.Mode()&os.ModeCharDevice != 0
+	return cmd.OutOrStdout() == os.Stdout && stdinIsTTY()
 }
 
 // promptLanguageCode prints the available codes and reads one from
