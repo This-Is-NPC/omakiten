@@ -8,23 +8,14 @@ import (
 	"strings"
 )
 
-// WrapperBegin / WrapperEnd delimit the okt() shell-wrapper block in
-// user rc files. The strings must stay byte-identical with the values
-// hardcoded at install.sh:10-11 and uninstall.sh:8-9 — the
-// scripts/wrapper_idempotency_test.sh fixture asserts the bash and Go
-// writers agree, and the uninstaller drops lines between exactly these
-// sentinels.
+// WrapperBegin and WrapperEnd delimit the shell-wrapper block in user rc
+// files and match the bootstrap uninstallers' sentinels.
 const (
 	WrapperBegin = "# >>> okt wrapper >>>"
 	WrapperEnd   = "# <<< okt wrapper <<<"
 )
 
-// wrapperBody is the literal okt() shell function written between the
-// sentinels for bash/zsh rc files. Both bash and PowerShell wrappers
-// only ever land via the Go installer now — scripts/wrapper_idempotency_test.sh
-// and scripts/wrapper_idempotency_test.ps1 build the binary and re-run
-// `okt setup` against a seeded rc/profile to confirm a second install
-// lands the same bytes.
+// wrapperBody passes TUI navigation back to the parent Bash or Zsh shell.
 const wrapperBody = `# Auto-installed by omakiten. Lets ` + "`okt tui`" + ` cd the parent shell
 # into the project chosen on the Home screen when the TUI exits.
 # Remove with the bundled uninstall.sh; do not edit by hand.
@@ -87,8 +78,7 @@ func PowerShellWrapperBlock() string {
 }
 
 // InstallWrapper writes (or replaces) the bash/zsh wrapper block in
-// rcPath. Behaviour mirrors install.sh's install_wrapper_into; see
-// installBlockInto for the shared swap-or-append semantics.
+// rcPath using the shared swap-or-append writer.
 func InstallWrapper(rcPath string) error {
 	return installBlockInto(rcPath, WrapperBlock())
 }
@@ -117,9 +107,7 @@ func InstallPowerShellWrapper(profilePath string) error {
 //     WrapperEnd is replaced by the new block, surrounding content
 //     stays byte-identical.
 //
-// The function is idempotent against itself: re-running with the same
-// block produces the same bytes, which is the invariant the
-// scripts/wrapper_idempotency_test.{sh,ps1} fixtures exercise.
+// Re-running with the same block produces the same bytes.
 func installBlockInto(rcPath, block string) error {
 	if rcPath == "" {
 		return fmt.Errorf("installer: empty rc path")
@@ -213,7 +201,11 @@ func replaceBlock(src []byte, block string) ([]byte, bool) {
 		switch {
 		case !skipping && trimmed == WrapperBegin:
 			skipping = true
-			out.WriteString(block)
+			replacement := block
+			if lineTerminator(line) == "\r\n" {
+				replacement = strings.ReplaceAll(block, "\n", "\r\n")
+			}
+			out.WriteString(replacement)
 			// Preserve whichever line terminator the original
 			// WrapperBegin carried so swapping inside a CRLF file
 			// stays CRLF-clean.

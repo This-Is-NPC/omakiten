@@ -2,17 +2,13 @@ package installer
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 )
 
-// TestWrapperBlockSentinels asserts the exact byte-for-byte sentinel
-// strings the shell scripts depend on. Drift in either direction
-// breaks scripts/wrapper_idempotency_test.sh (which extracts the bash
-// install_wrapper_into and replays it against a fresh tmp rc) and the
-// shipped uninstall.sh (which greps for WrapperBegin to decide whether
-// to scrub the block).
+// TestWrapperBlockSentinels pins the bootstrap uninstallers' delimiters.
 func TestWrapperBlockSentinels(t *testing.T) {
 	if WrapperBegin != "# >>> okt wrapper >>>" {
 		t.Fatalf("WrapperBegin drifted: got %q", WrapperBegin)
@@ -49,42 +45,17 @@ func TestInstallWrapper_CreatesFile(t *testing.T) {
 	}
 }
 
-// TestInstallWrapper_Idempotent mirrors the assertion in
-// scripts/wrapper_idempotency_test.sh: re-running install on the same
-// file must not duplicate the block.
+// TestInstallWrapper_Idempotent rejects duplicate wrapper blocks.
 func TestInstallWrapper_Idempotent(t *testing.T) {
 	rc := filepath.Join(t.TempDir(), ".bashrc")
 	const seed = "# user content above\nexport FOO=bar\n"
 	if err := os.WriteFile(rc, []byte(seed), 0o644); err != nil {
-		t.Fatalf("seed rc: %v", err)
+		t.Fatal(err)
 	}
-
-	if err := InstallWrapper(rc); err != nil {
-		t.Fatalf("first install: %v", err)
-	}
-	first, err := os.ReadFile(rc)
-	if err != nil {
-		t.Fatalf("read after first install: %v", err)
-	}
-	if got := strings.Count(string(first), WrapperBegin); got != 1 {
-		t.Fatalf("first install: want 1 begin sentinel, got %d", got)
-	}
-	if !strings.Contains(string(first), "export FOO=bar") {
-		t.Fatalf("first install dropped the seed content: %s", first)
-	}
-
-	if err := InstallWrapper(rc); err != nil {
-		t.Fatalf("second install: %v", err)
-	}
-	second, err := os.ReadFile(rc)
-	if err != nil {
-		t.Fatalf("read after second install: %v", err)
-	}
-	if got := strings.Count(string(second), WrapperBegin); got != 1 {
-		t.Fatalf("re-install duplicated the block: got %d sentinels", got)
-	}
-	if string(first) != string(second) {
-		t.Fatalf("idempotent install diverged:\n--- first ---\n%s\n--- second ---\n%s", first, second)
+	assertWrapperInstallIdempotent(t, rc, InstallWrapper)
+	got, err := os.ReadFile(rc)
+	if err != nil || !strings.HasPrefix(string(got), seed) {
+		t.Fatalf("install changed the seed content: %v\n%s", err, got)
 	}
 }
 
@@ -173,38 +144,12 @@ func TestInstallPowerShellWrapper_Idempotent(t *testing.T) {
 	profile := filepath.Join(t.TempDir(), "profile.ps1")
 	const seed = "# user content above\n$env:FOO = 'bar'\n"
 	if err := os.WriteFile(profile, []byte(seed), 0o644); err != nil {
-		t.Fatalf("seed profile: %v", err)
+		t.Fatal(err)
 	}
-
-	if err := InstallPowerShellWrapper(profile); err != nil {
-		t.Fatalf("first install: %v", err)
-	}
-	first, err := os.ReadFile(profile)
-	if err != nil {
-		t.Fatalf("read after first install: %v", err)
-	}
-	if got := strings.Count(string(first), WrapperBegin); got != 1 {
-		t.Fatalf("first install: want 1 begin sentinel, got %d", got)
-	}
-	if !strings.Contains(string(first), "$env:FOO = 'bar'") {
-		t.Fatalf("first install dropped seeded content: %s", first)
-	}
-	if !strings.Contains(string(first), "function okt {") {
-		t.Fatalf("first install missing PS function: %s", first)
-	}
-
-	if err := InstallPowerShellWrapper(profile); err != nil {
-		t.Fatalf("second install: %v", err)
-	}
-	second, err := os.ReadFile(profile)
-	if err != nil {
-		t.Fatalf("read after second install: %v", err)
-	}
-	if got := strings.Count(string(second), WrapperBegin); got != 1 {
-		t.Fatalf("re-install duplicated the block: got %d sentinels", got)
-	}
-	if string(first) != string(second) {
-		t.Fatalf("idempotent install diverged:\n--- first ---\n%s\n--- second ---\n%s", first, second)
+	assertWrapperInstallIdempotent(t, profile, InstallPowerShellWrapper)
+	got, err := os.ReadFile(profile)
+	if err != nil || !strings.HasPrefix(string(got), seed) || !strings.Contains(string(got), "function okt {") {
+		t.Fatalf("install changed the seed content or omitted the PowerShell function: %v\n%s", err, got)
 	}
 }
 
@@ -256,5 +201,89 @@ func TestInstallWrapper_PreservesCRLF(t *testing.T) {
 	}
 	if strings.Count(string(got), WrapperBegin) != 1 {
 		t.Fatalf("expected one begin sentinel after CRLF swap, got %d", strings.Count(string(got), WrapperBegin))
+	}
+}
+
+type wrapperRoundTripCase struct {
+	tool, file, profile, seed string
+	install                   func(string) error
+}
+
+func TestWrapperBootstrapUninstallRoundTrip(t *testing.T) {
+	cases := map[string]wrapperRoundTripCase{
+		"bash":            {"bash", "uninstall.sh", ".bashrc", "# user content\nexport FOO=bar\n", InstallWrapper},
+		"powershell":      {"pwsh", "uninstall.ps1", filepath.Join("Documents", "PowerShell", "profile.ps1"), "# user content\n$env:FOO = 'bar'\n", InstallPowerShellWrapper},
+		"bash CRLF":       {"bash", "uninstall.sh", ".bashrc", "# user content\r\nexport FOO=bar\r\n", InstallWrapper},
+		"powershell CRLF": {"pwsh", "uninstall.ps1", filepath.Join("Documents", "PowerShell", "profile.ps1"), "# user content\r\n$env:FOO = 'bar'\r\n", InstallPowerShellWrapper},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) { runWrapperRoundTrip(t, tc) })
+	}
+}
+
+func runWrapperRoundTrip(t *testing.T, tc wrapperRoundTripCase) {
+	t.Helper()
+	tool, err := exec.LookPath(tc.tool)
+	if err != nil {
+		t.Skipf("%s is not installed", tc.tool)
+	}
+	root := t.TempDir()
+	profile := filepath.Join(root, tc.profile)
+	if err := os.MkdirAll(filepath.Dir(profile), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	newline := "\n"
+	if strings.Contains(tc.seed, "\r\n") {
+		newline = "\r\n"
+	}
+	seed := tc.seed + newline
+	if err := os.WriteFile(profile, []byte(seed+WrapperBegin+newline+"stale wrapper"+newline+WrapperEnd+newline), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	assertWrapperInstallIdempotent(t, profile, tc.install)
+	script, err := filepath.Abs(filepath.Join("..", "..", tc.file))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for range 2 {
+		runBootstrapUninstaller(t, tool, tc.tool, script, root)
+		got, err := os.ReadFile(profile)
+		if err != nil || string(got) != seed {
+			t.Fatalf("uninstaller changed unrelated bytes: %v\n%q, want %q", err, got, seed)
+		}
+	}
+}
+
+func assertWrapperInstallIdempotent(t *testing.T, profile string, install func(string) error) {
+	t.Helper()
+	var first []byte
+	for attempt := range 2 {
+		if err := install(profile); err != nil {
+			t.Fatal(err)
+		}
+		got, err := os.ReadFile(profile)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.Count(string(got), WrapperBegin) != 1 {
+			t.Fatalf("expected one wrapper: %s", got)
+		}
+		if attempt == 1 && string(first) != string(got) {
+			t.Fatal("repeated install changed the wrapper")
+		}
+		first = got
+	}
+}
+
+func runBootstrapUninstaller(t *testing.T, tool, name, script, root string) {
+	t.Helper()
+	args := []string{script}
+	if name == "pwsh" {
+		args = []string{"-NoProfile", "-NonInteractive", "-File", script}
+	}
+	cmd := exec.Command(tool, args...)
+	cmd.Env = append(os.Environ(), "HOME="+root, "USERPROFILE="+root, "INSTALL_DIR="+filepath.Join(root, "bin"), "LOCALAPPDATA="+filepath.Join(root, "local"))
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("bootstrap uninstaller: %v\n%s", err, out)
 	}
 }

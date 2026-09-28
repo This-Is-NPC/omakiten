@@ -16,8 +16,9 @@ remove_wrapper_from() {
   fi
   local tmp; tmp=$(mktemp)
   awk -v begin="${WRAPPER_BEGIN}" -v end="${WRAPPER_END}" '
-    $0 == begin { skipping = 1; next }
-    skipping && $0 == end { skipping = 0; next }
+    { line = $0; sub(/\r$/, "", line) }
+    line == begin { skipping = 1; next }
+    skipping && line == end { skipping = 0; next }
     !skipping
   ' "$rc" > "$tmp"
   mv "$tmp" "$rc"
