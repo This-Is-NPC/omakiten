@@ -1455,7 +1455,7 @@ keys:
   cli.update.err.signature_verification_failed_fmt: "falló la verificación de firma de la release: %s; binario sin cambios"
   cli.update.err.downgrade_blocked_fmt: "la release %s no es más reciente que la instalada %s; se rechaza el downgrade"
   cli.update.err.unsigned_release_fmt: "la release %s está en el corte de releases firmadas %s o antes; reinstale la primera release firmada con un instalador verificado"
-  cli.tui.err.config_validation_failed_fmt: "health check de config falló (%d errores, primero: %s); para investigar la causa corre `okt config validate`"
+  cli.tui.err.config_validation_failed_fmt: "config health check failed (%d errors, first: %s); inspect the reported path and follow details.errors[].hint"
   # Remediation hint copy (#367) — %s slot carries the suggested command literal.
   cli.config.validate.remediation.missing_shipped_file: "Restaura los archivos por defecto embarcados: %s — tu subárbol custom/ se conserva; respalda primero las ediciones directas a archivos shipped."
   cli.config.validate.remediation.embedded_default_drift: "Refresca los defaults embarcados que el binario en ejecución espera: %s — tu subárbol custom/ no se toca."
@@ -1463,6 +1463,7 @@ keys:
   cli.config.validate.remediation.invalid_value: "Corrige el valor inválido: %s — abre el archivo en la ruta citada y ajusta el campo."
   cli.config.validate.remediation.missing_required_key: "Añade la clave requerida que falta: %s — abre el archivo en la ruta citada e inserta la entrada descrita en el error."
   cli.config.validate.remediation.theme_not_found: "Elige un tema que el runtime pueda resolver: %s — abre el archivo y define config.theme.active a uno de los slugs disponibles."
+  cli.config.validate.remediation.validation: "Inspect and correct the reported configuration: %s"
   # Plans — TUI plan list + network diagram + goal editor.
   tui.plans.list.empty: "Aún no hay plans. Crea uno con `okt plan create <slug> --name \"...\"`."
   tui.plans.list.header: "SLUG             STATUS    HECHO/TOTAL  %    NOMBRE ‹WAVE ACTIVA›"

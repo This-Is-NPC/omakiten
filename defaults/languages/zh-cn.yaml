@@ -1441,7 +1441,7 @@ keys:
   cli.update.err.signature_verification_failed_fmt: "发布签名校验失败：%s；binary 未改动"
   cli.update.err.downgrade_blocked_fmt: "发布 %s 不比已安装的 %s 更新，已拒绝降级"
   cli.update.err.unsigned_release_fmt: "发布 %s 处于已签名发布分界线 %s 或更早；请使用已验证的安装程序重新安装首个已签名发布"
-  cli.tui.err.config_validation_failed_fmt: "config 健康检查失败（%d 个错误，第一个：%s）；运行 `okt config validate` 以排查原因"
+  cli.tui.err.config_validation_failed_fmt: "config health check failed (%d errors, first: %s); inspect the reported path and follow details.errors[].hint"
   # Remediation hint copy (#367) — %s slot carries the suggested command literal.
   cli.config.validate.remediation.missing_shipped_file: "Restore the shipped default files: %s — your custom/ subtree is preserved; back up direct edits to shipped files first."
   cli.config.validate.remediation.embedded_default_drift: "Refresh the embedded defaults the running binary expects: %s — your custom/ subtree stays untouched."
@@ -1449,6 +1449,7 @@ keys:
   cli.config.validate.remediation.invalid_value: "Fix the invalid value: %s — open the file at the cited path and adjust the field."
   cli.config.validate.remediation.missing_required_key: "Add the missing required key: %s — open the file at the cited path and insert the entry described in the error."
   cli.config.validate.remediation.theme_not_found: "Pick a theme the runtime can resolve: %s — open the file and set config.theme.active to one of the available slugs."
+  cli.config.validate.remediation.validation: "Inspect and correct the reported configuration: %s"
   # Plans — TUI plan list + network diagram + goal editor.
   tui.plans.list.empty: "暂无 plan。 使用 `okt plan create <slug> --name \"...\"` 创建。"
   tui.plans.list.header: "SLUG             STATUS    完成/合计   %    名称 ‹活动 WAVE›"

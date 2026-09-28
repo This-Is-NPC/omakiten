@@ -536,6 +536,10 @@ orphan-migration notification's `Migrate` button.
 
 ### `okt config validate [path]`
 
+Validation reads the selected configuration and reports its exact path. Error
+details provide a quoted editor command for file corrections or an explicitly
+scoped refresh command for shipped assets. Validation does not rewrite files.
+
 Runs `config.ValidateBundle` against the supplied YAML (or the resolved one). Reports the first failing rule from `internal/config/validator.go`.
 
 ```sh
