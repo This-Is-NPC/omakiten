@@ -16,39 +16,39 @@ func snapshotWithSurfaces(t *testing.T, table config.SurfaceTable) *config.Snaps
 	return config.BuildSnapshot(bundle)
 }
 
-func TestForMCPSetSnapshotUngated(t *testing.T) {
+func TestForCLISetSnapshotUngated(t *testing.T) {
 	table := config.CanonicalSurfaceTable()
 	row := table["wiring.set_snapshot"]
-	if row.MCP == nil || *row.MCP {
-		t.Fatal("canonical wiring.set_snapshot must be mcp:false")
+	if row.CLI == nil || *row.CLI {
+		t.Fatal("canonical wiring.set_snapshot must be cli:false")
 	}
 	orig := NewService(nil, contract.ProjectSelector{})
-	mcp := orig.ForMCP()
-	mcp.SetSnapshot(snapshotWithSurfaces(t, table))
+	cli := orig.ForCLI()
+	cli.SetSnapshot(snapshotWithSurfaces(t, table))
 	if orig.Snapshot() != nil {
-		t.Fatal("ForMCP copy must not mutate the original Service")
+		t.Fatal("ForCLI copy must not mutate the original Service")
 	}
-	if mcp.Snapshot() == nil {
-		t.Fatal("SetSnapshot on the MCP copy did not stick")
+	if cli.Snapshot() == nil {
+		t.Fatal("SetSnapshot on the agent copy did not stick")
 	}
 }
 
-func TestForMCPProductDenied(t *testing.T) {
+func TestForCLIProductDenied(t *testing.T) {
 	table := config.CanonicalSurfaceTable()
 	deniedFlag := false
 	row := table["template.list"]
-	row.MCP = &deniedFlag
+	row.CLI = &deniedFlag
 	row.Reason = "${{intl:operations.denied.agent_delete}}"
 	table["template.list"] = row
 
-	svc := NewService(nil, contract.ProjectSelector{}).ForMCP()
+	svc := NewService(nil, contract.ProjectSelector{}).ForCLI()
 	svc.SetSnapshot(snapshotWithSurfaces(t, table))
 	_, err := svc.ListTemplates(context.Background(), contract.ListTemplatesInput{})
 	var denied OperationDenied
 	if !errors.As(err, &denied) {
 		t.Fatalf("ListTemplates err = %v, want OperationDenied", err)
 	}
-	if denied.Surface != SurfaceMCP || denied.Op != "template.list" {
+	if denied.Surface != SurfaceCLI || denied.Op != "template.list" {
 		t.Fatalf("denied = %+v", denied)
 	}
 	if denied.Reason != "${{intl:operations.denied.agent_delete}}" {
@@ -62,7 +62,7 @@ func TestNewServiceZeroSurfaceAllowsProduct(t *testing.T) {
 	row := table["template.list"]
 	row.CLI = &deniedFlag
 	row.TUI = &deniedFlag
-	row.MCP = &deniedFlag
+	row.CLI = &deniedFlag
 	row.Reason = "all off"
 	table["template.list"] = row
 
@@ -118,22 +118,22 @@ func TestForCLIVsForTUI(t *testing.T) {
 	}
 }
 
-func TestForMCPListCommandsDenied(t *testing.T) {
+func TestForCLIListCommandsDenied(t *testing.T) {
 	table := config.CanonicalSurfaceTable()
 	deniedFlag := false
 	row := table["command.list"]
-	row.MCP = &deniedFlag
+	row.CLI = &deniedFlag
 	row.Reason = "commands hidden from agents"
 	table["command.list"] = row
 
-	svc := NewService(nil, contract.ProjectSelector{}).ForMCP()
+	svc := NewService(nil, contract.ProjectSelector{}).ForCLI()
 	svc.SetSnapshot(snapshotWithSurfaces(t, table))
 	_, err := svc.ListCommands(context.Background())
 	var denied OperationDenied
 	if !errors.As(err, &denied) {
 		t.Fatalf("ListCommands err = %v, want OperationDenied", err)
 	}
-	if denied.Surface != SurfaceMCP || denied.Op != "command.list" {
+	if denied.Surface != SurfaceCLI || denied.Op != "command.list" {
 		t.Fatalf("denied = %+v", denied)
 	}
 }

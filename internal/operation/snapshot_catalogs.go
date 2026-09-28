@@ -16,7 +16,7 @@ import (
 // Snapshots arrive immutable; the closures defensively copy slices /
 // maps before returning so callers that mutate the returned value
 // cannot leak into other readers. The cost is one O(n) copy per
-// MCP catalog call (already O(n) before the migration via the bundle
+// agent catalog call (already O(n) before the migration via the bundle
 // snapshots taken at runtime build time).
 
 func snapshotTemplateCatalog(snap *config.Snapshot) TemplateCatalog {
@@ -110,11 +110,11 @@ func snapshotPersonaCatalog(snap *config.Snapshot) contract.PersonaCatalog {
 }
 
 func snapshotCommandCatalog(snap *config.Snapshot) contract.CommandCatalog {
-	return func() map[string]contract.MCPCommandBinding {
-		commands := snap.MCPCommands()
-		out := make(map[string]contract.MCPCommandBinding, len(commands))
+	return func() map[string]contract.CommandBinding {
+		commands := snap.Commands()
+		out := make(map[string]contract.CommandBinding, len(commands))
 		for name, spec := range commands {
-			out[name] = contract.MCPCommandBinding{
+			out[name] = contract.CommandBinding{
 				Persona:      spec.Persona,
 				Laws:         append([]string(nil), spec.Laws...),
 				LawsDisabled: append([]string(nil), spec.LawsDisabled...),

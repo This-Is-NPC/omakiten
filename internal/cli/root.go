@@ -59,12 +59,7 @@ type runtime struct {
 	bus                events.Bus
 	hooksEngine        *hooks.Engine
 	notificationAction *actions.NotificationShowAction
-	// cache is the per-project BundleCache the CLI invocation seeds at
-	// boot. Phase 3c keeps the cache size at 1 for the single-shot CLI
-	// path (one --project per invocation), but exposing the cache lets
-	// MCP-style multi-project surfaces re-resolve through the same
-	// handle as the agentruntime composition root. Subcommands that
-	// want a project-aware bundle call ResolveProjectRuntime.
+	// cache holds the project runtime seeded for this CLI invocation.
 	cache *agentruntime.BundleCache
 	// projectID is the cache key for the boot-seeded entry — 0 when no
 	// --project flag was supplied (the default fallback used by every
@@ -182,7 +177,7 @@ func addRootCommands(cmd *cobra.Command, opts *runtimeOptions, version string, i
 		run = interactive[0]
 	}
 	cmd.AddCommand(newTUICommand(opts, version, run))
-	cmd.AddCommand(newMCPCommand(opts))
+	cmd.AddCommand(newCommandCommand(opts))
 	cmd.AddCommand(newSetupCommand(opts))
 	cmd.AddCommand(newUninstallCommand(opts))
 	cmd.AddCommand(newUpdateCommand(opts))

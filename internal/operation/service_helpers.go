@@ -150,7 +150,7 @@ func blockedWork(tasks []domain.Task, dependencies []domain.TaskDependency, regi
 	return out
 }
 
-// truncateBody enforces config.mcp.max_comment_chars on a comment body.
+// truncateBody enforces config.agent.max_comment_chars on a comment body.
 // When the body fits the budget, it is returned unchanged; when it exceeds,
 // it is cut at the budget and an ellipsis is appended (`…`). The cut respects
 // rune boundaries so we never split a multi-byte character. Callers should

@@ -11,6 +11,7 @@ import (
 
 	"omakiten/internal/config"
 	"omakiten/internal/domain"
+	"omakiten/internal/installer"
 	"omakiten/internal/sqlite"
 )
 
@@ -312,10 +313,22 @@ func newConfigRefreshDefaultsCommand(opts *runtimeOptions) *cobra.Command {
 						"error":          domain.SafeError(err),
 					})
 				}
-				return map[string]any{"root": root, "refreshed": true}, nil
+				return refreshIntegrationSkills(root, configPath)
 			})
 		},
 	}
+}
+
+func refreshIntegrationSkills(root, configPath string) (map[string]any, error) {
+	skillRoot := ""
+	if filepath.Base(root) == config.RepoLocalDirName {
+		skillRoot = filepath.Dir(root)
+	}
+	skills, err := installer.RefreshSkills(skillRoot)
+	if err != nil {
+		return nil, domain.NewError(domain.ErrUpdateFailed, "integration skill refresh failed: "+err.Error(), map[string]any{"root": root, "repair_command": updateDefaultsManualCommandForConfig(configPath)})
+	}
+	return map[string]any{"root": root, "refreshed": true, "skills": skills}, nil
 }
 
 func newConfigSurfacesCommand(opts *runtimeOptions) *cobra.Command {

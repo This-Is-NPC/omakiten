@@ -269,7 +269,7 @@ func (m Screen) studioPreviewReport() bundledraft.Report {
 		return m.studioDraft.ReportText(m.t)
 	}
 	if snap := m.repos.activeSnapshot(); snap != nil {
-		bundle := config.Bundle{MCPCommands: snap.MCPCommands(), Skills: snap.Skills(), AllSkills: snap.AllSkills(), Laws: snap.Laws(), AllLaws: snap.AllLaws(), Personas: snap.Personas(), AllPersonas: snap.AllPersonas(), Templates: snap.Templates(), AllTemplates: snap.AllTemplates(), Workflows: []config.Workflow{snapshotWorkflowToConfig(snap.Workflow())}, Config: config.Settings{Workflow: config.WorkflowSettings{Active: snap.Workflow().Key}}}
+		bundle := config.Bundle{Commands: snap.Commands(), Skills: snap.Skills(), AllSkills: snap.AllSkills(), Laws: snap.Laws(), AllLaws: snap.AllLaws(), Personas: snap.Personas(), AllPersonas: snap.AllPersonas(), Templates: snap.Templates(), AllTemplates: snap.AllTemplates(), Workflows: []config.Workflow{snapshotWorkflowToConfig(snap.Workflow())}, Config: config.Settings{Workflow: config.WorkflowSettings{Active: snap.Workflow().Key}}}
 		return bundledraft.Report{Original: bundle, Candidate: bundle, DiffSummary: []string{m.tr("tui.studio.diff.no_changes", "No changes")}}
 	}
 	return bundledraft.Report{DiffSummary: []string{m.tr("tui.studio.diff.no_changes", "No changes")}}

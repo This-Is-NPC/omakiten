@@ -6,7 +6,7 @@ Source files inspected for this decision:
 
 - `internal/config/loader.go` (`readWiringDetailed`, import expansion, `Bundle.SourcePaths`).
 - `internal/config/import_resolver.go` (`from` / `merge_from` semantics and imported source tracking).
-- `internal/config/bundle.go` (`Bundle`, `wiring`, `MCPCommandSpec`, workflow structs).
+- `internal/config/bundle.go` (`Bundle`, `wiring`, `CommandSpec`, workflow structs).
 - `internal/config/saver.go` (`SaveBundle`, `bundleToWiring`).
 - `internal/app/bundle_editor.go` (`BundleEditor.ApplyWithFiles`).
 - `internal/operation/service_command.go` (`ResolveCommand`, `renderCommandMarkdown`).
@@ -20,7 +20,7 @@ The top-level TUI order after Studio lands is:
 |---|---|---|
 | `01` | `Tasks` | Task execution surfaces: board, table, graph, plans. |
 | `02` | `Stats` | Project metrics, logs, and operational inspection. |
-| `03` | `Studio` | Workflow and MCP prompt authoring for the active YAML profile. |
+| `03` | `Studio` | Workflow and agent playbook authoring for the active YAML profile. |
 | `04` | `Settings` | Runtime preferences, entity catalogs, tags, and project-level pickers. |
 
 Studio MVP subs, in palette order (`31`–`34`; `,` / `//` cycle these four):
@@ -28,7 +28,7 @@ Studio MVP subs, in palette order (`31`–`34`; `,` / `//` cycle these four):
 | Sub | Palette | Scope |
 |---|---|---|
 | `Workflow` | `31` | Buckets, transitions, and guards as one list. Permissions, reorder, key edits, add/remove edges. |
-| `Commands` | `32` | `mcp_commands` bindings: persona, skills, laws, laws_disabled, templates, plus composed prompt preview. |
+| `Commands` | `32` | `commands` bindings: persona, skills, laws, laws_disabled, templates, plus composed prompt preview. |
 | `Personas` | `33` | Wired persona roster and reverse command index. RELATED skill, law, command, and empty-state text is sanitized at the terminal render sink; harmless Unicode is preserved. |
 | `Hooks` | `34` | Configured HookSpecs with per-index `hook.executed` history. |
 
@@ -42,7 +42,7 @@ Settings remains the owner for non-Studio configuration:
 | `Laws`, `Personas`, `Skills`, `Templates` | Remain in Settings as entity catalogs and file-backed entity editors. Studio Commands only edits command wiring references to these entities. |
 | `Tags` | Remains in Settings. Tags are operational metadata, not YAML authoring. |
 | Workflow/bucket/guard concepts | Move to Studio. Settings should not expose write controls for workflow structure once Studio exists. |
-| MCP command bindings | Move to Studio Commands. Settings may show related entity availability but should not edit `mcp_commands`. |
+| CLI command bindings | Move to Studio Commands. Settings may show related entity availability but should not edit `commands`. |
 
 ## Supported MVP Edits
 
@@ -72,7 +72,7 @@ Supported command edits:
 
 | Edit | Rules |
 |---|---|
-| `persona` | Set or clear `mcp_commands.<name>.persona`; warn or validate using the same missing-reference behavior as the loader. |
+| `persona` | Set or clear `commands.<name>.persona`; warn or validate using the same missing-reference behavior as the loader. |
 | `skills` | Set command skill subset. For schema v2 personas, every selected skill must be in the persona `skill_repertoire`. |
 | `laws` | Set command-specific added laws. |
 | `laws_disabled` | Set command-specific law removals. A law must not appear in both `laws` and `laws_disabled` for the same command. |
@@ -131,7 +131,7 @@ Current behavior:
 |---|---|---|
 | `workflows` | May be inline, `from: ./file.yaml`, or use nested `merge_from`. | Imports are expanded before strict decode; `Bundle.Workflows` contains only the resolved values. |
 | `personas` wiring | May be inline or imported as YAML wiring. Persona bodies remain separate Markdown files. | `Bundle.Personas` contains picked resolved personas with wiring applied; import provenance for each wiring entry is not retained. |
-| `mcp_commands` | May be inline, `from: ./file.yaml`, or use nested `merge_from`. | `Bundle.MCPCommands` is a resolved map; per-entry import provenance is not retained. |
+| `commands` | May be inline, `from: ./file.yaml`, or use nested `merge_from`. | `Bundle.Commands` is a resolved map; per-entry import provenance is not retained. |
 
 `LoadBundle` records only `Bundle.SourcePaths`: the active profile plus every imported file in first-encounter order. `SaveBundle` writes the resolved `Bundle` back to the active profile path by converting it to the canonical `wiring` struct. `BundleEditor.ApplyWithFiles` writes that same active profile path atomically. There is no field-level source map for imported workflow, persona wiring, or command entries.
 
@@ -148,7 +148,7 @@ Detection requirement for downstream implementation:
 - If the top-level target block in the active profile is a value-level `from:` import, block all Studio edits for that block.
 - If a target subtree is introduced by `merge_from`, block edits to imported keys unless the draft layer can prove the edited key is explicitly overridden inline in the active profile.
 - When provenance cannot be proven, choose the blocked state rather than writing to the active profile and flattening imports.
-- Tests must cover imported `workflows`, imported `mcp_commands`, and imported `personas` wiring before enabling write-capable editors for those areas.
+- Tests must cover imported `workflows`, imported `commands`, and imported `personas` wiring before enabling write-capable editors for those areas.
 
 This keeps imported-block behavior settled without silently flattening modular config or writing to the wrong file.
 
@@ -183,7 +183,7 @@ Prompt-preview requirements:
 
 - Start from the candidate bundle, not the last persisted snapshot, when there are unapplied Studio changes.
 - Resolve the command playbook from the bound `okt-<slug>-playbook` skill.
-- Include persona body when `mcp_commands.<name>.persona` resolves.
+- Include persona body when `commands.<name>.persona` resolves.
 - Include command-selected skills, falling back exactly like `ResolveCommand`: command `skills`, then persona `skill_repertoire`.
 - Include effective laws as `global laws + persona laws + command laws + template laws - laws_disabled`, deduped in first-seen order.
 - Include templates using the same metadata rendering as `renderCommandMarkdown`.
@@ -193,7 +193,7 @@ Prompt-preview requirements:
 Implemented shape:
 
 - `agent.ResolveCommandFromCatalog` is the pure resolver shared by runtime `ResolveCommand` and Studio candidate prompt preview.
-- `resolveStudioCandidateCommand` projects candidate bundle entities into agent catalogs and passes candidate `mcp_commands` plus `config.languages.agent_output` to that shared resolver.
+- `resolveStudioCandidateCommand` projects candidate bundle entities into agent catalogs and passes candidate `commands` plus `config.languages.agent_output` to that shared resolver.
 - `TestStudioPreviewRendersCandidatePrompt` covers persona, skills, inherited/template laws, `laws_disabled` subtraction, templates, and output language rendering from candidate state on Commands; agent resolver tests cover entity-sourced playbook composition.
 
 ## Risks and Mitigations
@@ -203,8 +203,8 @@ Implemented shape:
 | Flattening imported config by saving the resolved bundle to the active profile. | Block imported target blocks until field-level provenance and write-through are implemented. |
 | Corrupting active tasks by editing bucket IDs. | Do not support direct ID editing in MVP; generated IDs only for new buckets. |
 | Breaking guard/view references during bucket key edits. | Rewrite all documented key references in the candidate and validate before apply. |
-| Confusing Settings/Studio split. | Studio owns workflow and MCP command authoring; Settings owns runtime preferences and entity catalogs. |
-| Preview drift from real MCP prompts. | Reuse `ResolveCommand` semantics or enforce parity tests against it. |
+| Confusing Settings/Studio split. | Studio owns workflow and CLI command authoring; Settings owns runtime preferences and entity catalogs. |
+| Preview drift from real agent playbooks. | Reuse `ResolveCommand` semantics or enforce parity tests against it. |
 | SQLite accidentally becoming config storage. | Keep Studio writes file-backed only; SQLite remains operational data only. |
 
 ## Downstream Acceptance Notes
@@ -214,4 +214,4 @@ Before any Studio write-capable task is accepted, it must cite this document and
 - Draft validation runs before disk writes.
 - Imported targets show the exact blocked message above.
 - Bucket key edits update the documented key references and leave ID-based transitions untouched.
-- Prompt preview output is derived from the same composition rules as MCP commands.
+- Prompt preview output is derived from the same composition rules as agent playbooks.

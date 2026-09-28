@@ -9,7 +9,7 @@ import (
 	"omakiten/internal/domain"
 )
 
-// Search is the MCP entry for the unified FTS5 search tool. Project
+// Search is the agent entry for the unified FTS5 search tool. Project
 // resolution differs from the rest of the agent surface: a missing
 // project / project_id pair means "cross-project" instead of falling
 // back to the CWD-resolved selector. Callers searching cross-entity

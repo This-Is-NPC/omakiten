@@ -120,7 +120,7 @@ keys:
   cli.project.resume.short: "Show distribution, likely next work, blocked work, and dependencies"
   cli.project.edit.short: "Update the active project description"
   cli.project.edit.flag.description: "new project description"
-  cli.projects.short: "Project 生命周期 utilities (delete — destructive ops)"
+  cli.projects.short: "Project 生命周期 utilities"
   cli.projects.delete.short: "Hard-delete 已注册 project 及每条依赖行（不可逆）"
   cli.projects.delete.long: |-
     按数字 id 或 slug 解析 project，将 recovery
@@ -198,22 +198,10 @@ keys:
   cli.template.short: "列出并显示已加载的 templates（基于 templates/ 下的文件）"
   cli.template.list.short: "列出已加载的 templates"
   cli.template.show.short: "显示一个 template（frontmatter + 正文）"
-  cli.mcp.short: "通过 MCP 暴露 Omakiten agent intents"
-  cli.mcp.prompt.short: "将解析后的 okt-* prompt markdown 渲染到 stdout"
-  cli.mcp.prompt.flag.list: "按层级分组列出命令面，而不是渲染正文"
-  cli.mcp.prompt.list.title: "命令面 — %d 个命令\n"
-  cli.mcp.prompt.list.orchestrators: "\n编排器 (%d) — 裸命令，指挥路径\n"
-  cli.mcp.prompt.list.system: "\n系统 (%d) — 与工具对话，无项目对象\n"
-  cli.mcp.prompt.list.granular: "\n细粒度 (%d) — okt-<object>-<verb>，精准\n"
-  cli.mcp.prompt.list.object: "%s (%d)\n"
-  cli.mcp.tools.short: "列出 Omakiten MCP tool 定义"
-  cli.mcp.call.short: "使用 JSON 输入对象调用 Omakiten MCP tool"
-  cli.mcp.serve.short: "运行 Omakiten MCP stdio 服务器"
-  cli.mcp.install.short: "在 AI harness 中配置 Omakiten MCP 服务器"
   cli.workflow.short: "检查 workflow 配置"
   cli.workflow.show.short: "显示活动的 workflow"
   cli.workflow.orphan.short: "预览或重新绑定那些 bucket 被 workflow 切换停用的 tasks"
-  notice.subtask_kit.enabled.mcp_resolves_at_root: "Sub-task kit 已启用：MCP commands、personas、laws、templates 和 skills 仍从 project root kit 解析。"
+  notice.subtask_kit.enabled.commands_resolve_at_root: "Sub-task kit 已启用：agent commands、personas、laws、templates 和 skills 仍从 project root kit 解析。"
   cli.config.init.long: |-
     在所选 scope 中创建一个独立的 config 安装。
 
@@ -266,14 +254,14 @@ keys:
     读取和写入活动 omakiten.yaml 中的 config.languages.{cli,tui,agent_output}。
     languages.cli 和 languages.tui 会针对 languages/ 下发现的 language
     packs 进行验证;languages.agent_output 是自由形式,逐字转发到
-    MCP prompt 合成器。
+    agent playbook 合成器。
 
     默认目标是解析后的 omakiten.yaml(存在时为 repo-local .omakiten/,
     否则为 user-global ConfigRoot)。在 set/reset 上使用 --global 将
     写入固定到 user-global 文件,无论是否存在 repo-local。
 
     写入触发 BundleCache.Reload,以便后续的 okt 调用和长时间运行的
-    工具(TUI、MCP 服务器)观察到新的选择。当前 CLI 进程和任何已在
+    工具(TUI、CLI 服务器)观察到新的选择。当前 CLI 进程和任何已在
     运行的 CLI 调用不会被追溯更新;只有后续调用会获取更改。
   cli.config.language.set.long: |-
     示例:
@@ -285,7 +273,6 @@ keys:
     针对 languages/ 下发现的语言代码进行验证。--agent 接受任何非空
     字符串(或 "" 以清除)。--global 将写入固定到 user-global 的
     omakiten.yaml。
-  cli.mcp.install.long: "将 Omakiten MCP 服务器配置写入 harness config 文件(例如 Claude Desktop 或 OpenCode)。"
   cli.workflow.orphan.long: |-
     在 preset 切换或 omakiten.yaml 编辑后,指向不再存在的 workflow
     bucket 的 tasks 是孤儿。默认情况下,此命令打印迁移计划(哪些
@@ -333,12 +320,6 @@ keys:
   cli.init.flag.name: "项目名称"
   cli.init.flag.slug: "项目 slug"
   cli.init.flag.root: "项目根路径"
-  cli.init.flag.enable-mcp: "为支持的 harness 启用全局 MCP agent 访问"
-  cli.init.flag.mcp-harness: "要配置的 MCP harness"
-  cli.init.flag.mcp-config: "MCP harness config 路径"
-  cli.init.flag.mcp-command: "写入 harness MCP config 的命令"
-  cli.init.flag.mcp-dry-run: "预览 MCP harness config 更改,不写入"
-  cli.init.flag.mcp-force: "替换现有的 Omakiten MCP harness 条目"
   cli.init.flag.preset: "要复制到 .omakiten/config/<preset>.yaml 并激活的官方 workflow preset"
   cli.init.flag.preset-force: "覆盖现有的 .omakiten preset config"
   cli.config.init.flag.scope: "要 seed 的 config 层:global 或 local"
@@ -406,12 +387,6 @@ keys:
   cli.persona.edit.flag.skill: "skill id(替换现有集合)"
   cli.persona.edit.flag.skill-slug: "skill slug(替换现有集合)"
   cli.persona.edit.flag.no-edit: "不打开 $EDITOR(仅应用标志驱动的更新)"
-  cli.mcp.call.flag.input: "JSON 输入对象"
-  cli.mcp.install.flag.harness: "目标 harness (%s)"
-  cli.mcp.install.flag.config-path: "harness config 文件路径(默认:harness 默认值)。接受任何可写路径;不强制目录限制——默认使用 harness 的标准位置。"
-  cli.mcp.install.flag.command: "运行 omakiten 的命令(默认:当前可执行文件)"
-  cli.mcp.install.flag.dry-run: "预览更改,不写入"
-  cli.mcp.install.flag.force: "覆盖现有的 Omakiten MCP config"
   cli.workflow.orphan.flag.confirm: "应用重新绑定;不带此标志时命令打印计划并退出"
   cli.workflow.orphan.flag.dry-run: "打印迁移计划而不应用(在 --confirm 缺席时为默认)"
   cli.err.config_invalid: "config 无效"
@@ -473,7 +448,7 @@ keys:
   tui.empty.graph_no_deps: "暂无 task 依赖。"
   tui.empty.home_no_projects: "无项目"
   tui.empty.home_no_projects_full: "未注册任何项目。"
-  tui.empty.logs: "暂无活动。使用 CLI、TUI 或 MCP 与 Omakiten 交互。"
+  tui.empty.logs: "暂无活动。使用 CLI、TUI 或 CLI 与 Omakiten 交互。"
   tui.empty.stats: "此期间未记录任何 agent 活动。"
   tui.empty.table_no_tasks: "暂无 tasks。按 n 创建一个。"
   tui.empty.table_filtered: "没有 task 匹配已配置的表格过滤器。"
@@ -848,7 +823,7 @@ keys:
   tui.studio.buckets.label.position: "position"
   tui.studio.buckets.label.task_delete: "task delete"
   tui.studio.buckets.label.task_edit: "task edit"
-  tui.studio.commands.bindings_empty: "No known MCP commands."
+  tui.studio.commands.bindings_empty: "No known agent commands."
   tui.studio.commands.bindings_header: "COMMAND BINDINGS"
   tui.studio.commands.candidate_diff: "Candidate diff:"
   tui.studio.commands.field.laws: "laws"
@@ -873,12 +848,12 @@ keys:
   tui.studio.commands.msg.template_selection_changed: "template selection changed"
   tui.studio.commands.selected: "SELECTED: %s"
   tui.studio.commands.validation: "Validation: %s"
-  tui.studio.commands.warn.missing_law: "mcp_commands.%s.laws: missing law %q"
-  tui.studio.commands.warn.missing_law_disabled: "mcp_commands.%s.laws_disabled: missing law %q"
-  tui.studio.commands.warn.missing_persona: "mcp_commands.%s.persona: missing persona %q"
-  tui.studio.commands.warn.missing_skill: "mcp_commands.%s.skills: missing skill %q"
-  tui.studio.commands.warn.missing_template: "mcp_commands.%s.templates: missing template %q"
-  tui.studio.commands.warn.unknown_command: "mcp_commands.%s: unknown MCP command"
+  tui.studio.commands.warn.missing_law: "commands.%s.laws: missing law %q"
+  tui.studio.commands.warn.missing_law_disabled: "commands.%s.laws_disabled: missing law %q"
+  tui.studio.commands.warn.missing_persona: "commands.%s.persona: missing persona %q"
+  tui.studio.commands.warn.missing_skill: "commands.%s.skills: missing skill %q"
+  tui.studio.commands.warn.missing_template: "commands.%s.templates: missing template %q"
+  tui.studio.commands.warn.unknown_command: "commands.%s: unknown agent playbook"
   tui.studio.commands.warnings_header: "Command warnings:"
   tui.studio.diff.bucket_added: "Bucket added: %s"
   tui.studio.diff.bucket_key_changed: "Bucket key changed: %s -> %s"
@@ -999,7 +974,7 @@ keys:
   tui.studio.personas.kicker: "PERSONAS"
   tui.studio.personas.known: "known"
   tui.studio.personas.msg.no_changes_to_save: "no Studio Personas changes to save"
-  tui.studio.personas.related.commands: "// COMMANDS (mcp_commands.persona = this slug)"
+  tui.studio.personas.related.commands: "// COMMANDS (commands.persona = this slug)"
   tui.studio.personas.related.heading: "RELATED"
   tui.studio.personas.related.kicker: "%d skills · %d laws · %d commands"
   tui.studio.personas.related.commands_empty: "No commands bind this persona."
@@ -1099,7 +1074,7 @@ keys:
   tui.settings.effective.section.theme: "主题"
   tui.settings.effective.section.template_defaults: "模板默认值"
   tui.settings.effective.section.views: "视图"
-  tui.settings.effective.section.mcp: "mcp"
+  tui.settings.effective.section.agent: "agent"
   tui.settings.effective.section.tui: "tui"
   tui.settings.effective.section.sqlite: "sqlite"
   tui.settings.effective.section.activity_log: "活动日志"
@@ -1375,12 +1350,12 @@ keys:
   notifications.kitten_link.description: "为 tags、依赖和串联支线任务而设的警觉小猫。"
   notifications.kitten_orphan_migration.description: "在 config 切换后,当 tasks 会因新 workflow 的 bucket 集合而成为孤儿时的提示。"
   notifications.kitten_success.description: "为完成的仪式和受祝福的修复而设的骄傲守护小猫。"
-  cli.setup.short: "运行安装后初始选择器(语言 → preset → MCP harness)"
+  cli.setup.short: "运行安装后初始选择器(语言 → preset → skill destination)"
   cli.setup.long: |-
     okt setup 是由 curl|bash 安装程序调用的安装后选择器。
 
     它在一个 bubbletea 程序中走完语言选择(CLI / TUI / agent 输出)、
-    preset 选择和 MCP harness 配置,然后写入 shell rc 中的 okt() 包装器。
+    preset 选择和 skill destination 配置,然后写入 shell rc 中的 okt() 包装器。
     使用 --update 重新运行以重新审视选择。
 
     Headless / 非交互式 shells 跳过每个匹配 env var 已填充的屏幕:
@@ -1390,20 +1365,18 @@ keys:
   cli.setup.flag.tui-lang: "通过设置所选代码跳过 TUI 语言选择器(与 OKT_TUI_LANG= 形式相同)"
   cli.setup.flag.agent-lang: "通过设置所选自由形式值跳过 agent 输出语言提示"
   cli.setup.flag.preset: "通过设置所选 preset 名称跳过 preset 选择器(与 OKT_PRESET= 形式相同)"
-  cli.setup.flag.harnesses: "用 harness 名称的 CSV 跳过 harness 多选(与 OKT_HARNESSES= 形式相同)"
+  cli.setup.flag.harnesses: "Skill destinations: agents, claude-code, or 0 to skip"
   cli.setup.flag.skip-wrapper: "不写入 okt() shell rc 包装器块(当用户通过 dotfiles 管理其 rc 文件时有用)"
-  cli.setup.flag.skip-harnesses: "解析 harness 输入但不调用 `okt mcp setup`(由 shell 测试 + dry-run smoke 检查使用)"
+  cli.setup.flag.skip-harnesses: "Skip installing the integration skill"
   cli.setup.status.preset_written: "=> 活动 workflow preset: %s (%s/.active)"
   cli.setup.status.wrapper_written: "=> okt() shell 包装器已安装到: %s"
   cli.setup.status.wrapper_skipped: "=> 跳过 shell 包装器安装: 未找到 ~/.bashrc 或 ~/.zshrc"
-  cli.setup.status.harness_configured: "=> 为 %s 配置 MCP"
-  cli.setup.status.harness_failed: "   (已跳过 %s, exit %d — 手动重新运行: %s mcp setup --harness %s --force)"
   cli.setup.warn.unknown_preset: "warn: OKT_PRESET=%s 不是支持的 preset; 回退到 %s"
   cli.setup.picker.lang.cli.title: "选择你的 CLI 语言"
   cli.setup.picker.agent.title: "agent 输出语言(自由文本,例如 \"English\" 或 \"简体中文\")"
   cli.setup.picker.agent.placeholder: "en"
   cli.setup.picker.preset.title: "选择你的 workflow preset"
-  cli.setup.picker.harness.title: "配置 MCP harness"
+  cli.setup.picker.harness.title: "Install the Omakiten skill"
   cli.setup.picker.hint.nav: "↑/↓ 导航 · enter 确认 · ctrl+c 退出"
   cli.setup.picker.hint.multi: "↑/↓ 导航 · enter 切换 · tab 确认 · ctrl+c 退出"
   cli.setup.picker.hint.input: "输入以编辑 · enter 确认(空白可以)· ctrl+c 退出"
@@ -1646,5 +1619,14 @@ keys:
   tui.help.stats_insights.title: "Stats · insights"
   tui.help.stats_insights.refresh: "刷新"
 
-  operations.denied.wiring: "Internal composition injector/getter; not available on CLI, TUI, or MCP."
+  operations.denied.wiring: "Internal composition injector/getter; not available on CLI or TUI."
   operations.denied.agent_delete: "Agents cannot delete this resource."
+
+  cli.command.short: "Discover and resolve configured agent playbooks"
+  cli.command.list.short: "List available playbooks"
+  cli.command.resolve.short: "Resolve persona, skills, laws and templates"
+  cli.command.resolve.flag.arguments: "Playbook arguments as a JSON object"
+  cli.init.flag.skill: "Install the Omakiten skill in this project"
+  cli.init.flag.claude-code: "Also install the skill for Claude Code (requires --skill)"
+
+  cli.projects.list.short: "List registered projects"

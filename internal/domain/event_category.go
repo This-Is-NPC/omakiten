@@ -33,7 +33,6 @@ const (
 	EventCategoryAudit EventCategory = "audit"
 	// EventCategoryHook groups hook dispatch events.
 	EventCategoryHook EventCategory = "hook"
-	// EventCategoryToolCall groups cli/mcp/tui per-invocation activity
 	// log entries.
 	EventCategoryToolCall EventCategory = "tool_call"
 	// EventCategoryTrick groups TUI palette submissions.

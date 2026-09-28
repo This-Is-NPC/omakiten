@@ -17,7 +17,7 @@ Invoke each target via Bash and capture stdout, stderr, and the exit code.
 
 ## Report in a table
 
-Call `templates.show comment-check-report` for the scaffold, fill it — one row per target with status (`pass` / `fail` / `skip` / `yellow`) and a one-line failing tail — then persist it with `comments.add` on the task (`author_type=agent`). Quote the last ≤10 lines of stderr verbatim per failed target; never summarize errors. Read-only — never apply fixes, never re-run after editing.
+Call `okt template show comment-check-report` for the scaffold, fill it — one row per target with status (`pass` / `fail` / `skip` / `yellow`) and a one-line failing tail — then persist it with `okt comment add` on the task (`author_type=agent`). Quote the last ≤10 lines of stderr verbatim per failed target; never summarize errors. Read-only — never apply fixes, never re-run after editing.
 
 ## Handoff
 

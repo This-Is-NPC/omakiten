@@ -318,7 +318,7 @@ type narutoKitFile struct {
 		SchemaVersion   int      `yaml:"schema_version"`
 		SkillRepertoire []string `yaml:"skill_repertoire"`
 	} `yaml:"personas"`
-	MCPCommands map[string]config.MCPCommandSpec `yaml:"mcp_commands"`
+	Commands map[string]config.CommandSpec `yaml:"commands"`
 }
 
 type shippedEntityFM struct {
@@ -355,8 +355,8 @@ func loadNarutoKitFile() (narutoKitFile, error) {
 	if err := yaml.Unmarshal(raw, &kit); err != nil {
 		return narutoKitFile{}, fmt.Errorf("naruto.yaml: %w", err)
 	}
-	if len(kit.Personas) == 0 || len(kit.MCPCommands) == 0 {
-		return narutoKitFile{}, fmt.Errorf("naruto.yaml: missing personas or mcp_commands")
+	if len(kit.Personas) == 0 || len(kit.Commands) == 0 {
+		return narutoKitFile{}, fmt.Errorf("naruto.yaml: missing personas or commands")
 	}
 	return kit, nil
 }
@@ -429,7 +429,7 @@ func loadNarutoStudioEntities(skillSet, lawSet map[string]struct{}) ([]config.Sk
 	return skills, laws, nil
 }
 
-func loadNarutoStudioKit() (personas []config.Persona, skills []config.Skill, laws []config.Law, commands map[string]config.MCPCommandSpec, err error) {
+func loadNarutoStudioKit() (personas []config.Persona, skills []config.Skill, laws []config.Law, commands map[string]config.CommandSpec, err error) {
 	kit, err := loadNarutoKitFile()
 	if err != nil {
 		return nil, nil, nil, nil, err
@@ -438,7 +438,7 @@ func loadNarutoStudioKit() (personas []config.Persona, skills []config.Skill, la
 	if err != nil {
 		return nil, nil, nil, nil, err
 	}
-	for _, spec := range kit.MCPCommands {
+	for _, spec := range kit.Commands {
 		for _, slug := range spec.Laws {
 			lawSet[slug] = struct{}{}
 		}
@@ -447,7 +447,7 @@ func loadNarutoStudioKit() (personas []config.Persona, skills []config.Skill, la
 		}
 	}
 	skills, laws, err = loadNarutoStudioEntities(skillSet, lawSet)
-	return personas, skills, laws, kit.MCPCommands, err
+	return personas, skills, laws, kit.Commands, err
 }
 
 func mergeEntitiesBySlug[T any](base []T, extra []T, slug func(T) string) []T {
@@ -479,7 +479,7 @@ func studioPersonasGoldenBundle() config.Bundle {
 	}
 	bundle.Personas = personas
 	bundle.AllPersonas = personas
-	bundle.MCPCommands = commands
+	bundle.Commands = commands
 	bundle.Skills = mergeEntitiesBySlug(nil, skills, func(s config.Skill) string { return s.Slug })
 	bundle.AllSkills = bundle.Skills
 	bundle.Laws = mergeEntitiesBySlug(bundle.Laws, laws, func(l config.Law) string { return l.Slug })

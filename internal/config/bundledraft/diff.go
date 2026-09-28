@@ -26,7 +26,7 @@ func Diff(original, candidate config.Bundle, text Text) []string {
 			formatStringList(original.Config.Views.Table.Filter.Bucket, text),
 			formatStringList(candidate.Config.Views.Table.Filter.Bucket, text)))
 	}
-	out = append(out, diffMCPCommands(original.MCPCommands, candidate.MCPCommands, text)...)
+	out = append(out, diffCommands(original.Commands, candidate.Commands, text)...)
 	if len(out) == 0 {
 		if !reflect.DeepEqual(original, candidate) {
 			return []string{Tr(text, "tui.studio.diff.configuration_changed", "Configuration changed")}
@@ -156,7 +156,7 @@ func formatStringList(values []string, text Text) string {
 	return strings.Join(values, ", ")
 }
 
-func diffMCPCommands(original, candidate map[string]config.MCPCommandSpec, text Text) []string {
+func diffCommands(original, candidate map[string]config.CommandSpec, text Text) []string {
 	if reflect.DeepEqual(original, candidate) {
 		return nil
 	}

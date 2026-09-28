@@ -14,7 +14,7 @@ Score the candidates with an explicit method — MoSCoW, RICE, or value-vs-effor
 
 ## Fill the bound scaffold
 
-Call `templates.show` for the bound scoring scaffold, fill it, and persist it with `comments.add` (task-scoped when a task id exists, project-scoped when ranking pre-task candidates). Stay read-only with respect to code and task bodies.
+Call `okt template show` for the bound scoring scaffold, fill it, and persist it with `okt comment add` (task-scoped when a task id exists, project-scoped when ranking pre-task candidates). Stay read-only with respect to code and task bodies.
 
 ## Handoff
 

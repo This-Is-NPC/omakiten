@@ -19,12 +19,12 @@ import (
 // row.created_at stay in the same lexicographic space.
 const logsSinceLayout = "2006-01-02T15:04:05Z"
 
-// ListLogs implements the `logs.list` MCP tool. It returns rows from
+// ListLogs implements the `logs.list` operation. It returns rows from
 // the unified events log scoped to the active project and shaped with
 // a rendered `summary` per row so agents see human-readable text
 // without parsing the payload JSON.
 //
-// Defaults are applied here so MCP callers can pass nothing and still
+// Defaults are applied here so agent callers can pass nothing and still
 // get a useful 30-day window of every event category:
 //
 //   - Empty categories  → no category filter (every event_type).

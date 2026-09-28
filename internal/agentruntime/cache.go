@@ -7,8 +7,6 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
-	"sort"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -114,9 +112,6 @@ type BundleCache struct {
 	// project/CWD. Zero value when no selector was installed (rare
 	// boot shapes that resolve project per call).
 	selector contract.ProjectSelector
-
-	notifyMu          sync.RWMutex
-	onSurfacesChanged func()
 }
 
 // NewBundleCache constructs an empty cache. Open seeds the first entry
@@ -148,75 +143,6 @@ func (c *BundleCache) projectSelector() contract.ProjectSelector {
 	c.selectorMu.RLock()
 	defer c.selectorMu.RUnlock()
 	return c.selector
-}
-
-// SetSurfacesChangedNotify installs a hook fired after a successful
-// rebuild when the surfaces: fingerprint changes. The callback must
-// not block — Reload returns as soon as it returns. Typical wiring is
-// a non-blocking send on a buffered channel that mcp.ServeNotify reads.
-func (c *BundleCache) SetSurfacesChangedNotify(fn func()) {
-	c.notifyMu.Lock()
-	c.onSurfacesChanged = fn
-	c.notifyMu.Unlock()
-}
-
-func (c *BundleCache) fireSurfacesChanged() {
-	c.notifyMu.RLock()
-	fn := c.onSurfacesChanged
-	c.notifyMu.RUnlock()
-	if fn != nil {
-		fn()
-	}
-}
-
-func (c *BundleCache) maybeNotifySurfacesChanged(old, next *ProjectRuntime) {
-	if old == nil || next == nil {
-		return
-	}
-	if surfacesFingerprint(old.Snapshot) == surfacesFingerprint(next.Snapshot) {
-		return
-	}
-	c.fireSurfacesChanged()
-}
-
-func surfacesFingerprint(snap *config.Snapshot) string {
-	if snap == nil {
-		return ""
-	}
-	table := snap.Surfaces()
-	if len(table) == 0 {
-		return ""
-	}
-	slugs := make([]string, 0, len(table))
-	for slug := range table {
-		slugs = append(slugs, slug)
-	}
-	sort.Strings(slugs)
-	var b strings.Builder
-	for _, slug := range slugs {
-		row := table[slug]
-		b.WriteString(slug)
-		b.WriteByte('=')
-		writeSurfaceBit(&b, row.CLI)
-		writeSurfaceBit(&b, row.TUI)
-		writeSurfaceBit(&b, row.MCP)
-		b.WriteByte('|')
-		b.WriteString(row.Reason)
-		b.WriteByte(';')
-	}
-	return b.String()
-}
-
-func writeSurfaceBit(b *strings.Builder, p *bool) {
-	if p == nil {
-		b.WriteByte('?')
-		return
-	}
-	if *p {
-		b.WriteByte('1')
-		return
-	}
-	b.WriteByte('0')
 }
 
 // Get returns the cached runtime for projectID without consulting the
@@ -497,7 +423,6 @@ func (c *BundleCache) commitReload(ctx context.Context, projectID int64, old, ru
 	}
 	if old != nil {
 		c.maybeEmitSubtaskKitNotice(ctx, projectID, old.Snapshot, runtime.Snapshot)
-		c.maybeNotifySurfacesChanged(old, runtime)
 	}
 }
 
@@ -764,12 +689,11 @@ func buildProjectRuntime(ctx context.Context, store *sqlite.Store, cs *configsto
 	// builds find no rows to update. Errors are swallowed so a hot
 	// transient (FK lock, etc.) cannot block runtime composition.
 	svc.SetSettings(operation.ServiceSettings{
-		RecentCommentLimit:       bundle.Config.MCP.RecentCommentLimit,
-		MaxCommentChars:          bundle.Config.MCP.MaxCommentChars,
-		IncludeWorkflow:          *bundle.Config.MCP.IncludeWorkflowInContinue,
-		CachePrompts:             *bundle.Config.MCP.CachePrompts,
-		NextWorkLimit:            bundle.Config.MCP.NextWorkLimit,
-		SimilarTaskLimit:         bundle.Config.MCP.SimilarTaskLimit,
+		RecentCommentLimit:       bundle.Config.Agent.RecentCommentLimit,
+		MaxCommentChars:          bundle.Config.Agent.MaxCommentChars,
+		IncludeWorkflow:          *bundle.Config.Agent.IncludeWorkflowInContinue,
+		NextWorkLimit:            bundle.Config.Agent.NextWorkLimit,
+		SimilarTaskLimit:         bundle.Config.Agent.SimilarTaskLimit,
 		SolutionsTopLimitDefault: bundle.Config.Solutions.DefaultTopLimit,
 		SolutionsTopLimitMax:     bundle.Config.Solutions.MaxTopLimit,
 	})

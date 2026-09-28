@@ -19,6 +19,23 @@ func newProjectsCommand(opts *runtimeOptions) *cobra.Command {
 		Use:   "projects",
 		Short: opts.t("cli.projects.short"),
 	}
+	cmd.AddCommand(&cobra.Command{
+		Use: "list", Short: opts.t("cli.projects.list.short"), Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return runJSON(cmd, func(ctx context.Context) (any, error) {
+				rt, err := opts.open(ctx, true)
+				if err != nil {
+					return nil, err
+				}
+				defer rt.close()
+				projects, err := rt.operationService().ListProjects(ctx)
+				if err != nil {
+					return nil, err
+				}
+				return map[string]any{"projects": projects}, nil
+			})
+		},
+	})
 	cmd.AddCommand(newProjectsDeleteCommand(opts))
 	return cmd
 }

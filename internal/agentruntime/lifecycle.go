@@ -69,7 +69,7 @@ func RunLeased(ctx context.Context, backup *Backup, run func(contract.RecoveryLe
 	}, err
 }
 
-// InitProject registers a project row. Sysadmin — not an MCP product tool.
+// InitProject registers a project row. Sysadmin — not an agent product tool.
 func InitProject(ctx context.Context, repo app.ProjectRepository, name, slug, rootPath string) (domain.Project, error) {
 	return app.NewProjectService(repo, nil, nil).Init(ctx, name, slug, rootPath)
 }

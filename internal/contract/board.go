@@ -6,7 +6,7 @@ import (
 )
 
 // BoardSnapshot is the TUI board read-model (D19). Distinct from
-// Service.Snapshot (wiring.snapshot) and from the MCP wire DTOs.
+// Service.Snapshot (wiring.snapshot) and from the delivery contracts.
 type BoardSnapshot struct {
 	Tasks        []domain.Task
 	Workflow     domain.Workflow

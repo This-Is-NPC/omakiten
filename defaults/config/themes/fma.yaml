@@ -1,7 +1,7 @@
-# Shokunin (Fullmetal Alchemist) themed roster — personas and mcp_commands.
+# Shokunin (Fullmetal Alchemist) themed roster — personas and commands.
 # Imported by shokunin.yaml via fragment selectors:
 #   personas:     { from: ./modules/fma.yaml#personas }
-#   mcp_commands: { from: ./modules/fma.yaml#mcp_commands }
+#   commands: { from: ./modules/fma.yaml#commands }
 personas:
   # Concierge + Tester — intel/router who also verifies the evidence. Repertoire
   # carries the Tester skills so the okt-task-check / okt-task-quality slots
@@ -138,7 +138,7 @@ personas:
       - markdown
       - okt-audit-playbook
 
-mcp_commands:
+commands:
   global:
     laws: [template-fidelity, authorize-remote-writes, project-scope-only]
   # Shokunin slot bindings (#189 W5.1).

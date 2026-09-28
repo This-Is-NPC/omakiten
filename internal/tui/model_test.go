@@ -243,7 +243,7 @@ func TestModelRefreshKeyUpdatesActivityLogs(t *testing.T) {
 		t.Fatalf("logs view unexpectedly contains new log before refresh\n%s", ansi.Strip(got.View()))
 	}
 	logID, err := store.BeginActivityLog(ctx, domain.ActivityLog{
-		Source:        domain.ActivitySourceMCP,
+		Source:        domain.ActivitySourceCLI,
 		Entrypoint:    "tools/call",
 		Operation:     "app.CommentService.Add",
 		ProjectID:     project.ID,
@@ -263,9 +263,8 @@ func TestModelRefreshKeyUpdatesActivityLogs(t *testing.T) {
 	// The Logs inspector renders the new event_row through
 	// SummarizeEvent, which renders tool_call rows as
 	// `<source>/<tool_name> [status] <ms>ms`. The TYPE column
-	// carries the event_type (mcp.tool_call), the WHO column the
-	// source (mcp).
-	for _, want := range []string{"app.CommentService.Add", "mcp"} {
+	// carries the event_type (cli.tool_call), the WHO column the
+	for _, want := range []string{"app.CommentService.Add", "cli"} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("View() missing %q after refresh\n%s", want, view)
 		}

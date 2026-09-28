@@ -10,7 +10,7 @@ import (
 )
 
 // SearchService is the application-layer entry for the unified FTS5
-// `search` MCP tool. It validates the caller's entity-type filter
+// `search` operation. It validates the caller's entity-type filter
 // against the closed set declared in domain.AllSearchEntityTypes,
 // trims the query, and delegates the heavy lifting (BM25 ranking,
 // snippet rendering, implicit task-state filter) to the adapter behind

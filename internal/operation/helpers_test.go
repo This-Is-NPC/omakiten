@@ -51,7 +51,7 @@ func TestTaskTitleAndDescription(t *testing.T) {
 
 func TestSimilarTasks(t *testing.T) {
 	tasks := []domain.Task{
-		{ID: 1, Title: "Add MCP agent integration", Description: "Expose Omakiten state"},
+		{ID: 1, Title: "Add agent agent integration", Description: "Expose Omakiten state"},
 		{ID: 2, Title: "Write tests", Description: "Cover code"},
 		{ID: 3, Title: "Build API", Description: "REST endpoints"},
 	}
@@ -62,13 +62,13 @@ func TestSimilarTasks(t *testing.T) {
 	}
 
 	// Exact match
-	exact := similarTasks("Add MCP agent integration", tasks, 5, nil, nil)
+	exact := similarTasks("Add agent agent integration", tasks, 5, nil, nil)
 	if len(exact) != 1 || exact[0].ID != 1 {
 		t.Fatalf("similarTasks(exact) = %#v, want task 1", exact)
 	}
 
 	// Substring match
-	sub := similarTasks("MCP", tasks, 5, nil, nil)
+	sub := similarTasks("agent", tasks, 5, nil, nil)
 	if len(sub) != 1 || sub[0].ID != 1 {
 		t.Fatalf("similarTasks(sub) = %#v, want task 1", sub)
 	}

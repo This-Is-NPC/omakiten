@@ -16,8 +16,8 @@ func TestMetricsServiceSummaryAggregatesPerModel(t *testing.T) {
 	searchService := NewSearchService(store, store)
 
 	// Two distinct models, distinct sessions.
-	ctxOpus := activity.WithAgent(context.Background(), "mcp", "errors_record", "claude-opus-4-7", "sess-opus")
-	ctxSonnet := activity.WithAgent(context.Background(), "mcp", "errors_record", "claude-sonnet-4-6", "sess-sonnet")
+	ctxOpus := activity.WithAgent(context.Background(), "cli", "errors_record", "claude-opus-4-7", "sess-opus")
+	ctxSonnet := activity.WithAgent(context.Background(), "cli", "errors_record", "claude-sonnet-4-6", "sess-sonnet")
 
 	recordMetricsScenario(t, errService, searchService, project.Context(), ctxOpus, ctxSonnet)
 
@@ -88,7 +88,7 @@ func TestMetricsServiceSummaryLikeRateFormula(t *testing.T) {
 	defer func() { _ = store.Close() }()
 
 	errService := NewErrorService(store, store.Snapshot())
-	ctxAgent := activity.WithAgent(context.Background(), "mcp", "errors_record", "claude-haiku-4-7", "sess-haiku")
+	ctxAgent := activity.WithAgent(context.Background(), "cli", "errors_record", "claude-haiku-4-7", "sess-haiku")
 
 	// One error, two candidate solutions: one liked, one failed.
 	// Expected: solution_added=2, solution_liked=1, solution_failed=1,

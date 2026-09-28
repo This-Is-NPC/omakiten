@@ -1,7 +1,6 @@
 package installer
 
 import (
-	"context"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -75,33 +74,6 @@ func TestWriteWrappers_EmptyHomeReturnsNothing(t *testing.T) {
 	}
 }
 
-// TestSetupHarnesses_UnsupportedShortCircuits guards the contract that
-// invalid harness names produce a result entry with ExitCode != 0 +
-// non-nil Err without invoking the okt binary (which the test fixture
-// doesn't even need to provide).
-func TestSetupHarnesses_UnsupportedShortCircuits(t *testing.T) {
-	results := SetupHarnesses(context.Background(), "/nonexistent/okt", []string{"bogus"})
-	if len(results) != 1 {
-		t.Fatalf("results: got %d want 1", len(results))
-	}
-	if results[0].Status != "unsupported" {
-		t.Fatalf("status: got %q want %q", results[0].Status, "unsupported")
-	}
-	if results[0].Err == nil {
-		t.Fatalf("expected non-nil Err for unsupported harness")
-	}
-	if results[0].ExitCode == 0 {
-		t.Fatalf("expected non-zero ExitCode for unsupported harness")
-	}
-}
-
-func TestSetupHarnesses_EmptyNamesIsNoOp(t *testing.T) {
-	results := SetupHarnesses(context.Background(), "/nonexistent/okt", nil)
-	if len(results) != 0 {
-		t.Fatalf("expected empty result slice, got %v", results)
-	}
-}
-
 // TestPowerShellProfileTargets_PerOS pins the per-OS resolution that
 // WritePowerShellWrappers depends on. The PS wrapper is Windows-only
 // (the wrapper body shells into `okt.exe`, the Windows-only binary
@@ -160,29 +132,5 @@ func TestWritePowerShellWrappers_EmptyHomeReturnsNothing(t *testing.T) {
 	}
 	if installed != nil {
 		t.Fatalf("expected nil installed list on empty HOME, got %v", installed)
-	}
-}
-
-// TestSetupHarnesses_RecordsExecFailure runs the helper against a fake
-// "okt" binary the test creates as a script that always exits 7. The
-// exit code must propagate into the result so the caller can render
-// the `cli.setup.status.harness_failed` line with the same %d the
-// bash version embedded.
-func TestSetupHarnesses_RecordsExecFailure(t *testing.T) {
-	tmp := t.TempDir()
-	stub := filepath.Join(tmp, "okt")
-	const script = "#!/bin/sh\nexit 7\n"
-	if err := os.WriteFile(stub, []byte(script), 0o755); err != nil {
-		t.Fatalf("write stub: %v", err)
-	}
-	results := SetupHarnesses(context.Background(), stub, []string{"claude-code"})
-	if len(results) != 1 {
-		t.Fatalf("results: got %d want 1", len(results))
-	}
-	if results[0].Status != "failed" {
-		t.Fatalf("status: got %q want %q", results[0].Status, "failed")
-	}
-	if results[0].ExitCode != 7 {
-		t.Fatalf("exit code: got %d want 7", results[0].ExitCode)
 	}
 }

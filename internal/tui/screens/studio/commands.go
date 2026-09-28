@@ -77,7 +77,7 @@ func (m Screen) commandsListBody(canvas screenlayout.Canvas) screenlayout.Block 
 	spec := selectlist.Spec{
 		Kicker: m.sectionKickerCount(m.tr("tui.studio.commands.kicker", "COMMANDS"), len(rows), m.zoneFocused(sectionCommandsList)),
 		Cursor: held,
-		Empty:  m.tr("tui.studio.commands.bindings_empty", "No known MCP commands."),
+		Empty:  m.tr("tui.studio.commands.bindings_empty", "No known agent commands."),
 	}
 	spec.Width = canvas.Width()
 	if len(rows) == 0 {
@@ -150,7 +150,7 @@ func (m Screen) commandsInspectorTable(row studioprojection.CommandRow, bundle c
 		{m.tr("tui.studio.commands.field.laws", "laws"), valueOrDash(strings.Join(row.Spec.Laws, ", "))},
 		{m.tr("tui.studio.commands.field.laws_disabled", "laws_disabled"), valueOrDash(strings.Join(row.Spec.LawsDisabled, ", "))},
 		{m.tr("tui.studio.commands.field.templates", "templates"), valueOrDash(strings.Join(row.Spec.Templates, ", "))},
-		{m.tr("tui.studio.commands.field.global_laws", "global laws"), valueOrDash(strings.Join(bundle.MCPCommands[config.MCPCommandsGlobalKey].Laws, ", "))},
+		{m.tr("tui.studio.commands.field.global_laws", "global laws"), valueOrDash(strings.Join(bundle.Commands[config.CommandsGlobalKey].Laws, ", "))},
 	}
 	table := make([][]gridtable.Cell, 0, len(fields)+1)
 	table = append(table, []gridtable.Cell{gridtable.Styled(m.studioFieldsTitle(row.Key, m.zoneFocused(sectionCommandsFields)))})
@@ -165,7 +165,7 @@ func (m *Screen) handleStudioCommandsKey(msg tea.KeyMsg) tea.Cmd {
 		return nil
 	}
 	bundle := m.studioCommandsCandidate()
-	rows := studioCommandRows(bundle.MCPCommands, m.knownCommandNames())
+	rows := studioCommandRows(bundle.Commands, m.knownCommandNames())
 	if len(rows) == 0 {
 		m.handleStudioCommandsGridKey(msg.String())
 		return nil
@@ -182,7 +182,7 @@ func (m *Screen) handleStudioCommandsKey(msg tea.KeyMsg) tea.Cmd {
 	return m.commandPreviewCmd()
 }
 
-func (m *Screen) applyStudioCommandsKey(key string, bundle config.Bundle, rowKey string, spec config.MCPCommandSpec) (tea.Cmd, bool) {
+func (m *Screen) applyStudioCommandsKey(key string, bundle config.Bundle, rowKey string, spec config.CommandSpec) (tea.Cmd, bool) {
 	switch key {
 	case "up", "k", "down", "j":
 		m.handleStudioCommandsGridKey(key)
@@ -194,9 +194,9 @@ func (m *Screen) applyStudioCommandsKey(key string, bundle config.Bundle, rowKey
 		spec.Skills = toggleNextSlug(spec.Skills, personaSkillRepertoire(bundle, spec.Persona))
 		m.saveStudioCommandSpec(rowKey, spec, m.tr("tui.studio.commands.msg.skill_selection_changed", "skill selection changed"))
 	case "g":
-		global := bundle.MCPCommands[config.MCPCommandsGlobalKey]
+		global := bundle.Commands[config.CommandsGlobalKey]
 		global.Laws = toggleNextSlug(global.Laws, lawSlugs(bundle))
-		m.saveStudioCommandSpec(config.MCPCommandsGlobalKey, global, m.tr("tui.studio.commands.msg.global_law_selection_changed", "global law selection changed"))
+		m.saveStudioCommandSpec(config.CommandsGlobalKey, global, m.tr("tui.studio.commands.msg.global_law_selection_changed", "global law selection changed"))
 	case "w":
 		spec.Laws = toggleNextSlug(spec.Laws, lawSlugs(bundle))
 		m.saveStudioCommandSpec(rowKey, spec, m.tr("tui.studio.commands.msg.law_selection_changed", "law selection changed"))
@@ -257,18 +257,18 @@ func splitNonEmpty(block string) []string {
 	return strings.Split(block, "\n")
 }
 
-func (m *Screen) saveStudioCommandSpec(key string, spec config.MCPCommandSpec, ok string) {
+func (m *Screen) saveStudioCommandSpec(key string, spec config.CommandSpec, ok string) {
 	if err := m.ensureStudioDraft(); err != nil {
 		m.studioCommandMsg = err.Error()
 		return
 	}
-	if key == config.MCPCommandsGlobalKey {
+	if key == config.CommandsGlobalKey {
 		spec.Persona = ""
 		spec.Skills = nil
 		spec.Templates = nil
 		spec.LawsDisabled = nil
 	}
-	report := m.studioDraft.SetMCPCommandSpec(key, spec)
+	report := m.studioDraft.SetCommandSpec(key, spec)
 	m.studioCommandMsg = studioDraftReportMessage(report, ok)
 	m.refreshProjection()
 }
@@ -290,7 +290,7 @@ func (m Screen) studioCommandsBundle() (config.Bundle, bundledraft.Report) {
 		return report.Candidate, report
 	}
 	if snap := m.repos.activeSnapshot(); snap != nil {
-		bundle := config.Bundle{MCPCommands: snap.MCPCommands(), AllPersonas: snap.AllPersonas(), AllSkills: snap.AllSkills(), AllLaws: snap.AllLaws(), AllTemplates: snap.AllTemplates()}
+		bundle := config.Bundle{Commands: snap.Commands(), AllPersonas: snap.AllPersonas(), AllSkills: snap.AllSkills(), AllLaws: snap.AllLaws(), AllTemplates: snap.AllTemplates()}
 		return bundle, bundledraft.Report{Candidate: bundle}
 	}
 	return config.Bundle{}, bundledraft.Report{}
@@ -315,11 +315,11 @@ func (m *Screen) studioCommandsClamp(n int) {
 	}
 }
 
-func studioCommandRows(commands map[string]config.MCPCommandSpec, names []string) []studioprojection.CommandRow {
+func studioCommandRows(commands map[string]config.CommandSpec, names []string) []studioprojection.CommandRow {
 	return studioprojection.CommandRows(commands, names)
 }
 
-func CommandIndexFor(commands map[string]config.MCPCommandSpec, key string) int {
+func CommandIndexFor(commands map[string]config.CommandSpec, key string) int {
 	return studioprojection.CommandIndexFor(commands, key)
 }
 
@@ -364,7 +364,7 @@ func toggleNextSlug(selected, options []string) []string {
 	return selected[:len(selected)-1]
 }
 
-func removeLastStudioCommandFieldValue(spec config.MCPCommandSpec, field string) config.MCPCommandSpec {
+func removeLastStudioCommandFieldValue(spec config.CommandSpec, field string) config.CommandSpec {
 	switch field {
 	case "persona":
 		spec.Persona = ""

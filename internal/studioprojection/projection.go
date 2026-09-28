@@ -49,7 +49,7 @@ func Build(input Input) Projection {
 	bundle := input.Bundle
 	workflow := bundleWorkflow(bundle, input.Workflow, input.Snapshot)
 	text := input.Text
-	commands := commandRows(bundle.MCPCommands, input.CommandNames)
+	commands := commandRows(bundle.Commands, input.CommandNames)
 	personas := personaRows(bundle, input.CommandNames)
 	history := cloneHistory(input.HookHistory)
 	return Projection{
@@ -386,7 +386,7 @@ type CommandRow struct {
 	Key         string
 	Known       bool
 	Description string
-	Spec        config.MCPCommandSpec
+	Spec        config.CommandSpec
 }
 
 // DefaultCommandNames is the fallback catalog order used by fixture callers.
@@ -394,7 +394,7 @@ var DefaultCommandNames = []string{
 	"okt", "okt-help", "okt-start", "okt-shape", "okt-run", "okt-task-imagine", "okt-task-research", "okt-task-validate", "okt-task-requirements", "okt-task-prioritize", "okt-task-create", "okt-task-decompose", "okt-task-estimate", "okt-task-design", "okt-project-resume", "okt-project-continue", "okt-plan-create", "okt-plan-show", "okt-plan-continue", "okt-plan-claim", "okt-task-resume", "okt-task-continue", "okt-task-implement", "okt-task-self-review", "okt-task-refactor", "okt-task-document", "okt-task-debrief", "okt-config", "okt-skill", "okt-task-commit", "okt-task-review", "okt-task-secure", "okt-task-check", "okt-task-quality", "okt-audit", "okt-pause", "okt-note-free", "okt-note-recap", "okt-note-list", "okt-note-show",
 }
 
-func commandRows(commands map[string]config.MCPCommandSpec, names []string) []CommandRow {
+func commandRows(commands map[string]config.CommandSpec, names []string) []CommandRow {
 	if len(names) == 0 {
 		names = DefaultCommandNames
 	}
@@ -406,7 +406,7 @@ func commandRows(commands map[string]config.MCPCommandSpec, names []string) []Co
 	}
 	var extra []string
 	for name := range commands {
-		if name != config.MCPCommandsGlobalKey && !known[name] {
+		if name != config.CommandsGlobalKey && !known[name] {
 			extra = append(extra, name)
 		}
 	}
@@ -418,12 +418,12 @@ func commandRows(commands map[string]config.MCPCommandSpec, names []string) []Co
 }
 
 // CommandRows exposes deterministic command catalog projection.
-func CommandRows(commands map[string]config.MCPCommandSpec, names []string) []CommandRow {
+func CommandRows(commands map[string]config.CommandSpec, names []string) []CommandRow {
 	return commandRows(commands, names)
 }
 
 // CommandIndexFor returns the row index of key, or zero.
-func CommandIndexFor(commands map[string]config.MCPCommandSpec, key string) int {
+func CommandIndexFor(commands map[string]config.CommandSpec, key string) int {
 	for i, row := range commandRows(commands, nil) {
 		if row.Key == key {
 			return i
@@ -434,42 +434,42 @@ func CommandIndexFor(commands map[string]config.MCPCommandSpec, key string) int 
 
 // CommandWarnings validates command references against the loaded catalogs.
 func CommandWarnings(bundle config.Bundle, text Text) []string {
-	known := map[string]struct{}{config.MCPCommandsGlobalKey: {}}
+	known := map[string]struct{}{config.CommandsGlobalKey: {}}
 	for _, key := range DefaultCommandNames {
 		known[key] = struct{}{}
 	}
 	personas, skills, laws, templates := slugSet(PersonaSlugs(bundle)), slugSet(SkillSlugs(bundle)), slugSet(LawSlugs(bundle)), slugSet(TemplateSlugs(bundle))
 	var warnings []string
-	for key, spec := range bundle.MCPCommands {
+	for key, spec := range bundle.Commands {
 		warnings = append(warnings, commandWarnings(key, spec, known, personas, skills, laws, templates, text)...)
 	}
 	sort.Strings(warnings)
 	return warnings
 }
 
-func commandWarnings(key string, spec config.MCPCommandSpec, known, personas, skills, laws, templates map[string]struct{}, text Text) []string {
+func commandWarnings(key string, spec config.CommandSpec, known, personas, skills, laws, templates map[string]struct{}, text Text) []string {
 	var warnings []string
 	if _, ok := known[key]; !ok {
-		warnings = append(warnings, translate(text, "tui.studio.commands.warn.unknown_command", "mcp_commands.%s: unknown MCP command", key))
+		warnings = append(warnings, translate(text, "tui.studio.commands.warn.unknown_command", "commands.%s: unknown agent command", key))
 	}
-	if key != config.MCPCommandsGlobalKey && spec.Persona != "" {
+	if key != config.CommandsGlobalKey && spec.Persona != "" {
 		if _, ok := personas[spec.Persona]; !ok {
-			warnings = append(warnings, translate(text, "tui.studio.commands.warn.missing_persona", "mcp_commands.%s.persona: missing persona %q", key, spec.Persona))
+			warnings = append(warnings, translate(text, "tui.studio.commands.warn.missing_persona", "commands.%s.persona: missing persona %q", key, spec.Persona))
 		}
 	}
 	for _, ref := range spec.Skills {
 		if _, ok := skills[ref]; !ok {
-			warnings = append(warnings, translate(text, "tui.studio.commands.warn.missing_skill", "mcp_commands.%s.skills: missing skill %q", key, ref))
+			warnings = append(warnings, translate(text, "tui.studio.commands.warn.missing_skill", "commands.%s.skills: missing skill %q", key, ref))
 		}
 	}
 	for _, ref := range append(append([]string(nil), spec.Laws...), spec.LawsDisabled...) {
 		if _, ok := laws[ref]; !ok {
-			warnings = append(warnings, translate(text, "tui.studio.commands.warn.missing_law", "mcp_commands.%s.laws: missing law %q", key, ref))
+			warnings = append(warnings, translate(text, "tui.studio.commands.warn.missing_law", "commands.%s.laws: missing law %q", key, ref))
 		}
 	}
 	for _, ref := range spec.Templates {
 		if _, ok := templates[ref]; !ok {
-			warnings = append(warnings, translate(text, "tui.studio.commands.warn.missing_template", "mcp_commands.%s.templates: missing template %q", key, ref))
+			warnings = append(warnings, translate(text, "tui.studio.commands.warn.missing_template", "commands.%s.templates: missing template %q", key, ref))
 		}
 	}
 	return warnings
@@ -520,7 +520,7 @@ type PersonaRow struct {
 type PersonaCommand struct {
 	Key   string
 	Known bool
-	Spec  config.MCPCommandSpec
+	Spec  config.CommandSpec
 }
 
 // RelatedKind identifies a persona relationship row.
@@ -552,12 +552,12 @@ func personaRows(bundle config.Bundle, known []string) []PersonaRow {
 	}
 	out := make([]PersonaRow, 0, len(roster))
 	for _, persona := range roster {
-		out = append(out, PersonaRow{Persona: persona, Commands: personaCommands(bundle.MCPCommands, persona.Slug, known)})
+		out = append(out, PersonaRow{Persona: persona, Commands: personaCommands(bundle.Commands, persona.Slug, known)})
 	}
 	return out
 }
 
-func personaCommands(commands map[string]config.MCPCommandSpec, slug string, known []string) []PersonaCommand {
+func personaCommands(commands map[string]config.CommandSpec, slug string, known []string) []PersonaCommand {
 	var out []PersonaCommand
 	seen := map[string]bool{}
 	for _, key := range known {
@@ -569,7 +569,7 @@ func personaCommands(commands map[string]config.MCPCommandSpec, slug string, kno
 	}
 	var extra []string
 	for key, spec := range commands {
-		if key != config.MCPCommandsGlobalKey && spec.Persona == slug && !seen[key] {
+		if key != config.CommandsGlobalKey && spec.Persona == slug && !seen[key] {
 			extra = append(extra, key)
 		}
 	}

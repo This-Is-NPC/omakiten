@@ -5,7 +5,7 @@ import (
 	"omakiten/internal/domain"
 )
 
-// planSummary projects a domain.Plan into the MCP wire shape, keeping
+// planSummary projects a domain.Plan into the delivery contract, keeping
 // the goal body intact so the show / create responses can echo it back.
 // List responses zero the field before sending to keep payloads compact.
 func planSummary(plan domain.Plan) contract.PlanSummary {

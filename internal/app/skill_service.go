@@ -240,9 +240,9 @@ func (s *SkillService) Remove(ctx context.Context, slug string) error {
 		for index := range bundle.Personas {
 			bundle.Personas[index].SkillRepertoire = filterStrings(bundle.Personas[index].SkillRepertoire, slug)
 		}
-		for name, command := range bundle.MCPCommands {
+		for name, command := range bundle.Commands {
 			command.Skills = filterStrings(command.Skills, slug)
-			bundle.MCPCommands[name] = command
+			bundle.Commands[name] = command
 		}
 		return nil
 	}, []FileOp{{Op: OpDelete, Path: s.editor.RelativePath(path), ExpectedHash: fileHashes[path]}})

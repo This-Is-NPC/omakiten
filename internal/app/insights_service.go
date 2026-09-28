@@ -14,16 +14,7 @@ import (
 // stuckDays <= 0.
 const DefaultStuckDays = domain.DefaultStuckDays
 
-// InsightsService computes the six today-insights on demand (no cache) for a
-// project: stuck tasks, cycle-time/bottleneck per bucket, WIP per bucket,
-// guard hotspots, the error loop, and a basic per-model contrast. It is a
-// thin orchestration layer over InsightsRepository — input validation,
-// activity tracking, and the staleness-threshold default — mirroring
-// MetricsService so the two read-side services share a shape.
-//
-// This service is read-only: every insight is a query, nothing here mutates
-// state. The TUI surface (task 1351) and the MCP tool (task 1352) consume
-// this service; neither is wired here.
+// InsightsService queries project metrics without mutating state.
 type InsightsService struct {
 	repo InsightsRepository
 }

@@ -1,10 +1,10 @@
 # Command Surface
 
-Omakiten's MCP prompt surface is a command router for agents. Command names, tiers, roles, scopes, and write behavior are the stable contract. Persona, skills, laws, and templates are configurable bindings documented elsewhere.
+Omakiten's agent playbook surface is a command router for agents. Command names, tiers, roles, scopes, and write behavior are the stable contract. Persona, skills, laws, and templates are configurable bindings documented elsewhere.
 
 Source of truth in code:
 
-- Prompt list (command slugs): `internal/commandcatalog/command_table.go` — a bare slug table. The operational playbook and the prompts/list description are entity-sourced from each command's bound `okt-<slug>-playbook` skill, not from Go. See [`mcp.md`](mcp.md#prompts) and [`configuration-guide/command-bindings.md`](configuration-guide/command-bindings.md#playbook-skills).
+- Prompt list (command slugs): `internal/commandcatalog/command_table.go` — a bare slug table. The operational playbook and the command list description are entity-sourced from each command's bound `okt-<slug>-playbook` skill, not from Go. See [`agents.md`](agents.md#use) and [`configuration-guide/command-bindings.md`](configuration-guide/command-bindings.md#playbook-skills).
 - Tier routing: `internal/commandcatalog/command_registry.go`.
 
 ## Tiers
@@ -85,6 +85,6 @@ Roles are logical responsibilities. Bundled presets map those roles to themed pe
 
 ## See also
 
-- [configuration-guide/command-bindings.md](configuration-guide/command-bindings.md) — `mcp_commands`, persona skill repertoires, and effective laws/templates.
-- [mcp.md#anatomy-of-an-mcp-command](mcp.md#anatomy-of-an-mcp-command) — MCP prompt rendering and tool-call flow.
+- [configuration-guide/command-bindings.md](configuration-guide/command-bindings.md) — `commands`, persona skill repertoires, and effective laws/templates.
+- [agents.md#use](agents.md#use) — agent playbook rendering and tool-call flow.
 - [configuration-guide/path-resolution.md#modular-imports](configuration-guide/path-resolution.md#modular-imports) — value-level `from:` imports.

@@ -6,7 +6,7 @@ role_affinity:
   - Owner
   - Concierge
 ---
-Convene a council of every persona wired in the active config before you commit tasks, plans, or execution. The council is the customization surface — spawn one subagent per persona returned by `personas.list`, not per canonical role.
+Convene a council of every persona wired in the active config before you commit tasks, plans, or execution. The council is the customization surface — spawn one subagent per persona returned by `okt persona list`, not per canonical role.
 
 ## Omakiten returns a prompt; the agent does the spawning
 
@@ -18,9 +18,9 @@ The orchestrator prepares a compact brief first: what is proposed, scope, candid
 
 ## Convene the council
 
-1. Call `personas.list` — spawn one subagent per returned slug (always all; no role filter).
+1. Call `okt persona list` — spawn one subagent per returned slug (always all; no role filter).
 2. For each slug, hand the subagent a lean delegation contract:
-   - Call `personas.get <slug>` in its own fresh MCP context
+   - Call `okt persona show <slug>` in its own fresh agent context
    - Adopt that persona's body, expanded laws, and skill repertoire as voice and constraints
    - Assess ONLY the subject brief using the impact questions below
    - Do NOT implement, persist, or run unrelated `okt-task-*` playbooks
@@ -38,4 +38,4 @@ From this persona's perspective on the brief:
 
 ## Synthesize before persist
 
-Aggregate the returns: name agreements, disagreements, and gaps. Coach forks that need the user. Do not call `tasks.create_intent`, `tasks.create`, `plans.create`, or other write tools that commit the shaped outcome until synthesis is complete — or the user explicitly accepts the named gaps.
+Aggregate the returns: name agreements, disagreements, and gaps. Coach forks that need the user. Do not call `okt task create-intent`, `okt add`, `okt plan create`, or other write tools that commit the shaped outcome until synthesis is complete — or the user explicitly accepts the named gaps.

@@ -124,7 +124,7 @@ func TestResolveCommandTemplatesJITRendering(t *testing.T) {
 
 // TestRenderCommandMarkdownDropsRedundantStructure pins the renderer
 // streamlining contract: the rendered Markdown must NOT echo the prompt name
-// header or description (both ship in `prompts/list` metadata). Skills render
+// header or description (both ship in `command list` metadata). Skills render
 // as bullet-with-body — one bullet per skill, in configured order, carrying
 // the skill body when present and falling back to the description otherwise.
 // The bare `## Skills — A, B` inline header (no per-skill detail) is gone.
@@ -138,7 +138,7 @@ func TestRenderCommandMarkdownDropsRedundantStructure(t *testing.T) {
 	}
 	// No H1 header echoing the prompt name.
 	if strings.HasPrefix(resp.Markdown, "# ") || strings.Contains(resp.Markdown, "\n# okt-") {
-		t.Fatalf("Markdown should not echo prompt name as H1 header — already in prompts/list metadata. Got:\n%s", resp.Markdown)
+		t.Fatalf("Markdown should not echo prompt name as H1 header — already in command list metadata. Got:\n%s", resp.Markdown)
 	}
 	// The section headline carries no inline name list anymore — detail lives
 	// in the per-skill bullets below it.
@@ -346,7 +346,7 @@ func TestResolveCommandFallsBackToSkillRepertoire(t *testing.T) {
 
 // TestResolveCommandWithoutCatalogsDegradesGracefully guards the degraded path:
 // when the runtime is unwired (no skills/laws/personas/commands catalogs),
-// ResolveCommand still resolves a registered command without error so the MCP
+// ResolveCommand still resolves a registered command without error so the agent
 // harness keeps working through partial bootstraps. The command playbook is
 // entity-sourced now, so with no skill catalog there is nothing to render — the
 // description is empty and no persona/skills attach — but resolution must not
@@ -408,8 +408,8 @@ func wireBindingFixturesWithPersona(t *testing.T, fixture agentFixture, persona 
 	templates := []contract.TemplateSummary{
 		{Slug: "pull-request", Name: "Pull Request", Default: "pr", Body: "## Before\n## After\n", Laws: []string{"template-fidelity"}},
 	}
-	commands := map[string]contract.MCPCommandBinding{
-		MCPCommandsGlobalKey: {Laws: []string{"template-fidelity"}},
+	commands := map[string]contract.CommandBinding{
+		CommandsGlobalKey:    {Laws: []string{"template-fidelity"}},
 		"okt":                {Persona: "backend-agent"},
 		"okt-task-implement": {Persona: "backend-agent", Templates: []string{"pull-request"}},
 		"okt-task-imagine":   {Persona: "backend-agent", LawsDisabled: []string{"template-fidelity"}},
@@ -432,7 +432,7 @@ func equalStringSlices(a, b []string) bool {
 // TestNoGoCommandProseFallback is the no-Go-fallback guard (AC#2 of #603, the
 // automated enforcement of #598's "no hardcoded operational prose in Go"
 // goal). The okt-* command playbook (the operational ## Action prose) and the
-// prompts/list one-liner are ENTITY-SOURCED: they must come solely from the
+// command list one-liner are ENTITY-SOURCED: they must come solely from the
 // bound okt-<slug>-playbook skill, never from a Go table/fallback. This guard
 // proves Go injects NO such prose, and it is written to FAIL the moment a
 // fallback is reintroduced.
@@ -463,8 +463,8 @@ func testNoGoCommandFallbackBehavior(t *testing.T) {
 		[]contract.LawInfo{{Slug: "project-scope-only", Name: "Project scope only", Severity: "error", Body: "Never mix projects."}},
 		[]contract.PersonaInfo{{Slug: "backend-agent", Name: "Backend Agent", Body: "Backend body."}},
 		nil,
-		map[string]contract.MCPCommandBinding{
-			MCPCommandsGlobalKey: {Laws: []string{"project-scope-only"}},
+		map[string]contract.CommandBinding{
+			CommandsGlobalKey:    {Laws: []string{"project-scope-only"}},
 			"okt":                {Persona: "backend-agent"},
 			"okt-start":          {Persona: "backend-agent"},
 			"okt-task-implement": {Persona: "backend-agent"},
@@ -483,7 +483,7 @@ func assertNoGoCommandFallback(t *testing.T, fixture agentFixture, name string) 
 		t.Fatalf("ResolveCommand(%s) error = %v", name, err)
 	}
 	if strings.TrimSpace(resp.Description) != "" {
-		t.Fatalf("%s carries a description %q with an empty skill catalog — a Go fallback re-injected hardcoded prompts/list prose; descriptions must come solely from the bound okt-<slug>-playbook skill frontmatter", name, resp.Description)
+		t.Fatalf("%s carries a description %q with an empty skill catalog — a Go fallback re-injected hardcoded command list prose; descriptions must come solely from the bound okt-<slug>-playbook skill frontmatter", name, resp.Description)
 	}
 	if got := fixture.service.CommandDescription(name); strings.TrimSpace(got) != "" {
 		t.Fatalf("CommandDescription(%s) = %q with an empty skill catalog — a Go fallback re-injected hardcoded prose", name, got)

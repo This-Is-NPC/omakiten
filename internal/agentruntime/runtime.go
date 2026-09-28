@@ -1,10 +1,6 @@
-// Package agentruntime is the composition root for the Omakiten agent. It
-// owns the bootstrap that wires the sqlite store, the configstore adapter,
-// the agent service, and the per-bundle template/lookup snapshots. By
-// living here (rather than inside `internal/agent`), the agent package
-// itself stays free of `internal/config`, `internal/paths`, and
-// `internal/sqlite` imports — the agent only knows about the inward-facing
-// service+DTO model.
+// Package agentruntime composes headless operations, configuration snapshots,
+// storage and hooks. CLI callers and the terminal host consume its services
+// through their delivery contracts.
 package agentruntime
 
 import (
@@ -21,7 +17,6 @@ import (
 	"omakiten/internal/hooks/actions"
 	"omakiten/internal/operation"
 	"omakiten/internal/paths"
-	project_ "omakiten/internal/project"
 	"omakiten/internal/sqlite"
 )
 
@@ -40,13 +35,12 @@ type Options struct {
 	CWD        string
 }
 
-// Runtime owns the SQLite connection and project runtime cache for the MCP server.
+// Runtime owns the SQLite connection and project runtime cache.
 type Runtime struct {
 	store      *sqlite.Store
 	configPath string
 	// configPathExplicit is true when the caller supplied --config / ConfigPath.
-	// Default installs re-resolve the active profile marker so long-lived MCP
-	// servers notice `okt setup --update` switching presets.
+	// The runtime re-resolves the active marker when presets change.
 	configPathExplicit bool
 	dbPath             string
 	bus                events.Bus
@@ -54,8 +48,7 @@ type Runtime struct {
 	// defaultProjectID identifies the boot runtime in the cache.
 	defaultProjectID int64
 	// actionRegistry is the same registry the active runtime's engine
-	// reads from. Held on Runtime so external callers (tests, future
-	// MCP plugins) can extend the registry before a reload picks it up.
+	// reads from. Callers can extend the registry before a reload.
 	actionRegistry     *hooks.ActionRegistry
 	notificationAction *actions.NotificationShowAction
 }
@@ -152,42 +145,6 @@ func (r *Runtime) Snapshot() *config.Snapshot {
 		return pr.Snapshot
 	}
 	return nil
-}
-
-// ResolveServiceForProject routes explicit project selectors to their local bundle.
-// Projects without a local install use the default bundle; resolution errors propagate.
-func (r *Runtime) ResolveServiceForProject(ctx context.Context, project string, projectID int64) (*operation.Service, error) {
-	if project == "" && projectID == 0 {
-		return nil, nil
-	}
-	resolved, err := project_.NewResolver(r.store).Resolve(ctx, project_.ResolveOptions{ProjectID: projectID, Project: project})
-	if err != nil {
-		return nil, err
-	}
-	if resolved.RootPath == "" {
-		return nil, nil
-	}
-	repoLocal, ok, err := config.FindRepoLocal(resolved.RootPath)
-	if err != nil {
-		return nil, err
-	}
-	if !ok {
-		// Project has no per-project install — the default runtime
-		// already serves the right bundle (single-bundle process-wide).
-		return nil, nil
-	}
-	configFile, err := paths.ActiveConfigFileInDir(filepath.Join(repoLocal, "config"))
-	if err != nil {
-		return nil, err
-	}
-	if configFile == "" {
-		return nil, nil
-	}
-	pr, err := r.cache.Resolve(ctx, resolved.ID, configFile)
-	if err != nil {
-		return nil, err
-	}
-	return pr.Service, nil
 }
 
 // buildHookEntries lifts user-facing HookSpec entries into the

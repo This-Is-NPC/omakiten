@@ -27,7 +27,7 @@ type StudioDraft interface {
 	Candidate() config.Bundle
 	Dirty() bool
 	Mutate(mutate func(*config.Bundle) error) bundledraft.Report
-	SetMCPCommandSpec(key string, spec config.MCPCommandSpec) bundledraft.Report
+	SetCommandSpec(key string, spec config.CommandSpec) bundledraft.Report
 	RenameBucket(bucketID int, name string) bundledraft.Report
 	ChangeBucketKey(bucketID int, key string) bundledraft.Report
 	AddBucket(key, name string) bundledraft.Report

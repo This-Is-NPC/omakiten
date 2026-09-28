@@ -10,7 +10,7 @@ import (
 )
 
 func TestErrorServiceEmitsAttributedDomainEvents(t *testing.T) {
-	ctx := activity.WithAgent(context.Background(), "mcp", "errors_record", "claude-opus-4-7", "sess-42")
+	ctx := activity.WithAgent(context.Background(), "cli", "errors_record", "claude-opus-4-7", "sess-42")
 	store, project := appTestStore(t, appTestBundle(t))
 	defer func() { _ = store.Close() }()
 

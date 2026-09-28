@@ -207,27 +207,7 @@ func TestCLICommentEditPreservesTagsOnBodyOnly(t *testing.T) {
 	}
 }
 
-// TestCLICommentGuardDenied proves the comment edit/delete guards are
-// enforced THROUGH the `okt comment` CLI (not just at the agent/MCP layer):
-// the CLI routes edit/delete via operation.Service.EditComment/DeleteComment
-// → CommentService.EditScoped/Remove → enforceCommentPermission, the same
-// guard path MCP uses. A denial must surface the coded `guard_violation`
-// envelope.
-//
-// Two scopes are exercised against the seeded default omakase workflow:
-//
-//   - TASK scope: the default config allows comment edit/delete in `backlog`
-//     and `dev`, but `done` pins permissions.comment.delete=false and inherits
-//     edit=false from defaults.comment. Moving a task to `done` and then
-//     editing/deleting its comment must be blocked — the bucket-resolved
-//     task-scope path. A backlog comment edit/delete is the ALLOWED control.
-//
-//   - PROJECT scope: the seeded default has no defaults.comment.project
-//     sub-block (project comments resolve to the implicit allow). We overwrite
-//     the seeded omakase.yaml with a defaults.comment.project deny sub-block so
-//     a project-scoped edit is blocked task-lessly via
-//     ResolveCommentScopePermission. EnsureDefaultFiles never overwrites an
-//     existing file, so the next CLI invocation LoadBundle's our deny policy.
+// TestCLICommentGuardEnforced verifies that CLI writes respect comment guards.
 func TestCLICommentGuardDenied(t *testing.T) {
 	dbPath, configPath := commentTestEnv(t)
 

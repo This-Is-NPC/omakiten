@@ -11,15 +11,14 @@
 output:
   json_minified: true
   omit_empty: true
-# mcp tunes how MCP responses are shaped to fit the agent's context
+# agent tunes how agent responses are shaped to fit the agent's context
 # window. Every field is REQUIRED — the validator rejects bundles that
 # omit any. The values below are the canonical kit; tune them in your
 # local omakiten.yaml to compress payloads for narrow contexts.
-mcp:
+agent:
   recent_comment_limit: 5            # > 0; cap on comments shipped per call
   max_comment_chars: 0               # >= 0; 0 = no truncation
   include_workflow_in_continue: true # ship workflow block in tasks.continue
-  cache_prompts: true                # emit Anthropic cache_control hint
   next_work_limit: 5                 # > 0; "likely next work" suggestions
   similar_task_limit: 5              # > 0; similar-task hints on create_intent
 theme:
@@ -47,7 +46,7 @@ sqlite:
   # local-only filesystems can raise this to e.g. 268435456 (256 MiB)
   # for a measurable read-path win on larger databases.
   mmap_size_bytes: 0
-# solutions caps the `solutions.list_top` MCP response shape.
+# solutions caps the `solutions.list_top` agent response shape.
 solutions:
   default_top_limit: 10
   max_top_limit: 100
@@ -72,7 +71,7 @@ events:
   # net, NOT the deletion path: `okt project delete` already removes every
   # event of the project in the same transaction as the projects row. The
   # sweep only cleans up what a process that bypassed that sequence left
-  # behind (a stale long-lived MCP/TUI session writing after the delete).
+  # behind (a stale long-lived CLI/TUI session writing after the delete).
   # Every knob is optional; omit the block to inherit these values.
   orphan_sweep:
     enabled: true
@@ -294,10 +293,6 @@ events:
       category: tool_call
       display: "CLI tool call"
       formatter: cli.tool_call
-    mcp.tool_call:
-      category: tool_call
-      display: "MCP tool call"
-      formatter: mcp.tool_call
     tui.tool_call:
       category: tool_call
       display: "TUI tool call"

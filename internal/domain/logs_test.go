@@ -27,7 +27,7 @@ func TestLogsFilterCycleAndPartition(t *testing.T) {
 func TestComputeEventStatsClassifiesHealthAndSeedsCategories(t *testing.T) {
 	rows := []EventRow{
 		{EventType: EventTypeCLIToolCall, Status: "ok"},
-		{EventType: EventTypeMCPToolCall, Status: "error"},
+		{EventType: EventTypeTUIToolCall, Status: "error"},
 		{EventType: EventTypeHookExecuted, Status: "running"},
 		{EventType: EventTypeTaskCreated, Status: "ok"},
 	}

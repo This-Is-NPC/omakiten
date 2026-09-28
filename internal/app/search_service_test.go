@@ -59,7 +59,7 @@ func TestSearchServiceRejectsRetiredNoteEntityType(t *testing.T) {
 }
 
 func TestSearchServiceEmitsErrorsResearchedForErrorScope(t *testing.T) {
-	ctx := activity.WithAgent(context.Background(), "mcp", "search", "claude-opus-4-7", "sess-1")
+	ctx := activity.WithAgent(context.Background(), "cli", "search", "claude-opus-4-7", "sess-1")
 	store, project := appTestStore(t, appTestBundle(t))
 	defer func() { _ = store.Close() }()
 
@@ -80,7 +80,7 @@ func TestSearchServiceEmitsErrorsResearchedForErrorScope(t *testing.T) {
 }
 
 func TestSearchServiceSkipsErrorsResearchedWhenScopeExcludesError(t *testing.T) {
-	ctx := activity.WithAgent(context.Background(), "mcp", "search", "claude-opus-4-7", "sess-2")
+	ctx := activity.WithAgent(context.Background(), "cli", "search", "claude-opus-4-7", "sess-2")
 	store, project := appTestStore(t, appTestBundle(t))
 	defer func() { _ = store.Close() }()
 
@@ -107,7 +107,7 @@ func TestSearchServiceSkipsErrorsResearchedWhenScopeExcludesError(t *testing.T) 
 // marker. Coverage gap: TestSearchServiceEmitsErrorsResearchedForErrorScope
 // only exercises the per-project path.
 func TestSearchServiceEmitsErrorsResearchedForCrossProjectScope(t *testing.T) {
-	ctx := activity.WithAgent(context.Background(), "mcp", "search", "claude-opus-4-7", "sess-3")
+	ctx := activity.WithAgent(context.Background(), "cli", "search", "claude-opus-4-7", "sess-3")
 	store, project := appTestStore(t, appTestBundle(t))
 	defer func() { _ = store.Close() }()
 

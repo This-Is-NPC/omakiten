@@ -105,7 +105,7 @@ func (s *Store) scanProject(row *sql.Row) (domain.Project, error) {
 // the project_tags bridge (project-scoped tag attachments), not the
 // global tags table. ActivityLogEntries sums every per-call activity
 // log row (events.event_type in operation / cli.tool_call /
-// mcp.tool_call / tui.tool_call) the project accumulated.
+// cli.tool_call / tui.tool_call) the project accumulated.
 //
 // Counters are best-effort — concurrent writes between the read and
 // the eventual DELETE are accepted; the contract is "what the user
@@ -118,7 +118,7 @@ func (s *Store) ProjectDeleteCounts(ctx context.Context, projectID int64) (domai
 			(SELECT COUNT(*) FROM events        WHERE project_id = ?1 AND event_type = 'comment'),
 			(SELECT COUNT(*) FROM plans         WHERE project_id = ?1),
 			(SELECT COUNT(*) FROM project_tags  WHERE project_id = ?1),
-			(SELECT COUNT(*) FROM events        WHERE project_id = ?1 AND event_type IN ('operation', 'cli.tool_call', 'mcp.tool_call', 'tui.tool_call'))
+			(SELECT COUNT(*) FROM events        WHERE project_id = ?1 AND event_type IN ('operation', 'cli.tool_call', 'cli.tool_call', 'tui.tool_call'))
 	`
 	var counters domain.ProjectDeleteCounters
 	if err := s.db.QueryRowContext(ctx, query, projectID).Scan(

@@ -90,10 +90,10 @@ func ValidateBundle(bundle Bundle, loadedSkills []Skill, loadedLaws []Law, loade
 	if err := validateScopeUniqueness(bundle); err != nil {
 		return err
 	}
-	if err := validateMCPCommands(bundle, personaSet, lawSet, templateSet); err != nil {
+	if err := validateCommands(bundle, personaSet, lawSet, templateSet); err != nil {
 		return err
 	}
-	if err := validateMCPCommandSkillSubset(bundle); err != nil {
+	if err := validateCommandSkillSubsets(bundle); err != nil {
 		return err
 	}
 	if err := validateSurfaces(bundle.Surfaces); err != nil {
@@ -122,7 +122,7 @@ func validateBundleSettings(bundle Bundle) error {
 	if err := validateViewSettings(bundle.Config.Views, bundle.Workflows, bundle.Config.Workflow.Active, effectivePriorityValues(bundle)); err != nil {
 		return err
 	}
-	if err := validateMCPSettings(bundle.Config.MCP); err != nil {
+	if err := validateAgentSettings(bundle.Config.Agent); err != nil {
 		return err
 	}
 	if err := validateTUISettings(bundle.Config.TUI); err != nil {
@@ -268,28 +268,28 @@ func validateProjectRefs(bundle Bundle, lawSet map[string]struct{}) error {
 	return nil
 }
 
-// validateMCPCommands enforces structural rules inside `mcp_commands`: empty
+// validateCommands enforces structural rules inside `commands`: empty
 // command name and same-slug-in-both-laws-and-laws_disabled are hard errors
 // because they encode a typo / contradiction the user cannot consciously
 // want. Slug refs (persona/templates/laws) are NOT validated here — they
-// are scanned by warnMCPCommandRefs and surfaced as bundle.Warnings so a
+// are scanned by warnCommandRefs and surfaced as bundle.Warnings so a
 // missing persona or law file does not block the runtime from starting.
-func validateMCPCommands(bundle Bundle, personaSet, lawSet, templateSet map[string]struct{}) error {
+func validateCommands(bundle Bundle, personaSet, lawSet, templateSet map[string]struct{}) error {
 	_ = personaSet
 	_ = lawSet
 	_ = templateSet
-	for name, spec := range bundle.MCPCommands {
+	for name, spec := range bundle.Commands {
 		if strings.TrimSpace(name) == "" {
-			return fmt.Errorf("mcp_commands: empty command name")
+			return fmt.Errorf("commands: empty command name")
 		}
-		if name != MCPCommandsGlobalKey {
+		if name != CommandsGlobalKey {
 			seen := map[string]struct{}{}
 			for _, slug := range spec.Laws {
 				seen[slug] = struct{}{}
 			}
 			for _, slug := range spec.LawsDisabled {
 				if _, dup := seen[slug]; dup {
-					return fmt.Errorf("mcp_commands.%s: law %q is in both laws and laws_disabled", name, slug)
+					return fmt.Errorf("commands.%s: law %q is in both laws and laws_disabled", name, slug)
 				}
 			}
 		}
@@ -297,8 +297,8 @@ func validateMCPCommands(bundle Bundle, personaSet, lawSet, templateSet map[stri
 	return nil
 }
 
-// validateMCPCommandSkillSubset enforces the schema-v2 rule (task #268):
-// every slug in mcp_commands[name].skills must be a member of the bound
+// validateCommandSkillSubset enforces the schema-v2 rule (task #268):
+// every slug in commands[name].skills must be a member of the bound
 // persona's skill_repertoire. A command can only draw from skills the
 // persona is equipped with. The error names the offending command, the
 // persona, and the missing skills so the author can fix the wiring in one
@@ -308,20 +308,20 @@ func validateMCPCommands(bundle Bundle, personaSet, lawSet, templateSet map[stri
 // nothing to constrain. The reserved `global` key carries no persona/skills
 // and is likewise skipped. Iteration order is sorted so the surfaced error
 // is deterministic across runs.
-func validateMCPCommandSkillSubset(bundle Bundle) error {
-	if len(bundle.MCPCommands) == 0 {
+func validateCommandSkillSubsets(bundle Bundle) error {
+	if len(bundle.Commands) == 0 {
 		return nil
 	}
 	repertoire := skillRepertoires(bundle.Personas)
 
-	names := make([]string, 0, len(bundle.MCPCommands))
-	for name := range bundle.MCPCommands {
+	names := make([]string, 0, len(bundle.Commands))
+	for name := range bundle.Commands {
 		names = append(names, name)
 	}
 	sort.Strings(names)
 
 	for _, name := range names {
-		if err := validateCommandSkillSubset(name, bundle.MCPCommands[name], repertoire); err != nil {
+		if err := validateCommandSkillSubset(name, bundle.Commands[name], repertoire); err != nil {
 			return err
 		}
 	}
@@ -340,8 +340,8 @@ func skillRepertoires(personas []Persona) map[string]map[string]struct{} {
 	return out
 }
 
-func validateCommandSkillSubset(name string, spec MCPCommandSpec, repertoire map[string]map[string]struct{}) error {
-	if name == MCPCommandsGlobalKey || len(spec.Skills) == 0 {
+func validateCommandSkillSubset(name string, spec CommandSpec, repertoire map[string]map[string]struct{}) error {
+	if name == CommandsGlobalKey || len(spec.Skills) == 0 {
 		return nil
 	}
 	personaSlug := strings.TrimSpace(spec.Persona)
@@ -358,73 +358,70 @@ func validateCommandSkillSubset(name string, spec MCPCommandSpec, repertoire map
 	if len(missing) == 0 {
 		return nil
 	}
-	return fmt.Errorf("mcp_commands.%s.skills: %s not in persona %q skill_repertoire", name, strings.Join(missing, ", "), personaSlug)
+	return fmt.Errorf("commands.%s.skills: %s not in persona %q skill_repertoire", name, strings.Join(missing, ", "), personaSlug)
 }
 
-// warnMCPCommandRefs collects soft warnings for every slug inside mcp_commands
+// warnCommandRefs collects soft warnings for every slug inside commands
 // that has no matching loaded entity. Returns an empty slice on a clean
 // bundle. Called from loader.go after ValidateBundle so the warnings ride
 // along on the loaded bundle without aborting the load.
-func warnMCPCommandRefs(bundle Bundle, personaSet, lawSet, templateSet map[string]struct{}) []SourceWarning {
+func warnCommandRefs(bundle Bundle, personaSet, lawSet, templateSet map[string]struct{}) []SourceWarning {
 	var warns []SourceWarning
-	for name, spec := range bundle.MCPCommands {
-		warns = appendMCPCommandRefs(warns, name, spec, personaSet, lawSet, templateSet)
+	for name, spec := range bundle.Commands {
+		warns = appendCommandRefs(warns, name, spec, personaSet, lawSet, templateSet)
 	}
 	return warns
 }
 
-func appendMCPCommandRefs(warns []SourceWarning, name string, spec MCPCommandSpec, personaSet, lawSet, templateSet map[string]struct{}) []SourceWarning {
+func appendCommandRefs(warns []SourceWarning, name string, spec CommandSpec, personaSet, lawSet, templateSet map[string]struct{}) []SourceWarning {
 	if strings.TrimSpace(name) == "" {
 		return warns
 	}
-	if name != MCPCommandsGlobalKey {
+	if name != CommandsGlobalKey {
 		persona := strings.TrimSpace(spec.Persona)
 		if persona != "" {
-			warns = appendMissingMCPRef(warns, "mcp_commands."+name+".persona", "persona", persona, personaSet)
+			warns = appendMissingCommandRef(warns, "commands."+name+".persona", "persona", persona, personaSet)
 		}
-		warns = appendMissingMCPRefs(warns, "mcp_commands."+name+".templates", "template", spec.Templates, templateSet)
+		warns = appendMissingCommandRefs(warns, "commands."+name+".templates", "template", spec.Templates, templateSet)
 	}
-	warns = appendMissingMCPRefs(warns, "mcp_commands."+name+".laws", "law", spec.Laws, lawSet)
-	return appendMissingMCPRefs(warns, "mcp_commands."+name+".laws_disabled", "law", spec.LawsDisabled, lawSet)
+	warns = appendMissingCommandRefs(warns, "commands."+name+".laws", "law", spec.Laws, lawSet)
+	return appendMissingCommandRefs(warns, "commands."+name+".laws_disabled", "law", spec.LawsDisabled, lawSet)
 }
 
-func appendMissingMCPRefs(warns []SourceWarning, scope, kind string, slugs []string, loaded map[string]struct{}) []SourceWarning {
+func appendMissingCommandRefs(warns []SourceWarning, scope, kind string, slugs []string, loaded map[string]struct{}) []SourceWarning {
 	for _, slug := range slugs {
-		warns = appendMissingMCPRef(warns, scope, kind, slug, loaded)
+		warns = appendMissingCommandRef(warns, scope, kind, slug, loaded)
 	}
 	return warns
 }
 
-func appendMissingMCPRef(warns []SourceWarning, scope, kind, slug string, loaded map[string]struct{}) []SourceWarning {
+func appendMissingCommandRef(warns []SourceWarning, scope, kind, slug string, loaded map[string]struct{}) []SourceWarning {
 	if _, ok := loaded[slug]; !ok {
 		warns = append(warns, SourceWarning{Slug: slug, Message: fmt.Sprintf("%s: ref %q has no matching %s file", scope, slug, kind)})
 	}
 	return warns
 }
 
-// validateMCPSettings enforces that every MCP-shape knob is declared
+// validateAgentSettings enforces that every agent-output knob is declared
 // in the bundle. The runtime has no in-code fallback; the canonical
 // values live in defaults/omakiten.yaml (the embedded kit YAML the
 // installer materialises). A user who removes a field gets an error
 // pointing at the kit so the fix is obvious.
-func validateMCPSettings(m MCPSettings) error {
+func validateAgentSettings(m AgentSettings) error {
 	if m.RecentCommentLimit <= 0 {
-		return fmt.Errorf("config.mcp.recent_comment_limit: must be > 0 (see defaults/omakiten.yaml for canonical values)")
+		return fmt.Errorf("config.agent.recent_comment_limit: must be > 0 (see defaults/omakiten.yaml for canonical values)")
 	}
 	if m.MaxCommentChars < 0 {
-		return fmt.Errorf("config.mcp.max_comment_chars: must be >= 0 (0 = no truncation)")
+		return fmt.Errorf("config.agent.max_comment_chars: must be >= 0 (0 = no truncation)")
 	}
 	if m.IncludeWorkflowInContinue == nil {
-		return fmt.Errorf("config.mcp.include_workflow_in_continue: required boolean (see defaults/omakiten.yaml)")
-	}
-	if m.CachePrompts == nil {
-		return fmt.Errorf("config.mcp.cache_prompts: required boolean (see defaults/omakiten.yaml)")
+		return fmt.Errorf("config.agent.include_workflow_in_continue: required boolean (see defaults/omakiten.yaml)")
 	}
 	if m.NextWorkLimit <= 0 {
-		return fmt.Errorf("config.mcp.next_work_limit: must be > 0 (see defaults/omakiten.yaml)")
+		return fmt.Errorf("config.agent.next_work_limit: must be > 0 (see defaults/omakiten.yaml)")
 	}
 	if m.SimilarTaskLimit <= 0 {
-		return fmt.Errorf("config.mcp.similar_task_limit: must be > 0 (see defaults/omakiten.yaml)")
+		return fmt.Errorf("config.agent.similar_task_limit: must be > 0 (see defaults/omakiten.yaml)")
 	}
 	return nil
 }

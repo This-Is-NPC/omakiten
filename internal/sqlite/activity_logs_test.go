@@ -17,7 +17,7 @@ func TestActivityLogCRUD(t *testing.T) {
 	defer func() { _ = store.Close() }()
 
 	id, err := store.BeginActivityLog(ctx, domain.ActivityLog{
-		Source:        domain.ActivitySourceMCP,
+		Source:        domain.ActivitySourceTUI,
 		Entrypoint:    "tasks.create_intent",
 		Operation:     "app.TaskService.Add",
 		ProjectID:     1,
@@ -50,8 +50,8 @@ func TestActivityLogCRUD(t *testing.T) {
 	if log.DurationMs != 42 {
 		t.Fatalf("log.DurationMs = %d, want 42", log.DurationMs)
 	}
-	if log.Source != domain.ActivitySourceMCP {
-		t.Fatalf("log.Source = %q, want mcp", log.Source)
+	if log.Source != domain.ActivitySourceTUI {
+		t.Fatalf("log.Source = %q, want tui", log.Source)
 	}
 }
 
@@ -63,7 +63,7 @@ func TestActivityLogListFilterBySource(t *testing.T) {
 	}
 	defer func() { _ = store.Close() }()
 
-	for _, source := range []domain.ActivitySource{domain.ActivitySourceCLI, domain.ActivitySourceMCP} {
+	for _, source := range []domain.ActivitySource{domain.ActivitySourceCLI, domain.ActivitySourceTUI} {
 		id, err := store.BeginActivityLog(ctx, domain.ActivityLog{Source: source, Operation: "test", Status: "running"})
 		if err != nil {
 			t.Fatalf("BeginActivityLog(%s) error = %v", source, err)
@@ -73,15 +73,15 @@ func TestActivityLogListFilterBySource(t *testing.T) {
 		}
 	}
 
-	logs, err := store.ListActivityLogs(ctx, domain.ActivityLogFilter{Source: domain.ActivitySourceMCP, Limit: 10})
+	logs, err := store.ListActivityLogs(ctx, domain.ActivityLogFilter{Source: domain.ActivitySourceTUI, Limit: 10})
 	if err != nil {
 		t.Fatalf("ListActivityLogs() error = %v", err)
 	}
 	if len(logs) != 1 {
 		t.Fatalf("ListActivityLogs() len = %d, want 1", len(logs))
 	}
-	if logs[0].Source != domain.ActivitySourceMCP {
-		t.Fatalf("log.Source = %q, want mcp", logs[0].Source)
+	if logs[0].Source != domain.ActivitySourceTUI {
+		t.Fatalf("log.Source = %q, want tui", logs[0].Source)
 	}
 }
 
@@ -89,7 +89,6 @@ func TestActivityLogListFilterBySource(t *testing.T) {
 // the Stats › Logs summary tables read from. The fixture spans two
 // projects + every source/status combination so the test guarantees:
 //   - the project filter actually narrows the count;
-//   - sources outside cli/mcp/tui aren't double-counted by `Total`;
 //   - status counts include `running` (rows that never reached Finish).
 func TestActivityLogStatsAggregatesFullScope(t *testing.T) {
 	ctx := context.Background()
@@ -116,18 +115,16 @@ func TestActivityLogStatsAggregatesFullScope(t *testing.T) {
 			t.Fatalf("FinishActivityLog(%s) error = %v", source, err)
 		}
 	}
-
-	// Project 1: 3 cli/ok, 2 mcp/ok, 4 tui/ok, 1 mcp/error, 1 tui/running.
 	for i := 0; i < 3; i++ {
 		insert(domain.ActivitySourceCLI, 1, "ok")
 	}
 	for i := 0; i < 2; i++ {
-		insert(domain.ActivitySourceMCP, 1, "ok")
+		insert(domain.ActivitySourceTUI, 1, "ok")
 	}
 	for i := 0; i < 4; i++ {
 		insert(domain.ActivitySourceTUI, 1, "ok")
 	}
-	insert(domain.ActivitySourceMCP, 1, "error")
+	insert(domain.ActivitySourceTUI, 1, "error")
 	insert(domain.ActivitySourceTUI, 1, "") // remains running
 
 	// Project 2 noise — must not show up under project_id = 1.
@@ -152,8 +149,8 @@ func TestActivityLogStatsAggregatesFullScope(t *testing.T) {
 
 func assertFullActivityStats(t *testing.T, stats domain.ActivityLogStats) {
 	t.Helper()
-	want := map[string]int{"Total": 11, "Ok": 9, "Error": 1, "Running": 1, "CLI": 3, "MCP": 3, "TUI": 5}
-	got := map[string]int{"Total": stats.Total, "Ok": stats.Ok, "Error": stats.Error, "Running": stats.Running, "CLI": stats.CLI, "MCP": stats.MCP, "TUI": stats.TUI}
+	want := map[string]int{"Total": 11, "Ok": 9, "Error": 1, "Running": 1, "CLI": 3, "TUI": 8}
+	got := map[string]int{"Total": stats.Total, "Ok": stats.Ok, "Error": stats.Error, "Running": stats.Running, "CLI": stats.CLI, "TUI": stats.TUI}
 	for key, wantValue := range want {
 		if got[key] != wantValue {
 			t.Errorf("%s = %d, want %d", key, got[key], wantValue)
@@ -191,7 +188,7 @@ func TestActivityLogPruneKeepsNewest(t *testing.T) {
 
 	if err := store.PruneEventTypes(ctx, []string{
 		domain.EventTypeCLIToolCall,
-		domain.EventTypeMCPToolCall,
+		domain.EventTypeTUIToolCall,
 		domain.EventTypeTUIToolCall,
 	}, 0, 3); err != nil {
 		t.Fatalf("PruneEventTypes() error = %v", err)
@@ -220,7 +217,7 @@ func TestBeginActivityLogWritesCanonicalEventType(t *testing.T) {
 	defer func() { _ = store.Close() }()
 
 	id, err := store.BeginActivityLog(ctx, domain.ActivityLog{
-		Source:        domain.ActivitySourceMCP,
+		Source:        domain.ActivitySourceCLI,
 		Entrypoint:    "tools/call",
 		Operation:     "tasks.create",
 		ProjectID:     1,
@@ -239,7 +236,7 @@ func TestBeginActivityLogWritesCanonicalEventType(t *testing.T) {
 	assertToolCallStart(t, eventType, payload)
 
 	// Finish: payload mirror keys must update alongside the columns so
-	// hooks subscribed to mcp.tool_call can match `when: { status: ok }`.
+	// hooks subscribed to cli.tool_call can match `when: { status: ok }`.
 	if err := store.FinishActivityLog(ctx, id, "ok", 123, ""); err != nil {
 		t.Fatalf("FinishActivityLog() error = %v", err)
 	}
@@ -251,14 +248,14 @@ func TestBeginActivityLogWritesCanonicalEventType(t *testing.T) {
 
 func assertToolCallStart(t *testing.T, eventType, payload string) {
 	t.Helper()
-	if eventType != domain.EventTypeMCPToolCall {
-		t.Fatalf("event_type = %q, want %q", eventType, domain.EventTypeMCPToolCall)
+	if eventType != domain.EventTypeCLIToolCall {
+		t.Fatalf("event_type = %q, want %q", eventType, domain.EventTypeCLIToolCall)
 	}
 	var decoded map[string]any
 	if err := json.Unmarshal([]byte(payload), &decoded); err != nil {
 		t.Fatalf("payload not JSON: %v (raw=%q)", err, payload)
 	}
-	for key, want := range map[string]any{"tool_name": "tasks.create", "source": "mcp", "entrypoint": "tools/call", "status": "running"} {
+	for key, want := range map[string]any{"tool_name": "tasks.create", "source": "cli", "entrypoint": "tools/call", "status": "running"} {
 		if decoded[key] != want {
 			t.Errorf("payload.%s = %v, want %v", key, decoded[key], want)
 		}

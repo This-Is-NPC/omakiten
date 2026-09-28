@@ -147,7 +147,7 @@ Good: `feat(filter): add priority option` then
 
 Omakiten is a checkpoint layer for AI-assisted development: a local-first store of tasks,
 decisions, errors, solutions and handoff notes that agents read before acting and write
-before leaving. Go module `omakiten`, binary `okt`, shipping a CLI, a TUI and an MCP server.
+before leaving. Go module `omakiten`, binary `okt`, shipping a CLI and a TUI.
 
 `CONTRIBUTING.md` is the canonical project checklist and wins over the
 project-specific guidance below wherever the two overlap. In this tree,
@@ -209,7 +209,7 @@ Update the guide that covers a behavior in the same PR that changes it.
 ### Working with the board
 
 Omakiten is the source of truth for tasks, plans, comments and handoffs. Read and write it
-through the `okt` CLI or the Omakiten MCP tools rather than through loose files.
+through the `okt` CLI rather than through loose files.
 
 Findings from a review become tasks through the Third Hokage alone. Any agent that turns up
 a finding reports it; the Hokage classifies it as a deviation inside the task in flight or as

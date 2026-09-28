@@ -78,7 +78,7 @@ dismiss:
 # `command` is left empty: the TUI intercepts the ActionMsg by slug
 # (kitten_orphan_migration) and invokes operation.Service.MigrateOrphans
 # in-process against the ProjectRuntime already held by the model —
-# same facade contract as MCP orphans.migrate / the CLI preview path,
+# same facade contract as CLI orphans.migrate / the CLI preview path,
 # without the DispatchCommand re-open of the SQLite handle. Pressing
 # `s` dismisses with no side effect — the user can re-trigger later.
 actions:

@@ -9,9 +9,9 @@ This guide covers the cascade scope, the YAML shape, the validator rules, the mi
 Per-depth resolution applies to **task shape only**:
 
 - **In** — `workflows[]` (buckets / transitions / guards), `config.hooks`, and the detail-view sub-tasks board render.
-- **Out** — `mcp_commands`, persona, laws, templates, skills. Every protocol concern always resolves at the project root kit, regardless of the task's depth.
+- **Out** — `commands`, persona, laws, templates, skills. Every protocol concern always resolves at the project root kit, regardless of the task's depth.
 
-The boundary keeps MCP prompt assembly identical for root and sub-tasks: `tasks.continue <sub_id>` returns the same persona / laws / templates that `tasks.continue <root_id>` would. Only the workflow surface (which bucket the task can move into, which guard fires, which hook gets dispatched) shifts with depth.
+The boundary keeps agent playbook assembly identical for root and sub-tasks: `tasks.continue <sub_id>` returns the same persona / laws / templates that `tasks.continue <root_id>` would. Only the workflow surface (which bucket the task can move into, which guard fires, which hook gets dispatched) shifts with depth.
 
 ## Sub-task creation
 
@@ -81,7 +81,7 @@ The loader enforces the cascade shape before any active snapshot is published:
 | Sub-kit file missing `kit:` / `config:` / `workflows:` | Rejected. Partial files cannot be promoted to a sub-kit. |
 | Sub-kit file declares its own `subtask_kit:` | Rejected. One cascade level only. |
 | `subtask_kit:` absolute path or contains `..` | Rejected. Relative-to-kit-dir only. |
-| Sub-kit declares `mcp_commands:` | **Warning** (non-fatal): `mcp_commands: ignored at depth >=1; MCP always resolves at project root`. The block is loaded but never consumed. |
+| Sub-kit declares `commands:` | **Warning** (non-fatal): `commands: ignored at depth >=1; CLI always resolves at project root`. The block is loaded but never consumed. |
 
 Failed validation produces **no partial snapshot swap, no migration trigger, and no transparency notice**. The runtime keeps the prior snapshot until a valid pair lands.
 
@@ -182,7 +182,7 @@ now dispatches against `notifications/subtask-orphaned-warning.yaml` loaded from
 
 ## Transparency notice
 
-The first time a project enables `subtask_kit:` (transition from no sub-kit to a configured path), the runtime emits a one-shot `subtask_kit.notice_emitted` system event with the i18n key `notice.subtask_kit.enabled.mcp_resolves_at_root`. The TUI surfaces it once so the operator understands the protocol boundary: `mcp_commands` still resolves at the project root regardless of sub-kit contents.
+The first time a project enables `subtask_kit:` (transition from no sub-kit to a configured path), the runtime emits a one-shot `subtask_kit.notice_emitted` system event with the i18n key `notice.subtask_kit.enabled.commands_resolve_at_root`. The TUI surfaces it once so the operator understands the protocol boundary: `commands` still resolves at the project root regardless of sub-kit contents.
 
 The notice fires **only** on the no-sub-kit → some-path transition. It does **not** fire on:
 

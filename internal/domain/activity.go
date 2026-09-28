@@ -5,7 +5,6 @@ type ActivitySource string
 const (
 	ActivitySourceCLI ActivitySource = "cli"
 	ActivitySourceTUI ActivitySource = "tui"
-	ActivitySourceMCP ActivitySource = "mcp"
 )
 
 type ActivityLog struct {
@@ -45,7 +44,6 @@ type ActivityLogStats struct {
 	Error    int
 	Running  int
 	CLI      int
-	MCP      int
 	TUI      int
 	OldestAt string // created_at of the earliest entry in scope; empty when scope is empty
 	NewestAt string // created_at of the latest entry in scope; empty when scope is empty

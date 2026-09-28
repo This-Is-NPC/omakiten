@@ -106,7 +106,6 @@ func validateNotificationContent(n Notification) error {
 // validateNotificationActions enforces the per-action invariants and the
 // cross-action uniqueness rule on keys. Empty action list is allowed —
 // notifications without interactive buttons keep their dismiss-only
-// behaviour. Commands starting with `tui` or `mcp` are rejected because
 // re-entering those surfaces from a hook would block the running TUI on a
 // nested cobra invocation that cannot run cleanly without its own terminal.
 // Every other command is permitted; destructive ones rely on the receiving

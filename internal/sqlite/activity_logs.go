@@ -14,14 +14,12 @@ import (
 // toolCallEventTypeList is the SQL-friendly form of the canonical
 // tool-call event_type vocabulary. Readers filter via `event_type IN
 // (...)` so legacy rows that the migration left under 'operation' (a
-// source value outside the cli/mcp/tui set) are explicitly excluded —
 // those are stale fixtures, not real activity, and would distort the
 // logs view.
-const toolCallEventTypeList = "'cli.tool_call', 'mcp.tool_call', 'tui.tool_call'"
+const toolCallEventTypeList = "'cli.tool_call', 'tui.tool_call'"
 
 // toolCallPayload builds the canonical payload JSON written alongside
 // every BeginActivityLog row. Keys mirror the discrete columns so hooks
-// can filter via `when: { tool_name: ..., source: mcp }` without
 // needing to read SQL columns; `args` carries the raw tool argument
 // blob the caller passed in.
 func toolCallPayload(log domain.ActivityLog) (string, error) {
@@ -137,7 +135,7 @@ WHERE id = ? AND event_type IN (`+toolCallEventTypeList+`)
 	}
 
 	// Fan-out the finished row so the hooks engine can dispatch on
-	// `mcp.tool_call` / `cli.tool_call` / `tui.tool_call`. Hooks fire
+	// `cli.tool_call` / `cli.tool_call` / `tui.tool_call`. Hooks fire
 	// only after Finish so the payload carries the final status,
 	// duration, and error_message — pre-call dispatch would race the
 	// call itself. publishEvent is a no-op when no bus is wired.
@@ -258,7 +256,6 @@ SUM(CASE WHEN status = 'ok' THEN 1 ELSE 0 END),
 SUM(CASE WHEN status = 'error' THEN 1 ELSE 0 END),
 SUM(CASE WHEN status = 'running' THEN 1 ELSE 0 END),
 SUM(CASE WHEN source = 'cli' THEN 1 ELSE 0 END),
-SUM(CASE WHEN source = 'mcp' THEN 1 ELSE 0 END),
 SUM(CASE WHEN source = 'tui' THEN 1 ELSE 0 END),
 COALESCE(MIN(created_at), ''),
 COALESCE(MAX(created_at), '')
@@ -266,15 +263,14 @@ FROM events WHERE ` + strings.Join(conds, " AND ")
 
 	row := s.db.QueryRowContext(ctx, query, args...)
 	var stats domain.ActivityLogStats
-	var ok, errCount, running, cli, mcp, tui sql.NullInt64
-	if err := row.Scan(&stats.Total, &ok, &errCount, &running, &cli, &mcp, &tui, &stats.OldestAt, &stats.NewestAt); err != nil {
+	var ok, errCount, running, cli, tui sql.NullInt64
+	if err := row.Scan(&stats.Total, &ok, &errCount, &running, &cli, &tui, &stats.OldestAt, &stats.NewestAt); err != nil {
 		return domain.ActivityLogStats{}, err
 	}
 	stats.Ok = int(ok.Int64)
 	stats.Error = int(errCount.Int64)
 	stats.Running = int(running.Int64)
 	stats.CLI = int(cli.Int64)
-	stats.MCP = int(mcp.Int64)
 	stats.TUI = int(tui.Int64)
 	return stats, nil
 }

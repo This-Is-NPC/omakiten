@@ -29,7 +29,7 @@
 | `github.com/charmbracelet/lipgloss` | v1.1.1-0.20250404203927-76690c660834 | Terminal styling and layout |
 | `github.com/charmbracelet/x/ansi` | v0.11.6 | ANSI escape utilities used by TUI rendering |
 | `github.com/muesli/termenv` | v0.16.0 | Terminal color profile support via Charm stack |
-| `github.com/pelletier/go-toml/v2` | v2.3.1 | TOML editing for Codex MCP harness config |
+| `github.com/pelletier/go-toml/v2` | v2.3.1 | TOML parsing for architecture checks on mise tasks |
 | `github.com/google/uuid` | v1.6.0 | UUID generation (indirect, used by activity layer) |
 | `github.com/dustin/go-humanize` | v1.0.1 | Human-readable formatting in TUI |
 | `golang.org/x/term` | v0.43.0 | Terminal raw-mode + size detection (used by `internal/cli/setup_picker.go` during installer) |
@@ -47,8 +47,7 @@ flowchart TD
     Terminal --> TUI[tui]
     Terminal --> Runtime[agentruntime]
     CLI --> Runtime
-    MCP[mcp] --> Operations[operation]
-    CLI --> Operations
+    CLI --> Operations[operation]
     Runtime --> Operations
     Runtime --> SQLite[sqlite]
     Runtime --> Files[configstore]
@@ -84,7 +83,6 @@ edges; `.golangci.yml` mirrors the production import restrictions.
 | `internal/app/guards` | Transition, operation and permission guard evaluation |
 | `internal/domain` | Entities, errors, immutable event metadata and slug policy |
 | `internal/agentruntime` | Shared bootstrap, per-project runtime cache and resource lifecycle |
-| `internal/mcp` | MCP schemas, tools/resources/prompts and JSON-RPC stdio |
 | `internal/sqlite` | Operational persistence, transactional writes and live database snapshots |
 | `internal/config` | Bundle schema, coherent loading, validation and immutable snapshots |
 | `internal/config/bundledraft` | Pure staged bundle editing through an editor port |
@@ -109,7 +107,7 @@ Reload prepares a candidate, checks consumer acceptance, drains the previous
 engine and publishes the new runtime. Rejection keeps the active entry intact;
 a drain failure leaves the replacement unpublished. Close rejects new rebuilds
 and drains every cached engine before closing the database. Project lookup,
-configuration discovery and reload errors propagate to MCP callers.
+configuration discovery and reload errors propagate to CLI callers.
 
 Configuration lives in YAML and file-backed assets. `config.Snapshot` supplies
 immutable project policy. Enum construction belongs to `config.BuildEnumRegistry`;

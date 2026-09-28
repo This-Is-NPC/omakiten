@@ -33,7 +33,7 @@ func TestOperationSurfaceMatchesItsGolden(t *testing.T) {
 
 // assertOperationSurfaceListingNotVacuous refuses to pass on an empty
 // census. An empty listing compares equal to an empty golden — green,
-// and covering nothing. The floor is CanonicalSurfaceCount itself (70),
+// and covering nothing. The floor is CanonicalSurfaceCount itself (69),
 // so shrinking the census without updating the constant still fails.
 func assertOperationSurfaceListingNotVacuous(t *testing.T, listing string) {
 	t.Helper()

@@ -105,7 +105,7 @@ type TaskFilter struct {
 	Sort       TaskSort
 	// IncludeArchived flips the default active-only filter so callers can opt
 	// into seeing archived tasks. Defaults to false: every list view (board,
-	// table, graph, logs, MCP) hides archived rows unless the toggle is on.
+	// table, graph, logs, agent) hides archived rows unless the toggle is on.
 	IncludeArchived bool
 	// ParentMode scopes the list by tasks.parent_id. The zero value
 	// disables the filter (every task surfaces). Board callers set

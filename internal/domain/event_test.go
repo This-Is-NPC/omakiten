@@ -50,7 +50,6 @@ func TestKnownEventTypesCoversCatalog(t *testing.T) {
 		EventTypeSubtaskKitNoticeEmitted: {},
 		EventTypeConfirmationGranted:     {},
 		EventTypeCLIToolCall:             {},
-		EventTypeMCPToolCall:             {},
 		EventTypeTUIToolCall:             {},
 		EventTypeTrickExecuted:           {},
 		EventTypeUpdateHealthCheckPassed: {},
@@ -97,7 +96,6 @@ func TestToolCallEventTypeForSource(t *testing.T) {
 		want string
 	}{
 		{ActivitySourceCLI, EventTypeCLIToolCall},
-		{ActivitySourceMCP, EventTypeMCPToolCall},
 		{ActivitySourceTUI, EventTypeTUIToolCall},
 	}
 	for _, c := range cases {
@@ -112,7 +110,7 @@ func TestToolCallEventTypeForSource(t *testing.T) {
 }
 
 func TestToolCallEventTypesAreKnown(t *testing.T) {
-	for _, ev := range []string{EventTypeCLIToolCall, EventTypeMCPToolCall, EventTypeTUIToolCall} {
+	for _, ev := range []string{EventTypeCLIToolCall, EventTypeTUIToolCall} {
 		if fixtureRegistry().CategoryOf(ev) == EventCategoryUnknown {
 			t.Fatalf("IsKnownEventType(%q) = false, want true (hooks must accept it)", ev)
 		}

@@ -14,7 +14,7 @@ Sketch the approach — the data flow, the seams you will touch, the interfaces 
 
 ## Record the rationale
 
-Call `templates.show` for any bound design scaffold, fill it, and persist the design rationale with `comments.add` on the task. Do not edit production code here.
+Call `okt template show` for any bound design scaffold, fill it, and persist the design rationale with `okt comment add` on the task. Do not edit production code here.
 
 ## Handoff
 

@@ -27,7 +27,6 @@
 - [Laws](#laws)
 - [Personas](#personas)
 - [TUI](#tui)
-- [MCP](#mcp)
 - [Command reference](#command-reference)
 - [Output envelope](#output-envelope)
 - [See also](#see-also)
@@ -66,7 +65,7 @@ The TUI sets `agent_model="human"` internally so its activity is filtered out of
 
 ## `okt setup` — post-install picker
 
-`internal/cli/setup.go`. The bubbletea picker the curl-bash installer hands off to. Walks language → agent output language → workflow preset → MCP harnesses in one program, then writes the `okt()` shell-rc wrapper. CLI and TUI share the install-time language picker; the per-surface split lives in the profile yaml and can be changed later with `okt config language`. Re-run with `--update` to revisit choices; existing rc-wrapper and `omakiten.yaml` settings are preserved.
+`internal/cli/setup.go`. The bubbletea picker the curl-bash installer hands off to. Walks language → agent output language → workflow preset → skill destinations in one program, then writes the `okt()` shell-rc wrapper. CLI and TUI share the install-time language picker; the per-surface split lives in the profile yaml and can be changed later with `okt config language`. Re-run with `--update` to revisit choices; existing rc-wrapper and `omakiten.yaml` settings are preserved.
 
 The language pickers enumerate `defaults/languages/` at boot via `defaults.FS.ReadDir("languages")` — every bundled YAML auto-appears, with no allowlist to update. Adding a new pack ships as a doc-only PR on top of `defaults/languages/<code>.yaml`; see the [Languages Guide](./configuration-guide/languages.md) for the filename convention, header fields, parity rule, and the `scripts/new-language-pack.sh` scaffold.
 
@@ -235,17 +234,15 @@ The bundled `uninstall.sh` / `uninstall.ps1` scripts stay in the repo for the bo
 
 ## `okt init` — register the current project
 
-`internal/cli/init.go`. Inserts a project row in the global SQLite DB (`UpsertProject`); optionally writes the MCP harness config and seeds a preset under `.omakiten/`.
+`internal/cli/init.go`. Inserts a project row in the global SQLite DB (`UpsertProject`); optionally installs the integration skill and seeds a preset under `.omakiten/`.
 
 Run `okt init --help` for the full flag list. Non-obvious behavior:
 
 - `--root` defaults to `$CWD`; the value is what later CWD-based project resolution matches against.
-- `--enable-mcp` toggles a bundle of `--mcp-*` flags that mirror [`okt mcp setup`](#okt-mcp-setup) — see that section for the harness matrix.
 - `--preset NAME` copies `defaults/config/<NAME>.yaml` into `<root>/.omakiten/config/` and sets `.active`. Without `--root`, a Git worktree is detected by walking up from `$CWD`; outside Git, `$CWD` is used. Use `--preset-force` to overwrite an existing `.omakiten` target.
 
 ```sh
 okt init --name Omakiten --slug omakiten --root "$PWD"
-okt init --slug acme --enable-mcp --mcp-harness opencode --mcp-dry-run
 okt init --preset kaiseki --name Acme --slug acme
 ```
 
@@ -359,7 +356,7 @@ okt assign 42                       # clear (recovery)
 
 `internal/cli/comment.go`. Run `okt comment <subcommand> --help` for the full flag list.
 
-Comments are scope-aware: `--scope task` (default) hangs the comment off a task, `--scope project` off the project (no `TASK_ID`), and `--scope universal` is cross-project (no `TASK_ID`, NULL `project_id`). All four subcommands have full parity with the `comments.*` MCP tools.
+Comments are scope-aware: `--scope task` (default) hangs the comment off a task, `--scope project` off the project (no `TASK_ID`), and `--scope universal` is cross-project (no `TASK_ID`, NULL `project_id`).
 
 - `okt comment add [TASK_ID] -b BODY` — `--body` / `-b` is required. Task scope needs the `TASK_ID` arg; project/universal scopes must omit it. Flags: `--scope` (`task`|`project`|`universal`), `--kind` (free string, e.g. `handoff`/`recap`/`standup`), `--title`, `--pinned`, `--author` (defaults to `human`; other value `agent`), and `--tag` / `-T` (repeatable, kebab-case-normalized — `-T resume -T deployment-notes`).
 - `okt comment list [TASK_ID]` — a bare `TASK_ID` with no other flag lists that task's comments in chronological order (legacy task-scoped path). Adding any filter switches to the query surface: `--scope` (`task`|`project`|`universal`), `--kind`, `--tag` / `-T`, `--pinned` (pinned-only), `--query` (FTS5 over body + title, capped at 4096 UTF-8 bytes and 256 lexical terms/operators), `--since` (window floor — Go duration `24h`/`30m` or N-day shorthand `7d`), and `--comment-id` (fetch exactly one comment by id when it belongs to the resolved project; universal comments remain cross-project).
@@ -397,7 +394,7 @@ okt depend remove 42 --on 41
 
 ## Plans
 
-`internal/cli/plan.go`. WBS-style orchestration: a plan groups child tasks into ordered waves and feeds the multi-agent claim flow exposed via MCP. Project-scoped — every call resolves against the active project (`--project` / `--project-id` / CWD).
+`internal/cli/plan.go`. WBS-style orchestration: a plan groups child tasks into ordered waves and feeds the multi-agent claim flow exposed via CLI. Project-scoped — every call resolves against the active project (`--project` / `--project-id` / CWD).
 
 ### `okt plan create SLUG --name NAME [--goal-body BODY]`
 
@@ -421,12 +418,12 @@ Attaches an existing task to `(plan, wave)`. Re-assigning within the same plan i
 
 ### `okt plan claim SLUG`
 
-Atomically reserves the next claimable task in the plan's active wave (unassigned and still in the workflow's first bucket) by stamping `tasks.assigned_to` with the resolved agent identity from `OMAKITEN_AGENT_MODEL`. The value is required; an empty or unset model returns `validation_error`. The CLI form is the human-driven counterpart to the MCP `plans.claim_next` tool and inherits the same `BEGIN IMMEDIATE` serialisation. **The bucket is not moved** — the claim is ownership-only, so the workflow's first bucket stays the task's bucket. Returns `{claimed: false}` when nothing is currently claimable.
+Atomically reserves the next claimable task in the plan's active wave (unassigned and still in the workflow's first bucket) by stamping `tasks.assigned_to` with the resolved agent identity from `OMAKITEN_AGENT_MODEL`. The value is required; an empty or unset model returns `validation_error`. The claim uses `BEGIN IMMEDIATE` serialisation. **The bucket is not moved** — the claim is ownership-only, so the workflow's first bucket stays the task's bucket. Returns `{claimed: false}` when nothing is currently claimable.
 
 ```sh
 okt plan create plans-v1 --name "Plans rollout" --goal-body "Land WBS in 3 waves"
 okt plan wave-add plans-v1 "Schema"
-okt plan wave-add plans-v1 "MCP surface"
+okt plan wave-add plans-v1 "CLI surface"
 okt plan assign plans-v1 1 42
 okt plan show plans-v1
 OMAKITEN_AGENT_MODEL=claude-opus-4-7 okt plan claim plans-v1
@@ -434,7 +431,7 @@ OMAKITEN_AGENT_MODEL=claude-opus-4-7 okt plan claim plans-v1
 okt move 42 dev
 ```
 
-The bucket transition is a separate `okt move` (or MCP `tasks.move`) call so preset-defined guards on the bucket transition stay authoritative — for example, omakase requires a self-branch comment before `backlog → dev`, and `claim` does not bypass it.
+The bucket transition is a separate `okt move` call so preset-defined guards on the bucket transition stay authoritative — for example, omakase requires a self-branch comment before `backlog → dev`, and `claim` does not bypass it.
 
 To clear an abandoned claim, run `okt assign <task_id>` (no `WHO`) or move the task back to `backlog`.
 
@@ -469,7 +466,7 @@ Each emitted row carries the 5-field shape `time · event_type · entity · auth
 
 ```sh
 okt logs                                   # default window, every category
-okt logs --category tool_call              # filter to CLI/MCP/TUI tool calls
+okt logs --category tool_call              # filter to CLI/TUI tool calls
 okt logs --category task --category plan   # task + plan rows
 okt logs --category task,plan              # equivalent comma form
 okt logs --since 24h                       # narrow to the last 24 hours
@@ -627,7 +624,6 @@ okt db backup --out /mnt/external/omakiten-2026-05-24.db
 okt db backup --out /mnt/external/omakiten-latest.db --force
 ```
 
-Restoring is a manual operation today: stop any running `okt mcp serve` / `okt tui`, move the backup file in over the live `omakiten.db`, and restart. No `okt db restore` ships intentionally — restores are rare, destructive, and best done with eyes-on.
 
 ### `okt db check`
 
@@ -732,50 +728,6 @@ okt tui                           # outside a registered project: opens Home
 The wrapper is delimited by sentinel comments (`# >>> okt wrapper >>>` / `# <<< okt wrapper <<<`) in your `~/.bashrc` / `~/.zshrc` / `$PROFILE`, and is fully removed by `uninstall.sh` / `uninstall.ps1`. Running `okt` without the wrapper is supported — the TUI works normally; only the post-exit `cd` is silently absent.
 
 The handshake file the wrapper reads can be overridden via `$OKT_CD_FILE`; defaults to `$XDG_RUNTIME_DIR/okt-cd` (or `$TMPDIR/okt-cd-$UID` as a last fallback).
-
----
-
-## MCP
-
-`internal/cli/mcp.go`. Adapter and stdio server in `internal/mcp/`.
-
-### `okt mcp tools`
-
-Lists tool/resource/prompt definitions (`mcp.Tools()`, `mcp.Resources()`, `mcp.Prompts()`). No flags.
-
-### `okt mcp prompts [name] [--list]`
-
-Renders the resolved markdown for every `okt-*` MCP prompt, or one prompt when `name` is supplied. This is the CLI mirror of `prompts/get` and is useful for auditing persona/skill/law/template composition without starting an MCP client.
-
-`--list` skips the bodies and prints the command-surface listing: the 40-command v2 kit grouped by routing tier (orchestrator / system / granular), with the granular tier sub-grouped by object namespace (`okt-<object>-<verb>`). It is the shell-side view of the MCP `prompts/list` surface — see `.docs/mcp.md#prompts` for the full tier breakdown.
-
-### `okt mcp call TOOL_NAME --input JSON`
-
-Calls a tool directly without going through the stdio server. Useful for scripting and testing. `--input` accepts a JSON object string (e.g. `'{"task_id":42}'`).
-
-### `okt mcp serve`
-
-Runs the JSON-RPC 2.0 stdio server (`internal/mcp/server.go:ServeNotify`). No flags. Stdin/stdout are the transport — meant to be spawned by an MCP harness.
-
-### `okt mcp setup`
-
-Writes the `omakiten` MCP server entry into a harness config file (`internal/agentsetup/setup.go`). Mirrors the `--mcp-*` flags exposed by `okt init` but as standalone subcommand flags (`--harness`, `--config-path`, `--command`, `--dry-run`, `--force`). Supported harnesses: `claude-code` (default; project-scope `<cwd>/.mcp.json` with `mcpServers.omakiten`), `claude-desktop`, `opencode`, `crush`, `github-copilot`, `codex`, `cursor` (`internal/agentsetup/setup.go::SupportedHarnesses`). Run `okt mcp setup --help` for defaults. An orphan `~/.claude/.mcp.json` from the previous broken Claude Code setup can be deleted.
-
-Security note: `--command` is persisted as the executable command the AI harness will run. Use a trusted absolute binary path, prefer the harness default `--config-path` plus `--dry-run`, avoid privileged or system config paths, and treat `--force` as replacing existing executable harness configuration.
-
-```sh
-okt mcp tools
-okt mcp prompts okt-task-implement
-okt mcp prompts --list
-okt mcp call tasks.list --input '{"_agent_model":"human-cli","bucket_key":"dev"}'
-okt mcp call search --input '{"_agent_model":"human-cli","query":"sqlite race","entity_types":["error","solution"]}'
-okt mcp setup --harness opencode --dry-run
-okt mcp serve   # invoked by the harness, not by hand
-```
-
-`okt mcp call search` is the CLI handle for the unified FTS5 surface (`internal/app/search_service.go`); it returns BM25-ranked hits with `<mark>...</mark>` snippets across tasks, comments, errors, solutions, and plans. Pass `entity_types: []` (or omit the key) for an all-five sweep. Project- and universal-scoped note-like content is returned as `comment`, not as a separate entity type. The legacy `errors.search` MCP tool was retired alongside it.
-
-The full set of MCP tools, resources, and prompts is documented in `.docs/mcp.md`.
 
 ---
 
@@ -1063,12 +1015,6 @@ Register the current project in the global database
 
 | Flag | Short | Type | Description |
 |---|---|---|---|
-| `--enable-mcp` |  |  | enable global MCP agent access for a supported harness |
-| `--mcp-command` |  | string | command path written to the harness MCP config |
-| `--mcp-config` |  | string | MCP harness config path |
-| `--mcp-dry-run` |  |  | preview MCP harness config changes without writing |
-| `--mcp-force` |  |  | replace an existing Omakiten MCP harness entry |
-| `--mcp-harness` |  | string | MCP harness to configure (default "claude-code") |
 | `--name` |  | string | project name |
 | `--preset` |  | string | official workflow preset to copy into .omakiten/config/<preset>.yaml and activate |
 | `--preset-force` |  |  | overwrite an existing .omakiten preset config |
@@ -1146,52 +1092,6 @@ okt logs reads the unified events table through the same path the TUI Logs inspe
 | `--category` | `-c` | all | restrict to one or more event categories (repeatable, comma-separated; all clears the filter) |
 | `--limit` | `-n` | int | cap the number of rows returned (0 = no cap) |
 | `--since` |  | string | override the default window (e.g. 24h, 30m, 7d) |
-
-### `okt mcp call`
-
-Call an Omakiten MCP tool with a JSON input object
-`okt mcp call TOOL_NAME [flags]`
-
-| Flag | Short | Type | Description |
-|---|---|---|---|
-| `--input` |  | string | JSON input object |
-
-### `okt mcp prompts`
-
-Render resolved okt-* prompt markdown to stdout
-`okt mcp prompts [name] [flags]`
-
-| Flag | Short | Type | Description |
-|---|---|---|---|
-| `--list` |  |  | List the command surface grouped by tier instead of rendering bodies |
-
-### `okt mcp serve`
-
-Run the Omakiten MCP stdio server
-`okt mcp serve [flags]`
-
-_No flags beyond globals._
-
-### `okt mcp setup`
-
-Writes the Omakiten MCP server configuration to the harness config file (e.g. Claude Desktop or OpenCode).
-Security note: `--command` is persisted as the executable command the AI harness will run. Use a trusted absolute binary path, prefer the harness default `--config-path` plus `--dry-run`, avoid privileged or system config paths, and treat `--force` as replacing existing executable harness configuration.
-`okt mcp setup [flags]`
-
-| Flag | Short | Type | Description |
-|---|---|---|---|
-| `--command` |  | string | Command to run omakiten (default: current executable) |
-| `--config-path` |  | string | Path to harness config file (default: harness default). Accepts any writable path; no directory restriction enforced — defaults to the harness standard location. |
-| `--dry-run` |  |  | Preview changes without writing |
-| `--force` |  |  | Overwrite existing Omakiten MCP config |
-| `--harness` |  | string | Target harness (claude-code, claude-desktop, opencode, crush, github-copilot, codex, cursor) (default "claude-code") |
-
-### `okt mcp tools`
-
-List Omakiten MCP tool definitions
-`okt mcp tools [flags]`
-
-_No flags beyond globals._
 
 ### `okt move`
 
@@ -1359,7 +1259,7 @@ Resolve the project by numeric id or slug, write a recovery snapshot to the roll
 
 ### `okt setup`
 
-okt setup is the post-install picker the curl|bash installer drops you into. It walks language selection (CLI / TUI / agent-output), preset selection, and MCP-harness configuration in a single bubbletea program, then writes the okt() shell-rc wrapper. Re-run with --update to revisit choices. Headless / non-interactive shells skip every screen the matching env var fills: OKT_CLI_LANG, OKT_TUI_LANG, OKT_AGENT_LANG, OKT_PRESET, OKT_HARNESSES.
+okt setup is the post-install picker the curl|bash installer drops you into. It walks language selection (CLI / TUI / agent-output), preset selection, and skill-destination configuration in a single bubbletea program, then writes the okt() shell-rc wrapper. Re-run with --update to revisit choices. Headless / non-interactive shells skip every screen the matching env var fills: OKT_CLI_LANG, OKT_TUI_LANG, OKT_AGENT_LANG, OKT_PRESET, OKT_HARNESSES.
 `okt setup [flags]`
 
 | Flag | Short | Type | Description |
@@ -1368,7 +1268,6 @@ okt setup is the post-install picker the curl|bash installer drops you into. It 
 | `--cli-lang` |  | string | skip the CLI-language picker by setting the chosen code (same shape as OKT_CLI_LANG=) |
 | `--harnesses` |  | string | skip the harness multi-select with a CSV of harness names (same shape as OKT_HARNESSES=) |
 | `--preset` |  | string | skip the preset picker by setting the chosen preset name (same shape as OKT_PRESET=) |
-| `--skip-harnesses` |  |  | resolve harness inputs but do not invoke `okt mcp setup` (used by shell tests + dry-run smoke checks) |
 | `--skip-wrapper` |  |  | do not write the okt() shell-rc wrapper block (useful when the user manages their rc files via dotfiles) |
 | `--tui-lang` |  | string | skip the TUI-language picker by setting the chosen code (same shape as OKT_TUI_LANG=) |
 | `--update` |  |  | re-run the picker with current values prefilled (idempotent against existing rc + omakiten.yaml) |
@@ -1485,7 +1384,7 @@ Every command writes to stdout one of:
 {"ok":false,"error":{"code":"<coded>","msg":"…","details":{…}}}
 ```
 
-`code` is one of the constants in `internal/domain/errors.go` (e.g., `validation_error`, `task_not_found`, `workflow_invalid_transition`, `guard_violation`, `dependency_invalid`, `tag_conflict`, `editor_failed`, `config_invalid`). The full list and agent-side guidance is in `.docs/mcp.md` §"Failure Guidance".
+`code` is one of the constants in `internal/domain/errors.go` (e.g., `validation_error`, `task_not_found`, `workflow_invalid_transition`, `guard_violation`, `dependency_invalid`, `tag_conflict`, `editor_failed`, `config_invalid`). The full list and agent-side guidance is in `.docs/agents.md` §"Failure Guidance".
 
 A failed command exits with status `1`. JSON minification follows `config.output.json_minified`.
 
@@ -1494,5 +1393,13 @@ A failed command exits with status `1`. JSON minification follows `config.output
 ## See also
 
 - [`configuration-guide/README.md`](./configuration-guide/README.md) — config keys CLI flags override.
-- [`mcp.md`](./mcp.md) — agent equivalent for operations that live on MCP; CLI-only ops (`projects.delete`, `db.backup`, `update`, `uninstall`, `setup`) are documented in their respective subcommand sections above.
+- [`agents.md`](./agents.md) — agent skill installation and usage; administrative operations (`projects.delete`, `db.backup`, `update`, `uninstall`, `setup`) are documented in their respective subcommand sections above.
 - [`workflow.md`](./workflow.md) — preset CLI workflows.
+
+## Agent playbooks
+
+`okt command list` lists configured playbooks. `okt command resolve NAME` returns the composed persona, skills, laws, templates and `data.markdown`. `--arguments` accepts a JSON object. Both commands honor the CLI exposure policy.
+
+`okt init --skill` installs the integration skill below the project root; `--claude-code` adds the Claude Code destination. See [Agent integration](agents.md) for installation and lifecycle behavior.
+
+`okt projects list` returns registered projects ordered by name for explicit scope selection.

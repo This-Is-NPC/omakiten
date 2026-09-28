@@ -16,7 +16,7 @@ import (
 // call.
 
 // BenchmarkStoreMaxOpenConnsContention exists to track db.Stats().Wait*
-// metrics under realistic TUI+MCP+hook concurrency so the W7 #225
+// metrics under realistic TUI+CLI+hook concurrency so the W7 #225
 // decision to lower MaxOpenConns 4 → 2 can be re-evaluated against
 // real data instead of intuition. It is intentionally not asserted
 // against a specific WaitCount threshold — the benchmark reports the

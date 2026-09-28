@@ -258,7 +258,7 @@ func TestRenderInsightsScrollsWhenBodyOverflowsViewport(t *testing.T) {
 
 // TestRenderInsightsSanitizesUntrustedStrings pins the escape-injection
 // guard: task titles, agent model ids, guard rule/tags, and payload-derived
-// bucket keys flow from MCP input into the operator's terminal, and
+// bucket keys flow from agent input into the operator's terminal, and
 // truncateText's width math treats escape sequences as zero-width — so the
 // renderer must strip ANSI/control sequences before drawing. The output is
 // checked UN-stripped: the styles' own ANSI is expected, but the injected

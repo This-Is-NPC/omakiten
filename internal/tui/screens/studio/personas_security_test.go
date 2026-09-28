@@ -89,7 +89,7 @@ func personaRelatedSecurityBundle(empty bool) config.Bundle {
 	if !empty {
 		bundle.Laws = []config.Law{{Slug: personaRelatedControlPayload, Severity: personaRelatedControlPayload}}
 		bundle.AllLaws = append([]config.Law(nil), bundle.Laws...)
-		bundle.MCPCommands = map[string]config.MCPCommandSpec{
+		bundle.Commands = map[string]config.CommandSpec{
 			personaRelatedControlPayload: {Persona: persona.Slug, Skills: []string{personaRelatedControlPayload}},
 		}
 	}

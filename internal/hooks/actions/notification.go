@@ -35,7 +35,7 @@ const (
 
 // NotificationShowMsg is the neutral message emitted by NotificationShowAction.
 // TUI code adapts it to Bubble Tea by sending this value into the tea.Program;
-// CLI/MCP runtimes leave the sender nil so the action is a silent no-op.
+// CLI runtimes leave the sender nil so the action is a silent no-op.
 type NotificationShowMsg struct {
 	Notification config.Notification
 	Text         string

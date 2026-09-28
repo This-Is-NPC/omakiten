@@ -62,7 +62,6 @@ func TestValidateTheme(t *testing.T) {
 
 func TestValidateBundleErrors(t *testing.T) {
 	// validTestBundle returns the minimal Bundle that passes the strict
-	// validator: every required canonical block (mcp, tui, views,
 	// priorities, severities, template_defaults, surfaces) is set to the
 	// kit's canonical values. Per-test mutations target the field under
 	// exercise without re-declaring everything else.
@@ -246,11 +245,10 @@ func validTestBundle() Bundle {
 			Output:   OutputSettings{JSONMinified: true, OmitEmpty: true},
 			Workflow: WorkflowSettings{Active: "default"},
 			Theme:    ThemeSettings{Active: "catppuccin"},
-			MCP: MCPSettings{
+			Agent: AgentSettings{
 				RecentCommentLimit:        5,
 				MaxCommentChars:           0,
 				IncludeWorkflowInContinue: &tru,
-				CachePrompts:              &tru,
 				NextWorkLimit:             5,
 				SimilarTaskLimit:          5,
 			},

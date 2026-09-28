@@ -12,24 +12,8 @@ import (
 	"omakiten/internal/domain"
 )
 
-// ResolveCommand assembles the persona/skills/laws/templates package bound to
-// `name` and returns it both structured and rendered as a single markdown
-// message ready for an MCP PromptMessage. The resolution follows the rules
-// documented in `.docs/configuration-guide/command-bindings.md`:
-//
-//   - effective laws = global ∪ persona.laws ∪ command.laws ∪ templates[].laws,
-//     minus command.laws_disabled, deduped, in first-seen order;
-//   - persona is the one declared on the command spec (no default);
-//   - skills come from the command subset, then the persona's current skill
-//     repertoire;
-//   - templates are the slugs declared on the command spec;
-//   - the command playbook is entity-sourced: the prompts/list description comes
-//     from the bound okt-<slug>-playbook skill's frontmatter, and its body
-//     renders among the skills — Go carries no Action/Description prose.
-//
-// Missing catalogs degrade gracefully — an unwired runtime still resolves a
-// registered command (empty description, no persona/skills); an unknown
-// command still rejects.
+// ResolveCommand composes the configured persona, skills, laws and templates.
+// It returns structured context and the same Markdown used by Studio previews.
 func (s *Service) ResolveCommand(_ context.Context, input contract.ResolveCommandInput) (contract.ResolveCommandResponse, error) {
 	if err := s.allow("command.resolve"); err != nil {
 		return contract.ResolveCommandResponse{}, err
@@ -47,10 +31,7 @@ func (s *Service) ResolveCommand(_ context.Context, input contract.ResolveComman
 	return resolveCommandFromCatalog(name, invocationArgs(input.Arguments), commands, personas, skills, laws, templates, outputLanguage)
 }
 
-// ListCommands returns every agent-callable okt-* command slug with its
-// entity-sourced description. MCP tool commands.list is this gated
-// discovery surface; Adapter.Prompts() (prompts/list) stays ungated so
-// a human slash-command picker still works when the tool is denied.
+// ListCommands returns registered playbooks with their entity-sourced descriptions.
 func (s *Service) ListCommands(_ context.Context) (contract.ListCommandsResponse, error) {
 	if err := s.allow("command.list"); err != nil {
 		return contract.ListCommandsResponse{}, err
@@ -63,24 +44,22 @@ func (s *Service) ListCommands(_ context.Context) (contract.ListCommandsResponse
 	return contract.ListCommandsResponse{Commands: out}, nil
 }
 
-// ResolveCommandFromCatalog resolves a command against an unsaved candidate
-// catalog. Studio uses this entry point so prompt preview and MCP runtime
-// resolution share one composition and rendering implementation.
-func ResolveCommandFromCatalog(name string, commands map[string]contract.MCPCommandBinding, personas map[string]contract.PersonaInfo, skills map[string]contract.SkillInfo, laws map[string]contract.LawInfo, templates map[string]contract.TemplateInfo, outputLanguage string) (contract.ResolveCommandResponse, error) {
+// ResolveCommandFromCatalog previews a playbook against an unsaved catalog.
+func ResolveCommandFromCatalog(name string, commands map[string]contract.CommandBinding, personas map[string]contract.PersonaInfo, skills map[string]contract.SkillInfo, laws map[string]contract.LawInfo, templates map[string]contract.TemplateInfo, outputLanguage string) (contract.ResolveCommandResponse, error) {
 	return resolveCommandFromCatalog(strings.TrimSpace(name), nil, commands, personas, skills, laws, templates, outputLanguage)
 }
 
-func resolveCommandFromCatalog(name string, args []contract.InvocationArg, commands map[string]contract.MCPCommandBinding, personas map[string]contract.PersonaInfo, skills map[string]contract.SkillInfo, laws map[string]contract.LawInfo, templates map[string]contract.TemplateInfo, outputLanguage string) (contract.ResolveCommandResponse, error) {
+func resolveCommandFromCatalog(name string, args []contract.InvocationArg, commands map[string]contract.CommandBinding, personas map[string]contract.PersonaInfo, skills map[string]contract.SkillInfo, laws map[string]contract.LawInfo, templates map[string]contract.TemplateInfo, outputLanguage string) (contract.ResolveCommandResponse, error) {
 	if name == "" {
 		return contract.ResolveCommandResponse{}, domain.NewError(domain.ErrValidation, "command name is required", nil)
 	}
 	if !commandcatalog.IsRegisteredCommand(name) {
-		return contract.ResolveCommandResponse{}, domain.NewError(domain.ErrValidation, "unknown MCP command", map[string]any{"name": name})
+		return contract.ResolveCommandResponse{}, domain.NewError(domain.ErrValidation, "unknown agent command", map[string]any{"name": name})
 	}
 
 	resp := contract.ResolveCommandResponse{Name: name, InvocationArgs: args}
 
-	// The prompts/list one-liner is entity-sourced: it is the frontmatter
+	// The command list one-liner is entity-sourced: it is the frontmatter
 	// `description` of the bound okt-<slug>-playbook skill, not Go prose. An
 	// unwired runtime (no skill catalog) degrades to an empty description.
 	if pb, ok := skills[commandcatalog.PlaybookSlug(name)]; ok {
@@ -88,7 +67,7 @@ func resolveCommandFromCatalog(name string, args []contract.InvocationArg, comma
 	}
 
 	spec := commands[name]
-	globalSpec := commands[MCPCommandsGlobalKey]
+	globalSpec := commands[CommandsGlobalKey]
 
 	if spec.Persona != "" {
 		if persona, ok := personas[spec.Persona]; ok {
@@ -118,7 +97,7 @@ func resolveCommandFromCatalog(name string, args []contract.InvocationArg, comma
 	return resp, nil
 }
 
-// CommandDescription returns the entity-sourced prompts/list one-liner for a
+// CommandDescription returns the entity-sourced command list one-liner for a
 // command: the frontmatter `description` of its bound okt-<slug>-playbook skill.
 // It returns the empty string for an unknown command or an unwired runtime (no
 // skill catalog / no matching playbook skill) — callers treat empty as "no
@@ -133,9 +112,9 @@ func (s *Service) CommandDescription(name string) string {
 	return ""
 }
 
-func (s *Service) loadCommandCatalog() map[string]contract.MCPCommandBinding {
+func (s *Service) loadCommandCatalog() map[string]contract.CommandBinding {
 	if s.commandCatalog == nil {
-		return map[string]contract.MCPCommandBinding{}
+		return map[string]contract.CommandBinding{}
 	}
 	return s.commandCatalog()
 }
@@ -247,7 +226,7 @@ func formatInvocationArg(value any) string {
 // template-bound law slugs, then subtracts laws_disabled. Each surviving slug
 // is resolved against the law catalog so the prompt ships the law body, not
 // just the name.
-func effectiveLaws(globalSpec, commandSpec contract.MCPCommandBinding, persona *contract.PersonaInfo, templates []contract.TemplateInfo, laws map[string]contract.LawInfo) []contract.LawInfo {
+func effectiveLaws(globalSpec, commandSpec contract.CommandBinding, persona *contract.PersonaInfo, templates []contract.TemplateInfo, laws map[string]contract.LawInfo) []contract.LawInfo {
 	disabled := map[string]struct{}{}
 	for _, slug := range commandSpec.LawsDisabled {
 		disabled[slug] = struct{}{}
@@ -285,34 +264,7 @@ func resolveEffectiveLaws(slugs []string, disabled map[string]struct{}, laws map
 	return out
 }
 
-// renderCommandMarkdown produces the single PromptMessage body the MCP layer
-// returns. Sections are kept compact and ordered (persona → skills → laws →
-// templates) so the agent can scan them top-down without reordering.
-//
-// There is no `## Action` section anymore: the command's operational playbook
-// is ENTITY-SOURCED. Each command binds an `okt-<slug>-playbook` skill, so the
-// playbook body arrives in the `## Skills` section like any other skill body —
-// the Go layer no longer carries a duplicate copy of the prose.
-//
-// The prompt name and description are NOT echoed in the body — they ship via
-// `prompts/list` metadata in the MCP protocol, which every aware client
-// surfaces before calling `prompts/get`. Emitting them again here would just
-// duplicate bytes the agent already has.
-//
-// Skills render as bullet-with-body under `## Skills` — one bullet per skill
-// in configured (persona-wiring) order, the bound playbook skill among them.
-// Each bullet carries the skill body (the procedural payload) when present;
-// skills without a body fall back to their description, and skills with neither
-// render as a bare name bullet.
-//
-// Laws render under `## Laws` (no count parenthetical) — the number is
-// decorative; the agent does not branch on it.
-//
-// Templates render as JIT metadata: slug, optional name (only when it diverges
-// from the title-case of the slug), optional default kind, optional
-// description. The fetch hint (`templates.show <slug>`) is NOT emitted as a
-// trailing footer; instead, every templates-bound command must surface the
-// hint via its action text or its persona body.
+// renderCommandMarkdown renders persona, invocation arguments, skills, laws and templates.
 func renderCommandMarkdown(resp contract.ResolveCommandResponse) string {
 	r := markdownRenderer{}
 	r.writePersona(resp.Persona)

@@ -166,7 +166,7 @@ func (s *ErrorService) ConfirmSolution(ctx context.Context, project domain.Proje
 }
 
 // ListTopSolutions returns the N most-liked solutions globally (cross-project).
-// Limits beyond config.solutions.max_top_limit are clamped so MCP responses
+// Limits beyond config.solutions.max_top_limit are clamped so agent responses
 // stay bounded. Caller-omitted limit (<=0) inherits
 // config.solutions.default_top_limit. Validator guarantees both knobs are
 // present and positive when the bundle reaches runtime.

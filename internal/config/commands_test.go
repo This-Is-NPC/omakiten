@@ -6,11 +6,11 @@ import (
 	"testing"
 )
 
-// TestLoadBundleAcceptsMCPCommands round-trips a yaml that wires the new
-// mcp_commands block through LoadBundle. The merged Bundle must surface every
+// TestLoadBundleAcceptsCommands round-trips a yaml that wires the new
+// commands block through LoadBundle. The merged Bundle must surface every
 // declared command, including the reserved `global` slot, and frontmatter
 // laws on personas/templates must merge with the wiring without duplication.
-func TestLoadBundleAcceptsMCPCommands(t *testing.T) {
+func TestLoadBundleAcceptsCommands(t *testing.T) {
 	dir := t.TempDir()
 	configPath := filepath.Join(dir, "config", "omakiten.yaml")
 	writeWiring(t, configPath, `version: 1
@@ -19,11 +19,10 @@ config:
   output: { json_minified: true, omit_empty: true }
   workflow: { active: default }
   theme: { active: catppuccin }
-  mcp:
+  agent:
     recent_comment_limit: 5
     max_comment_chars: 0
     include_workflow_in_continue: true
-    cache_prompts: true
     next_work_limit: 5
     similar_task_limit: 5
   tui:
@@ -63,7 +62,7 @@ personas:
     schema_version: 2
     skill_repertoire:
       - go
-mcp_commands:
+commands:
   global:
     laws:
       - template-fidelity
@@ -86,17 +85,17 @@ mcp_commands:
 	if err != nil {
 		t.Fatalf("LoadBundle() error = %v", err)
 	}
-	if len(bundle.MCPCommands) != 3 {
-		t.Fatalf("MCPCommands len = %d, want 3 (global + 2 commands)", len(bundle.MCPCommands))
+	if len(bundle.Commands) != 3 {
+		t.Fatalf("Commands len = %d, want 3 (global + 2 commands)", len(bundle.Commands))
 	}
-	if !containsStringInSlice(bundle.MCPCommands["global"].Laws, "template-fidelity") {
-		t.Fatalf("global laws missing template-fidelity: %+v", bundle.MCPCommands["global"])
+	if !containsStringInSlice(bundle.Commands["global"].Laws, "template-fidelity") {
+		t.Fatalf("global laws missing template-fidelity: %+v", bundle.Commands["global"])
 	}
-	if bundle.MCPCommands["okt-implement"].Persona != "backend-agent" {
-		t.Fatalf("okt-implement persona = %q", bundle.MCPCommands["okt-implement"].Persona)
+	if bundle.Commands["okt-implement"].Persona != "backend-agent" {
+		t.Fatalf("okt-implement persona = %q", bundle.Commands["okt-implement"].Persona)
 	}
-	if !containsStringInSlice(bundle.MCPCommands["okt-imagine"].LawsDisabled, "template-fidelity") {
-		t.Fatalf("okt-imagine laws_disabled missing template-fidelity: %+v", bundle.MCPCommands["okt-imagine"])
+	if !containsStringInSlice(bundle.Commands["okt-imagine"].LawsDisabled, "template-fidelity") {
+		t.Fatalf("okt-imagine laws_disabled missing template-fidelity: %+v", bundle.Commands["okt-imagine"])
 	}
 
 	// Frontmatter law on persona should appear on the merged persona record.
@@ -113,7 +112,7 @@ mcp_commands:
 }
 
 // TestLoadBundleRejectsDanglingCommandRefs covers the validator: each persona,
-// law, and template slug referenced inside mcp_commands must resolve to a
+// law, and template slug referenced inside commands must resolve to a
 // loaded entity.
 func TestLoadBundleRejectsDanglingCommandRefs(t *testing.T) {
 	dir := t.TempDir()
@@ -124,11 +123,10 @@ config:
   output: { json_minified: true, omit_empty: true }
   workflow: { active: default }
   theme: { active: catppuccin }
-  mcp:
+  agent:
     recent_comment_limit: 5
     max_comment_chars: 0
     include_workflow_in_continue: true
-    cache_prompts: true
     next_work_limit: 5
     similar_task_limit: 5
   tui:
@@ -160,7 +158,7 @@ workflows:
     buckets:
       - { id: 1, key: backlog, name: Backlog, position: 1 }
     transitions: []
-mcp_commands:
+commands:
   okt-implement:
     persona: ghost
 `)
@@ -193,11 +191,10 @@ config:
   output: { json_minified: true, omit_empty: true }
   workflow: { active: default }
   theme: { active: catppuccin }
-  mcp:
+  agent:
     recent_comment_limit: 5
     max_comment_chars: 0
     include_workflow_in_continue: true
-    cache_prompts: true
     next_work_limit: 5
     similar_task_limit: 5
   tui:
@@ -231,7 +228,7 @@ workflows:
     transitions: []
 laws:
   - template-fidelity
-mcp_commands:
+commands:
   okt-implement:
     laws:
       - template-fidelity

@@ -157,7 +157,7 @@ func (a testAction) Execute(_ context.Context, _ domain.Event, _ map[string]any)
 }
 
 // TestActivityLogFinishFiresToolCallHook is the regression for the
-// Phase 1 contract that hooks can subscribe to `mcp.tool_call` (or
+// Phase 1 contract that hooks can subscribe to `cli.tool_call` (or
 // cli/tui) and filter on payload fields populated by FinishActivityLog.
 // Pre-#109 the activity log path bypassed the events bus entirely so
 // hooks never fired on tool calls; pre-019 the event_type catch-all
@@ -178,12 +178,12 @@ func TestActivityLogFinishFiresToolCallHook(t *testing.T) {
 	registry.Register(testAction{ran: &ran})
 	hookEntries := []hooks.Hook{
 		{
-			On:   domain.EventTypeMCPToolCall,
+			On:   domain.EventTypeTUIToolCall,
 			When: map[string]string{"tool_name": "tasks.create"},
 			Do:   "test",
 		},
 		{
-			On:   domain.EventTypeMCPToolCall,
+			On:   domain.EventTypeTUIToolCall,
 			When: map[string]string{"tool_name": "tasks.delete"},
 			Do:   "test",
 		},
@@ -193,7 +193,7 @@ func TestActivityLogFinishFiresToolCallHook(t *testing.T) {
 	defer engine.Stop()
 
 	id, err := store.BeginActivityLog(ctx, domain.ActivityLog{
-		Source:        domain.ActivitySourceMCP,
+		Source:        domain.ActivitySourceTUI,
 		Entrypoint:    "tools/call",
 		Operation:     "tasks.create",
 		ProjectID:     1,

@@ -175,7 +175,6 @@ func (e *Evaluator) resolvedSnapshot(snap *config.Snapshot) *config.Snapshot {
 // EmitViolated records a guard.violated domain event. operation and rule are
 // free-form strings — call sites pick the values that name the operation
 // precisely. target carries identifiers (task_id, comment_id, from_bucket,
-// to_bucket). attempted_by is derived from the request source: mcp -> "agent",
 // anything else -> "user". Telemetry must not break business logic; emission
 // errors are swallowed.
 //
@@ -305,11 +304,10 @@ func OperationPayloadName(operation string) string {
 	return operation
 }
 
-// attemptedBy derives the attempted_by tag from the request source. MCP
-// traffic is agent-driven; CLI/TUI are treated as user-driven.
+// attemptedBy identifies agent calls by their model provenance.
 func attemptedBy(ctx context.Context) string {
-	source, _, _, _, _ := activity.FromContext(ctx)
-	if source == "mcp" {
+	_, _, model, _, _ := activity.FromContext(ctx)
+	if model != "" && model != "human" {
 		return "agent"
 	}
 	return "user"

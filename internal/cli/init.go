@@ -9,21 +9,16 @@ import (
 	"github.com/spf13/cobra"
 
 	"omakiten/internal/agentruntime"
-	"omakiten/internal/agentsetup"
 	"omakiten/internal/config"
 	"omakiten/internal/domain"
+	"omakiten/internal/installer"
 )
 
 func newInitCommand(opts *runtimeOptions) *cobra.Command {
 	var name string
 	var slug string
 	var root string
-	var enableMCP bool
-	var mcpHarness string
-	var mcpConfigPath string
-	var mcpCommand string
-	var mcpDryRun bool
-	var mcpForce bool
+	var installSkill, claudeCode bool
 	var presetName string
 	var presetForce bool
 
@@ -33,10 +28,8 @@ func newInitCommand(opts *runtimeOptions) *cobra.Command {
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return runJSON(cmd, func(ctx context.Context) (any, error) {
 				return runInit(ctx, opts, initInputs{
-					name: name, slug: slug, root: root, enableMCP: enableMCP,
-					mcpHarness: mcpHarness, mcpConfigPath: mcpConfigPath,
-					mcpCommand: mcpCommand, mcpDryRun: mcpDryRun, mcpForce: mcpForce,
-					presetName: presetName, presetForce: presetForce,
+					name: name, slug: slug, root: root,
+					presetName: presetName, presetForce: presetForce, installSkill: installSkill, claudeCode: claudeCode,
 				})
 			})
 		},
@@ -45,30 +38,24 @@ func newInitCommand(opts *runtimeOptions) *cobra.Command {
 	cmd.Flags().StringVar(&name, "name", "", opts.t("cli.init.flag.name"))
 	cmd.Flags().StringVar(&slug, "slug", "", opts.t("cli.init.flag.slug"))
 	cmd.Flags().StringVar(&root, "root", "", opts.t("cli.init.flag.root"))
-	cmd.Flags().BoolVar(&enableMCP, "enable-mcp", false, opts.t("cli.init.flag.enable-mcp"))
-	cmd.Flags().StringVar(&mcpHarness, "mcp-harness", agentsetup.ClaudeCodeHarness, opts.t("cli.init.flag.mcp-harness"))
-	cmd.Flags().StringVar(&mcpConfigPath, "mcp-config", "", opts.t("cli.init.flag.mcp-config"))
-	cmd.Flags().StringVar(&mcpCommand, "mcp-command", "", opts.t("cli.init.flag.mcp-command"))
-	cmd.Flags().BoolVar(&mcpDryRun, "mcp-dry-run", false, opts.t("cli.init.flag.mcp-dry-run"))
-	cmd.Flags().BoolVar(&mcpForce, "mcp-force", false, opts.t("cli.init.flag.mcp-force"))
+	cmd.Flags().BoolVar(&installSkill, "skill", false, opts.t("cli.init.flag.skill"))
+	cmd.Flags().BoolVar(&claudeCode, "claude-code", false, opts.t("cli.init.flag.claude-code"))
 	cmd.Flags().StringVar(&presetName, "preset", "", opts.t("cli.init.flag.preset"))
 	cmd.Flags().BoolVar(&presetForce, "preset-force", false, opts.t("cli.init.flag.preset-force"))
 	return cmd
 }
 
 type initInputs struct {
-	name, slug, root string
-	enableMCP        bool
-	mcpHarness       string
-	mcpConfigPath    string
-	mcpCommand       string
-	mcpDryRun        bool
-	mcpForce         bool
-	presetName       string
-	presetForce      bool
+	name, slug, root         string
+	installSkill, claudeCode bool
+	presetName               string
+	presetForce              bool
 }
 
 func runInit(ctx context.Context, opts *runtimeOptions, inputs initInputs) (any, error) {
+	if inputs.claudeCode && !inputs.installSkill {
+		return nil, domain.NewError(domain.ErrValidation, "--claude-code requires --skill", nil)
+	}
 	projectRoot, err := initProjectRoot(inputs.root)
 	if err != nil {
 		return nil, err
@@ -91,15 +78,16 @@ func runInit(ctx context.Context, opts *runtimeOptions, inputs initInputs) (any,
 	if presetResult != nil {
 		result["preset"] = presetResult
 	}
-	if inputs.enableMCP {
-		setup, err := agentsetup.Setup(agentsetup.Options{
-			Harness: inputs.mcpHarness, ConfigPath: inputs.mcpConfigPath, ProjectRoot: projectRoot,
-			Command: inputs.mcpCommand, DryRun: inputs.mcpDryRun, Force: inputs.mcpForce,
-		})
+	if inputs.installSkill {
+		targets := []string{"agents"}
+		if inputs.claudeCode {
+			targets = append(targets, "claude-code")
+		}
+		skills, err := installer.InstallSkills(projectRoot, targets, inputs.presetForce)
 		if err != nil {
 			return nil, err
 		}
-		result["agent_setup"] = setup
+		result["skills"] = skills
 	}
 	return result, nil
 }

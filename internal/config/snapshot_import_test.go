@@ -77,22 +77,22 @@ func TestSnapshotImportedWorkflowsMatchInline(t *testing.T) {
 	}
 }
 
-// TestSnapshotImportedMCPCommandsMatchInline pins acceptance #3 and proves the
-// resolver is generic, NOT hardcoded to hooks/workflows: the mcp_commands
+// TestSnapshotImportedCommandsMatchInline pins acceptance #3 and proves the
+// resolver is generic, NOT hardcoded to hooks/workflows: the commands
 // section — a third, structurally different profile-level value (a map, not a
-// sequence) — imports successfully and surfaces through Snapshot.MCPCommands()
+// sequence) — imports successfully and surfaces through Snapshot.Commands()
 // identically to the inline profile.
-func TestSnapshotImportedMCPCommandsMatchInline(t *testing.T) {
-	inline := snapshotFromImportFixture(t, nil) // default profile: mcp_commands inline
+func TestSnapshotImportedCommandsMatchInline(t *testing.T) {
+	inline := snapshotFromImportFixture(t, nil) // default profile: commands inline
 	imported := snapshotFromImportFixture(t, func(t *testing.T, profile string) {
-		externalizeTopLevel(t, profile, "mcp_commands", "mcp-commands.yml")
+		externalizeTopLevel(t, profile, "commands", "commands.yml")
 	})
 
-	if got := imported.MCPCommands(); len(got) == 0 {
-		t.Fatal("imported Snapshot.MCPCommands() empty, want resolved from import")
+	if got := imported.Commands(); len(got) == 0 {
+		t.Fatal("imported Snapshot.Commands() empty, want resolved from import")
 	}
-	if !reflect.DeepEqual(imported.MCPCommands(), inline.MCPCommands()) {
-		t.Fatalf("Snapshot.MCPCommands() imported = %+v, inline = %+v; want identical", imported.MCPCommands(), inline.MCPCommands())
+	if !reflect.DeepEqual(imported.Commands(), inline.Commands()) {
+		t.Fatalf("Snapshot.Commands() imported = %+v, inline = %+v; want identical", imported.Commands(), inline.Commands())
 	}
 }
 

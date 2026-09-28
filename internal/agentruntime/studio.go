@@ -9,7 +9,7 @@ import (
 func ResolveCommandPreview(bundle config.Bundle, name string) (string, error) {
 	resp, err := operation.ResolveCommandFromCatalog(
 		name,
-		studioAgentCommands(bundle.MCPCommands),
+		studioAgentCommands(bundle.Commands),
 		studioAgentPersonas(bundle.Personas),
 		studioAgentSkills(bundle.Skills),
 		studioAgentLaws(bundle.Laws),
@@ -22,10 +22,10 @@ func ResolveCommandPreview(bundle config.Bundle, name string) (string, error) {
 	return resp.Markdown, nil
 }
 
-func studioAgentCommands(commands map[string]config.MCPCommandSpec) map[string]contract.MCPCommandBinding {
-	out := make(map[string]contract.MCPCommandBinding, len(commands))
+func studioAgentCommands(commands map[string]config.CommandSpec) map[string]contract.CommandBinding {
+	out := make(map[string]contract.CommandBinding, len(commands))
 	for key, spec := range commands {
-		out[key] = contract.MCPCommandBinding{Persona: spec.Persona, Laws: append([]string(nil), spec.Laws...), LawsDisabled: append([]string(nil), spec.LawsDisabled...), Templates: append([]string(nil), spec.Templates...), Skills: append([]string(nil), spec.Skills...)}
+		out[key] = contract.CommandBinding{Persona: spec.Persona, Laws: append([]string(nil), spec.Laws...), LawsDisabled: append([]string(nil), spec.LawsDisabled...), Templates: append([]string(nil), spec.Templates...), Skills: append([]string(nil), spec.Skills...)}
 	}
 	return out
 }

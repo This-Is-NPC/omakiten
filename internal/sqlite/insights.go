@@ -18,7 +18,7 @@ const DefaultStuckDays = domain.DefaultStuckDays
 // defaultStuckBuckets are the fallback in-flight bucket ids the stuck scan
 // uses when the caller supplies none: dev(2) and review(3) in the canonical
 // bundle (1=backlog 2=dev 3=review 4=done). Callers that know the active
-// workflow (TUI, MCP service) pass the real in-flight roster via
+// workflow (TUI, agent service) pass the real in-flight roster via
 // Workflow.InFlightBucketIDs so presets with different bucket ids scan the
 // right stages; the fallback only covers legacy/headless callers.
 var defaultStuckBuckets = []int64{2, 3}

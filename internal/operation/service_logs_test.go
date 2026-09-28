@@ -19,7 +19,7 @@ var fakeClockAnchor = time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
 
 // TestResolveLogsSinceDefaultUsesSnapshotWindow locks the default
 // behaviour: with no `since` input, the service substitutes
-// Snapshot.LogsWindowDays as the time floor so MCP callers can pass
+// Snapshot.LogsWindowDays as the time floor so agent callers can pass
 // nothing and still get the project's configured window.
 func TestResolveLogsSinceDefaultUsesSnapshotWindow(t *testing.T) {
 	t.Parallel()
@@ -149,7 +149,7 @@ func TestNormalizeLogsCategoriesEmptyMeansAll(t *testing.T) {
 
 // TestLogsRowCarriesSummary locks the projection contract: every row
 // produced via logsRow exposes a non-empty Summary string and the
-// Category derived from EventCategoryOf. The MCP test exercises this
+// Category derived from EventCategoryOf. The agent test exercises this
 // over the wire; this unit test pins the contract at the projection
 // layer so a regression surfaces in the package that owns the bug.
 func TestLogsRowCarriesSummary(t *testing.T) {

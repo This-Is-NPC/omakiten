@@ -9,7 +9,7 @@ Read a task's checkpoint — understand where the task stopped, do not start cod
 
 ## Read the checkpoint
 
-Call `tasks.continue` for the task id, then summarize the last decision, the open questions, and the immediate next increment so you resume the thread rather than restarting it.
+Call `okt task continue` for the task id, then summarize the last decision, the open questions, and the immediate next increment so you resume the thread rather than restarting it.
 
 ## Handoff
 

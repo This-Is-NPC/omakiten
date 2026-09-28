@@ -10,7 +10,7 @@ import (
 
 // newDeleteCommand wires `okt delete TASK_ID [--confirm]` against
 // operation.Service.DeleteTask. Without --confirm the facade returns a
-// Confirmation block (matching tag remove / MCP); with --confirm the hard
+// Confirmation block (matching tag remove / agent); with --confirm the hard
 // delete runs and bucket policy / operations.delete.guards still apply.
 func newDeleteCommand(opts *runtimeOptions) *cobra.Command {
 	var confirmed bool

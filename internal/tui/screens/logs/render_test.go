@@ -51,7 +51,7 @@ func TestFormatWhoColumn(t *testing.T) {
 		want string
 	}{
 		{"tool_call source", domain.EventRow{EntityType: "system", EventType: domain.EventTypeCLIToolCall, Source: "cli"}, "cli"},
-		{"hook source", domain.EventRow{EntityType: "system", EventType: domain.EventTypeHookExecuted, Source: "mcp"}, "mcp"},
+		{"hook source", domain.EventRow{EntityType: "system", EventType: domain.EventTypeHookExecuted, Source: "cli"}, "cli"},
 		{"comment author", domain.EventRow{EntityType: "task", EntityID: 1, EventType: domain.EventTypeComment, AuthorType: "agent"}, "agent"},
 		{"system fallback", domain.EventRow{EntityType: "system", EventType: domain.EventTypeBundleSwapped}, "—"},
 		{"source fallback outside tool calls", domain.EventRow{EntityType: "plan", EventType: domain.EventTypeBundleSwapped, Source: "cli"}, "cli"},
@@ -100,7 +100,7 @@ func TestComputeEventStatsToolCallHealth(t *testing.T) {
 	t.Parallel()
 	rows := []domain.EventRow{
 		{EventType: domain.EventTypeCLIToolCall, Status: "ok"},
-		{EventType: domain.EventTypeMCPToolCall, Status: "error"},
+		{EventType: domain.EventTypeTUIToolCall, Status: "error"},
 		{EventType: domain.EventTypeTUIToolCall, Status: "running"},
 		{EventType: domain.EventTypeHookExecuted, Status: "ok"},
 		// non-tool_call rows must not contribute to the health buckets.

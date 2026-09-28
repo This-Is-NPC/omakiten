@@ -4,7 +4,7 @@ import (
 	"omakiten/internal/domain"
 )
 
-// InsightsSummaryInput drives the insights.summary MCP endpoint.
+// InsightsSummaryInput drives the insights.summary operation.
 //
 // StuckDays parameterises insight 1 (the stuck-task staleness threshold);
 // pass 0 (or omit) to take the service default (app.DefaultStuckDays = 7).
@@ -48,7 +48,7 @@ type InsightsSummaryResponse struct {
 
 // InsightsSummaryBoard mirrors domain.Insights field-for-field. It exists as a
 // dedicated wire DTO (rather than embedding domain.Insights directly) so the
-// frozen MCP contract is decoupled from the internal domain struct: the domain
+// frozen agent contract is decoupled from the internal domain struct: the domain
 // type can grow internal fields without leaking onto the published schema, and
 // the per-model rows gain the explicit `sample_size` alias the contract
 // promises without mutating the domain shape.

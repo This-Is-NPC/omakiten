@@ -9,7 +9,6 @@ import (
 
 // agentBundleWithTemplates returns the canonical agent test bundle
 // with its Templates slice replaced by the supplied list. The helper
-// preserves the workflow / kit / mcp settings the fixture seeds via
 // agentTestBundle so the resulting snapshot still answers
 // Workflow() / Settings() correctly — replacing only the catalog the
 // test cares about.
@@ -60,7 +59,7 @@ func snapshotWithTaskTemplate(t *testing.T, projectSlug string, scaffold contrac
 }
 
 // snapshotWithEntities builds a snapshot whose Skills(), Laws(),
-// Personas(), MCPCommands() reflect the supplied inline values. Empty
+// Personas(), Commands() reflect the supplied inline values. Empty
 // slices/maps are tolerated and produce an empty catalog of that kind.
 // Used by tests that exercise one catalog axis at a time without having
 // to rebuild the full canonical fixture.
@@ -70,7 +69,7 @@ func snapshotWithEntities(
 	laws []contract.LawInfo,
 	personas []contract.PersonaInfo,
 	templates []contract.TemplateSummary,
-	commands map[string]contract.MCPCommandBinding,
+	commands map[string]contract.CommandBinding,
 ) *config.Snapshot {
 	t.Helper()
 	bundle := config.Bundle{}
@@ -118,9 +117,9 @@ func snapshotWithEntities(
 		})
 	}
 	if len(commands) > 0 {
-		bundle.MCPCommands = make(map[string]config.MCPCommandSpec, len(commands))
+		bundle.Commands = make(map[string]config.CommandSpec, len(commands))
 		for name, binding := range commands {
-			bundle.MCPCommands[name] = config.MCPCommandSpec{
+			bundle.Commands[name] = config.CommandSpec{
 				Persona:      binding.Persona,
 				Laws:         append([]string(nil), binding.Laws...),
 				LawsDisabled: append([]string(nil), binding.LawsDisabled...),

@@ -9,7 +9,7 @@ import (
 
 // TestSetSettingsStoresValuesVerbatim verifies the strict contract:
 // SetSettings is a plain assignment now that the validator guarantees
-// every MCP field is positive before the composition root reaches
+// every agent field is positive before the composition root reaches
 // here. The previous "clamp zero/negative to defaults" behaviour is
 // gone — defaults no longer exist in code.
 func TestSetSettingsStoresValuesVerbatim(t *testing.T) {
@@ -63,7 +63,6 @@ func TestContinueTaskHonorsIncludeWorkflowSetting(t *testing.T) {
 	fixture.service.SetSettings(ServiceSettings{
 		RecentCommentLimit: 5,
 		IncludeWorkflow:    false,
-		CachePrompts:       true,
 	})
 
 	resp, err := fixture.service.ContinueTask(fixture.ctx, contract.ContinueTaskInput{TaskID: fixture.taskA1.ID})
@@ -145,19 +144,5 @@ func TestContinueTaskTruncatesCommentBodies(t *testing.T) {
 		if runeLen > 51 {
 			t.Fatalf("comment body length = %d, want <=51 (cap 50 + ellipsis), body = %q", runeLen, c.Body)
 		}
-	}
-}
-
-// TestSettingsCachePromptsExposed sanity-checks the accessor used by the MCP
-// adapter to decide whether to stamp the cache_control hint on prompt content.
-func TestSettingsCachePromptsExposed(t *testing.T) {
-	fixture := newAgentFixture(t)
-	fixture.service.SetSettings(ServiceSettings{CachePrompts: true})
-	if !fixture.service.SettingsCachePrompts() {
-		t.Fatal("SettingsCachePrompts() = false, want true")
-	}
-	fixture.service.SetSettings(ServiceSettings{CachePrompts: false})
-	if fixture.service.SettingsCachePrompts() {
-		t.Fatal("SettingsCachePrompts() = true, want false")
 	}
 }

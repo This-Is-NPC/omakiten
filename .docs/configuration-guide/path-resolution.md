@@ -7,7 +7,7 @@ Canonical write-up of how Omakiten finds its config root, the active yaml profil
 In order, first match wins:
 
 1. **`--config <path>` flag** (CLI-level) — pin to a specific yaml file. Skips resolver entirely; the directory containing the file is treated as `<root>/config/`.
-2. **<a id="repo-local"></a>Project-local `.omakiten/`** — `config.FindRepoLocal(startDir)` performs the walk-up: starting at the current working directory (CLI / MCP) or the project's `root_path`, it ascends looking for a `.omakiten/` directory. The walk stops at `$HOME` and at the filesystem root, so accidental hits in unrelated parents are not picked up. `agentruntime.Open` does **not** discover — it only composes the runtime around whatever path the caller resolved (typically via `FindRepoLocal`). When a `.omakiten/` is found, that directory becomes `<root>` for this invocation — full config + entity layout, distinct per project, committed alongside the repo. SQLite data stays at the user-global path; only the config side is repo-local.
+2. **<a id="repo-local"></a>Project-local `.omakiten/`** — `config.FindRepoLocal(startDir)` performs the walk-up: starting at the current working directory (CLI) or the project's `root_path`, it ascends looking for a `.omakiten/` directory. The walk stops at `$HOME` and at the filesystem root, so accidental hits in unrelated parents are not picked up. `agentruntime.Open` does **not** discover — it only composes the runtime around whatever path the caller resolved (typically via `FindRepoLocal`). When a `.omakiten/` is found, that directory becomes `<root>` for this invocation — full config + entity layout, distinct per project, committed alongside the repo. SQLite data stays at the user-global path; only the config side is repo-local.
 3. **<a id="omakiten-home"></a>`$OMAKITEN_HOME`** env var — pins config, data, state, and entity overrides under one directory. Layout: `$OMAKITEN_HOME/{config,data,state}/...` plus entity folders as siblings.
 4. **`$XDG_CONFIG_HOME`** env var — `$XDG_CONFIG_HOME/omakiten`.
 5. **OS default** — `~/.config/omakiten` (Linux / macOS); equivalent under Windows.
@@ -163,7 +163,7 @@ Imported documents may themselves contain directives. The resolver walks the who
 
 ### Supported scope
 
-Imports are expanded for the **active profile yaml values** only. Entity body/frontmatter loaders (laws, skills, personas, templates, themes, notifications, languages — see [entities.md](entities.md)) do not honor `from:`, but they do use the same bounded no-follow reads. On Linux and supported Unix-family targets, directory enumeration and file reads are pinned to descriptor-relative handles; Windows uses native handle-relative no-reparse opens. Symlinked entity files or custom directories are rejected rather than followed, while Plan 9 and other unsupported targets fail closed. Because expansion happens entirely inside the config loader, **the TUI, MCP server, and CLI consume the already-resolved config and need no import awareness** — they see the same materialised `Bundle`/`Snapshot` whether a section was inline or imported.
+Imports are expanded for the **active profile yaml values** only. Entity body/frontmatter loaders (laws, skills, personas, templates, themes, notifications, languages — see [entities.md](entities.md)) do not honor `from:`, but they do use the same bounded no-follow reads. On Linux and supported Unix-family targets, directory enumeration and file reads are pinned to descriptor-relative handles; Windows uses native handle-relative no-reparse opens. Symlinked entity files or custom directories are rejected rather than followed, while Plan 9 and other unsupported targets fail closed. Because expansion happens entirely inside the config loader, **the TUI, CLI, and CLI consume the already-resolved config and need no import awareness** — they see the same materialised `Bundle`/`Snapshot` whether a section was inline or imported.
 
 ## <a id="config-root-from-yaml-path"></a>`ConfigRootFromYAMLPath` recognized shapes
 
@@ -273,7 +273,7 @@ The local development workflow mirrors the production root under `dev_env/`:
 └── languages/
 ```
 
-`mise run dev:sync` mirrors `defaults/` into `dev_env/` aggressively (managed files overwritten, `custom/` left alone). `dev_env/` itself is gitignored (`.gitignore:24`). Tasks that need a clean dev state pull it in differently: `mise run mcp:prompts` declares `depends = ["dev:sync"]`, while the raw-terminal `mise run tui` invokes `dev:install` inside its task body so the nested `dev:sync` + `build` output can be captured without detaching Bubble Tea from its controlling terminal. Both TUI tasks pass an explicit config below `dev_env/`, preventing repo-local `.omakiten/` discovery from escaping the dev environment.
+`mise run dev:sync` mirrors `defaults/` into `dev_env/` aggressively (managed files overwritten, `custom/` left alone). `dev_env/` itself is gitignored (`.gitignore:24`). The raw-terminal `mise run tui` invokes `dev:install` inside its task body so the nested `dev:sync` + `build` output can be captured without detaching Bubble Tea from its controlling terminal. Both TUI tasks pass an explicit config below `dev_env/`, preventing repo-local `.omakiten/` discovery from escaping the dev environment.
 
 ## Update when
 

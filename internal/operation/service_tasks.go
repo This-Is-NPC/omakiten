@@ -34,7 +34,7 @@ func (s *Service) ContinueTask(ctx context.Context, input contract.ContinueTaskI
 
 	// Workflow shape is heavy (~150 tokens) and rarely changes mid-session.
 	// Skip the lookup when the caller has opted out via include_workflow=false
-	// or when config.mcp.include_workflow_in_continue is false and the caller
+	// or when config.agent.include_workflow_in_continue is false and the caller
 	// did not override.
 	includeWorkflow := s.settings.IncludeWorkflow
 	if input.IncludeWorkflow != nil {
@@ -138,7 +138,7 @@ func (s *Service) createTaskIntent(ctx context.Context, input contract.CreateTas
 	// input BEFORE any list/similarity work. createTask validates these again at
 	// the domain boundary, but reaching it requires loading the full project
 	// task list and tokenizing title+description for the similarity scan — so an
-	// over-cap MCP payload (a 64 KiB+ description) would otherwise force that
+	// over-cap agent payload (a 64 KiB+ description) would otherwise force that
 	// whole scan before being rejected. Validate up front so the reject is O(1).
 	if err := domain.ValidateTaskTitle(strings.TrimSpace(title)); err != nil {
 		return contract.CreateTaskResponse{}, err
@@ -208,10 +208,10 @@ func (s *Service) CreateTask(ctx context.Context, input contract.CreateTaskInput
 	return s.createTaskIntent(ctx, input)
 }
 
-// EditTask exposes app.TaskService.Edit through MCP. The handler does
+// EditTask exposes app.TaskService.Edit through agent. The handler does
 // nothing more than serialize input → invoke the service → serialize
 // output: every policy decision (bucket permissions, archive gate,
-// priority registry lookup) lives in the service so the MCP surface
+// priority registry lookup) lives in the service so the agent surface
 // carries no canonical defaults of its own.
 func (s *Service) EditTask(ctx context.Context, input contract.EditTaskInput) (contract.EditTaskResponse, error) {
 	if err := s.allow("task.edit"); err != nil {
@@ -328,9 +328,7 @@ func (s *Service) UnarchiveTask(ctx context.Context, input contract.ArchiveTaskI
 	return contract.ArchiveTaskResponse{Project: projectSummary(project), Task: taskSummary(task, s.registry)}, nil
 }
 
-// AssignTask sets or clears tasks.assigned_to. Census slug task.assign
-// is distinct from plan.task.assign (attach a task to a plan wave).
-// CLI recovery for a crashed claim; not registered as an MCP tool (D10).
+// UnassignTask clears an assignment through the application service.
 func (s *Service) AssignTask(ctx context.Context, input contract.AssignTaskInput) (contract.AssignTaskResponse, error) {
 	if err := s.allow("task.assign"); err != nil {
 		return contract.AssignTaskResponse{}, err

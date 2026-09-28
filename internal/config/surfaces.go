@@ -7,7 +7,6 @@ import (
 )
 
 // validateSurfaces enforces the four completeness rules on the top-level
-// surfaces: table. Missing or extra slugs, omitted cli/tui/mcp keys, and
 // a false surface without a reason are all load errors — not warnings.
 func validateSurfaces(table SurfaceTable) error {
 	missing, extra := DiffSurfaces(table)
@@ -34,10 +33,7 @@ func validateSurfaceRow(slug string, row SurfacePolicy) error {
 	if row.TUI == nil {
 		return fmt.Errorf("surfaces.%s: tui is required", slug)
 	}
-	if row.MCP == nil {
-		return fmt.Errorf("surfaces.%s: mcp is required", slug)
-	}
-	if !*row.CLI || !*row.TUI || !*row.MCP {
+	if !*row.CLI || !*row.TUI {
 		if strings.TrimSpace(row.Reason) == "" {
 			return fmt.Errorf("surfaces.%s: reason is required when any surface is false", slug)
 		}
@@ -114,8 +110,7 @@ func surfaceEntity(slug string) string {
 
 func formatSurfaceRow(slug string, row SurfacePolicy) string {
 	line := slug + ": { cli: " + yamlSurfaceBool(row.CLI) +
-		", tui: " + yamlSurfaceBool(row.TUI) +
-		", mcp: " + yamlSurfaceBool(row.MCP)
+		", tui: " + yamlSurfaceBool(row.TUI)
 	if strings.TrimSpace(row.Reason) != "" {
 		line += ", reason: \"" + row.Reason + "\""
 	}

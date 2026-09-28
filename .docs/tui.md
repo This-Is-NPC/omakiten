@@ -64,7 +64,7 @@ If the wrapper is not installed (e.g. you run the bare `okt` binary in CI or via
 okt --project omakiten tui
 ```
 
-The TUI consumes the same application services as the CLI and MCP layers — the SQLite store and bundled config files are the only state. There is no separate TUI cache.
+The TUI consumes the same application services as the CLI and operation layers — the SQLite store and bundled config files are the only state. There is no separate TUI cache.
 
 ## Project view
 
@@ -191,7 +191,7 @@ Every scrollable surface in this guide — per-zone tables below and every modal
 
 ### Tasks › Plans
 
-The fourth Tasks sub-tab surfaces WBS-style plans (`screens/plans/`, `screens/plannetwork/`). The list, read-only goal reader, and Plan Network are registered route-stack screens with owned lifecycle. Plan Network owns its graph projection, cursor/scroll/collapse state, goal editor, assignment input, resize, footer/help, and reload policy; it emits typed save/assign outcomes while the host retains service execution and rejects stale generation or plan-scope results. It is the in-TUI counterpart to the MCP `plans.*` tools and the `okt plan ...` CLI surface.
+The fourth Tasks sub-tab surfaces WBS-style plans (`screens/plans/`, `screens/plannetwork/`). The list, read-only goal reader, and Plan Network are registered route-stack screens with owned lifecycle. Plan Network owns its graph projection, cursor/scroll/collapse state, goal editor, assignment input, resize, footer/help, and reload policy; it emits typed save/assign outcomes while the host retains service execution and rejects stale generation or plan-scope results. It is the in-TUI counterpart to the CLI `plans.*` tools and the `okt plan ...` CLI surface.
 
 The sub opens to a **list view** first; pressing `enter` on a plan opens the **network diagram** for that plan. `esc` returns to the list.
 
@@ -237,13 +237,13 @@ The `c` binding opens a single-line input pre-filled with the focused task's cur
 
 ### Stats › General
 
-Per-AI-model benchmark over a configurable period plus the project's headline `Totals` (tasks / comments / tags) and `Tokens` (estimated / max + `[BUDGET EXCEEDED]` badge when truncated). The model-breakdown table reads from `app.MetricsService` — same aggregation the `metrics.summary` MCP tool returns: per-model `buckets` (`error_recorded`, `error_searched`, `solution_added`, `solution_liked`, `solution_failed`, `solution_top_viewed`) plus like rate and search-before-record ratio.
+Per-AI-model benchmark over a configurable period plus the project's headline `Totals` (tasks / comments / tags) and `Tokens` (estimated / max + `[BUDGET EXCEEDED]` badge when truncated). The model-breakdown table reads from `app.MetricsService` — same aggregation the `metrics.summary` CLI operation returns: per-model `buckets` (`error_recorded`, `error_searched`, `solution_added`, `solution_liked`, `solution_failed`, `solution_top_viewed`) plus like rate and search-before-record ratio.
 
 | Key | Action |
 |---|---|
 | `←` · `→` | cycle period (`7d` → `30d` → `all`) |
 
-The TUI itself reports `agent_model="human"` so its own activity does not appear in this benchmark — only MCP traffic with a real `_agent_model` does. See `.docs/mcp.md` for the underlying domain-event timeline.
+The TUI itself reports `agent_model="human"` so its own activity does not appear in this benchmark — only CLI traffic with a real `_agent_model` does. See `.docs/agents.md` for the underlying domain-event timeline.
 
 ### Stats › Logs
 
@@ -264,7 +264,7 @@ TIME · TYPE · ENTITY · WHO · DETAIL
 Two bordered grid tables stack above the panel:
 
 - **Categories** — one row per `domain.KnownEventCategories` entry with its window total from `EventRepository.EventCategoryCounts`. Every category is present (zero counts acceptable) so the grouping vocabulary is visible at a glance.
-- **Health · tool_calls** — `ok` / `error` / `running` counts scoped explicitly to the `cli.tool_call` / `mcp.tool_call` / `tui.tool_call` / `hook.executed` subset. The kicker carries the scope so the numbers cannot be confused with the project-wide totals above.
+- **Health · tool_calls** — `ok` / `error` / `running` counts scoped explicitly to the `cli.tool_call` / `tui.tool_call` / `hook.executed` subset. The kicker carries the scope so the numbers cannot be confused with the project-wide totals above.
 
 Both tables aggregate over the same `views.logs.window_days` window the panel rows do.
 
@@ -287,7 +287,7 @@ A single-line chip strip sits above the summary tables:
 | Mode | Categories included | Event types rolled up |
 |---|---|---|
 | `all` | every `domain.KnownEventCategory` | no `Categories` filter passed to the repository |
-| `tool-calls` | `tool_call`, `hook` | all CLI / MCP / TUI tool calls (`cli.tool_call`, `mcp.tool_call`, `tui.tool_call`) plus hook executions (`hook.executed`) |
+| `tool-calls` | `tool_call`, `hook` | all CLI / TUI tool calls (`cli.tool_call`, `tui.tool_call`) plus hook executions (`hook.executed`) |
 | `domain` | `task`, `comment`, `plan`, `trick`, `tag-dep` | user-authored activity |
 | `system` | `audit`, `guard`, `domain` | system bookkeeping |
 
@@ -604,4 +604,4 @@ Press `M` (capital) inside the task view, comment view, or entity view to toggle
 - [`configuration-guide/themes.md`](configuration-guide/themes.md) — color tokens used by the TUI.
 - [`configuration-guide/README.md`](configuration-guide/README.md) — TUI scope, layout config.
 - [`cli.md`](cli.md) — sibling CLI surface.
-- [`mcp.md`](mcp.md) — agent surface mirror of TUI ops.
+- [`agents.md`](agents.md) — agent surface mirror of TUI ops.

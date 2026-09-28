@@ -93,7 +93,7 @@ func studioBenchBody(kind, slug string) string {
 }
 
 // studioBenchBundle mirrors the shape of a shipped Omakiten bundle: every known
-// MCP command bound, plus the persona/skill/law/template catalogs those
+// playbook bound, plus the persona/skill/law/template catalogs those
 // bindings resolve against.
 func studioBenchBundle() config.Bundle {
 	const (
@@ -143,8 +143,8 @@ func studioBenchBundle() config.Bundle {
 		templates = append(templates, template)
 	}
 
-	commands := map[string]config.MCPCommandSpec{
-		config.MCPCommandsGlobalKey: {Laws: append([]string(nil), lawSlugs[:3]...)}}
+	commands := map[string]config.CommandSpec{
+		config.CommandsGlobalKey: {Laws: append([]string(nil), lawSlugs[:3]...)}}
 	for i, name := range commandcatalog.CommandNames() {
 		persona := personas[i%len(personas)]
 		// A command may only bind skills the persona actually carries in its
@@ -153,7 +153,7 @@ func studioBenchBundle() config.Bundle {
 		if len(skills) > 3 {
 			skills = skills[:3]
 		}
-		commands[name] = config.MCPCommandSpec{
+		commands[name] = config.CommandSpec{
 			Persona:   persona.Slug,
 			Skills:    append([]string(nil), skills...),
 			Laws:      append([]string(nil), lawSlugs[i%len(lawSlugs):min(i%len(lawSlugs)+4, len(lawSlugs))]...),
@@ -168,10 +168,9 @@ func studioBenchBundle() config.Bundle {
 			Output:   config.OutputSettings{JSONMinified: true, OmitEmpty: true},
 			Workflow: config.WorkflowSettings{Active: "omakase"},
 			Theme:    config.ThemeSettings{Active: "default"},
-			MCP: config.MCPSettings{
+			Agent: config.AgentSettings{
 				RecentCommentLimit:        5,
 				IncludeWorkflowInContinue: &tru,
-				CachePrompts:              &tru,
 				NextWorkLimit:             5,
 				SimilarTaskLimit:          5},
 			TUI:              config.TUISettings{TokenBadge: config.TokenBadgeThresholds{YellowAt: 150, RedAt: 400}},
@@ -216,7 +215,7 @@ func studioBenchBundle() config.Bundle {
 		AllPersonas:  personas,
 		Templates:    templates,
 		AllTemplates: templates,
-		MCPCommands:  commands,
+		Commands:     commands,
 		Surfaces:     config.CanonicalSurfaceTable(),
 	}
 }

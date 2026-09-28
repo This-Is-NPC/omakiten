@@ -35,7 +35,7 @@ func TestBuildProjectsCatalogRelationshipsAndHookHistoryWithoutQueries(t *testin
 		AllPersonas: []config.Persona{persona},
 		Skills:      []config.Skill{{Slug: "testing"}}, AllSkills: []config.Skill{{Slug: "testing"}},
 		Laws: []config.Law{{Slug: "safe", Severity: "warning"}}, AllLaws: []config.Law{{Slug: "safe", Severity: "warning"}},
-		MCPCommands: map[string]config.MCPCommandSpec{
+		Commands: map[string]config.CommandSpec{
 			"okt-task-continue": {Persona: persona.Slug, Skills: []string{"testing"}},
 			"okt-made-up":       {Persona: "missing"},
 		},

@@ -9,7 +9,7 @@ Orient the user on the active config layout so they can customize their omakiten
 
 ## Load the orientation scaffold
 
-Call `templates.show config-orientation` to load the path resolution order, entity layout, frontmatter shapes, wiring relationships, and workflow guard kinds. Read it fully before answering any config-edit question — do not guess.
+Call `okt template show config-orientation` to load the path resolution order, entity layout, frontmatter shapes, wiring relationships, and workflow guard kinds. Read it fully before answering any config-edit question — do not guess.
 
 ## What the config governs
 

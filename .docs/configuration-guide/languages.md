@@ -76,7 +76,7 @@ Omakiten's domain vocabulary stays in English even inside translations. Translat
 The fixed primitives:
 
 ```text
-workflow · preset · bucket · harness · skill · law · persona · agent · MCP ·
+workflow · preset · bucket · harness · skill · law · persona · agent · CLI ·
 TUI · CLI · tag · blocker · slug · scope · task · comment · frontmatter ·
 hot-reload · cascade · severity
 ```

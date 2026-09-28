@@ -41,8 +41,8 @@ func (s Screen) projectionBundle() config.Bundle {
 			Skills: snap.Skills(), AllSkills: snap.AllSkills(),
 			Laws: snap.Laws(), AllLaws: snap.AllLaws(),
 			Templates: snap.Templates(), AllTemplates: snap.AllTemplates(),
-			MCPCommands: snap.MCPCommands(),
-			Config:      snap.Settings(),
+			Commands: snap.Commands(),
+			Config:   snap.Settings(),
 		}
 	}
 	return config.Bundle{Workflows: []config.Workflow{studioprojection.ConfigWorkflowFromDomain(s.workflow, nil)}}

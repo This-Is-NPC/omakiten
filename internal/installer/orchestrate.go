@@ -1,16 +1,13 @@
 package installer
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
 
-	"omakiten/internal/agentsetup"
 	"omakiten/internal/paths"
 )
 
@@ -154,87 +151,4 @@ func WritePowerShellWrappers(home string) ([]string, error) {
 		installed = append(installed, p)
 	}
 	return installed, nil
-}
-
-// HarnessSetupResult records one harness-configuration attempt so the
-// caller can render success/failure lines through the catalog without
-// re-running the work. Status mirrors agentsetup.Result.Status verbatim
-// for the success path; on failure ExitCode is non-zero and Err carries
-// the underlying error.
-type HarnessSetupResult struct {
-	Harness  string
-	Status   string
-	ExitCode int
-	Err      error
-}
-
-// SetupHarnesses invokes `<oktBin> mcp setup --harness <name> --force`
-// for each entry in names, capturing per-harness outcomes so the
-// caller can render the cli.setup.status.harness_configured /
-// cli.setup.status.harness_failed lines without aborting the loop on
-// the first failure — install.sh keeps going on per-harness errors
-// because one missing config dir (e.g. user never installed Crush)
-// shouldn't block configuring the rest.
-//
-// oktBin must be an absolute path to the okt binary (typically
-// $INSTALL_DIR/okt). The caller resolves the binary path; passing a
-// bare "okt" would rely on $PATH and surprise users whose shell hasn't
-// re-sourced the wrapper yet.
-//
-// SetupHarnesses validates each harness name against
-// agentsetup.SupportedHarnesses before invoking — an unknown name
-// short-circuits with a non-zero ExitCode and an Err so the caller
-// renders the same warning bash does for unknown harnesses.
-func SetupHarnesses(ctx context.Context, oktBin string, names []string) []HarnessSetupResult {
-	results := make([]HarnessSetupResult, 0, len(names))
-	supported := agentsetup.SupportedHarnesses()
-	for _, name := range names {
-		name = strings.TrimSpace(name)
-		if name == "" {
-			continue
-		}
-		if !contains(supported, name) {
-			results = append(results, HarnessSetupResult{
-				Harness:  name,
-				Status:   "unsupported",
-				ExitCode: 1,
-				Err:      fmt.Errorf("unsupported harness %q", name),
-			})
-			continue
-		}
-		cmd := exec.CommandContext(ctx, oktBin, "mcp", "setup", "--harness", name, "--force")
-		// Discard child stdout/stderr — install.sh did the same with
-		// `>/dev/null 2>&1`. The summary the caller renders carries
-		// the exit code, which is sufficient for the "re-run manually"
-		// hint we surface on failure.
-		cmd.Stdout = nil
-		cmd.Stderr = nil
-		err := cmd.Run()
-		res := HarnessSetupResult{Harness: name}
-		if err == nil {
-			res.Status = "ok"
-			res.ExitCode = 0
-			results = append(results, res)
-			continue
-		}
-		res.Status = "failed"
-		var exitErr *exec.ExitError
-		if errors.As(err, &exitErr) {
-			res.ExitCode = exitErr.ExitCode()
-		} else {
-			res.ExitCode = 1
-		}
-		res.Err = err
-		results = append(results, res)
-	}
-	return results
-}
-
-func contains(haystack []string, needle string) bool {
-	for _, h := range haystack {
-		if h == needle {
-			return true
-		}
-	}
-	return false
 }

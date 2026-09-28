@@ -209,7 +209,7 @@ func TestClaimNextPlanTaskReturnsEmptyWhenNothingClaimable(t *testing.T) {
 		t.Fatalf("AddPlanWave: %v", err)
 	}
 
-	ctx = activity.WithAgent(ctx, "mcp", "plans.claim_next", "claude-opus-4-7", "")
+	ctx = activity.WithAgent(ctx, "cli", "plans.claim_next", "claude-opus-4-7", "")
 	task, ok, err := store.ClaimNextPlanTask(ctx, project.ID, plan.ID, store.snap())
 	if err != nil {
 		t.Fatalf("ClaimNextPlanTask: %v", err)
@@ -242,7 +242,7 @@ func TestClaimNextPlanTaskStampsAssigneeWithoutMovingBucket(t *testing.T) {
 		t.Fatalf("AssignTaskToPlan: %v", err)
 	}
 
-	ctx = activity.WithAgent(ctx, "mcp", "plans.claim_next", "claude-opus-4-7", "")
+	ctx = activity.WithAgent(ctx, "cli", "plans.claim_next", "claude-opus-4-7", "")
 	claimed, ok, err := store.ClaimNextPlanTask(ctx, project.ID, plan.ID, store.snap())
 	if err != nil {
 		t.Fatalf("ClaimNextPlanTask: %v", err)
@@ -334,7 +334,7 @@ func TestClaimNextPlanTask_EmitsEventOnSuccess(t *testing.T) {
 	})
 	defer sub.Unsubscribe()
 
-	ctx = activity.WithAgent(ctx, "mcp", "plans.claim_next", "claude-opus-4-7", "")
+	ctx = activity.WithAgent(ctx, "cli", "plans.claim_next", "claude-opus-4-7", "")
 	claimed, ok, err := store.ClaimNextPlanTask(ctx, project.ID, plan.ID, store.snap())
 	if err != nil {
 		t.Fatalf("ClaimNextPlanTask: %v", err)
@@ -444,7 +444,7 @@ func TestPeekNextClaimableMatchesClaimWithoutMutating(t *testing.T) {
 
 	assertPeekDoesNotMutateTask(t, ctx, store, task.ID)
 
-	ctx = activity.WithAgent(ctx, "mcp", "plans.claim_next", "claude-opus-4-7", "")
+	ctx = activity.WithAgent(ctx, "cli", "plans.claim_next", "claude-opus-4-7", "")
 	claimed, ok, err := store.ClaimNextPlanTask(ctx, project.ID, plan.ID, store.snap())
 	if err != nil {
 		t.Fatalf("ClaimNextPlanTask after peek: %v", err)
@@ -527,7 +527,7 @@ func TestClaimNextPlanTaskGatesAcrossWaves(t *testing.T) {
 		t.Fatalf("AssignTaskToPlan 2: %v", err)
 	}
 
-	ctx = activity.WithAgent(ctx, "mcp", "plans.claim_next", "claude-opus-4-7", "")
+	ctx = activity.WithAgent(ctx, "cli", "plans.claim_next", "claude-opus-4-7", "")
 
 	first, ok := mustClaimPlanTask(t, ctx, store, project.ID, plan.ID)
 	if !ok || first.ID != t1.ID {
@@ -599,7 +599,7 @@ func concurrentPlanClaims(t *testing.T, ctx context.Context, store *storeFixture
 		wg.Add(1)
 		go func(workerID int) {
 			defer wg.Done()
-			wctx := activity.WithAgent(ctx, "mcp", "plans.claim_next", "claude-opus-4-7-worker", "")
+			wctx := activity.WithAgent(ctx, "cli", "plans.claim_next", "claude-opus-4-7-worker", "")
 			claimed, ok, err := store.ClaimNextPlanTask(wctx, projectID, planID, store.snap())
 			if err != nil {
 				t.Errorf("worker %d claim: %v", workerID, err)
@@ -729,7 +729,7 @@ func TestMoveTaskClearsAssignedToOnBucketChange(t *testing.T) {
 	}
 
 	// Claim populates assigned_to without moving the bucket — task stays in backlog.
-	ctxClaim := activity.WithAgent(ctx, "mcp", "plans.claim_next", "claude-opus-4-7", "")
+	ctxClaim := activity.WithAgent(ctx, "cli", "plans.claim_next", "claude-opus-4-7", "")
 	claimed, ok, err := store.ClaimNextPlanTask(ctxClaim, project.ID, plan.ID, store.snap())
 	if err != nil || !ok {
 		t.Fatalf("ClaimNextPlanTask: ok=%v err=%v", ok, err)
@@ -895,7 +895,7 @@ func TestClaimNextPlanTaskNeverCompletesEvenInTwoBucketWorkflow(t *testing.T) {
 		t.Fatalf("AssignTaskToPlan: %v", err)
 	}
 
-	ctxClaim := activity.WithAgent(ctx, "mcp", "plans.claim_next", "claude-opus-4-7", "")
+	ctxClaim := activity.WithAgent(ctx, "cli", "plans.claim_next", "claude-opus-4-7", "")
 	claimed, ok, err := store.ClaimNextPlanTask(ctxClaim, project.ID, plan.ID, store.snap())
 	if err != nil || !ok {
 		t.Fatalf("ClaimNextPlanTask: ok=%v err=%v", ok, err)

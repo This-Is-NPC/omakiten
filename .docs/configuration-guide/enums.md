@@ -52,7 +52,7 @@ config:
 | Field | Type | Notes |
 |---|---|---|
 | `id` | int `> 0` | Storage handle and sort weight. Declare low to high. |
-| `value` | string | Human label in TUI badges, CLI output, and MCP DTOs. |
+| `value` | string | Human label in TUI badges, CLI output, and CLI DTOs. |
 | `default` | bool | At most one entry. Used when a task is created without explicit priority. |
 | `color` | string, optional | Theme token for badges: `error`, `warning`, `success`, or `info`. |
 

@@ -1,6 +1,6 @@
 # View configuration
 
-`config.views` sets default sort, filter, and time-window behavior for CLI/TUI/MCP read surfaces. It seeds views; it does not define workflow or command semantics.
+`config.views` sets default sort, filter, and time-window behavior for CLI/TUI read surfaces. It seeds views; it does not define workflow or command semantics.
 
 Source files:
 
@@ -64,7 +64,7 @@ time; use `config.views.logs.window_days` only for its default time horizon.
 
 - TUI Stats Logs.
 - CLI `okt logs` when `--since` is omitted.
-- MCP `logs.list` when `since` is omitted.
+- CLI `logs.list` when `since` is omitted.
 
 Callers can still pass an explicit time floor for one query.
 

@@ -13,7 +13,6 @@ import (
 // per-key audit list under screen `03 //settings`.
 //
 // Section is the top-level YAML block (the outermost mapping key inside
-// `config:` — e.g. `mcp`, `context`, `theme`, `views`). Key is the
 // dot-path within the section (e.g. `recent_comment_limit`, or
 // `surface.padding.left` for nested blocks; numeric indexes are appended
 // as `[0]` for sequences). Value is the canonical YAML literal for the

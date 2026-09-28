@@ -136,9 +136,9 @@ func TestStudioCommandsRendersGlobalAndWarnings(t *testing.T) {
 	bundle.AllLaws = []config.Law{{Slug: "safety"}}
 	bundle.Templates = []config.TaskTemplate{{Slug: "requirements"}}
 	bundle.AllTemplates = []config.TaskTemplate{{Slug: "requirements"}}
-	bundle.MCPCommands = map[string]config.MCPCommandSpec{
-		config.MCPCommandsGlobalKey: {Laws: []string{"safety"}},
-		"okt-task-continue":         {Persona: "missing-persona", Skills: []string{"ghost-skill"}, Laws: []string{"missing-law"}, Templates: []string{"missing-template"}},
+	bundle.Commands = map[string]config.CommandSpec{
+		config.CommandsGlobalKey: {Laws: []string{"safety"}},
+		"okt-task-continue":      {Persona: "missing-persona", Skills: []string{"ghost-skill"}, Laws: []string{"missing-law"}, Templates: []string{"missing-template"}},
 	}
 	draft, err := bundledraft.New(bundleeditor.New(&studioDraftStore{bundle: bundle}, "omakiten.yaml"))
 	if err != nil {
@@ -152,10 +152,10 @@ func TestStudioCommandsRendersGlobalAndWarnings(t *testing.T) {
 		"global laws",
 		"safety",
 		"okt-task-continue",
-		"mcp_commands.okt-task-continue.persona",
-		"mcp_commands.okt-task-continue.skills",
-		"mcp_commands.okt-task-continue.laws",
-		"mcp_commands.okt-task-continue.templates",
+		"commands.okt-task-continue.persona",
+		"commands.okt-task-continue.skills",
+		"commands.okt-task-continue.laws",
+		"commands.okt-task-continue.templates",
 	} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("Studio commands missing %q\n%s", want, view)
@@ -169,13 +169,13 @@ func TestStudioCommandsPersonaChangeSurfacesInvalidSkills(t *testing.T) {
 	bundle.AllPersonas = append([]config.Persona(nil), bundle.Personas...)
 	bundle.Skills = []config.Skill{{Slug: "code"}, {Slug: "review"}}
 	bundle.AllSkills = append([]config.Skill(nil), bundle.Skills...)
-	bundle.MCPCommands = map[string]config.MCPCommandSpec{"okt-task-continue": {Persona: "builder", Skills: []string{"code"}}}
+	bundle.Commands = map[string]config.CommandSpec{"okt-task-continue": {Persona: "builder", Skills: []string{"code"}}}
 	draft, err := bundledraft.New(bundleeditor.New(&studioDraftStore{bundle: bundle}, "omakiten.yaml"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	m := Model{styles: newStyles(tuiTestTheme()), width: 120, height: 40, studioScreen: studioState(draft, func(state *studio.State) {
-		state.CommandIndex = studio.CommandIndexFor(bundle.MCPCommands, "okt-task-continue")
+		state.CommandIndex = studio.CommandIndexFor(bundle.Commands, "okt-task-continue")
 	})}
 
 	updateStudioTest(&m, screenhost.StudioCommands, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'p'}})
@@ -185,7 +185,7 @@ func TestStudioCommandsPersonaChangeSurfacesInvalidSkills(t *testing.T) {
 		t.Fatalf("validation error = %v, want invalid skill subset", report.ValidationError)
 	}
 	view := ansi.Strip(renderStudioTest(m, screenhost.StudioCommands))
-	if !strings.Contains(view, "Validation: mcp_commands.okt-task-continue.skills") {
+	if !strings.Contains(view, "Validation: commands.okt-task-continue.skills") {
 		t.Fatalf("Studio commands did not render blocking validation\n%s", view)
 	}
 }
@@ -202,7 +202,7 @@ func TestStudioCommandsGlobalLawMutation(t *testing.T) {
 
 	updateStudioTest(&m, screenhost.StudioCommands, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'g'}})
 
-	laws := draft.Report().Candidate.MCPCommands[config.MCPCommandsGlobalKey].Laws
+	laws := draft.Report().Candidate.Commands[config.CommandsGlobalKey].Laws
 	if len(laws) != 1 || laws[0] != "safety" {
 		t.Fatalf("global laws = %#v, want safety", laws)
 	}
@@ -215,16 +215,16 @@ func TestStudioPreviewRendersCandidatePrompt(t *testing.T) {
 	bundle.Skills = []config.Skill{{Slug: "code", Name: "Code", Body: "Implement the change."}}
 	bundle.Laws = []config.Law{{Slug: "global-law", Name: "Global", Severity: "warning", Body: "Global rule."}, {Slug: "persona-law", Name: "Persona", Severity: "error", Body: "Persona rule."}, {Slug: "template-law", Name: "Template", Severity: "info", Body: "Template rule."}, {Slug: "disabled-law", Name: "Disabled", Severity: "info", Body: "Disabled rule."}}
 	bundle.Templates = []config.TaskTemplate{{Slug: "task-template", Name: "Task Template", Default: "task", Description: "Task scaffold", Laws: []string{"template-law", "disabled-law"}, Body: "Template body."}}
-	bundle.MCPCommands = map[string]config.MCPCommandSpec{
-		config.MCPCommandsGlobalKey: {Laws: []string{"global-law", "disabled-law"}},
-		"okt-task-continue":         {Persona: "builder", Skills: []string{"code"}, Templates: []string{"task-template"}, LawsDisabled: []string{"disabled-law"}},
+	bundle.Commands = map[string]config.CommandSpec{
+		config.CommandsGlobalKey: {Laws: []string{"global-law", "disabled-law"}},
+		"okt-task-continue":      {Persona: "builder", Skills: []string{"code"}, Templates: []string{"task-template"}, LawsDisabled: []string{"disabled-law"}},
 	}
 	draft, err := bundledraft.New(bundleeditor.New(&studioDraftStore{bundle: bundle}, "omakiten.yaml"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	m := Model{styles: newStyles(tuiTestTheme()), width: 120, height: 40, studioScreen: studioState(draft, func(state *studio.State) {
-		state.CommandIndex = studio.CommandIndexFor(bundle.MCPCommands, "okt-task-continue")
+		state.CommandIndex = studio.CommandIndexFor(bundle.Commands, "okt-task-continue")
 	})}
 
 	view := ansi.Strip(renderStudioTest(m, screenhost.StudioCommands))
@@ -301,13 +301,13 @@ func TestStudioPromptPreviewSanitizesControlsAndPreservesMarkdownLines(t *testin
 	bundle := studioDraftBundle()
 	bundle.Personas = []config.Persona{{Slug: "builder", Name: "Builder", Body: "first\nsecond\x00\x1b]0;owned\a\u009b31m"}}
 	bundle.AllPersonas = append([]config.Persona(nil), bundle.Personas...)
-	bundle.MCPCommands = map[string]config.MCPCommandSpec{"okt-task-continue": {Persona: "builder"}}
+	bundle.Commands = map[string]config.CommandSpec{"okt-task-continue": {Persona: "builder"}}
 	draft, err := bundledraft.New(bundleeditor.New(&studioDraftStore{bundle: bundle}, "omakiten.yaml"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	m := Model{styles: newStyles(tuiTestTheme()), studioScreen: studioState(draft, func(state *studio.State) {
-		state.CommandIndex = studio.CommandIndexFor(bundle.MCPCommands, "okt-task-continue")
+		state.CommandIndex = studio.CommandIndexFor(bundle.Commands, "okt-task-continue")
 	})}
 	m.repos.ResolveCommandPreview = agentruntime.ResolveCommandPreview
 	view := ansi.Strip(m.boundStudioScreen(screenhost.StudioCommands).PromptPreview(m.screenFrame(), draft.Report().Candidate))
@@ -380,7 +380,7 @@ func TestStudioGuardReorderPreservesDeclarationOrder(t *testing.T) {
 func TestRootForwardsAScreensOwnAsyncMessage(t *testing.T) {
 	bundle := studioDraftBundle()
 	bundle.Personas = []config.Persona{{Slug: "builder", Name: "Builder", Body: "Ship working code."}}
-	bundle.MCPCommands = map[string]config.MCPCommandSpec{"okt-task-continue": {Persona: "builder"}}
+	bundle.Commands = map[string]config.CommandSpec{"okt-task-continue": {Persona: "builder"}}
 	draft, err := bundledraft.New(bundleeditor.New(&studioDraftStore{bundle: bundle}, "omakiten.yaml"))
 	if err != nil {
 		t.Fatal(err)
@@ -389,7 +389,7 @@ func TestRootForwardsAScreensOwnAsyncMessage(t *testing.T) {
 		styles: newStyles(tuiTestTheme()), width: 120, height: 40,
 		navigation: screenhost.StudioCommands,
 		studioScreen: studioState(draft, func(state *studio.State) {
-			state.CommandIndex = studio.CommandIndexFor(bundle.MCPCommands, "okt-task-continue")
+			state.CommandIndex = studio.CommandIndexFor(bundle.Commands, "okt-task-continue")
 		}),
 	}
 

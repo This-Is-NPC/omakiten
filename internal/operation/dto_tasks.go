@@ -5,7 +5,7 @@ import (
 	"omakiten/internal/domain"
 )
 
-// taskSummary projects a domain.Task into the MCP wire shape, resolving the
+// taskSummary projects a domain.Task into the delivery contract, resolving the
 // priority label via the supplied registry. registry is nil-safe — Priority
 // is left empty when no registry is available, so consumers can still parse
 // the rest of the shape.

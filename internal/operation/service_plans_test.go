@@ -30,7 +30,7 @@ func TestAssignAndClaimPlanTaskRoundTrip(t *testing.T) {
 	}
 
 	// Claim — must succeed and stamp assignee.
-	ctxModel := activity.WithAgent(fixture.ctx, "mcp", "plans.claim_next", "claude-opus-4-7", "")
+	ctxModel := activity.WithAgent(fixture.ctx, "cli", "plans.claim_next", "claude-opus-4-7", "")
 	resp, err := fixture.service.ClaimNextPlanTask(ctxModel, contract.ClaimNextPlanTaskInput{Slug: "race"})
 	if err != nil {
 		t.Fatalf("ClaimNextPlanTask: %v", err)
@@ -91,14 +91,14 @@ func TestCreatePlanRoundTripThroughAgentService(t *testing.T) {
 	fixture := newAgentFixture(t)
 
 	resp, err := fixture.service.CreatePlan(fixture.ctx, contract.CreatePlanInput{
-		Slug:     "ship-mcp",
-		Name:     "Ship MCP",
+		Slug:     "ship-cli",
+		Name:     "Ship agent",
 		GoalBody: "Goal markdown",
 	})
 	if err != nil {
 		t.Fatalf("CreatePlan: %v", err)
 	}
-	if resp.Plan.Slug != "ship-mcp" || resp.Plan.Name != "Ship MCP" {
+	if resp.Plan.Slug != "ship-cli" || resp.Plan.Name != "Ship agent" {
 		t.Fatalf("CreatePlan plan = %+v", resp.Plan)
 	}
 	if resp.Plan.Status != string(domain.PlanStatusActive) {
@@ -291,7 +291,7 @@ func TestContinuePlanPreviewsNextClaimable(t *testing.T) {
 
 	// Sanity: peek did not mutate. plans.claim_next on the same plan
 	// must still hand back the same task id.
-	claimCtx := activity.WithAgent(fixture.ctx, "mcp", "plans.claim_next", "claude-test", "")
+	claimCtx := activity.WithAgent(fixture.ctx, "cli", "plans.claim_next", "claude-test", "")
 	claim, err := fixture.service.ClaimNextPlanTask(claimCtx, contract.ClaimNextPlanTaskInput{Slug: "resume"})
 	if err != nil {
 		t.Fatalf("ClaimNextPlanTask after peek: %v", err)

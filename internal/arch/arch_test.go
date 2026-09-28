@@ -38,7 +38,7 @@ var hexagonalRules = []rule{
 		from: "internal/app",
 		forbidden: []string{
 			"internal/sqlite", "internal/configstore",
-			"internal/tui", "internal/cli", "internal/mcp", "internal/operation",
+			"internal/tui", "internal/cli", "internal/operation",
 			"internal/agentruntime",
 		},
 		reason: "app talks to adapters via ports declared in app/ports.go; concrete adapter imports invert the hex direction",
@@ -47,7 +47,7 @@ var hexagonalRules = []rule{
 		from: "internal/sqlite",
 		forbidden: []string{
 			"internal/app", "internal/configstore", "internal/tui", "internal/cli",
-			"internal/mcp", "internal/operation", "internal/agentruntime",
+			"internal/operation", "internal/agentruntime",
 		},
 		reason: "sqlite is a leaf adapter; depending on app or sibling adapters would cycle the dependency graph",
 	},
@@ -55,7 +55,7 @@ var hexagonalRules = []rule{
 		from: "internal/configstore",
 		forbidden: []string{
 			"internal/app", "internal/sqlite", "internal/tui", "internal/cli",
-			"internal/mcp", "internal/operation", "internal/agentruntime",
+			"internal/operation", "internal/agentruntime",
 		},
 		reason: "configstore is a leaf adapter for config I/O; depending on app or sibling adapters cycles the graph",
 	},
@@ -64,7 +64,7 @@ var hexagonalRules = []rule{
 		forbidden: []string{
 			"internal/tui", "internal/cli", "internal/terminal",
 		},
-		reason: "agentruntime is the headless agent/MCP composition root; TUI delivery must stay behind neutral hook actions and sender ports",
+		reason: "agentruntime is the headless composition root; TUI delivery must stay behind neutral hook actions and sender ports",
 	},
 	{
 		from:      "internal/tui/components",
@@ -76,10 +76,10 @@ var hexagonalRules = []rule{
 	ruleScreensNoOperation,
 	{from: "internal/tui", forbidden: []string{"internal/cli", "internal/operation", "internal/agentruntime", "internal/configstore", "internal/sqlite", "internal/recovery"}, reason: "tui receives neutral contracts and ports"},
 	{from: "internal/cli", forbidden: []string{"internal/tui", "internal/terminal"}, reason: "cli receives an injected interactive runner"},
-	{from: "internal/contract", forbidden: []string{"internal/app", "internal/operation", "internal/agentruntime", "internal/sqlite", "internal/configstore", "internal/recovery", "internal/tui", "internal/cli", "internal/mcp", "internal/terminal", "internal/updater"}, reason: "contracts contain no implementations"},
+	{from: "internal/contract", forbidden: []string{"internal/app", "internal/operation", "internal/agentruntime", "internal/sqlite", "internal/configstore", "internal/recovery", "internal/tui", "internal/cli", "internal/terminal", "internal/updater"}, reason: "contracts contain no implementations"},
 	{from: "internal/config", forbidden: []string{"internal/tui", "internal/cli", "internal/terminal"}, reason: "configuration is independent of delivery"},
 	{from: "internal/app", forbidden: []string{"internal/recovery", "internal/terminal", "internal/hooks"}, reason: "application services use adapter ports"},
-	{from: "internal/operation", forbidden: []string{"internal/tui", "internal/cli", "internal/terminal", "internal/mcp"}, reason: "operations are independent of their consumers"},
+	{from: "internal/operation", forbidden: []string{"internal/tui", "internal/cli", "internal/terminal"}, reason: "operations are independent of their consumers"},
 }
 
 // Delivery adapters cannot bypass their operation contracts to call application services.

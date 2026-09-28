@@ -7,12 +7,11 @@ import (
 
 func init() {
 	registerFormatter(EventTypeCLIToolCall, summarizeToolCall)
-	registerFormatter(EventTypeMCPToolCall, summarizeToolCall)
 	registerFormatter(EventTypeTUIToolCall, summarizeToolCall)
 }
 
 // summarizeToolCall renders the per-invocation activity log entries
-// shared by CLI / MCP / TUI tool surfaces. The three event_types share
+// shared by CLI / TUI tool surfaces. The three event_types share
 // the same payload shape so a single arm covers all three.
 func summarizeToolCall(row EventRow) string {
 	payload := decodePayload(row.Payload)

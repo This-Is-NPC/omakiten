@@ -400,7 +400,7 @@ func (s *Service) AddPlanWave(ctx context.Context, input contract.AddPlanWaveInp
 	}, nil
 }
 
-// planWaveSummary projects a domain.PlanWave into the MCP wire shape.
+// planWaveSummary projects a domain.PlanWave into the delivery contract.
 func planWaveSummary(wave domain.PlanWave) contract.PlanWaveSummary {
 	return contract.PlanWaveSummary{
 		ID:       wave.ID,

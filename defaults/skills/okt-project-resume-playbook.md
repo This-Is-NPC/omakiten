@@ -9,7 +9,7 @@ Scan for the next work to pick up. This is the cold scan across the project, not
 
 ## Scan and report
 
-Call `project.resume` and report the top candidates, each with a one-line rationale so the user can choose with context rather than guessing.
+Call `okt project resume` and report the top candidates, each with a one-line rationale so the user can choose with context rather than guessing.
 
 ## Handoff
 

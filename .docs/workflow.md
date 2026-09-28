@@ -213,11 +213,11 @@ Operations: archive requires `#documentation`.
 
 ### Persona, laws, skills, templates
 
-Personas, MCP-command bindings, and workflow guards for `omakase` live in `defaults/config/omakase.yaml`. Inspect the active wiring with:
+Personas, CLI-command bindings, and workflow guards for `omakase` live in `defaults/config/omakase.yaml`. Inspect the active wiring with:
 
 ```bash
 okt persona list                     # personas in the active preset
-okt mcp call templates.list --input '{}'
+okt template list
 yq '.workflows[0]' defaults/config/omakase.yaml
 ```
 
@@ -465,7 +465,7 @@ A note is the same comment row with a wider scope — the distinction is `scope`
 
 A task's `#tests-passing` evidence belongs in the task's comment trail (it documents that task's CHECK phase). A "we picked SQLite over Postgres because…" decision, the team glossary, a runbook for a flaky deploy, or the snapshot at the end of today's session — those belong in a `scope=project`/`universal` comment, where they stay reachable from any future task or project view.
 
-See [`mcp.md` § Comments & activity](./mcp.md#comments--activity) for the tool-level surface (scope/kind/title/pinned filters) and [`mcp.md` § Prompts](./mcp.md#prompts) for the prompt table including these commands.
+See [`agents.md` § Comments & activity](./cli.md#comments) for the tool-level surface (scope/kind/title/pinned filters) and [`agents.md` § Prompts](./agents.md#use) for the prompt table including these commands.
 
 ---
 
@@ -488,9 +488,9 @@ The four official presets all wire `wave_gate` onto the transition that enters `
 
 Tasks not attached to a plan (`wave_id IS NULL`) pass the guard as a no-op, so the new guard is safe in every existing preset.
 
-### Atomic claim — `plans.claim_next`
+### Atomic claim — `okt plan claim`
 
-`plans.claim_next` is the only correct way for an agent to acquire work inside a plan. The MCP tool wraps a single SQLite write transaction:
+`okt plan claim <slug>` acquires work inside a plan atomically. It wraps a single SQLite write transaction:
 
 1. `BEGIN IMMEDIATE` — serialises against any concurrent claim attempt.
 2. `SELECT` the active wave (lowest-position wave with any non-final active task), then the lowest-id task in that wave that is active, unassigned, and still in the workflow's first bucket.
@@ -499,13 +499,12 @@ Tasks not attached to a plan (`wave_id IS NULL`) pass the guard as a no-op, so t
 
 Two concurrent calls land on the same write lock; the loser retries the SELECT and either claims a different first-bucket task or returns empty. No double-claim is possible. The CLI handle (`okt plan claim <slug>`) hits the same primitive.
 
-Agents claim first, then move with `tasks.move` after preset-defined guard preconditions are satisfied. Calling `tasks.move` without a prior claim bypasses the assignment write and leaves the activity log inconsistent with the plan's progress view.
+Agents claim first, then move with `okt move` after preset-defined guard preconditions are satisfied. Calling `okt move` without a prior claim bypasses the assignment write and leaves the activity log inconsistent with the plan's progress view.
 
 ### How many agents can a wave sustain?
 
 **Manual result: 87 agents claiming simultaneously against one database.** Every claim through that level in the 2026-08-02 reference run was correct; the first failing level was 88, where excess agents got a `SQLITE_BUSY` error instead of a task. This was a full manual run, not a CI gate; the separate manual freshness check currently passes, but CI does not rerun or certify the ceiling.
 
-The number is environment-qualified — 12 logical CPUs, SQLite 3.53.0, `busy_timeout=5000`, file-backed WAL, source revision `a69613257999ca05b66ecc75a27842bb7635c104` — and comes from a reproducible harness, not a guess. The linked reference documents the invalidation triggers and fast freshness check. Protocol, full per-level table, and raw JSON live in [`internal/claim-next-agent-ceiling.md`](./internal/claim-next-agent-ceiling.md).
 
 What this means when you size a wave:
 
@@ -531,7 +530,7 @@ v1 does not auto-reclaim — silent reclaim would hide real-world agent failures
 
 ### Surfaces
 
-- **MCP**: 13 tools under `plans.*` (`create`, `list`, `show`, `add_wave`, `assign_task`, `continue`, `claim_next`, `edit`, `delete`, `remove_wave`, `rename_wave`, `reorder_wave`, `unassign`). See [MCP Guide § Plans](./mcp.md#plans-wbs-style-multi-agent-orchestration).
+- **CLI**: 13 tools under `plans.*` (`create`, `list`, `show`, `add_wave`, `assign_task`, `continue`, `claim_next`, `edit`, `delete`, `remove_wave`, `rename_wave`, `reorder_wave`, `unassign`). See [CLI Guide § Plans](./cli.md#plans).
 - **CLI**: `okt plan create|list|show|wave-add|assign|claim|edit|delete|wave-remove|wave-rename|wave-reorder|unassign` and the orthogonal `okt assign <task_id> [who]` for free-text assignment outside the plan flow. See [CLI Guide § Plans](./cli.md#plans).
 - **TUI**: a fourth sub-tab under `01 // TASKS` — list view first, then a screen-local collapsible wave/task network per plan with goal editing and assignment. See [TUI Guide § Tasks › Plans](./tui.md#tasks--plans).
 - **Search**: `plans.goal_body` is indexed in the unified FTS5 `search_index` so cross-project `search` finds plans by name or any phrase in the goal markdown.
@@ -567,7 +566,7 @@ Run these locally before activating a custom preset:
 okt config validate <config-dir>/config/custom/<my-preset>.yaml
 ```
 
-The validator rejects missing required config blocks, bad enum rows, invalid workflow references, unknown guard types, contradictory `mcp_commands` law rules, and command skills outside the persona repertoire. The field-level rules live in the configuration-guide modules above.
+The validator rejects missing required config blocks, bad enum rows, invalid workflow references, unknown guard types, contradictory `commands` law rules, and command skills outside the persona repertoire. The field-level rules live in the configuration-guide modules above.
 
 Warnings (non-fatal) flag template slug-vs-name mismatches and other low-severity drift; the runtime still loads but the agent may show a noisier prompt.
 
@@ -578,7 +577,7 @@ Warnings (non-fatal) flag template slug-vs-name mismatches and other low-severit
    ```bash
    echo my-preset.yaml > <config-dir>/config/.active
    ```
-3. The next CLI / TUI / MCP invocation resolves the new preset. On Windows,
+3. The next CLI / TUI invocation resolves the new preset. On Windows,
    pass `--config <path>` instead. On Plan 9 and other unsupported targets,
    config installation and marker persistence remain unavailable until a
    safe-I/O backend is provided.
@@ -610,8 +609,7 @@ for config installation.
 - [`configuration-guide/command-bindings.md`](./configuration-guide/command-bindings.md) — prompt binding schema.
 - [`configuration-guide/guards.md`](./configuration-guide/guards.md) — guard types and their config.
 - [`presets.md`](./presets.md) — preset discipline and workflow comparison.
-- [`mcp.md`](./mcp.md) — MCP tool surface, prompt anatomy, tuning context cost.
+- [`agents.md`](./agents.md) — skill installation and agent CLI workflow.
 - [`internal/data-model.md`](./internal/data-model.md) — current SQLite schema and operational data.
-- [`internal/claim-next-agent-ceiling.md`](./internal/claim-next-agent-ceiling.md) — measured `plans.claim_next` concurrency ceiling and its protocol.
 - `internal/domain/event.go::KnownEventTypes` — canonical list of `events` payloads.
 - [`why_omakiten.md`](./why_omakiten.md) — every cited work; per-preset "Methodology basis" anchors link here.

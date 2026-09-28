@@ -9,7 +9,7 @@ laws:
 
 Precedence (full contract in `.docs/configuration-guide/path-resolution.md`):
 
-1. `--config <path>` flag (CLI / TUI / MCP).
+1. `--config <path>` flag (CLI / TUI).
 2. `$OMAKITEN_HOME/config/<active>.yaml`.
 3. `$XDG_CONFIG_HOME/omakiten/config/<active>.yaml`.
 4. `~/.config/omakiten/config/<active>.yaml`.
@@ -56,13 +56,13 @@ CLI / TUI surface:
 | Persona | — | `name`, `description`, `skills`, `laws` |
 | Template | — | `name`, `description`, `entity`, `default`, `project`, `laws` |
 
-A template's `default:` value must appear in `config.template_defaults`. Templates without `default:` still load and remain bindable from `mcp_commands` — they just aren't offered in the TUI default-picker. A template with `project: <slug>` scopes the binding to that project, shadowing any global template that claims the same `(default, project=*)` slot.
+A template's `default:` value must appear in `config.template_defaults`. Templates without `default:` still load and remain bindable from `commands` — they just aren't offered in the TUI default-picker. A template with `project: <slug>` scopes the binding to that project, shadowing any global template that claims the same `(default, project=*)` slot.
 
 ## Wiring relationships
 
 - **Persona → skills/laws.** Listed in the persona's frontmatter.
-- **`mcp_commands.<cmd>` → persona / laws / templates.** Each prompt resolves one persona, the union of its bound laws, and any bound templates.
-- **`mcp_commands.global.laws`** — inherited by every command unless opted out via `mcp_commands.<cmd>.laws_disabled`.
+- **`commands.<cmd>` → persona / laws / templates.** Each prompt resolves one persona, the union of its bound laws, and any bound templates.
+- **`commands.global.laws`** — inherited by every command unless opted out via `commands.<cmd>.laws_disabled`.
 - **Effective laws for a command** = `global ∪ persona.laws ∪ command.laws ∪ templates[].laws`, deduped, minus `laws_disabled`.
 - A `laws:` or `personas:` block in the profile yaml acts as a strict allowlist (only the listed slugs activate). Omitting the block auto-loads every `.md` under the corresponding folder.
 
@@ -127,11 +127,11 @@ All accept `hint` (string shown in the `guard.violated` event when the guard fai
 
 ### Operation guards
 
-`workflows[].operations.{archive,delete,unarchive}.guards[]` reuses the same guard shapes above. They gate the corresponding `tasks.archive` / `tasks.delete` / `tasks.unarchive` calls. Archive moves the task into the workflow's final bucket atomically and bypasses both bucket policy and transition guards — only operation guards apply. Unarchive flips state back to `active` while leaving the bucket untouched.
+`workflows[].operations.{archive,delete,unarchive}.guards[]` reuses the same guard shapes above. They gate the corresponding `okt archive` / `okt delete` / `okt unarchive` calls. Archive moves the task into the workflow's final bucket atomically and bypasses both bucket policy and transition guards — only operation guards apply. Unarchive flips state back to `active` while leaving the bucket untouched.
 
 ### Task state
 
-Tasks carry `state ∈ {active, archived}`. `domain.TaskFilter.IncludeArchived` defaults to false everywhere, so archived rows are invisible in `tasks.list` / board / table unless explicitly included.
+Tasks carry `state ∈ {active, archived}`. `domain.TaskFilter.IncludeArchived` defaults to false everywhere, so archived rows are invisible in `okt list` / board / table unless explicitly included.
 
 ## Configurable enums
 
@@ -153,10 +153,10 @@ config:
 - `color` is an optional theme token name (`success | info | warning | error`) used by the badge renderer.
 - Storage is by integer id, so renaming a label is a one-line edit; existing tasks / laws keep their stored id.
 
-## MCP commands
+## CLI commands
 
 ```yaml
-mcp_commands:
+commands:
   global:
     laws: [template-fidelity, authorize-remote-writes]
   okt-task-implement:
@@ -255,8 +255,8 @@ Every block plus its sort `field` / `order` is required — the validator reject
 | `config.tui.token_badge` | Token badge thresholds on entity cards | `yellow_at`, `red_at` |
 | `config.sqlite.busy_timeout_ms` | `PRAGMA busy_timeout` (ms) | > 0 |
 | `config.events.retention` | Storage caps for persisted event rows | `defaults.{max_age_days,max_rows}` (both >= 0); optional `by_category` / `overrides` |
-| `config.solutions` | `solutions.list_top` MCP caps | `default_top_limit`, `max_top_limit` |
-| `config.mcp` | MCP response shape | `recent_comment_limit` (> 0), `max_comment_chars` (≥ 0), `include_workflow_in_continue` (`*bool`), `cache_prompts` (`*bool`), `next_work_limit`, `similar_task_limit` (both > 0) |
+| `config.solutions` | `okt solution list-top` CLI caps | `default_top_limit`, `max_top_limit` |
+| `config.agent` | CLI response shape | `recent_comment_limit` (> 0), `max_comment_chars` (≥ 0), `include_workflow_in_continue` (`*bool`), `next_work_limit`, `similar_task_limit` (both > 0) |
 | `config.search.stopwords` | Tokens dropped before similarity scoring | list of lowercase strings |
 | `config.tag_synonyms` | `NormalizeTagName` redirect table | `<non-canonical>: <canonical>` map |
 | `config.template_defaults` | Allowed values for template frontmatter `default:` | list of kind strings |
@@ -269,7 +269,7 @@ Every required field is rejected by the validator if missing — error messages 
 2. **Copy before editing.** Either copy the profile under `<config-dir>/custom/<name>.yaml` (so a future kit refresh doesn't overwrite it) or override field-by-field inside the existing active file.
 3. **Edit and validate.** `okt config validate <path>` runs the same strict parser the runtime uses — missing required fields, dangling refs, unknown event types, and guard typos surface here.
 4. **Activate.** TUI: Settings › Config picker. CLI: edit `<config-dir>/.active` to the new basename, or pass `--config <path>` per invocation.
-5. **Reload.** CLI / MCP reload on next invocation. The TUI hot-reloads on picker selection; otherwise relaunch.
+5. **Reload.** CLI reload on next invocation. The TUI hot-reloads on picker selection; otherwise relaunch.
 
 ## Canonical references
 
@@ -278,6 +278,6 @@ For deeper detail, fetch the matching guide:
 - `.docs/configuration-guide/README.md` — map of modular config guides.
 - `.docs/configuration-guide/workflows.md` — workflow buckets, transitions, permissions, and operation guards.
 - `.docs/configuration-guide/guards.md` — guard kinds, evaluation order, and failure payloads.
-- `.docs/configuration-guide/command-bindings.md` — `mcp_commands` persona/law/template bindings.
-- `.docs/mcp.md` — MCP tool surface and prompt anatomy.
+- `.docs/configuration-guide/command-bindings.md` — `commands` persona/law/template bindings.
+- `.docs/agents.md` — CLI tool surface and prompt anatomy.
 - `.docs/internal/data-model.md` — current SQLite schema baseline and the unified `events` log.

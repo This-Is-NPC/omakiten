@@ -31,14 +31,14 @@ type Bundle struct {
 	AllLaws      []Law          `yaml:"-" json:"-"`
 	AllTemplates []TaskTemplate `yaml:"-" json:"-"`
 	Workflows    []Workflow     `yaml:"workflows" json:"workflows,omitempty"`
-	// Surfaces is the per-operation CLI/TUI/MCP exposure table. It is a
+	// Surfaces is the per-operation CLI/TUI exposure table. It is a
 	// sibling of workflows:, not nested under workflow.operations (those
 	// are domain guards). LoadBundle rejects an incomplete table.
-	Surfaces      SurfaceTable              `yaml:"surfaces,omitempty" json:"surfaces,omitempty"`
-	Projects      []Project                 `yaml:"-" json:"projects,omitempty"`
-	MCPCommands   map[string]MCPCommandSpec `yaml:"-" json:"mcp_commands,omitempty"`
-	Notifications map[string]Notification   `yaml:"-" json:"notifications,omitempty"`
-	Languages     []Language                `yaml:"-" json:"languages,omitempty"`
+	Surfaces      SurfaceTable            `yaml:"surfaces,omitempty" json:"surfaces,omitempty"`
+	Projects      []Project               `yaml:"-" json:"projects,omitempty"`
+	Commands      map[string]CommandSpec  `yaml:"-" json:"commands,omitempty"`
+	Notifications map[string]Notification `yaml:"-" json:"notifications,omitempty"`
+	Languages     []Language              `yaml:"-" json:"languages,omitempty"`
 	// ActiveTheme is the theme resolved by LoadBundle from
 	// themes/<Config.Theme.Active>.yaml (custom→default precedence). When
 	// the loader cannot resolve the active slug the field is left as a
@@ -90,28 +90,27 @@ func (b Bundle) TemplateByDefault(kind, projectSlug string) *TaskTemplate {
 // wiring is the literal YAML shape of `omakiten.yaml`. Loader unmarshals into
 // this; saver marshals from it. Keeps Bundle decoupled from on-disk layout.
 type wiring struct {
-	Version     int                       `yaml:"version"`
-	Kit         Kit                       `yaml:"kit"`
-	SubtaskKit  string                    `yaml:"subtask_kit,omitempty"`
-	Config      Settings                  `yaml:"config"`
-	Workflows   []Workflow                `yaml:"workflows"`
-	Surfaces    SurfaceTable              `yaml:"surfaces,omitempty"`
-	Skills      []string                  `yaml:"skills,omitempty"`
-	Laws        []string                  `yaml:"laws,omitempty"`
-	Templates   []string                  `yaml:"templates,omitempty"`
-	Personas    []PersonaWiring           `yaml:"personas,omitempty"`
-	Projects    []ProjectWiring           `yaml:"projects,omitempty"`
-	MCPCommands map[string]MCPCommandSpec `yaml:"mcp_commands,omitempty"`
+	Version    int                    `yaml:"version"`
+	Kit        Kit                    `yaml:"kit"`
+	SubtaskKit string                 `yaml:"subtask_kit,omitempty"`
+	Config     Settings               `yaml:"config"`
+	Workflows  []Workflow             `yaml:"workflows"`
+	Surfaces   SurfaceTable           `yaml:"surfaces,omitempty"`
+	Skills     []string               `yaml:"skills,omitempty"`
+	Laws       []string               `yaml:"laws,omitempty"`
+	Templates  []string               `yaml:"templates,omitempty"`
+	Personas   []PersonaWiring        `yaml:"personas,omitempty"`
+	Projects   []ProjectWiring        `yaml:"projects,omitempty"`
+	Commands   map[string]CommandSpec `yaml:"commands,omitempty"`
 }
 
-// MCPCommandSpec binds an `okt-*` MCP prompt to a persona, a set of laws, a
 // set of templates, and an opt-out list. The reserved key `global` declares
 // the laws applied to every command resolution; per-command entries can either
 // add laws (`laws:`) or remove laws inherited from `global` (`laws_disabled:`).
 //
 // Templates listed here are surfaced in the resolved prompt so the agent has
 // the relevant scaffold body without having to call templates.show first.
-type MCPCommandSpec struct {
+type CommandSpec struct {
 	Persona      string   `yaml:"persona,omitempty" json:"persona,omitempty"`
 	Laws         []string `yaml:"laws,omitempty" json:"laws,omitempty"`
 	LawsDisabled []string `yaml:"laws_disabled,omitempty" json:"laws_disabled,omitempty"`
@@ -119,15 +118,15 @@ type MCPCommandSpec struct {
 	// Skills (schema v2) is the per-command skill selection. Each slug
 	// must be a member of the bound persona's skill_repertoire — the
 	// command can only draw from skills the persona is equipped with.
-	// Validated by validateMCPCommandSkillSubset.
+	// Validated by validateCommandSkillSubset.
 	Skills []string `yaml:"skills,omitempty" json:"skills,omitempty"`
 }
 
-// MCPCommandsGlobalKey is the reserved entry inside mcp_commands that supplies
+// CommandsGlobalKey is the reserved entry inside commands that supplies
 // laws inherited by every command. Per-command entries may opt out via
 // `laws_disabled:`. Anything else under this key is ignored — the shape is
-// the same MCPCommandSpec for symmetry, but Persona/Templates are not applied.
-const MCPCommandsGlobalKey = "global"
+// the same CommandSpec for symmetry, but Persona/Templates are not applied.
+const CommandsGlobalKey = "global"
 
 // PersonaWiring is the persona entry inside `omakiten.yaml`. The persona body
 // (description, free-form notes) lives in personas/<slug>.md; this struct only
@@ -159,7 +158,7 @@ type Settings struct {
 	Theme            ThemeSettings     `yaml:"theme" json:"theme"`
 	TemplateDefaults []string          `yaml:"template_defaults,omitempty" json:"template_defaults,omitempty"`
 	Views            ViewSettings      `yaml:"views,omitempty" json:"views,omitempty"`
-	MCP              MCPSettings       `yaml:"mcp,omitempty" json:"mcp,omitempty"`
+	Agent            AgentSettings     `yaml:"agent,omitempty" json:"agent,omitempty"`
 	TUI              TUISettings       `yaml:"tui,omitempty" json:"tui,omitempty"`
 	SQLite           SQLiteSettings    `yaml:"sqlite,omitempty" json:"sqlite,omitempty"`
 	Solutions        SolutionsSettings `yaml:"solutions,omitempty" json:"solutions,omitempty"`
@@ -185,7 +184,7 @@ type Settings struct {
 	Severities []SeverityDefinition `yaml:"severities,omitempty" json:"severities,omitempty"`
 	// Languages picks the active language code per surface. CLI and TUI
 	// resolve against discovered languages/<code>.yaml files; AgentOutput
-	// is a free-form directive surfaced into the MCP prompt composer
+	// is a free-form directive surfaced into the playbook composer
 	// and is not validated against the catalog. See EffectiveLanguages
 	// for defaults (en for CLI/TUI, empty for AgentOutput).
 	Languages LanguageSettings `yaml:"languages,omitempty" json:"languages,omitempty"`
@@ -194,7 +193,7 @@ type Settings struct {
 // LanguageSettings holds the three independent surface language codes.
 // CLI drives help/usage chrome and CLI-owned errors. TUI drives every
 // terminal-UI label and screen. AgentOutput is a free-form string
-// (e.g. "English", "pt-br", "Português (Brasil)") appended to the MCP
+// (e.g. "English", "pt-br", "Português (Brasil)") appended to the agent
 // composer prompt as the trailing "Output language" directive; the
 // agent honors it based on its own training rather than any catalog
 // lookup, so any non-empty string is accepted at validation time.
@@ -206,7 +205,7 @@ type LanguageSettings struct {
 
 // EffectiveLanguages returns the resolved LanguageSettings with
 // defaults applied: CLI and TUI fall back to "en"; AgentOutput stays
-// empty when unset so the MCP composer skips the trailing directive
+// empty when unset so the playbook composer skips the trailing directive
 // line entirely. Field-by-field defaulting matches the project-local /
 // user-global override semantics from #51 where each setting falls
 // back independently if not supplied by the more specific layer.
@@ -223,7 +222,7 @@ func (s Settings) EffectiveLanguages() LanguageSettings {
 
 // SeverityDefinition is one row of the configurable law-severity table.
 // ID is the storage handle; Value is the human label rendered in
-// frontmatter, CLI output, MCP responses, and JSON marshaling. Default
+// frontmatter, CLI output, agent responses, and JSON marshaling. Default
 // flags the severity applied when a law arrives without one (validator
 // enforces at most one). Color is an optional theme-token name picked
 // up by the TUI badge renderer (`error` / `warning` / `success` /
@@ -266,7 +265,7 @@ func (s Settings) DefaultSeverityID() int {
 
 // PriorityDefinition is one row of the configurable priority table.
 // ID is the storage handle and the sort weight; Value is the human label
-// rendered in TUI/CLI/MCP/JSON output. Default flags the priority
+// rendered in TUI/CLI/JSON output. Default flags the priority
 // applied to tasks created without an explicit priority — at most one
 // definition may set it (validator-enforced). Color is an optional
 // theme-token name (e.g. `error`, `warning`, `success`) used by the TUI
@@ -320,20 +319,20 @@ type OutputSettings struct {
 	OmitEmpty    bool `yaml:"omit_empty" json:"omit_empty"`
 }
 
-// MCPSettings tunes how MCP responses are shaped to fit the agent's
+// AgentSettings tunes how agent responses are shaped to fit the agent's
 // context window. **Every field is required** — the canonical values
 // live in `defaults/omakiten.yaml` (the embedded kit YAML the installer
 // materialises into the user's config root). Validator rejects bundles
 // that omit any field. Pointer booleans (`*bool`) require an explicit
 // `true` / `false` declaration; nil = invalid.
-type MCPSettings struct {
+type AgentSettings struct {
 	// RecentCommentLimit caps how many recent comments tools like
 	// `tasks.continue` and `project.overview` ship per call. Required;
 	// validator demands > 0.
 	RecentCommentLimit int `yaml:"recent_comment_limit" json:"recent_comment_limit"`
 
 	// MaxCommentChars truncates comment bodies past this length with a
-	// trailing ellipsis when shipped over MCP. Required; validator
+	// trailing ellipsis when shipped over agent. Required; validator
 	// demands >= 0 (0 = no truncation).
 	MaxCommentChars int `yaml:"max_comment_chars" json:"max_comment_chars"`
 
@@ -342,32 +341,12 @@ type MCPSettings struct {
 	// declaration so the user opts in or out deliberately.
 	IncludeWorkflowInContinue *bool `yaml:"include_workflow_in_continue" json:"include_workflow_in_continue"`
 
-	// CachePrompts toggles emitting the Anthropic-aware `cache_control`
-	// hint on `prompts/get` content. Required `*bool`.
-	CachePrompts *bool `yaml:"cache_prompts" json:"cache_prompts"`
-
-	// NextWorkLimit caps the "likely next work" suggestion list shipped
-	// in `project.resume`. Required; validator demands > 0.
 	NextWorkLimit int `yaml:"next_work_limit" json:"next_work_limit"`
 
 	// SimilarTaskLimit caps how many similar-task hints are surfaced by
 	// `tasks.create_intent`. Required; validator demands > 0.
 	SimilarTaskLimit int `yaml:"similar_task_limit" json:"similar_task_limit"`
 }
-
-// EffectiveRecentCommentLimit and friends are identity passthroughs
-// kept for explicit naming at call sites. Validator guarantees the
-// fields are valid when the bundle reaches runtime — no fallback.
-func (m MCPSettings) EffectiveRecentCommentLimit() int { return m.RecentCommentLimit }
-func (m MCPSettings) EffectiveMaxCommentChars() int    { return m.MaxCommentChars }
-func (m MCPSettings) EffectiveIncludeWorkflowInContinue() bool {
-	return m.IncludeWorkflowInContinue != nil && *m.IncludeWorkflowInContinue
-}
-func (m MCPSettings) EffectiveCachePrompts() bool {
-	return m.CachePrompts != nil && *m.CachePrompts
-}
-func (m MCPSettings) EffectiveNextWorkLimit() int    { return m.NextWorkLimit }
-func (m MCPSettings) EffectiveSimilarTaskLimit() int { return m.SimilarTaskLimit }
 
 // SQLiteSettings tunes the connection-level SQLite knobs the Store applies
 // at Open time. Required block — the kit's defaults/omakiten.yaml ships
@@ -394,9 +373,9 @@ type SQLiteSettings struct {
 	MmapSizeBytes int `yaml:"mmap_size_bytes" json:"mmap_size_bytes"`
 }
 
-// SolutionsSettings caps the `solutions.list_top` MCP response shape.
+// SolutionsSettings caps the `solutions.list_top` agent response shape.
 // DefaultTopLimit applies when a caller passes <=0; MaxTopLimit clamps
-// caller-supplied limits so MCP responses stay bounded regardless of
+// caller-supplied limits so agent responses stay bounded regardless of
 // what the agent asks for. Required block.
 type SolutionsSettings struct {
 	// DefaultTopLimit is the limit applied when the caller omits one.
@@ -655,7 +634,7 @@ type LogsViewSettings struct {
 	// validator demands > 0.
 	Limit int `yaml:"limit,omitempty" json:"limit,omitempty"`
 	// WindowDays declares the default time horizon for the LOGS view
-	// across TUI / CLI / MCP. Required; validator demands > 0. Consumers
+	// across TUI / CLI. Required; validator demands > 0. Consumers
 	// read it via Snapshot.LogsWindowDays() which converts to a
 	// time.Duration (days * 24h) so call sites can do
 	// `time.Now().Add(-d)` without re-doing the math.
@@ -710,7 +689,7 @@ type Persona struct {
 	// SchemaVersion marks the current persona schema.
 	SchemaVersion int `json:"schema_version,omitempty"`
 	// SkillRepertoire is the persona's full skill pool;
-	// mcp_commands may only select a subset of it.
+	// commands may only select a subset of it.
 	SkillRepertoire []string `json:"skill_repertoire,omitempty"`
 	Laws            []string `json:"laws,omitempty"`
 	SourcePath      string   `json:"source_path,omitempty"`
@@ -897,18 +876,16 @@ func (p *CommentOpPolicy) UnmarshalYAML(value *yaml.Node) error {
 
 // SurfaceTable is the top-level `surfaces:` mapping: one row per
 // operation.Service method (70 census slugs). Pointer bools distinguish
-// an omitted key from an explicit false — omitting mcp is a load error,
 // not an implicit true.
 type SurfaceTable map[string]SurfacePolicy
 
-// SurfacePolicy is one row of the surfaces table. CLI/TUI/MCP are
+// SurfacePolicy is one row of the surfaces table. CLI/TUI are
 // pointers so ValidateBundle can reject a row that skipped a key.
 // Reason is required when any of the three is false; `${{intl:...}}`
 // tokens are stored as-is and resolved by the catalog at display time.
 type SurfacePolicy struct {
 	CLI    *bool  `yaml:"cli" json:"cli"`
 	TUI    *bool  `yaml:"tui" json:"tui"`
-	MCP    *bool  `yaml:"mcp" json:"mcp"`
 	Reason string `yaml:"reason,omitempty" json:"reason,omitempty"`
 }
 

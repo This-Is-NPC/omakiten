@@ -53,10 +53,9 @@ func applyTestBundle() config.Bundle {
 			Output:   config.OutputSettings{JSONMinified: true, OmitEmpty: true},
 			Workflow: config.WorkflowSettings{Active: "omakase"},
 			Theme:    config.ThemeSettings{Active: "default"},
-			MCP: config.MCPSettings{
+			Agent: config.AgentSettings{
 				RecentCommentLimit:        5,
 				IncludeWorkflowInContinue: &tru,
-				CachePrompts:              &tru,
 				NextWorkLimit:             5,
 				SimilarTaskLimit:          5,
 			},
@@ -102,7 +101,7 @@ func applyTestBundle() config.Bundle {
 		AllSkills:   []config.Skill{{Slug: "code"}},
 		Personas:    []config.Persona{{Slug: "builder", SkillRepertoire: []string{"code"}}},
 		AllPersonas: []config.Persona{{Slug: "builder", SkillRepertoire: []string{"code"}}},
-		MCPCommands: map[string]config.MCPCommandSpec{"task": {Persona: "builder", Skills: []string{"code"}}},
+		Commands:    map[string]config.CommandSpec{"task": {Persona: "builder", Skills: []string{"code"}}},
 		Surfaces:    config.CanonicalSurfaceTable(),
 	}
 }
