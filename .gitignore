@@ -36,14 +36,14 @@ dev_env/
 *.swo
 .DS_Store
 
-# Temporary files
-tmp/
+# Workspace scratch, coverage, profiles, caches, and local build output
+/.tmp/
 *.tmp
 
 # Stray test-runner caches (not used by this Go repo, but blocked just in case)
 .pytest_cache/
 
-# Python bytecode from scripts/ i18n apply helpers
+# Python bytecode
 __pycache__/
 *.py[cod]
 
@@ -54,7 +54,6 @@ __pycache__/
 # >>> assisted_workflow >>>
 
 # my stuff
-.temp/
 personal_notes
 opencode.json
 .impeccable.md

@@ -51,4 +51,18 @@ printf 'seed-stale\n\ttotal: (statements) 100.0%%\n' >"$summary"
 [[ $(sed -n '2p' "$profile") == 'seed-stale:1.1,1.2 10 1' ]]
 [[ $(sed -n '2p' "$summary") == $'\ttotal: (statements) 100.0%' ]]
 touch "$profile" "$summary"; sleep 0.1; touch "$source"; expect_fail subsecond-stale
+
+# Newer generated Go files must not invalidate evidence for the source tree.
+touch "$profile" "$summary"
+sleep 0.1
+for directory in .tmp .opencode _scratch bin build dist dev_env vendor node_modules; do
+  mkdir -p "$tmp/$directory"
+  printf 'package generated\n' >"$tmp/$directory/generated.go"
+done
+"${checker[@]}" "$profile" "$summary" "$tmp" >/dev/null
+
+# A newer package source must still invalidate that same evidence.
+mkdir -p "$tmp/internal/example"
+printf 'package example\n' >"$tmp/internal/example/source.go"
+expect_fail nested-source-stale
 echo 'OK: coverage checker grammar, freshness, boundary, and failure cases'

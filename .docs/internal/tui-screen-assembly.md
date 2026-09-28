@@ -781,8 +781,8 @@ package-level adoption cannot prove:
    paths are rejected.
 
 Parent P2 steps 11 and 12 are represented by completed rows #2561 and #2536. Step 10 is
-this plan. The stale `.temp/arquitetura.md` remains scratch analysis; this tracked document
-supersedes its screen-boundary claims and no normative source is recreated under `.temp/`.
+this plan. The archived `.tmp/archive/scratch/arquitetura.md` remains scratch analysis; this tracked document
+supersedes its screen-boundary claims and no normative source is recreated under `.tmp/`.
 
 ### 6.9 Re-audit closeout at wave 961 HEAD
 

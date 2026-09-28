@@ -10,29 +10,23 @@ cosign = "3.1.1"
 # verify-before-extract gate would be covered by source parity alone.
 powershell = "7.6.3"
 
+[env]
+GOCACHE = "{{config_root}}/.tmp/cache/go-build"
+GOLANGCI_LINT_CACHE = "{{config_root}}/.tmp/cache/golangci-lint"
+
 [tasks.fmt]
 description = "Format Go sources"
-run = "gofmt -w ."
+run = "scripts/format.sh"
 
 [tasks."fmt:check"]
-description = "Fail if any Go source under internal/ or cmd/ is not gofmt-clean (CI gate)"
+description = "Fail if Go source directories are not gofmt-clean (CI gate)"
 # Paired with TestGofmtBoundary in internal/arch. Both are wired into `check`
 # on purpose: this step runs the real gofmt binary and fails in seconds, before
 # the multi-minute test suite; the Go test rides `go test ./...` so it still
 # fires for a contributor who never invokes mise, and it survives the case
 # where a compile error takes the arch package down — which is exactly when
 # formatting drift would otherwise slip in unnoticed.
-run = '''
-unformatted="$(gofmt -l internal cmd)"
-if [ -n "$unformatted" ]; then
-  printf '\n\033[31mFAIL:\033[0m these files are not gofmt-clean:\n' >&2
-  printf '%s\n' "$unformatted" | while IFS= read -r file; do
-    printf '  - %s\n' "$file" >&2
-  done
-  printf '\nRun `mise run fmt` to fix them.\n\n' >&2
-  exit 1
-fi
-'''
+run = "scripts/format.sh --check"
 
 [tasks.test]
 description = "Run Go tests once and enforce aggregate coverage"
@@ -41,21 +35,11 @@ description = "Run Go tests once and enforce aggregate coverage"
 # viewport surfaces stay routed through cardlist / linelist
 # components instead of re-inventing scroll-sync inline.
 env = { OKT_ENFORCE_SCROLL_BOUNDARY = "1" }
-run = '''
-set -euo pipefail
-scripts/check-coverage_test.sh
-go test -coverprofile=coverage.out ./...
-go tool cover -func=coverage.out > /tmp/okt-coverage.func
-scripts/check-coverage.sh coverage.out /tmp/okt-coverage.func .
-'''
+run = "scripts/test.sh"
 
 [tasks.build]
-description = "Build okt into bin/ with the current git version"
-run = '''
-mkdir -p bin
-version="$(git describe --tags --always --dirty 2>/dev/null || printf dev)"
-go build -ldflags "-X main.version=${version}" -o bin/okt ./cmd/okt
-'''
+description = "Build okt into .tmp/build/ with the current git version"
+run = "scripts/build.sh"
 
 [tasks."release:dry-run"]
 description = "Build and verify the complete release metadata fixture without publishing"
@@ -64,62 +48,12 @@ run = "scripts/release-dry-run.sh"
 [tasks.install]
 description = "Build and install okt locally, then run `okt setup` for production-like user state"
 depends = ["build"]
-run = '''
-if [ -z "${HOME:-}" ]; then
-  printf 'HOME is not set\n' >&2
-  exit 1
-fi
-installed_at="$HOME/.local/bin/okt"
-install -Dm755 bin/okt "$installed_at"
-"$PWD/scripts/sync-defaults.sh" "$HOME/.config/omakiten"
-
-# Catch stale copies of okt that PATH resolves before $HOME/.local/bin —
-# typically left over from a previous `go install ./cmd/okt`. Without this
-# guard, mise run install silently writes the new binary while the shell
-# keeps invoking the old one.
-on_path="$(command -v okt 2>/dev/null || true)"
-if [ -n "$on_path" ] && [ "$on_path" != "$installed_at" ]; then
-  printf '\n\033[33mWARN:\033[0m PATH resolves okt to %s, not %s.\n' "$on_path" "$installed_at" >&2
-  printf '       Remove the stale copy or reorder PATH so $HOME/.local/bin wins.\n' >&2
-  printf '       e.g. rm %s\n\n' "$on_path" >&2
-fi
-
-# Run `okt setup --update` to bind preset + shell-rc wrapper + MCP
-# harnesses in one shot. --update force-refreshes shipped defaults
-# (skills, laws, personas, templates, themes, notifications, language
-# packs) so repeat `mise run install` runs pick up edits under
-# defaults/ instead of silently keeping the pre-install copy on disk.
-# Honours every OKT_* env var the curl|bash installer documents; an
-# interactive shell still drops into the bubbletea picker for any
-# input left unsupplied.
-"$installed_at" setup --update
-
-"$installed_at" init --name Omakiten --slug omakiten --root "$PWD"
-'''
+run = "scripts/install-local.sh"
 
 [tasks."install:silent"]
 description = "Non-interactive variant of install — defaults to en/en/en + omakase preset, skips MCP harnesses. Use for fast repeat installs while iterating on the picker."
 depends = ["build"]
-run = '''
-if [ -z "${HOME:-}" ]; then
-  printf 'HOME is not set\n' >&2
-  exit 1
-fi
-installed_at="$HOME/.local/bin/okt"
-install -Dm755 bin/okt "$installed_at"
-"$PWD/scripts/sync-defaults.sh" "$HOME/.config/omakiten"
-
-on_path="$(command -v okt 2>/dev/null || true)"
-if [ -n "$on_path" ] && [ "$on_path" != "$installed_at" ]; then
-  printf '\n\033[33mWARN:\033[0m PATH resolves okt to %s, not %s.\n' "$on_path" "$installed_at" >&2
-  printf '       Remove the stale copy or reorder PATH so $HOME/.local/bin wins.\n' >&2
-  printf '       e.g. rm %s\n\n' "$on_path" >&2
-fi
-
-"$installed_at" setup --update --cli-lang en --tui-lang en --agent-lang en --preset omakase --skip-harnesses
-
-"$installed_at" init --name Omakiten --slug omakiten --root "$PWD"
-'''
+run = "scripts/install-local.sh --silent"
 
 [tasks."dev:sync"]
 description = "Mirror defaults/ into dev_env/ aggressively (overwrite root, leave custom/)"
@@ -132,67 +66,26 @@ mkdir -p dev_env
 description = "Simulate a fresh omakiten install into dev_env/ — sync defaults, reset dev-only custom overlays, then pin .active to a stock preset"
 env = { OMAKITEN_HOME = "dev_env", OKT_PRESET = "omakase", OKT_CLI_LANG = "en", OKT_TUI_LANG = "en", OKT_AGENT_LANG = "en", OKT_HARNESSES = "0" }
 depends = ["dev:sync", "build"]
-run = '''
-# `tui:bare` is the preservation path. The regular dev install represents a
-# fresh install, so legacy custom entities must not leak across schema changes.
-for sub in config skills laws personas templates themes notifications languages; do
-  rm -rf "$PWD/dev_env/$sub/custom"
-done
-"$PWD/bin/okt" setup --update --skip-wrapper --skip-harnesses
-'''
+run = "scripts/dev-install.sh"
 
 [tasks."install:mcp:claude"]
 description = "Install Omakiten MCP server into Claude Code config"
 depends = ["build"]
-run = '''
-if [ -z "${HOME:-}" ]; then
-  printf 'HOME is not set\n' >&2
-  exit 1
-fi
-bin/okt mcp setup --harness claude-code --force
-'''
+run = "scripts/install-mcp.sh claude-code"
 
 [tasks."install:mcp:claude-desktop"]
 description = "Install Omakiten MCP server into Claude Desktop config"
 depends = ["build"]
-run = '''
-if [ -z "${HOME:-}" ]; then
-  printf 'HOME is not set\n' >&2
-  exit 1
-fi
-bin/okt mcp setup --harness claude-desktop --force
-'''
+run = "scripts/install-mcp.sh claude-desktop"
 
 [tasks."install:mcp:opencode"]
 description = "Install Omakiten MCP server into OpenCode global config"
 depends = ["build"]
-run = '''
-if [ -z "${HOME:-}" ]; then
-  printf 'HOME is not set\n' >&2
-  exit 1
-fi
-bin/okt mcp setup --harness opencode --force
-'''
+run = "scripts/install-mcp.sh opencode"
 
 [tasks.uninstall]
 description = "Remove the locally installed okt binary and shell wrapper without deleting config or data"
-run = '''
-if [ -z "${HOME:-}" ]; then
-  printf 'HOME is not set\n' >&2
-  exit 1
-fi
-# Prefer the in-binary `okt uninstall --yes` when the binary is on disk —
-# it shares lifecycle primitives with install.sh so the wrapper scrub
-# matches byte-for-byte. Falls back to the legacy script for the
-# bootstrap-failure case (no binary present yet).
-installed_at="$HOME/.local/bin/okt"
-if [ -x "$installed_at" ]; then
-  "$installed_at" uninstall --yes
-else
-  rm -f "$installed_at"
-  "$PWD/scripts/uninstall-wrapper.sh"
-fi
-'''
+run = "scripts/uninstall-local.sh"
 
 [tasks.purge]
 description = "Remove Omakiten user config and data created by the production-like install"
@@ -285,4 +178,21 @@ run = "OKT_CHECK_CLAIM_BENCH_FRESHNESS=1 go test ./internal/mcp -run '^TestClaim
 
 [tasks.check]
 description = "Run the full verification suite"
-depends = ["fmt:check", "test", "lint", "vuln", "docs:check"]
+depends = ["fmt:check", "test", "lint", "vuln", "docs:check", "workspace:check"]
+
+[tasks."workspace:check"]
+description = "Reject generated artifacts outside .tmp/ and persistent local-state directories"
+run = "scripts/check-workspace.sh"
+
+[tasks."test:cross-build"]
+description = "Compile config, path, and SQLite safety tests for supported targets into .tmp/tests"
+usage = 'flag "--target <target>" help="Compile one OS/architecture instead of all supported targets"'
+run = "scripts/test-cross-build.sh"
+
+[tasks."test:profile"]
+description = "Profile one package and keep its binary and profiles under .tmp/profiles"
+usage = """
+arg "<package>" help="Go package to profile"
+flag "--bench <pattern>" default="." help="Benchmark regular expression"
+"""
+run = "scripts/test-profile.sh"

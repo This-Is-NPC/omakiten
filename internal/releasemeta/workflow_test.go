@@ -124,7 +124,7 @@ func assertReleaseSigningJob(t *testing.T, workflow workflowFile) {
 		t.Errorf("installer keyless gate order = verify:%d gate:%d stage:%d", verifyIndex, installerGateIndex, stageIndex)
 	}
 	installerGate := signing.Steps[installerGateIndex]
-	if installerGate.Shell != "bash" || strings.TrimSpace(installerGate.Run) != `scripts/release-installer-gate.sh "$TAG" dist` {
+	if installerGate.Shell != "bash" || strings.TrimSpace(installerGate.Run) != `scripts/release-installer-gate.sh "$TAG" .tmp/release` {
 		t.Errorf("installer keyless gate = %#v", installerGate)
 	}
 	assertInstallerGateContract(t)
@@ -142,7 +142,7 @@ func assertReleasePublishJob(t *testing.T, workflow workflowFile) {
 		t.Errorf("publish allowlist = %#v, want %#v", got, publishAssets("${TAG}"))
 	}
 	assertExactLine(t, upload.Run, `gh release upload "$TAG" "${assets[@]}" --repo "$GITHUB_REPOSITORY"`)
-	assertExactLine(t, upload.Run, `test "$(find dist -maxdepth 1 -type f | wc -l)" -eq "${#assets[@]}"`)
+	assertExactLine(t, upload.Run, `test "$(find .tmp/release -maxdepth 1 -type f | wc -l)" -eq "${#assets[@]}"`)
 }
 
 func TestInstallerAssuranceWorkflowCoversRequiredPlatformsAndCosign(t *testing.T) {
@@ -321,6 +321,9 @@ func assertNeeds(t *testing.T, job workflowJob, want ...string) {
 
 func assertPathSet(t *testing.T, step workflowStep, want []string) {
 	t.Helper()
+	if step.With["include-hidden-files"] != true {
+		t.Errorf("step %q must include its explicit .tmp/release allowlist", step.Name)
+	}
 	raw, ok := step.With["path"].(string)
 	if !ok {
 		t.Fatalf("step %q path is not a string: %#v", step.Name, step.With["path"])
@@ -383,15 +386,15 @@ func sameStrings(left, right []string) bool {
 
 func unsignedAssets() []string {
 	return []string{
-		"dist/okt_Darwin_arm64.tar.gz", "dist/okt_Darwin_x86_64.tar.gz", "dist/okt_Linux_arm64.tar.gz",
-		"dist/okt_Linux_x86_64.tar.gz", "dist/okt_Windows_arm64.zip", "dist/okt_Windows_x86_64.zip", "dist/checksums.txt",
+		".tmp/release/okt_Darwin_arm64.tar.gz", ".tmp/release/okt_Darwin_x86_64.tar.gz", ".tmp/release/okt_Linux_arm64.tar.gz",
+		".tmp/release/okt_Linux_x86_64.tar.gz", ".tmp/release/okt_Windows_arm64.zip", ".tmp/release/okt_Windows_x86_64.zip", ".tmp/release/checksums.txt",
 	}
 }
 
 func signedAssets(tag string) []string {
 	return append(unsignedAssets(),
-		"dist/release-manifest-"+tag+".json", "dist/release-manifest-"+tag+".sigstore.json",
-		"dist/checksums-"+tag+".sigstore.json", "dist/release-provenance-"+tag+".sigstore.json")
+		".tmp/release/release-manifest-"+tag+".json", ".tmp/release/release-manifest-"+tag+".sigstore.json",
+		".tmp/release/checksums-"+tag+".sigstore.json", ".tmp/release/release-provenance-"+tag+".sigstore.json")
 }
 
 func publishAssets(tag string) []string { return signedAssets(tag) }
