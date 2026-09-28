@@ -1,6 +1,6 @@
 package contract
 
-// ListPersonasInput drives the personas.list MCP endpoint. Read-only; returns
+// ListPersonasInput drives the personas.list operation. Read-only; returns
 // every persona wired in the active config personas: block without bodies.
 type ListPersonasInput struct{}
 

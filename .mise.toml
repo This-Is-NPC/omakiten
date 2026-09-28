@@ -39,7 +39,7 @@ depends = ["build"]
 run = "scripts/install-local.sh"
 
 [tasks."install:silent"]
-description = "Install locally with English, the omakase preset, and no MCP harnesses"
+description = "Install locally with English, the omakase preset, and no integration skill"
 depends = ["build"]
 run = "scripts/install-local.sh --silent"
 
@@ -53,21 +53,6 @@ confirm = "Reset custom development overlays under dev_env/?"
 env = { OMAKITEN_HOME = "dev_env", OKT_PRESET = "omakase", OKT_CLI_LANG = "en", OKT_TUI_LANG = "en", OKT_AGENT_LANG = "en", OKT_HARNESSES = "0" }
 depends = ["dev:sync", "build"]
 run = "scripts/dev-install.sh"
-
-[tasks."install:mcp:claude"]
-description = "Install Omakiten MCP server into Claude Code config"
-depends = ["build"]
-run = "scripts/install-mcp.sh claude-code"
-
-[tasks."install:mcp:claude-desktop"]
-description = "Install Omakiten MCP server into Claude Desktop config"
-depends = ["build"]
-run = "scripts/install-mcp.sh claude-desktop"
-
-[tasks."install:mcp:opencode"]
-description = "Install Omakiten MCP server into OpenCode global config"
-depends = ["build"]
-run = "scripts/install-mcp.sh opencode"
 
 [tasks.uninstall]
 description = "Remove the locally installed okt binary and shell wrapper without deleting config or data"
@@ -100,12 +85,6 @@ run = "scripts/gallery.sh"
 description = "Render every TUI component variant to stdout — no TTY, so it pipes to a file and diffs across a refactor"
 run = "scripts/gallery.sh -dump"
 
-[tasks."mcp:prompts"]
-description = "Render every okt-* MCP prompt's resolved markdown to stdout against the dev defaults"
-env = { OMAKITEN_HOME = "dev_env" }
-depends = ["dev:sync"]
-run = "scripts/mcp-prompts.sh"
-
 [tasks.lint]
 description = "Run Go linter"
 run = "scripts/lint.sh"
@@ -121,11 +100,6 @@ run = "scripts/docs.sh"
 [tasks."docs:check"]
 description = "Fail if legacy docs-refresh artifacts are present (CI gate)"
 run = "scripts/docs.sh --check"
-
-[tasks."claim-benchmark:freshness"]
-description = "Check whether the manual ClaimNext benchmark reference still matches its source and runtime inputs"
-env = { OKT_CHECK_CLAIM_BENCH_FRESHNESS = "1" }
-run = "scripts/claim-benchmark-freshness.sh"
 
 [tasks.check]
 description = "Run the full verification suite"

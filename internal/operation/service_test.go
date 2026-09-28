@@ -107,7 +107,7 @@ func TestCreateTaskIntentRequiresConfirmationForSimilarWork(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListTasks(before) error = %v", err)
 	}
-	created, err := fixture.service.CreateTaskIntent(fixture.ctx, contract.CreateTaskInput{Description: "Add MCP agent integration for AI harnesses"})
+	created, err := fixture.service.CreateTaskIntent(fixture.ctx, contract.CreateTaskInput{Description: "Add agent agent integration for AI harnesses"})
 	if err != nil {
 		t.Fatalf("CreateTaskIntent() error = %v", err)
 	}
@@ -177,7 +177,7 @@ func TestCreateTaskDirectly(t *testing.T) {
 	fixture := newAgentFixture(t)
 
 	// CreateTask bypasses similarity check
-	created, err := fixture.service.CreateTask(fixture.ctx, contract.CreateTaskInput{Title: "Add MCP agent integration", Description: "Expose Omakiten state"})
+	created, err := fixture.service.CreateTask(fixture.ctx, contract.CreateTaskInput{Title: "Add agent agent integration", Description: "Expose Omakiten state"})
 	if err != nil {
 		t.Fatalf("CreateTask() error = %v", err)
 	}
@@ -199,7 +199,7 @@ func TestCreateTaskDirectly(t *testing.T) {
 	}
 
 	// Confirmed=true override
-	confirmed, err := fixture.service.CreateTaskIntent(fixture.ctx, contract.CreateTaskInput{Title: "Add MCP agent integration", Confirmed: true})
+	confirmed, err := fixture.service.CreateTaskIntent(fixture.ctx, contract.CreateTaskInput{Title: "Add agent agent integration", Confirmed: true})
 	if err != nil {
 		t.Fatalf("CreateTaskIntent() confirmed error = %v", err)
 	}
@@ -388,7 +388,7 @@ func newAgentFixture(t *testing.T) agentFixture {
 	if err != nil {
 		t.Fatalf("UpsertProject(B) error = %v", err)
 	}
-	taskA1, err := store.CreateTask(ctx, projectA.ID, "Add MCP agent integration", "Expose Omakiten state to AI harnesses", domain.Priority(2), "backlog", nil, store.Snapshot())
+	taskA1, err := store.CreateTask(ctx, projectA.ID, "Add agent agent integration", "Expose Omakiten state to AI harnesses", domain.Priority(2), "backlog", nil, store.Snapshot())
 	if err != nil {
 		t.Fatalf("CreateTask(A1) error = %v", err)
 	}
@@ -410,7 +410,7 @@ func newAgentFixture(t *testing.T) agentFixture {
 		t.Fatalf("AddComment(B) error = %v", err)
 	}
 
-	// Production wires settings from bundle.Config.MCP via the
+	// Production wires settings from bundle.Config.Agent via the
 	// composition root; tests construct the service directly so seed
 	// kit-shape settings here. The validator at the config layer
 	// guarantees these values in production; mirroring them keeps
@@ -422,7 +422,6 @@ func newAgentFixture(t *testing.T) agentFixture {
 		RecentCommentLimit: 5,
 		MaxCommentChars:    0,
 		IncludeWorkflow:    true,
-		CachePrompts:       true,
 		NextWorkLimit:      5,
 		SimilarTaskLimit:   5,
 	})

@@ -68,10 +68,9 @@ func TestSaveBundleAndLoadRoundTrip(t *testing.T) {
 			Output:   OutputSettings{JSONMinified: true, OmitEmpty: true},
 			Workflow: WorkflowSettings{Active: "default"},
 			Theme:    ThemeSettings{Active: "catppuccin"},
-			MCP: MCPSettings{
+			Agent: AgentSettings{
 				RecentCommentLimit:        5,
 				IncludeWorkflowInContinue: &tru,
-				CachePrompts:              &tru,
 				NextWorkLimit:             5,
 				SimilarTaskLimit:          5,
 			},

@@ -2,7 +2,6 @@ package config
 
 // SurfaceKind classifies a census slug as product (user-facing) or
 // wiring (composition injectors/getters). Scaffold and the default
-// table derive cli/tui/mcp from this: product starts all-true, wiring
 // starts all-false with DeniedWiringReason.
 type SurfaceKind string
 
@@ -60,6 +59,7 @@ var CanonicalSurfaceCensus = []SurfaceCensusEntry{
 	{Slug: "progress.record", Kind: SurfaceKindProduct},
 	{Slug: "project.edit", Kind: SurfaceKindProduct},
 	{Slug: "project.overview", Kind: SurfaceKindProduct},
+	{Slug: "project.list", Kind: SurfaceKindProduct},
 	{Slug: "project.resume", Kind: SurfaceKindProduct},
 	{Slug: "search", Kind: SurfaceKindProduct},
 	{Slug: "skill.get", Kind: SurfaceKindProduct},
@@ -93,7 +93,6 @@ var CanonicalSurfaceCensus = []SurfaceCensusEntry{
 	{Slug: "wiring.set_project_selector", Kind: SurfaceKindWiring},
 	{Slug: "wiring.set_settings", Kind: SurfaceKindWiring},
 	{Slug: "wiring.set_snapshot", Kind: SurfaceKindWiring},
-	{Slug: "wiring.settings_cache_prompts", Kind: SurfaceKindWiring},
 	{Slug: "wiring.snapshot", Kind: SurfaceKindWiring},
 	{Slug: "wiring.synonyms", Kind: SurfaceKindWiring},
 }
@@ -109,7 +108,6 @@ func CanonicalSurfaceTable() SurfaceTable {
 			table[e.Slug] = SurfacePolicy{
 				CLI:    surfaceBool(false),
 				TUI:    surfaceBool(false),
-				MCP:    surfaceBool(false),
 				Reason: DeniedWiringReason,
 			}
 			continue
@@ -117,7 +115,6 @@ func CanonicalSurfaceTable() SurfaceTable {
 		table[e.Slug] = SurfacePolicy{
 			CLI: surfaceBool(true),
 			TUI: surfaceBool(true),
-			MCP: surfaceBool(true),
 		}
 	}
 	return table

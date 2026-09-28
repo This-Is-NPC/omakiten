@@ -25,7 +25,7 @@ The same guard shapes also drive **operation policies** (`operations.{archive,de
 `app.WorkflowService.MoveTask` runs in this order (`internal/app/workflow_service.go:179`):
 
 1. Validate input (`task_id > 0`, target bucket non-empty).
-2. Load `tasks.state`; reject archived tasks with `validation_error "task is archived; unarchive before moving"` (the `tasks.unarchive` MCP tool, `okt unarchive <id>` CLI, or TUI un-archive lift the gate). Archived tasks never reach the workflow flow — `Archive`/`Unarchive` live on `task_service.go` and have their own guard slot.
+2. Load `tasks.state`; reject archived tasks with `validation_error "task is archived; unarchive before moving"` (the `tasks.unarchive` CLI operation, `okt unarchive <id>` CLI, or TUI un-archive lift the gate). Archived tasks never reach the workflow flow — `Archive`/`Unarchive` live on `task_service.go` and have their own guard slot.
 3. Resolve current bucket via `WorkflowRepository.CurrentTaskBucket`.
 4. Resolve target bucket via the captured per-project Snapshot (`s.snap.BucketByKey`) — workflow shape lives in memory post-020, no repository round-trip.
 5. If `current != target`:
@@ -273,7 +273,7 @@ The pattern: forward transitions carry an evidence-gathering guard (a tag-anchor
 All guard violations use the `guard_violation` coded error (`internal/domain/errors.go:23`). Consumers:
 
 - **CLI**: returns the failure JSON envelope (`internal/output/json.go`) with `code: "guard_violation"` and exit code `1`.
-- **MCP / agent**: `internal/operation/errors.go` wraps it with next-step guidance via `guidanceForCode`.
+- **CLI / agent**: `internal/operation/errors.go` wraps it with next-step guidance via `guidanceForCode`.
 - **TUI**: surfaces the message + hint inline in the move flow (`internal/tui/render_task.go`).
 
 Because the move never persists when a guard fails, no `task.moved` event is recorded. The current bucket is preserved.
@@ -286,7 +286,7 @@ Every task-scoped violation also records a `guard.violated` audit event whose pa
   "rule":              "subtasks_complete", // guard.Type or "permissions" / "transition_not_allowed"
   "hint":              "subtasks_complete guard: subtask #42 ...",
   "target":            { "task_id": 7, "from_bucket_id": 2, "to_bucket_id": 3, "to_bucket": "review" },
-  "attempted_by":      "agent",             // "agent" for MCP source, "user" otherwise
+  "attempted_by":      "agent",             // "agent" for CLI source, "user" otherwise
   "subject_task_id":   7,
   "subject_parent_id": 42,                  // null for root tasks
   "subject_depth":     1,                   // 0 for root, 1+ for sub-tasks

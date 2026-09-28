@@ -77,7 +77,7 @@ func assertSkillsBulletWithBody(t *testing.T, name string, resp contract.Resolve
 // representative slice of the shokunin (FMA Brotherhood) command surface against
 // the embedded shokunin kit and asserts each one carries its expected sections:
 // a wired themed Persona, the entity-sourced playbook in the Skills section + a
-// prompts/list description, a Laws section (the global floor reaches every
+// command list description, a Laws section (the global floor reaches every
 // command), and bullet-with-body Skills.
 func TestShokuninPresetSmoke(t *testing.T) {
 	rt := openShokunin(t)
@@ -121,7 +121,7 @@ func assertShokuninCommand(t *testing.T, name string, resp contract.ResolveComma
 		t.Fatalf("%s markdown missing the Skills section carrying the entity-sourced playbook:\n%s", name, resp.Markdown)
 	}
 	if strings.TrimSpace(resp.Description) == "" {
-		t.Fatalf("%s carries no prompts/list description (the bound playbook skill's frontmatter)", name)
+		t.Fatalf("%s carries no command list description (the bound playbook skill's frontmatter)", name)
 	}
 	if !strings.Contains(resp.Markdown, "## Laws\n") || len(resp.Laws) == 0 {
 		t.Fatalf("%s markdown missing non-empty Laws section (the global law floor should reach every command):\n%s", name, resp.Markdown)
@@ -138,8 +138,8 @@ func assertShokuninTemplates(t *testing.T, name string, resp contract.ResolveCom
 	if !strings.Contains(resp.Markdown, "## Templates\n") {
 		t.Fatalf("%s binds %d template(s) but renders no Templates section:\n%s", name, len(resp.Templates), resp.Markdown)
 	}
-	if !strings.Contains(resp.Markdown, "templates.show") {
-		t.Fatalf("%s binds templates but carries no templates.show JIT fetch hint:\n%s", name, resp.Markdown)
+	if !strings.Contains(resp.Markdown, "okt template show") {
+		t.Fatalf("%s binds templates but carries no okt template show JIT fetch hint:\n%s", name, resp.Markdown)
 	}
 }
 
@@ -191,8 +191,8 @@ func assertShokuninBuilder(t *testing.T, resp contract.ResolveCommandResponse) {
 	if len(resp.Templates) == 0 {
 		t.Fatal("okt-task-implement binds no templates")
 	}
-	if !strings.Contains(resp.Markdown, "templates.show") {
-		t.Fatalf("okt-task-implement binds templates but carries no templates.show JIT hint:\n%s", resp.Markdown)
+	if !strings.Contains(resp.Markdown, "okt template show") {
+		t.Fatalf("okt-task-implement binds templates but carries no okt template show JIT hint:\n%s", resp.Markdown)
 	}
 
 	// Entity-sourced playbook lands (the bound okt-task-implement-playbook skill

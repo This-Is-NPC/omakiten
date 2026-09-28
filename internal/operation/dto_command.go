@@ -5,7 +5,7 @@ package operation
 // of internal/config types without importing it, so the agent layer stays
 // protocol- and config-neutral.
 
-// MCPCommandsGlobalKey mirrors config.MCPCommandsGlobalKey on the agent side.
+// CommandsGlobalKey mirrors config.CommandsGlobalKey on the agent side.
 // Duplicating it here avoids a config import while keeping the contract
 // stable: the runtime emits the same key.
-const MCPCommandsGlobalKey = "global"
+const CommandsGlobalKey = "global"

@@ -36,10 +36,10 @@ type TemplateInfo struct {
 	Body        string   `json:"body"`
 }
 
-// MCPCommandBinding mirrors config.MCPCommandSpec on the agent side. The
+// CommandBinding mirrors config.CommandSpec on the agent side. The
 // reserved name "global" supplies laws inherited by every command; per-command
 // entries can add laws or opt out of inherited ones via LawsDisabled.
-type MCPCommandBinding struct {
+type CommandBinding struct {
 	Persona      string   `json:"persona,omitempty"`
 	Laws         []string `json:"laws,omitempty"`
 	LawsDisabled []string `json:"laws_disabled,omitempty"`
@@ -60,21 +60,18 @@ type LawCatalog func() []LawInfo
 
 type PersonaCatalog func() []PersonaInfo
 
-type CommandCatalog func() map[string]MCPCommandBinding
+type CommandCatalog func() map[string]CommandBinding
 
 // ResolveCommandInput identifies the prompt to resolve. The agent service
 // trims and normalizes the name, then walks the bundle bindings to assemble
-// the persona/skills/laws/templates package the MCP layer renders into a
+// the persona/skills/laws/templates package the agent layer renders into a
 // single prompt message.
 type ResolveCommandInput struct {
 	Name      string         `json:"name"`
 	Arguments map[string]any `json:"arguments,omitempty"`
 }
 
-// CommandListEntry is one row of the commands.list discovery surface:
-// slug plus the entity-sourced playbook one-liner. Argument schemas
-// stay in the MCP adapter (promptArguments) so the operation layer
-// does not import protocol types.
+// CommandListEntry identifies a playbook and its entity-sourced description.
 type CommandListEntry struct {
 	Name        string `json:"name"`
 	Description string `json:"description,omitempty"`
@@ -86,10 +83,7 @@ type ListCommandsResponse struct {
 	Commands []CommandListEntry `json:"commands"`
 }
 
-// ResolveCommandResponse is the resolved package for one MCP prompt call.
-// Markdown holds the single-message rendering the MCP layer ships to the
-// agent; the structured fields are kept so callers can render the same data
-// differently (logs, tests, alternate adapters).
+// ResolveCommandResponse carries composed playbook context and its Markdown rendering.
 type ResolveCommandResponse struct {
 	Name        string         `json:"name"`
 	Description string         `json:"description,omitempty"`
@@ -97,10 +91,7 @@ type ResolveCommandResponse struct {
 	Skills      []SkillInfo    `json:"skills,omitempty"`
 	Laws        []LawInfo      `json:"laws,omitempty"`
 	Templates   []TemplateInfo `json:"templates,omitempty"`
-	// InvocationArgs carries prompt invocation arguments from MCP prompts/get.
-	// They render into the prompt body only when present, so command playbooks
-	// that refer to "the task id" or "the slug" receive the concrete values the
-	// user supplied without every playbook re-declaring an argument section.
+	// InvocationArgs carries the concrete values supplied when resolving a playbook.
 	InvocationArgs []InvocationArg `json:"invocation_args,omitempty"`
 	Markdown       string          `json:"markdown"`
 	// AgentOutputLanguage carries the raw configured agent-output

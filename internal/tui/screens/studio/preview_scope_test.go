@@ -12,7 +12,7 @@ import (
 func TestCommandPreviewCacheScopesSameCommandBySpecAndRuntime(t *testing.T) {
 	t.Parallel()
 
-	spec := config.MCPCommandSpec{Persona: "builder", Skills: []string{"code"}}
+	spec := config.CommandSpec{Persona: "builder", Skills: []string{"code"}}
 	changed := spec
 	changed.Skills = []string{"review"}
 	cache := &commandPreviewCache{}

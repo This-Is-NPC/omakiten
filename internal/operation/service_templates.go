@@ -84,7 +84,6 @@ func templateForList(template contract.TemplateSummary, includeBody bool) contra
 // names the active slug so the agent can re-call without a clarification
 // round-trip — same pattern as the _agent_model coercion. Calls outside any
 // registered project (no resolution) fall back to the slug-only lookup so
-// `okt mcp tools` discovery and CLI debug calls keep working.
 func (s *Service) ShowTemplate(ctx context.Context, input contract.ShowTemplateInput) (contract.ShowTemplateResponse, error) {
 	if err := s.allow("template.show"); err != nil {
 		return contract.ShowTemplateResponse{}, err

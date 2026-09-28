@@ -144,7 +144,7 @@ func warnLogsWindowExceedsRetention(cfg Settings) []SourceWarning {
 	if windowDays <= 0 {
 		return nil
 	}
-	resolved := cfg.Events.ResolveRetention("mcp.tool_call")
+	resolved := cfg.Events.ResolveRetention("cli.tool_call")
 	if resolved.MaxAgeDays <= 0 || windowDays <= resolved.MaxAgeDays {
 		return nil
 	}

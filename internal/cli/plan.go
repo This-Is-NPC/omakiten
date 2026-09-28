@@ -10,9 +10,7 @@ import (
 	"omakiten/internal/domain"
 )
 
-// newPlanCommand assembles the `okt plan ...` subcommand tree. Plans
-// group child tasks into ordered waves and feed the multi-agent claim
-// flow exposed at MCP (plans.claim_next).
+// newPlanCommand assembles plan, wave and atomic task-claim commands.
 func newPlanCommand(opts *runtimeOptions) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "plan",

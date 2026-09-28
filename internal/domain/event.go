@@ -162,7 +162,7 @@ const (
 	// by activity.Track before the source-discriminated split. Retained
 	// only so historic rows and the migration backfill can reference the
 	// pre-019 value; new writes use EventTypeCLIToolCall /
-	// EventTypeMCPToolCall / EventTypeTUIToolCall.
+	// EventTypeTUIToolCall / EventTypeTUIToolCall.
 	//
 	// Deprecated: do not emit. Use ToolCallEventTypeForSource for new code.
 	EventTypeOperation = "operation"
@@ -175,9 +175,6 @@ const (
 	// Payload={tool_name, source, entrypoint, status, duration_ms,
 	// error_message, args}.
 	EventTypeCLIToolCall = "cli.tool_call"
-	// EventTypeMCPToolCall mirrors EventTypeCLIToolCall for MCP-originated
-	// tool calls. Same payload contract.
-	EventTypeMCPToolCall = "mcp.tool_call"
 	// EventTypeTUIToolCall mirrors EventTypeCLIToolCall for TUI-originated
 	// tool calls. Same payload contract.
 	EventTypeTUIToolCall = "tui.tool_call"
@@ -196,7 +193,7 @@ const (
 	// sub-kit swaps, and disable transitions do NOT emit. The audit
 	// trail records the i18n key and the resolved kit identities so
 	// hooks and downstream UI surfaces can explain the protocol boundary
-	// (mcp_commands always resolves at the project root). EntityType=
+	// (commands always resolves at the project root). EntityType=
 	// system, Payload={i18n_key, from_kit, to_kit}.
 	EventTypeSubtaskKitNoticeEmitted = "subtask_kit.notice_emitted"
 
@@ -230,7 +227,7 @@ const (
 	// trace human-approved automation. EntityType=system,
 	// Payload={notification_slug, action_id, command}; author_type
 	// flows from ctx — `human` for the TUI surface, `agent` for any
-	// future MCP-triggered confirmation flow.
+	// future agent-triggered confirmation flow.
 	EventTypeConfirmationGranted = "confirmation.granted"
 
 	// Domain events emitted from the canonical service layer when an
@@ -275,14 +272,11 @@ const (
 
 // ToolCallEventTypeForSource returns the canonical event_type string for
 // the per-call activity log entry written by activity.Track. Returns ""
-// for sources outside the known cli/mcp/tui set so callers can detect a
 // typo before INSERTing a row with a malformed event_type.
 func ToolCallEventTypeForSource(source ActivitySource) string {
 	switch source {
 	case ActivitySourceCLI:
 		return EventTypeCLIToolCall
-	case ActivitySourceMCP:
-		return EventTypeMCPToolCall
 	case ActivitySourceTUI:
 		return EventTypeTUIToolCall
 	}

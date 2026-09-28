@@ -1,6 +1,6 @@
 package config
 
-const subtaskKitTransparencyNoticeKey = "notice.subtask_kit.enabled.mcp_resolves_at_root"
+const subtaskKitTransparencyNoticeKey = "notice.subtask_kit.enabled.commands_resolve_at_root"
 
 // SubtaskKitTransparencyNoticeKey returns the i18n catalog key used by UI
 // surfaces that explain the protocol boundary when subtask_kit is first enabled.

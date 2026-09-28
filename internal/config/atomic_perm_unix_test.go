@@ -39,7 +39,7 @@ func TestWriteAtomicDoesNotClobberExistingParent(t *testing.T) {
 	if err := os.Chmod(dir, 0o755); err != nil {
 		t.Fatalf("chmod existing dir: %v", err)
 	}
-	path := filepath.Join(dir, ".mcp.json")
+	path := filepath.Join(dir, "config.json")
 
 	if err := WriteAtomic(path, []byte("{}")); err != nil {
 		t.Fatalf("WriteAtomic: %v", err)

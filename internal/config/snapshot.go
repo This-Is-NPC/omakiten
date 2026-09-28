@@ -225,7 +225,7 @@ type Snapshot struct {
 	allTemplates []TaskTemplate
 
 	notifications map[string]Notification
-	mcpCommands   map[string]MCPCommandSpec
+	commands      map[string]CommandSpec
 
 	priorities []PriorityDefinition
 	severities []SeverityDefinition
@@ -239,7 +239,7 @@ type Snapshot struct {
 	registry *domain.EnumRegistry
 
 	settings Settings
-	// surfaces is the per-operation CLI/TUI/MCP exposure table copied
+	// surfaces is the per-operation CLI/TUI exposure table copied
 	// from Bundle.Surfaces at BuildSnapshot. Empty on fixtures that
 	// skip LoadBundle — accessors treat that as unrestricted.
 	surfaces SurfaceTable
@@ -284,7 +284,7 @@ func newSnapshot(bundle Bundle) *Snapshot {
 		templatesBySlug:    map[string]int{},
 		templatesByDefault: map[templateDefaultKey]int{},
 		notifications:      map[string]Notification{},
-		mcpCommands:        map[string]MCPCommandSpec{},
+		commands:           map[string]CommandSpec{},
 		languagesByCode:    map[string]int{},
 	}
 }
@@ -343,8 +343,8 @@ func populateSnapshotSettings(snap *Snapshot, bundle Bundle) {
 	for k, n := range bundle.Notifications {
 		snap.notifications[k] = n
 	}
-	for k, c := range bundle.MCPCommands {
-		snap.mcpCommands[k] = c
+	for k, c := range bundle.Commands {
+		snap.commands[k] = c
 	}
 	snap.priorities = append(snap.priorities, bundle.Config.Priorities...)
 	snap.severities = append(snap.severities, bundle.Config.Severities...)
@@ -551,7 +551,7 @@ func (s *Snapshot) Operations() domain.WorkflowOperations {
 	return s.workflow.Operations
 }
 
-// Surfaces returns the per-operation CLI/TUI/MCP exposure table.
+// Surfaces returns the per-operation CLI/TUI exposure table.
 // Returned as a fresh map so callers cannot mutate the snapshot; bool
 // pointers inside each row are shared with the snapshot (treat them as
 // read-only). Nil snapshot or an empty table returns nil — operation
@@ -699,7 +699,7 @@ func (s *Snapshot) Catalog(surface Surface) *Catalog {
 }
 
 // AgentOutputLanguage returns the raw configured agent-output language
-// string. Empty when the user has not selected one — the MCP composer
+// string. Empty when the user has not selected one — the playbook composer
 // then skips the trailing "**Output language:** ..." directive entirely.
 // Free-form by design: any non-empty string is honored verbatim because
 // the agent interprets the directive against its own language training,
@@ -762,21 +762,15 @@ func (s *Snapshot) NotificationBySlug(slug string) (Notification, bool) {
 	return v, ok
 }
 
-// MCPCommands returns a fresh copy of the resolved mcp_commands map.
+// Commands returns a fresh copy of the resolved commands map.
 // The reserved `global` entry stays in the map; callers that want the
 // per-command effective list use Resolve to apply inheritance + opt-outs.
-func (s *Snapshot) MCPCommands() map[string]MCPCommandSpec {
-	out := make(map[string]MCPCommandSpec, len(s.mcpCommands))
-	for k, v := range s.mcpCommands {
+func (s *Snapshot) Commands() map[string]CommandSpec {
+	out := make(map[string]CommandSpec, len(s.commands))
+	for k, v := range s.commands {
 		out[k] = v
 	}
 	return out
-}
-
-// MCPCommandByKey resolves an mcp_command entry by key.
-func (s *Snapshot) MCPCommandByKey(key string) (MCPCommandSpec, bool) {
-	v, ok := s.mcpCommands[key]
-	return v, ok
 }
 
 // Priorities returns the configured priority table. Used by the enum
@@ -806,7 +800,6 @@ func (s *Snapshot) SeverityIDByLabel(label string) int {
 }
 
 // Settings returns the resolved Settings block. The value carries the
-// full configuration tree (mcp, context, sqlite, events,
 // search, hooks, …) so callers reading any process-scope or per-call
 // knob go through this single accessor.
 func (s *Snapshot) Settings() Settings {
@@ -817,7 +810,7 @@ func (s *Snapshot) Settings() Settings {
 // (SourceDefault / SourceProject / SourceEnv). Empty or missing paths
 // fall back to SourceDefault — the conservative answer when the
 // snapshot was built from a Bundle that bypassed LoadBundle (test
-// fixtures, MCP composer mocks). Used by EffectiveTuples to populate
+// fixtures, playbook composer mocks). Used by EffectiveTuples to populate
 // the per-row Source field; the TUI settings viewer (#258) consumes
 // that field directly.
 func (s *Snapshot) SourceFor(path string) string {

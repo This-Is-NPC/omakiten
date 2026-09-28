@@ -15,7 +15,6 @@ import (
 // the TUI viewer.
 func TestEffectiveTuples_OrderAndCoercion(t *testing.T) {
 	bundle := newTwoBucketBundle("alpha", "beta")
-	cachePrompts := true
 	includeWF := false
 	bundle.Config = Settings{
 		Output: OutputSettings{
@@ -27,11 +26,10 @@ func TestEffectiveTuples_OrderAndCoercion(t *testing.T) {
 			Active: "omacon",
 		},
 		TemplateDefaults: []string{"feature", "bug"},
-		MCP: MCPSettings{
+		Agent: AgentSettings{
 			RecentCommentLimit:        5,
 			MaxCommentChars:           300,
 			IncludeWorkflowInContinue: &includeWF,
-			CachePrompts:              &cachePrompts,
 			NextWorkLimit:             4,
 			SimilarTaskLimit:          6,
 		},
@@ -77,7 +75,7 @@ func assertEffectiveTupleOrder(t *testing.T, tuples []EffectiveTuple) {
 		"workflow",
 		"theme",
 		"template_defaults",
-		"mcp",
+		"agent",
 		"tag_synonyms",
 		"priorities",
 		"languages",
@@ -107,22 +105,21 @@ func assertEffectiveTupleOrder(t *testing.T, tuples []EffectiveTuple) {
 func assertEffectiveTupleCoercion(t *testing.T, tuples []EffectiveTuple) {
 	t.Helper()
 	want := map[string]string{
-		"output.json_minified":             "false",
-		"output.omit_empty":                "true",
-		"theme.active":                     "omacon",
-		"mcp.recent_comment_limit":         "5",
-		"mcp.cache_prompts":                "true",
-		"mcp.include_workflow_in_continue": "false",
-		"priorities[0].id":                 "1",
-		"priorities[0].value":              "low",
-		"priorities[1].default":            "true",
-		"priorities[1].value":              "normal",
-		"tag_synonyms.bugfix":              "bug",
-		"tag_synonyms.feat":                "feature",
-		"template_defaults[0]":             "feature",
-		"template_defaults[1]":             "bug",
-		"languages.cli":                    "en",
-		"languages.tui":                    "pt-br",
+		"output.json_minified":               "false",
+		"output.omit_empty":                  "true",
+		"theme.active":                       "omacon",
+		"agent.recent_comment_limit":         "5",
+		"agent.include_workflow_in_continue": "false",
+		"priorities[0].id":                   "1",
+		"priorities[0].value":                "low",
+		"priorities[1].default":              "true",
+		"priorities[1].value":                "normal",
+		"tag_synonyms.bugfix":                "bug",
+		"tag_synonyms.feat":                  "feature",
+		"template_defaults[0]":               "feature",
+		"template_defaults[1]":               "bug",
+		"languages.cli":                      "en",
+		"languages.tui":                      "pt-br",
 	}
 	got := map[string]string{}
 	for _, tup := range tuples {
@@ -148,7 +145,6 @@ func assertEffectiveTupleCoercion(t *testing.T, tuples []EffectiveTuple) {
 // disagree the accessor is dropping a field.
 func TestEffectiveTuples_Completeness(t *testing.T) {
 	bundle := newTwoBucketBundle("alpha", "beta")
-	cachePrompts := true
 	includeWF := true
 	bundle.Config = Settings{
 		Output: OutputSettings{JSONMinified: true, OmitEmpty: true},
@@ -156,11 +152,10 @@ func TestEffectiveTuples_Completeness(t *testing.T) {
 			Active: "test",
 		},
 		Theme: ThemeSettings{Active: "omacon"},
-		MCP: MCPSettings{
+		Agent: AgentSettings{
 			RecentCommentLimit:        10,
 			MaxCommentChars:           500,
 			IncludeWorkflowInContinue: &includeWF,
-			CachePrompts:              &cachePrompts,
 			NextWorkLimit:             8,
 			SimilarTaskLimit:          9,
 		},
@@ -221,11 +216,10 @@ func TestEffectiveTuples_SourceNonEmptyOnEveryRow(t *testing.T) {
 	bundle := newTwoBucketBundle("alpha", "beta")
 	bundle.Config.Output.JSONMinified = true
 	bundle.Config.Theme = ThemeSettings{Active: "omacon"}
-	bundle.Config.MCP = MCPSettings{
+	bundle.Config.Agent = AgentSettings{
 		RecentCommentLimit:        3,
 		MaxCommentChars:           200,
 		IncludeWorkflowInContinue: boolPtr(true),
-		CachePrompts:              boolPtr(false),
 		NextWorkLimit:             2,
 		SimilarTaskLimit:          2,
 	}
@@ -265,20 +259,18 @@ func TestEffectiveTuples_SourceLayersThreadThrough(t *testing.T) {
 	bundle := newTwoBucketBundle("alpha", "beta")
 	bundle.Config.Output = OutputSettings{JSONMinified: true, OmitEmpty: true}
 	bundle.Config.Theme = ThemeSettings{Active: "omacon"}
-	bundle.Config.MCP = MCPSettings{
+	bundle.Config.Agent = AgentSettings{
 		RecentCommentLimit:        9,
 		MaxCommentChars:           300,
 		IncludeWorkflowInContinue: boolPtr(false),
-		CachePrompts:              boolPtr(true),
 		NextWorkLimit:             4,
 		SimilarTaskLimit:          4,
 	}
 	bundle.Sources = map[string]string{
-		"output.json_minified":     SourceProject,
-		"output.omit_empty":        SourceDefault,
-		"theme.active":             SourceEnv,
-		"mcp.recent_comment_limit": SourceProject,
-		"mcp.cache_prompts":        SourceDefault,
+		"output.json_minified":       SourceProject,
+		"output.omit_empty":          SourceDefault,
+		"theme.active":               SourceEnv,
+		"agent.recent_comment_limit": SourceProject,
 	}
 
 	snap := BuildSnapshot(bundle)
@@ -288,11 +280,10 @@ func TestEffectiveTuples_SourceLayersThreadThrough(t *testing.T) {
 	}
 
 	cases := map[string]string{
-		"output.json_minified":     SourceProject,
-		"output.omit_empty":        SourceDefault,
-		"theme.active":             SourceEnv,
-		"mcp.recent_comment_limit": SourceProject,
-		"mcp.cache_prompts":        SourceDefault,
+		"output.json_minified":       SourceProject,
+		"output.omit_empty":          SourceDefault,
+		"theme.active":               SourceEnv,
+		"agent.recent_comment_limit": SourceProject,
 	}
 	for path, want := range cases {
 		if got[path] != want {
@@ -304,9 +295,9 @@ func TestEffectiveTuples_SourceLayersThreadThrough(t *testing.T) {
 	// accessor's fallback covers leaves the loader did not record (e.g.
 	// future-added Settings fields seen by the accessor before the
 	// loader's source-tracker is taught about them).
-	if got["mcp.max_comment_chars"] != SourceDefault {
-		t.Errorf("unseeded path mcp.max_comment_chars: got %q, want %q (fallback)",
-			got["mcp.max_comment_chars"], SourceDefault)
+	if got["agent.max_comment_chars"] != SourceDefault {
+		t.Errorf("unseeded path agent.max_comment_chars: got %q, want %q (fallback)",
+			got["agent.max_comment_chars"], SourceDefault)
 	}
 }
 

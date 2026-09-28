@@ -50,12 +50,12 @@ func assertCanonicalSurfaceRow(t *testing.T, slug string, got, want config.Surfa
 		if got.Reason != want.Reason {
 			t.Errorf("%s: reason = %q, want %q", slug, got.Reason, want.Reason)
 		}
-		if got.CLI == nil || *got.CLI || got.TUI == nil || *got.TUI || got.MCP == nil || *got.MCP {
+		if got.CLI == nil || *got.CLI || got.TUI == nil || *got.TUI {
 			t.Errorf("%s: wiring row = %+v, want all false", slug, got)
 		}
 		return
 	}
-	if got.CLI == nil || !*got.CLI || got.TUI == nil || !*got.TUI || got.MCP == nil || !*got.MCP {
+	if got.CLI == nil || !*got.CLI || got.TUI == nil || !*got.TUI {
 		t.Errorf("%s: product row = %+v, want all true", slug, got)
 	}
 	if strings.TrimSpace(got.Reason) != "" {
@@ -104,7 +104,7 @@ func TestConfigSurfacesCheckMissingSlugIsError(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read surfaces module: %v", err)
 	}
-	stripped := strings.Replace(string(raw), "task.delete: { cli: true, tui: true, mcp: true }\n", "", 1)
+	stripped := strings.Replace(string(raw), "task.delete: { cli: true, tui: true, }\n", "", 1)
 	if stripped == string(raw) {
 		t.Fatal("surfaces module did not contain the task.delete row to strip")
 	}

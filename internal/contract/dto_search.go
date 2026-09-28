@@ -1,6 +1,6 @@
 package contract
 
-// SearchInput is the MCP shape for the unified `search` tool. EntityTypes
+// SearchInput is the agent shape for the unified `search` tool. EntityTypes
 // is an array of {task, comment, error, solution, plan}; empty means
 // "all five". Query is an FTS5 MATCH expression — the adapter forwards
 // it to SQLite verbatim, so callers can use phrase, prefix, NEAR, AND/
@@ -27,7 +27,7 @@ type SearchHitDTO struct {
 }
 
 // SearchResponse wraps the hit list with the resolved project summary so
-// MCP clients can confirm which project the cross-entity search filtered
+// agent clients can confirm which project the cross-entity search filtered
 // on (or whether it was cross-project).
 type SearchResponse struct {
 	Project ProjectSummary `json:"project"`

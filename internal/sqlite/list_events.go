@@ -20,14 +20,14 @@ const sqliteTimestampLayout = "2006-01-02 15:04:05"
 // MaxListEventsLimit is the server-side hard ceiling on ListEvents row
 // counts. Callers can request fewer rows via EventFilter.Limit, but
 // anything above this (or 0 / negative, meaning "no caller cap") gets
-// clamped here so an MCP client requesting `limit=1_000_000` cannot
+// clamped here so an agent client requesting `limit=1_000_000` cannot
 // exhaust memory by streaming the entire events table.
 const MaxListEventsLimit = 10_000
 
 // ListEvents is the generic Logs inspector read path. It returns rows
 // from the unified `events` table filtered by domain.EventFilter axes
 // and shaped as domain.EventRow values for consumption by TUI / CLI /
-// MCP surfaces.
+// agent surfaces.
 //
 // Filter semantics — every axis degrades to "no filter" at its zero
 // value (see EventFilter godoc):

@@ -1,6 +1,6 @@
 ---
 name: okt-skill playbook
-description: System command — load a skill body via skills.get (e.g. okt-skill commit), or list the catalog via skills.list with no arg; pulls any skill, ungated by persona repertoire.
+description: System command — load a skill body via okt skill show (e.g. okt-skill commit), or list the catalog via okt skill list with no arg; pulls any skill, ungated by persona repertoire.
 schema_version: 2
 role_affinity:
   - Concierge
@@ -9,11 +9,11 @@ Load a skill on demand, or browse the skill catalog. Resolve the slug from `--sl
 
 ## With a slug
 
-Call `skills.get` for that slug and surface the skill's full BODY verbatim — the procedural payload the user asked to read (e.g. `/okt-skill commit` loads the `commit` skill body via `skills.get`). When the slug is unknown, `skills.get` rejects naming the missing slug — relay that and suggest a bare `okt-skill` to see the valid slugs.
+Call `okt skill show` for that slug and surface the skill's full BODY verbatim — the procedural payload the user asked to read (e.g. `/okt-skill commit` loads the `commit` skill body via `okt skill show`). When the slug is unknown, `okt skill show` rejects naming the missing slug — relay that and suggest a bare `okt-skill` to see the valid slugs.
 
 ## With no argument
 
-Call `skills.list` and render the catalog — every loaded skill's slug + name + description, ordered by slug — so the user can pick one to load.
+Call `okt skill list` and render the catalog — every loaded skill's slug + name + description, ordered by slug — so the user can pick one to load.
 
 ## Ungated by the persona repertoire
 

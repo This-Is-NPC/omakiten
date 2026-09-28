@@ -263,20 +263,7 @@ func validateLanguageWriteIntent(bundle config.Bundle, cliSet, tuiSet bool) erro
 	return nil
 }
 
-// reloadActiveBundle honors AC §25: after a successful write the
-// command rebuilds the runtime's BundleCache entry so anything sharing
-// the cache (TUI started in-process, future MCP server embedded in the
-// same process tree) observes the new selection without restart. For a
-// short-lived CLI invocation the rebuild also doubles as a post-write
-// validation pass — a broken bundle that somehow round-trips SaveBundle
-// would surface here before the command returns success.
-//
-// The cache rebuilds against rt.configPath (the runtime's own boot
-// source), not the write target: when --global is supplied inside a
-// repo with .omakiten/, the active cache still holds repo-local and
-// re-parsing global would replace the wrong entry. Other long-running
-// consumers pick up changes through BundleCache.Resolve's mtime check
-// against their own source path, which the atomic write naturally bumps.
+// reloadActiveBundle rebuilds the active runtime after a language change.
 func reloadActiveBundle(ctx context.Context, opts *runtimeOptions) error {
 	rt, err := opts.open(ctx, true)
 	if err != nil {

@@ -19,7 +19,7 @@ type commandPreviewCache struct {
 	projectID         int64
 	runtimeGeneration uint64
 	name              string
-	spec              config.MCPCommandSpec
+	spec              config.CommandSpec
 	markdown          string
 	// formatted is the markdown after sanitising, which is what the zone paints.
 	// It is stored rather than derived because sanitising walks every rune of the
@@ -37,12 +37,12 @@ type commandPreviewMsg struct {
 	runtimeGeneration uint64
 	gen               uint64
 	name              string
-	spec              config.MCPCommandSpec
+	spec              config.CommandSpec
 	markdown          string
 	err               error
 }
 
-func cloneCommandSpec(spec config.MCPCommandSpec) config.MCPCommandSpec {
+func cloneCommandSpec(spec config.CommandSpec) config.CommandSpec {
 	spec.Laws = slices.Clone(spec.Laws)
 	spec.LawsDisabled = slices.Clone(spec.LawsDisabled)
 	spec.Templates = slices.Clone(spec.Templates)
@@ -50,7 +50,7 @@ func cloneCommandSpec(spec config.MCPCommandSpec) config.MCPCommandSpec {
 	return spec
 }
 
-func commandSpecEq(a, b config.MCPCommandSpec) bool {
+func commandSpecEq(a, b config.CommandSpec) bool {
 	return a.Persona == b.Persona &&
 		slices.Equal(a.Laws, b.Laws) &&
 		slices.Equal(a.LawsDisabled, b.LawsDisabled) &&
@@ -58,23 +58,23 @@ func commandSpecEq(a, b config.MCPCommandSpec) bool {
 		slices.Equal(a.Skills, b.Skills)
 }
 
-func (m Screen) studioPreviewTarget() (name string, spec config.MCPCommandSpec, bundle config.Bundle, ok bool) {
+func (m Screen) studioPreviewTarget() (name string, spec config.CommandSpec, bundle config.Bundle, ok bool) {
 	bundle, _ = m.studioCommandsBundle()
-	rows := studioCommandRows(bundle.MCPCommands, m.knownCommandNames())
+	rows := studioCommandRows(bundle.Commands, m.knownCommandNames())
 	if len(rows) == 0 {
-		return "", config.MCPCommandSpec{}, bundle, false
+		return "", config.CommandSpec{}, bundle, false
 	}
 	m.studioCommandsClamp(len(rows))
 	row := rows[m.studioCommandIndex]
 	return row.Key, row.Spec, bundle, true
 }
 
-func (c *commandPreviewCache) matches(projectID int64, runtimeGeneration uint64, name string, spec config.MCPCommandSpec) bool {
+func (c *commandPreviewCache) matches(projectID int64, runtimeGeneration uint64, name string, spec config.CommandSpec) bool {
 	return c != nil && c.ready && c.projectID == projectID && c.runtimeGeneration == runtimeGeneration && c.name == name && commandSpecEq(c.spec, spec)
 }
 
 func (m Screen) renderStudioPromptPreview(bundle config.Bundle) string {
-	rows := studioCommandRows(bundle.MCPCommands, m.knownCommandNames())
+	rows := studioCommandRows(bundle.Commands, m.knownCommandNames())
 	m.studioCommandsClamp(len(rows))
 	if len(rows) == 0 {
 		return m.tr("tui.studio.preview.prompt_empty", "No command bindings available.")
@@ -112,7 +112,7 @@ func (m Screen) PromptPreview(frame screenhost.Frame, bundle config.Bundle) stri
 }
 
 func (m Screen) resolvedStudioPromptPreview(bundle config.Bundle) string {
-	rows := studioCommandRows(bundle.MCPCommands, m.knownCommandNames())
+	rows := studioCommandRows(bundle.Commands, m.knownCommandNames())
 	m.studioCommandsClamp(len(rows))
 	if len(rows) == 0 {
 		return m.tr("tui.studio.preview.prompt_empty", "No command bindings available.")
@@ -151,7 +151,7 @@ func (m Screen) applyCommandPreview(msg commandPreviewMsg) {
 	m.storeCommandPreview(msg.name, msg.spec, msg.markdown, msg.err)
 }
 
-func (m Screen) storeCommandPreview(name string, spec config.MCPCommandSpec, markdown string, err error) {
+func (m Screen) storeCommandPreview(name string, spec config.CommandSpec, markdown string, err error) {
 	if m.commandPreview == nil {
 		return
 	}
@@ -167,12 +167,12 @@ func (m Screen) storeCommandPreview(name string, spec config.MCPCommandSpec, mar
 
 // studioCandidateCommands is the command map the prompt preview clamps its
 // cursor against, read straight off the held candidate.
-func (m Screen) studioCandidateCommands() map[string]config.MCPCommandSpec {
+func (m Screen) studioCandidateCommands() map[string]config.CommandSpec {
 	if m.studioDraft != nil {
-		return m.studioDraft.Candidate().MCPCommands
+		return m.studioDraft.Candidate().Commands
 	}
 	if snap := m.repos.activeSnapshot(); snap != nil {
-		return snap.MCPCommands()
+		return snap.Commands()
 	}
 	return nil
 }

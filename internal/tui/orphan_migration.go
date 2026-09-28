@@ -8,7 +8,7 @@ import (
 
 // handleOrphanMigrationAction applies the kitten_orphan_migration confirm
 // path through operation.Service.MigrateOrphans so TUI shares the same
-// preview/confirm contract as CLI/MCP. Empty ActionID paths (skip) are
+// preview/confirm contract as CLI. Empty ActionID paths (skip) are
 // labeled dismissals — they record nothing and leave tasks on the
 // inactive bucket until the user re-triggers.
 //

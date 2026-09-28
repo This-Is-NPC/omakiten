@@ -20,7 +20,7 @@ func NewPersonaService(repos EntityServiceRepos, snap *config.Snapshot) *Persona
 }
 
 // personasFromSnapshot projects the config.Persona slice carried on
-// the snapshot into the domain shape consumed by the CLI/TUI/MCP
+// the snapshot into the domain shape consumed by the CLI/TUI
 // surfaces. Ids are positional (1-based slot in the snapshot's
 // personas list) so callers that round-trip ids within a snapshot get
 // stable references; ids rotate on every bundle import — callers

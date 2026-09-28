@@ -63,7 +63,7 @@ func TestIzakayaBuilderIdentityRenders(t *testing.T) {
 	if len(resp.Templates) == 0 {
 		t.Fatalf("okt-task-implement binds no templates; expected pull-request")
 	}
-	if !strings.Contains(resp.Markdown, "## Templates\n") || !strings.Contains(resp.Markdown, "templates.show") {
+	if !strings.Contains(resp.Markdown, "## Templates\n") || !strings.Contains(resp.Markdown, "okt template show") {
 		t.Fatalf("okt-task-implement missing Templates section or JIT fetch hint:\n%s", resp.Markdown)
 	}
 

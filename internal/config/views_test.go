@@ -23,11 +23,10 @@ config:
   output:
     json_minified: true
     omit_empty: true
-  mcp:
+  agent:
     recent_comment_limit: 5
     max_comment_chars: 0
     include_workflow_in_continue: true
-    cache_prompts: true
     next_work_limit: 5
     similar_task_limit: 5
   workflow:
@@ -134,8 +133,8 @@ func TestLoadBundleParsesKitDefaultFile(t *testing.T) {
 	// Quick assertions that the resolved bundle is structurally complete:
 	// validator already covered the full set, but spot-check the most
 	// load-bearing pieces so a regression here points at the kit YAML.
-	if bundle.Config.MCP.RecentCommentLimit <= 0 {
-		t.Error("kit MCP.RecentCommentLimit not set")
+	if bundle.Config.Agent.RecentCommentLimit <= 0 {
+		t.Error("kit agent.RecentCommentLimit not set")
 	}
 	if bundle.Config.Views.Board.Sort.Field == "" {
 		t.Error("kit Views.Board.Sort.Field not set")

@@ -14,7 +14,7 @@ Run `git diff <base>..HEAD` and read every hunk you wrote with fresh eyes: dead 
 
 ## Record findings, fix the trivial
 
-Call `templates.show` for any bound findings scaffold, fill it, and persist the findings with `comments.add` on the task. Fix trivial issues inline and record that material progress with `progress.record`; escalate the rest rather than burying them.
+Call `okt template show` for any bound findings scaffold, fill it, and persist the findings with `okt comment add` on the task. Fix trivial issues inline and record that material progress with `okt progress record`; escalate the rest rather than burying them.
 
 ## Handoff
 

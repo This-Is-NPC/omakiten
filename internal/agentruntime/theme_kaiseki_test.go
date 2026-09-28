@@ -79,8 +79,8 @@ func TestKaisekiAragornBuilderIdentity(t *testing.T) {
 	if len(resp.Templates) == 0 {
 		t.Fatalf("okt-task-implement binds no templates")
 	}
-	if !strings.Contains(resp.Markdown, "## Templates\n") || !strings.Contains(resp.Markdown, "templates.show") {
-		t.Fatalf("okt-task-implement missing Templates section or templates.show JIT hint:\n%s", resp.Markdown)
+	if !strings.Contains(resp.Markdown, "## Templates\n") || !strings.Contains(resp.Markdown, "okt template show") {
+		t.Fatalf("okt-task-implement missing Templates section or okt template show JIT hint:\n%s", resp.Markdown)
 	}
 }
 
@@ -152,8 +152,8 @@ func TestKaisekiNotesSlotsScribeRepertoire(t *testing.T) {
 	if !strings.Contains(pause.Markdown, "Red Book of Westmarch") {
 		t.Fatalf("okt-pause markdown missing themed law name 'Red Book of Westmarch':\n%s", pause.Markdown)
 	}
-	if len(pause.Templates) == 0 || !strings.Contains(pause.Markdown, "templates.show") {
-		t.Fatalf("okt-pause missing note-handoff template or templates.show hint:\n%s", pause.Markdown)
+	if len(pause.Templates) == 0 || !strings.Contains(pause.Markdown, "okt template show") {
+		t.Fatalf("okt-pause missing note-handoff template or okt template show hint:\n%s", pause.Markdown)
 	}
 }
 

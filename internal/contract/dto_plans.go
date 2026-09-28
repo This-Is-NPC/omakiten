@@ -1,6 +1,6 @@
 package contract
 
-// PlanSummary is the MCP wire shape for a plan row. GoalBody is omitted
+// PlanSummary is the delivery contract for a plan row. GoalBody is omitted
 // from list views (zero-value json:"omitempty") so dashboards stay
 // compact; the show / get endpoints will fold it back in.
 type PlanSummary struct {
@@ -70,7 +70,7 @@ type PlanTaskRow struct {
 	AssignedTo string `json:"assigned_to,omitempty"`
 }
 
-// EditPlanInput is the MCP-side shape for plans.edit. The plan is
+// EditPlanInput is the agent-side shape for plans.edit. The plan is
 // identified by slug or plan_id (slug wins when both supplied). Name,
 // Slug, Status, and GoalBody are optional pointers: nil leaves the
 // column untouched, non-nil rewrites it. The service rejects a call that

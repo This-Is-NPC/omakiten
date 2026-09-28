@@ -262,7 +262,6 @@ func FormatEntity(row domain.EventRow) string {
 }
 
 // FormatWho composes the WHO column value: `source` for tool-call rows
-// (cli / mcp / tui), `author_type` for comments (human / agent), "—" for system
 // events. Falls back to the empty string when none of those signals are
 // present — the caller pads to the column width.
 func FormatWho(row domain.EventRow) string {

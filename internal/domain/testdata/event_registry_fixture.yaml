@@ -196,10 +196,6 @@ definitions:
     category: tool_call
     display: "CLI tool call"
     formatter: cli.tool_call
-  mcp.tool_call:
-    category: tool_call
-    display: "MCP tool call"
-    formatter: mcp.tool_call
   tui.tool_call:
     category: tool_call
     display: "TUI tool call"

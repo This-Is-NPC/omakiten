@@ -6,7 +6,7 @@ role_affinity:
   - Scribe
   - Concierge
 ---
-List knowledge notes for the active scope. Notes live in the `comments.*` surface; this is a read-only listing.
+List knowledge notes for the active scope. Notes live in the `okt comment` surface; this is a read-only listing.
 
 ## Resolve scope and filters
 
@@ -14,7 +14,7 @@ Resolve scope from `--scope` (default both project-scoped and universal notes wh
 
 ## Report each note
 
-Call `comments.list` with the filters and report each note's id, kind, title, scope, and pinned flag — order pinned first, then most recently updated. Read-only.
+Call `okt comment list` with the filters and report each note's id, kind, title, scope, and pinned flag — order pinned first, then most recently updated. Read-only.
 
 ## Handoff
 

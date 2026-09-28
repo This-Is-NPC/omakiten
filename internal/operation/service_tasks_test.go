@@ -18,14 +18,14 @@ import (
 // over-cap title/description submitted to tasks.create_intent must be rejected
 // with ErrValidation BEFORE the similarity scan runs — not after loading the
 // whole task list and tokenizing the oversized text. The fixture seeds
-// "Add MCP agent integration" (taskA1), so a matching title on the similarity
+// "Add agent agent integration" (taskA1), so a matching title on the similarity
 // path would otherwise return a RequiresConfirmation response; getting
 // ErrValidation instead proves the cap short-circuits ahead of that work.
 func TestCreateTaskIntentRejectsOverCapBeforeSimilarity(t *testing.T) {
 	t.Run("over-cap description rejected ahead of similarity", func(t *testing.T) {
 		f := newAgentFixture(t)
 		resp, err := f.service.CreateTaskIntent(f.ctx, contract.CreateTaskInput{
-			Title:       "Add MCP agent integration", // matches taskA1 → would trigger similarity
+			Title:       "Add agent agent integration", // matches taskA1 → would trigger similarity
 			Description: strings.Repeat("d", domain.MaxTaskDescriptionBytes+1),
 		})
 		assertCodedError(t, err, domain.ErrValidation)
@@ -101,7 +101,7 @@ func TestEditTaskRejectsUnknownPriorityLabel(t *testing.T) {
 // bundle (workflow.defaults deny edit; backlog overrides allow), moves a
 // task to dev, and confirms the agent surface propagates the
 // ErrGuardViolation that TaskService.Edit raises when the resolver says
-// no. The test exists to pin the contract that the MCP wrapper carries
+// no. The test exists to pin the contract that the agent wrapper carries
 // no policy of its own — it just relays whatever the service decides.
 func TestEditTaskInLockedBucketReturnsGuardViolation(t *testing.T) {
 	f := newAgentFixtureEditLockedToBacklog(t)
@@ -181,7 +181,6 @@ func newAgentFixtureEditLockedToBacklog(t *testing.T) editLockedFixture {
 	svc.SetSettings(ServiceSettings{
 		RecentCommentLimit: 5,
 		IncludeWorkflow:    true,
-		CachePrompts:       true,
 		NextWorkLimit:      5,
 		SimilarTaskLimit:   5,
 	})

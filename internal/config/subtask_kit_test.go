@@ -55,13 +55,13 @@ func TestLoadBundleLoadsSubtaskKit(t *testing.T) {
 
 	var sawWarning bool
 	for _, warning := range bundle.Warnings {
-		if strings.Contains(warning.Message, "mcp_commands: ignored at depth >=1; MCP always resolves at project root") && filepath.Base(warning.Path) == "izakaya.yaml" {
+		if strings.Contains(warning.Message, "commands: ignored at depth >=1; agent always resolves at project root") && filepath.Base(warning.Path) == "izakaya.yaml" {
 			sawWarning = true
 			break
 		}
 	}
 	if !sawWarning {
-		t.Fatalf("LoadBundle() warnings = %+v, want sub-kit mcp_commands warning", bundle.Warnings)
+		t.Fatalf("LoadBundle() warnings = %+v, want sub-kit commands warning", bundle.Warnings)
 	}
 
 	snap := BuildSnapshot(bundle)
@@ -78,8 +78,8 @@ func TestLoadBundleLoadsSubtaskKit(t *testing.T) {
 	if got := sub.Kit().Key; got != "izakaya" {
 		t.Fatalf("sub Snapshot.Kit().Key = %q, want izakaya", got)
 	}
-	if commands := sub.MCPCommands(); len(commands) != 0 {
-		t.Fatalf("sub Snapshot.MCPCommands() = %+v, want empty because sub-kit mcp_commands are ignored", commands)
+	if commands := sub.Commands(); len(commands) != 0 {
+		t.Fatalf("sub Snapshot.Commands() = %+v, want empty because sub-kit commands are ignored", commands)
 	}
 }
 
@@ -253,7 +253,7 @@ func TestNewSubtaskKitNoticeNeeded(t *testing.T) {
 		})
 	}
 
-	if got := SubtaskKitTransparencyNoticeKey(); got != "notice.subtask_kit.enabled.mcp_resolves_at_root" {
+	if got := SubtaskKitTransparencyNoticeKey(); got != "notice.subtask_kit.enabled.commands_resolve_at_root" {
 		t.Fatalf("SubtaskKitTransparencyNoticeKey() = %q", got)
 	}
 }

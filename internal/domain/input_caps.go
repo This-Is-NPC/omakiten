@@ -6,7 +6,7 @@ import (
 )
 
 // Input length caps enforced at the domain boundary on every write path
-// (CLI and MCP both reach a write through the app services that call
+// (CLI both reach a write through the app services that call
 // these validators). They close security finding S2: a malicious or
 // buggy client must not be able to push an unbounded blob into SQLite —
 // storage bloat plus prompt-bloat fed back to agents.

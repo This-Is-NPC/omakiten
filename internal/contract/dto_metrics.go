@@ -4,7 +4,7 @@ import (
 	"omakiten/internal/domain"
 )
 
-// MetricsSummaryInput drives the metrics.summary MCP endpoint. Period
+// MetricsSummaryInput drives the metrics.summary operation. Period
 // defaults to "30d" when empty; ProjectID 0 returns the cross-project view.
 type MetricsSummaryInput struct {
 	ProjectSelector

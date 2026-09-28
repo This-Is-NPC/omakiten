@@ -6,7 +6,7 @@ import (
 )
 
 // InsightsSummarySchemaVersion is the frozen contract marker for the
-// insights.summary MCP response. The agent self-consults this surface to
+// insights.summary agent response. The agent self-consults this surface to
 // self-correct (reactive → proactive), so its shape is a published API: any
 // breaking change to field names, nesting, or semantics MUST bump this
 // version and ship a migration note. Additive optional fields keep the same

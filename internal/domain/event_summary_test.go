@@ -238,9 +238,9 @@ func TestSummarizeEventPerTypeRendering(t *testing.T) {
 			row:  EventRow{EventType: EventTypeCLIToolCall, Payload: `{"tool_name":"tasks.move","source":"cli","status":"ok","duration_ms":12}`},
 			want: "cli/tasks.move [ok] 12ms",
 		},
-		"mcp.tool_call status from columns": {
-			row:  EventRow{EventType: EventTypeMCPToolCall, Source: "mcp", Status: "error", DurationMs: 33, Payload: `{"tool_name":"tasks.move"}`},
-			want: "mcp/tasks.move [error] 33ms",
+		"cli.tool_call status from columns": {
+			row:  EventRow{EventType: EventTypeTUIToolCall, Source: "cli", Status: "error", DurationMs: 33, Payload: `{"tool_name":"tasks.move"}`},
+			want: "cli/tasks.move [error] 33ms",
 		},
 		"tui.tool_call minimal": {
 			row:  EventRow{EventType: EventTypeTUIToolCall, Payload: `{"tool_name":"tasks.continue"}`},

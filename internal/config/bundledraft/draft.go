@@ -213,16 +213,16 @@ func (d *Draft) Mutate(mutate func(*config.Bundle) error) Report {
 	return d.Report()
 }
 
-func (d *Draft) SetMCPCommandSpec(key string, spec config.MCPCommandSpec) Report {
+func (d *Draft) SetCommandSpec(key string, spec config.CommandSpec) Report {
 	return d.Mutate(func(bundle *config.Bundle) error {
 		key = strings.TrimSpace(key)
 		if key == "" {
 			return d.errf("tui.studio.err.command_key_required", "command key is required")
 		}
-		if bundle.MCPCommands == nil {
-			bundle.MCPCommands = map[string]config.MCPCommandSpec{}
+		if bundle.Commands == nil {
+			bundle.Commands = map[string]config.CommandSpec{}
 		}
-		bundle.MCPCommands[key] = config.MCPCommandSpec{
+		bundle.Commands[key] = config.CommandSpec{
 			Persona:      strings.TrimSpace(spec.Persona),
 			Laws:         append([]string(nil), spec.Laws...),
 			LawsDisabled: append([]string(nil), spec.LawsDisabled...),

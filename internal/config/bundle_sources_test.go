@@ -36,23 +36,23 @@ func TestComputeSettingsSources_ProjectOverrideFlipsOneLeaf(t *testing.T) {
 		t.Fatalf("LoadKitConfigByKey(omakase): %v", err)
 	}
 	user := kit
-	user.MCP.RecentCommentLimit = kit.MCP.RecentCommentLimit + 99
+	user.Agent.RecentCommentLimit = kit.Agent.RecentCommentLimit + 99
 
 	sources := computeSettingsSources(user, kit)
-	got, ok := sources["mcp.recent_comment_limit"]
+	got, ok := sources["agent.recent_comment_limit"]
 	if !ok {
-		t.Fatal("expected mcp.recent_comment_limit in sources map")
+		t.Fatal("expected agent.recent_comment_limit in sources map")
 	}
 	if got != SourceProject {
-		t.Fatalf("mcp.recent_comment_limit: got %q, want %q", got, SourceProject)
+		t.Fatalf("agent.recent_comment_limit: got %q, want %q", got, SourceProject)
 	}
 	// Neighbouring leaves remain default — the override is single-leaf.
-	neighbour, ok := sources["mcp.max_comment_chars"]
+	neighbour, ok := sources["agent.max_comment_chars"]
 	if !ok {
-		t.Fatal("expected mcp.max_comment_chars in sources map")
+		t.Fatal("expected agent.max_comment_chars in sources map")
 	}
 	if neighbour != SourceDefault {
-		t.Fatalf("mcp.max_comment_chars: got %q, want %q (neighbour should stay default)", neighbour, SourceDefault)
+		t.Fatalf("agent.max_comment_chars: got %q, want %q (neighbour should stay default)", neighbour, SourceDefault)
 	}
 }
 
@@ -87,9 +87,9 @@ func TestComputeSettingsSources_UserOnlyLeafIsProject(t *testing.T) {
 // end-to-end path is exercised before any real env var lands.
 func TestApplyEnvOverlay_PromotesPathWhenEnvSet(t *testing.T) {
 	sources := map[string]string{
-		"theme.active":         SourceDefault,
-		"mcp.cache_prompts":    SourceProject,
-		"output.json_minified": SourceDefault,
+		"theme.active":          SourceDefault,
+		"agent.next_work_limit": SourceProject,
+		"output.json_minified":  SourceDefault,
 	}
 	bindings := []envOverlayBinding{
 		{envVar: "OMAKITEN_TEST_THEME", path: "theme.active"},
@@ -105,8 +105,8 @@ func TestApplyEnvOverlay_PromotesPathWhenEnvSet(t *testing.T) {
 		t.Fatalf("theme.active after overlay: got %q, want %q", got, SourceEnv)
 	}
 	// Unrelated paths stay where they were.
-	if got := sources["mcp.cache_prompts"]; got != SourceProject {
-		t.Errorf("mcp.cache_prompts: overlay must not touch unrelated paths; got %q", got)
+	if got := sources["agent.next_work_limit"]; got != SourceProject {
+		t.Errorf("agent.next_work_limit: overlay must not touch unrelated paths; got %q", got)
 	}
 	if got := sources["output.json_minified"]; got != SourceDefault {
 		t.Errorf("output.json_minified: overlay must not touch unrelated paths; got %q", got)
@@ -132,7 +132,7 @@ func TestApplyEnvOverlay_SkipsUnsetVars(t *testing.T) {
 
 // TestBundleSourceFor_NilMapFallsBackToDefault pins the consumer
 // contract: bundles constructed without LoadBundle (test fixtures via
-// newTwoBucketBundle, MCP composer mocks) have a nil Sources map and
+// newTwoBucketBundle, agent composer mocks) have a nil Sources map and
 // must report SourceDefault for any path. The accessor relies on this
 // so the TUI viewer never renders an empty source cell.
 func TestBundleSourceFor_NilMapFallsBackToDefault(t *testing.T) {
@@ -148,12 +148,12 @@ func TestBundleSourceFor_NilMapFallsBackToDefault(t *testing.T) {
 // pre-trimming.
 func TestBundleSourceFor_TrimsAndResolves(t *testing.T) {
 	b := Bundle{
-		Sources: map[string]string{"mcp.cache_prompts": SourceProject},
+		Sources: map[string]string{"agent.next_work_limit": SourceProject},
 	}
-	if got := b.SourceFor("mcp.cache_prompts"); got != SourceProject {
+	if got := b.SourceFor("agent.next_work_limit"); got != SourceProject {
 		t.Fatalf("direct lookup: got %q want %q", got, SourceProject)
 	}
-	if got := b.SourceFor("  mcp.cache_prompts  "); got != SourceProject {
+	if got := b.SourceFor("  agent.next_work_limit  "); got != SourceProject {
 		t.Fatalf("whitespace lookup: got %q want %q", got, SourceProject)
 	}
 	if got := b.SourceFor("missing.path"); got != SourceDefault {

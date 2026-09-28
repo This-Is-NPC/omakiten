@@ -120,7 +120,7 @@ keys:
   cli.project.resume.short: "Show distribution, likely next work, blocked work, and dependencies"
   cli.project.edit.short: "Update the active project description"
   cli.project.edit.flag.description: "new project description"
-  cli.projects.short: "Утиліти життєвого циклу project (delete — destructive ops)"
+  cli.projects.short: "Утиліти життєвого циклу project"
   cli.projects.delete.short: "Hard-delete зареєстрованого project і кожного залежного рядка (необоротно)"
   cli.projects.delete.long: |-
     Знайти project за числовим id або slug, записати recovery-
@@ -197,22 +197,10 @@ keys:
   cli.template.short: "List and show loaded templates (file-backed under templates/)"
   cli.template.list.short: "List loaded templates"
   cli.template.show.short: "Show a template (frontmatter + body)"
-  cli.mcp.short: "Експонувати наміри agent Omakiten через MCP"
-  cli.mcp.prompt.short: "Вивести відрендерений markdown prompt okt-* у stdout"
-  cli.mcp.prompt.flag.list: "Виводить перелік команд, згрупованих за рівнем, замість відмалювання тіл"
-  cli.mcp.prompt.list.title: "Поверхня команд — %d команд\n"
-  cli.mcp.prompt.list.orchestrators: "\nОркестратори (%d) — прямий шлях диригента\n"
-  cli.mcp.prompt.list.system: "\nСистема (%d) — спілкування з інструментом, без об'єкта проєкту\n"
-  cli.mcp.prompt.list.granular: "\nГранулярні (%d) — okt-<object>-<verb>, хірургічний\n"
-  cli.mcp.prompt.list.object: "%s (%d)\n"
-  cli.mcp.tools.short: "Показати визначення MCP tools Omakiten"
-  cli.mcp.call.short: "Викликати MCP tool Omakiten з JSON-об'єктом вхідних даних"
-  cli.mcp.serve.short: "Запустити MCP stdio server Omakiten"
-  cli.mcp.install.short: "Налаштувати MCP server Omakiten у AI harness"
   cli.workflow.short: "Переглянути конфігурацію workflow"
   cli.workflow.show.short: "Показати активний workflow"
   cli.workflow.orphan.short: "Переглянути або перепривʼязати tasks, чий bucket деактивовано заміною workflow"
-  notice.subtask_kit.enabled.mcp_resolves_at_root: "Sub-task kit увімкнено: MCP commands, personas, laws, templates і skills досі resolve з root kit project."
+  notice.subtask_kit.enabled.commands_resolve_at_root: "Sub-task kit увімкнено: agent commands, personas, laws, templates і skills досі resolve з root kit project."
   cli.config.init.long: |-
     Розгортає окрему інсталяцію config, вкорінену у вибраному scope.
 
@@ -269,7 +257,7 @@ keys:
     Читає і записує config.languages.{cli,tui,agent_output} в активному
     omakiten.yaml. languages.cli і languages.tui валідовуються проти
     language packs, виявлених під languages/; languages.agent_output —
-    довільний і пересилається без змін у MCP prompt composer.
+    довільний і пересилається без змін у agent playbook composer.
 
     Ціль за замовчуванням — розв'язаний omakiten.yaml (репо-локальний
     .omakiten/, якщо присутній, інакше глобальний ConfigRoot
@@ -277,7 +265,7 @@ keys:
     запис у глобальний файл користувача незалежно від наявності репо-локального.
 
     Записи запускають BundleCache.Reload, тому наступні виклики okt і
-    тривалі tools (TUI, MCP server) бачать новий вибір. Поточний CLI-процес
+    тривалі tools (TUI, CLI) бачать новий вибір. Поточний CLI-процес
     і будь-який уже запущений виклик CLI не оновлюються ретроактивно;
     лише наступні виклики підхоплюють зміну.
   cli.config.language.set.long: |-
@@ -290,7 +278,6 @@ keys:
     --tui валідовуються проти кодів мов, виявлених під languages/.
     --agent приймає будь-який непорожній рядок (або "" для очищення).
     --global фіксує запис у глобальний omakiten.yaml користувача.
-  cli.mcp.install.long: "Записує конфігурацію MCP server Omakiten у файл config harness (наприклад, Claude Desktop або OpenCode)."
   cli.workflow.orphan.long: |-
     Tasks, що вказували на bucket workflow, який більше не існує після
     зміни preset або редагування omakiten.yaml, стають orphans. За
@@ -338,12 +325,6 @@ keys:
   cli.init.flag.name: "ім'я проєкту"
   cli.init.flag.slug: "slug проєкту"
   cli.init.flag.root: "шлях кореня проєкту"
-  cli.init.flag.enable-mcp: "увімкнути глобальний доступ agent MCP для підтримуваного harness"
-  cli.init.flag.mcp-harness: "harness MCP для налаштування"
-  cli.init.flag.mcp-config: "шлях config harness MCP"
-  cli.init.flag.mcp-command: "шлях команди, записаний у config MCP harness"
-  cli.init.flag.mcp-dry-run: "попередній перегляд змін config MCP harness без запису"
-  cli.init.flag.mcp-force: "замінити існуючий запис MCP harness Omakiten"
   cli.init.flag.preset: "офіційний preset workflow для копіювання у .omakiten/config/<preset>.yaml і активації"
   cli.init.flag.preset-force: "перезаписати існуючий config preset .omakiten"
   cli.config.init.flag.scope: "шар config для розгортання: global або local"
@@ -411,12 +392,6 @@ keys:
   cli.persona.edit.flag.skill: "ids skills (замінює існуючий набір)"
   cli.persona.edit.flag.skill-slug: "slugs skills (замінює існуючий набір)"
   cli.persona.edit.flag.no-edit: "не відкривати $EDITOR (застосувати лише оновлення з прапорців)"
-  cli.mcp.call.flag.input: "JSON-об'єкт вхідних даних"
-  cli.mcp.install.flag.harness: "Цільовий harness (%s)"
-  cli.mcp.install.flag.config-path: "Шлях до файлу config harness (за замовчуванням: дефолт harness). Приймає будь-який доступний для запису шлях; обмеження каталогу не застосовується — за замовчуванням використовується стандартне розташування harness."
-  cli.mcp.install.flag.command: "Команда для запуску omakiten (за замовчуванням: поточний виконуваний)"
-  cli.mcp.install.flag.dry-run: "Попередній перегляд змін без запису"
-  cli.mcp.install.flag.force: "Перезаписати існуючий config MCP Omakiten"
   cli.workflow.orphan.flag.confirm: "застосувати перепривʼязку; без цього прапорця команда друкує план і виходить"
   cli.workflow.orphan.flag.dry-run: "надрукувати план міграції без застосування (за замовчуванням, коли немає --confirm)"
   cli.err.config_invalid: "config недійсний"
@@ -478,7 +453,7 @@ keys:
   tui.empty.graph_no_deps: "Залежностей tasks поки немає."
   tui.empty.home_no_projects: "немає проєктів"
   tui.empty.home_no_projects_full: "Жодного проєкту не зареєстровано."
-  tui.empty.logs: "Активності поки немає. Використовуйте CLI, TUI або MCP, щоб взаємодіяти з Omakiten."
+  tui.empty.logs: "Активності поки немає. Використовуйте CLI, TUI або CLI, щоб взаємодіяти з Omakiten."
   tui.empty.stats: "Жодної активності agent ще не записано за цей період."
   tui.empty.table_no_tasks: "Tasks поки немає. Натисніть n, щоб створити."
   tui.empty.table_filtered: "Жоден task не відповідає налаштованому фільтру таблиці."
@@ -853,7 +828,7 @@ keys:
   tui.studio.buckets.label.position: "position"
   tui.studio.buckets.label.task_delete: "task delete"
   tui.studio.buckets.label.task_edit: "task edit"
-  tui.studio.commands.bindings_empty: "No known MCP commands."
+  tui.studio.commands.bindings_empty: "No known agent commands."
   tui.studio.commands.bindings_header: "COMMAND BINDINGS"
   tui.studio.commands.candidate_diff: "Candidate diff:"
   tui.studio.commands.field.laws: "laws"
@@ -878,12 +853,12 @@ keys:
   tui.studio.commands.msg.template_selection_changed: "template selection changed"
   tui.studio.commands.selected: "SELECTED: %s"
   tui.studio.commands.validation: "Validation: %s"
-  tui.studio.commands.warn.missing_law: "mcp_commands.%s.laws: missing law %q"
-  tui.studio.commands.warn.missing_law_disabled: "mcp_commands.%s.laws_disabled: missing law %q"
-  tui.studio.commands.warn.missing_persona: "mcp_commands.%s.persona: missing persona %q"
-  tui.studio.commands.warn.missing_skill: "mcp_commands.%s.skills: missing skill %q"
-  tui.studio.commands.warn.missing_template: "mcp_commands.%s.templates: missing template %q"
-  tui.studio.commands.warn.unknown_command: "mcp_commands.%s: unknown MCP command"
+  tui.studio.commands.warn.missing_law: "commands.%s.laws: missing law %q"
+  tui.studio.commands.warn.missing_law_disabled: "commands.%s.laws_disabled: missing law %q"
+  tui.studio.commands.warn.missing_persona: "commands.%s.persona: missing persona %q"
+  tui.studio.commands.warn.missing_skill: "commands.%s.skills: missing skill %q"
+  tui.studio.commands.warn.missing_template: "commands.%s.templates: missing template %q"
+  tui.studio.commands.warn.unknown_command: "commands.%s: unknown agent playbook"
   tui.studio.commands.warnings_header: "Command warnings:"
   tui.studio.diff.bucket_added: "Bucket added: %s"
   tui.studio.diff.bucket_key_changed: "Bucket key changed: %s -> %s"
@@ -1004,7 +979,7 @@ keys:
   tui.studio.personas.kicker: "PERSONAS"
   tui.studio.personas.known: "known"
   tui.studio.personas.msg.no_changes_to_save: "no Studio Personas changes to save"
-  tui.studio.personas.related.commands: "// COMMANDS (mcp_commands.persona = this slug)"
+  tui.studio.personas.related.commands: "// COMMANDS (commands.persona = this slug)"
   tui.studio.personas.related.heading: "RELATED"
   tui.studio.personas.related.kicker: "%d skills · %d laws · %d commands"
   tui.studio.personas.related.commands_empty: "No commands bind this persona."
@@ -1104,7 +1079,7 @@ keys:
   tui.settings.effective.section.theme: "тема"
   tui.settings.effective.section.template_defaults: "значення шаблонів за замовчуванням"
   tui.settings.effective.section.views: "перегляди"
-  tui.settings.effective.section.mcp: "mcp"
+  tui.settings.effective.section.agent: "agent"
   tui.settings.effective.section.tui: "tui"
   tui.settings.effective.section.sqlite: "sqlite"
   tui.settings.effective.section.activity_log: "журнал активності"
@@ -1380,13 +1355,13 @@ keys:
   notifications.kitten_link.description: "Уважне кошеня для tags, залежностей та скованих побічних quests."
   notifications.kitten_orphan_migration.description: "Запит після заміни config, коли tasks стали б orphans через набір buckets нового workflow."
   notifications.kitten_success.description: "Гордий кошачий вартовий для завершених ритуалів та благословенних фіксів."
-  cli.setup.short: "Запустити picker першого налаштування (мова → preset → MCP harness)"
+  cli.setup.short: "Запустити picker першого налаштування (мова → preset → skill destination)"
   cli.setup.long: |-
     okt setup — це picker після інсталяції, у який curl|bash installer
     тебе кидає.
 
     Він проходить вибір мови (CLI / TUI / agent-output), вибір preset
-    та налаштування MCP-harness в одній програмі bubbletea, потім
+    та налаштування skill-destination в одній програмі bubbletea, потім
     записує shell-rc-обгортку okt(). Перезапусти з --update, щоб
     переглянути вибір.
 
@@ -1398,20 +1373,18 @@ keys:
   cli.setup.flag.tui-lang: "пропустити picker мови TUI задавши обраний код (та сама форма, що OKT_TUI_LANG=)"
   cli.setup.flag.agent-lang: "пропустити запит мови agent-output задавши обране вільне значення"
   cli.setup.flag.preset: "пропустити picker preset задавши обране ім'я preset (та сама форма, що OKT_PRESET=)"
-  cli.setup.flag.harnesses: "пропустити мульти-вибір harness з CSV імен harness (та сама форма, що OKT_HARNESSES=)"
+  cli.setup.flag.harnesses: "Skill destinations: agents, claude-code, or 0 to skip"
   cli.setup.flag.skip-wrapper: "не записувати блок shell-rc-обгортки okt() (корисно, коли користувач керує своїми rc-файлами через dotfiles)"
-  cli.setup.flag.skip-harnesses: "розв'язати входи harness, але не викликати `okt mcp setup` (використовується shell-тестами + dry-run smoke checks)"
+  cli.setup.flag.skip-harnesses: "Skip installing the integration skill"
   cli.setup.status.preset_written: "=> Активний preset workflow: %s (%s/.active)"
   cli.setup.status.wrapper_written: "=> Встановлено shell-обгортку okt() в: %s"
   cli.setup.status.wrapper_skipped: "=> Пропускаємо встановлення shell-обгортки: ~/.bashrc або ~/.zshrc не знайдено"
-  cli.setup.status.harness_configured: "=> Налаштовуємо MCP для %s"
-  cli.setup.status.harness_failed: "   (пропущено %s, вихід %d — перезапусти вручну: %s mcp setup --harness %s --force)"
   cli.setup.warn.unknown_preset: "попередження: OKT_PRESET=%s не є підтримуваним preset; повертаємось до %s"
   cli.setup.picker.lang.cli.title: "Оберіть мову CLI"
   cli.setup.picker.agent.title: "Мова виводу agent (вільний текст, наприклад \"Українська\" або \"Português (Brasil)\")"
   cli.setup.picker.agent.placeholder: "en"
   cli.setup.picker.preset.title: "Оберіть preset workflow"
-  cli.setup.picker.harness.title: "Налаштування MCP harnesses"
+  cli.setup.picker.harness.title: "Install the Omakiten skill"
   cli.setup.picker.hint.nav: "↑/↓ навігація · enter підтвердити · ctrl+c вийти"
   cli.setup.picker.hint.multi: "↑/↓ навігація · enter перемкнути · tab підтвердити · ctrl+c вийти"
   cli.setup.picker.hint.input: "вводь, щоб редагувати · enter підтвердити (порожнє ok) · ctrl+c вийти"
@@ -1656,5 +1629,14 @@ keys:
   tui.help.stats_insights.title: "Stats · інсайти"
   tui.help.stats_insights.refresh: "оновити"
 
-  operations.denied.wiring: "Internal composition injector/getter; not available on CLI, TUI, or MCP."
+  operations.denied.wiring: "Internal composition injector/getter; not available on CLI or TUI."
   operations.denied.agent_delete: "Agents cannot delete this resource."
+
+  cli.command.short: "Discover and resolve configured agent playbooks"
+  cli.command.list.short: "List available playbooks"
+  cli.command.resolve.short: "Resolve persona, skills, laws and templates"
+  cli.command.resolve.flag.arguments: "Playbook arguments as a JSON object"
+  cli.init.flag.skill: "Install the Omakiten skill in this project"
+  cli.init.flag.claude-code: "Also install the skill for Claude Code (requires --skill)"
+
+  cli.projects.list.short: "List registered projects"

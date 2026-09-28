@@ -61,8 +61,8 @@ Examples:
 okt tui
 okt list -b dev
 okt move 42 --to done
-okt mcp call search --input '{"query":"sqlite race","entity_types":["error","solution"]}'
-okt mcp call metrics.summary --input '{"period":"30d"}'
+okt search "sqlite race" --entity-type error --entity-type solution
+okt metrics summary --period 30d
 ```
 
 ---

@@ -28,7 +28,7 @@ const (
 
 // ValidateSearchQuery trims and bounds one FTS5 MATCH expression. All app and
 // repository entry points use this validator so internal callers cannot bypass
-// the same CPU/storage limits enforced for MCP requests.
+// the same CPU/storage limits enforced for agent requests.
 func ValidateSearchQuery(query string) (string, error) {
 	query = strings.TrimSpace(query)
 	if query == "" {

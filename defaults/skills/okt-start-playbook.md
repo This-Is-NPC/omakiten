@@ -11,10 +11,10 @@ Open the session as the concierge: orient the user, then hand them the next move
 
 Recover the live state before proposing anything, so you resume the thread the previous session left rather than starting cold:
 
-- `project.overview` for the board snapshot.
-- `tasks.list` for in-flight work.
-- `plans.list` for the plan state.
-- `comments.list` with `scope=project` (kind `handoff` and `recap`, most recent first) to recover the latest HANDOFF/RECAP.
+- `okt project overview` for the board snapshot.
+- `okt list` for in-flight work.
+- `okt plan list` for the plan state.
+- `okt comment list` with `scope=project` (kind `handoff` and `recap`, most recent first) to recover the latest HANDOFF/RECAP.
 
 ## Propose concrete next commands
 

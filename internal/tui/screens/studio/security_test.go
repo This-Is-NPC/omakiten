@@ -128,9 +128,9 @@ func testCandidatePreviewSafety(t *testing.T) {
 		assertCandidateOutputSafe(t, gridtable.RenderCells([][]gridtable.Cell{row}, []int{80, 80}, lipgloss.NewStyle()))
 	}
 	bundle := config.Bundle{
-		MCPCommands: map[string]config.MCPCommandSpec{"okt-task-continue": {Persona: "builder"}},
-		Personas:    []config.Persona{{Slug: "builder", Name: "Builder", Body: "first\n" + payload}}}
-	for i, row := range studioCommandRows(bundle.MCPCommands, nil) {
+		Commands: map[string]config.CommandSpec{"okt-task-continue": {Persona: "builder"}},
+		Personas: []config.Persona{{Slug: "builder", Name: "Builder", Body: "first\n" + payload}}}
+	for i, row := range studioCommandRows(bundle.Commands, nil) {
 		if row.Key == "okt-task-continue" {
 			m.studioCommandIndex = i
 			break
@@ -145,7 +145,7 @@ func testCandidateCommandsSafety(t *testing.T) {
 	m := Screen{}
 	assertCandidateOutputSafe(t, strings.Join(m.commandsInspectorTable(studioprojection.CommandRow{
 		Key:  payload,
-		Spec: config.MCPCommandSpec{Persona: payload, Skills: []string{payload}}}, config.Bundle{}, 80, 0), "\n"))
+		Spec: config.CommandSpec{Persona: payload, Skills: []string{payload}}}, config.Bundle{}, 80, 0), "\n"))
 	assertCandidateOutputSafe(t, "Candidate diff:\n"+strings.Join(prefixLines([]string{payload}, "- "), "\n"))
 	assertCandidateOutputSafe(t, "Command warnings:\n"+strings.Join(prefixLines([]string{payload}, "- "), "\n"))
 }

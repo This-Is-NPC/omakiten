@@ -121,7 +121,7 @@ func FilterLogVisibleRows(rows []EventRow) []EventRow {
 
 func isToolCallHealthEvent(eventType string) bool {
 	switch eventType {
-	case EventTypeCLIToolCall, EventTypeMCPToolCall, EventTypeTUIToolCall, EventTypeHookExecuted:
+	case EventTypeCLIToolCall, EventTypeTUIToolCall, EventTypeHookExecuted:
 		return true
 	default:
 		return false

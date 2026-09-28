@@ -45,7 +45,7 @@ type OrphanReport struct {
 // the kit identities that bracket the swap, and the structured reason.
 // Moved to the domain package per #297 review opportunity §D.19 / #299
 // §C so the JSON contract sits next to every other event-payload
-// schema (audit consumers, hook payload templates, MCP adapters all
+// schema (audit consumers, hook payload templates, agent adapters all
 // read against this shape). JSON tags are byte-identical to the
 // pre-move struct in sqlite/orphans.go so existing rows stay
 // compatible.

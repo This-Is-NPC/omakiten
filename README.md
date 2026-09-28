@@ -31,7 +31,7 @@ AI agents lose context between sessions. Different tools see different parts of 
 
 ## How It Works
 
-You keep working with whichever AI tool you prefer. Omakiten runs locally and connects to your agents through MCP — a standard protocol that lets AI tools read and write shared state.
+You keep working with whichever AI tool you prefer. Omakiten runs locally and provides an `omakiten` skill that teaches agents to read and write shared state through the `okt` CLI.
 
 ```mermaid
 flowchart TB
@@ -50,9 +50,9 @@ flowchart TB
     user --> opencodeA
     user --> claudeB
 
-    claudeA <-->|MCP| omakiten
-    opencodeA <-->|MCP| omakiten
-    claudeB <-->|MCP| omakiten
+    claudeA <-->|CLI| omakiten
+    opencodeA <-->|CLI| omakiten
+    claudeB <-->|CLI| omakiten
 
     cli[okt CLI] <-->|same state| omakiten
     tui[okt tui] <-->|same state| omakiten
@@ -148,7 +148,7 @@ Full trust model and the manual Cosign commands:
 The installer walks you through language, workflow preset, and which AI tools to connect. For headless installs (CI, Docker, dotfiles):
 
 ```bash
-OKT_CLI_LANG=en OKT_AGENT_LANG="English" OKT_PRESET=omakase OKT_HARNESSES=claude-code,opencode \
+OKT_CLI_LANG=en OKT_AGENT_LANG="English" OKT_PRESET=omakase OKT_HARNESSES=agents,claude-code \
   bash <(curl -fsSL https://raw.githubusercontent.com/This-Is-NPC/omakiten/master/install.sh)
 ```
 
@@ -201,7 +201,7 @@ okt list
 okt tui
 ```
 
-Once registered, tell your agent to start a session with `/okt-start`. It reads the checkpoint, surfaces what's pending, and suggests the next move. At the end, `/okt-pause` writes a handoff note — so the next session resumes from real state, not a blank slate.
+Once registered, ask your agent to run `okt project resume`. It reads the checkpoint, surfaces what's pending, and suggests the next move. At the end, the agent writes a handoff comment — so the next session resumes from real state, not a blank slate.
 
 ```mermaid
 flowchart LR
@@ -234,7 +234,7 @@ Once connected, agents understand natural language:
 | "Have we seen this error before?" | Agent searches across all sessions and projects. |
 | "That solution worked." | Agent marks the solution as confirmed. |
 
-Agents also respond to structured slash commands for more precise control. [See the full command surface.](.docs/command-surface.md)
+Agents discover configured playbooks through `okt command list` and read them with `okt command resolve NAME`. [See the full command surface.](.docs/command-surface.md)
 
 ---
 
@@ -284,7 +284,7 @@ okt uninstall --yes --purge     # remove everything, including data and config
 | **Command surface** | [`.docs/command-surface.md`](.docs/command-surface.md) |
 | **Configuration** | [`.docs/configuration-guide/README.md`](.docs/configuration-guide/README.md) |
 | **CLI reference** | [`.docs/cli.md`](.docs/cli.md) |
-| **MCP reference** | [`.docs/mcp.md`](.docs/mcp.md) |
+| **Agent integration** | [`.docs/agents.md`](.docs/agents.md) |
 | **Contributing** | [`.docs/internal/architecture.md`](.docs/internal/architecture.md) |
 
 Master index: [`.docs/README.md`](.docs/README.md)

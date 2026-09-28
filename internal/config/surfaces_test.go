@@ -49,7 +49,7 @@ func TestDiffSurfacesReportsMissingAndExtra(t *testing.T) {
 	got := CanonicalSurfaceTable()
 	delete(got, "task.delete")
 	tru := true
-	got["task.delet"] = SurfacePolicy{CLI: &tru, TUI: &tru, MCP: &tru}
+	got["task.delet"] = SurfacePolicy{CLI: &tru, TUI: &tru}
 
 	missing, extra := DiffSurfaces(got)
 	if len(missing) != 1 || missing[0] != "task.delete" {
@@ -82,11 +82,10 @@ func TestSurfaceScaffoldYAMLMatchesCensus(t *testing.T) {
 			continue
 		}
 		if surfaceBoolVal(got.CLI) != surfaceBoolVal(wantRow.CLI) ||
-			surfaceBoolVal(got.TUI) != surfaceBoolVal(wantRow.TUI) ||
-			surfaceBoolVal(got.MCP) != surfaceBoolVal(wantRow.MCP) {
-			t.Errorf("%s: cli/tui/mcp = %v/%v/%v, want %v/%v/%v", slug,
-				surfaceBoolVal(got.CLI), surfaceBoolVal(got.TUI), surfaceBoolVal(got.MCP),
-				surfaceBoolVal(wantRow.CLI), surfaceBoolVal(wantRow.TUI), surfaceBoolVal(wantRow.MCP))
+			surfaceBoolVal(got.TUI) != surfaceBoolVal(wantRow.TUI) {
+			t.Errorf("%s: cli/tui = %v/%v, want %v/%v", slug,
+				surfaceBoolVal(got.CLI), surfaceBoolVal(got.TUI),
+				surfaceBoolVal(wantRow.CLI), surfaceBoolVal(wantRow.TUI))
 		}
 		if got.Reason != wantRow.Reason {
 			t.Errorf("%s: reason = %q, want %q", slug, got.Reason, wantRow.Reason)
@@ -95,13 +94,10 @@ func TestSurfaceScaffoldYAMLMatchesCensus(t *testing.T) {
 	if !strings.Contains(raw, "command.list:") {
 		t.Fatal("scaffold missing command.list")
 	}
-	if !strings.Contains(raw, "command.resolve:") {
-		t.Fatal("scaffold missing command.resolve")
-	}
-	if !strings.Contains(raw, "command.list: { cli: true, tui: true, mcp: true }\ncommand.resolve: { cli: true, tui: true, mcp: true }\n\ncomment.add:") {
+	if !strings.Contains(raw, "command.list: { cli: true, tui: true }\ncommand.resolve: { cli: true, tui: true }\n\ncomment.add:") {
 		t.Fatal("scaffold should group by entity with a blank line between command and comment")
 	}
-	if !strings.Contains(raw, `wiring.set_snapshot: { cli: false, tui: false, mcp: false, reason: "${{intl:operations.denied.wiring}}" }`) {
+	if !strings.Contains(raw, `wiring.set_snapshot: { cli: false, tui: false, reason: "${{intl:operations.denied.wiring}}" }`) {
 		t.Fatal("scaffold wiring row missing reason token")
 	}
 }
@@ -129,8 +125,8 @@ func TestCanonicalSurfaceCensusIsClosed(t *testing.T) {
 			t.Fatalf("slug %q: unknown kind %q", e.Slug, e.Kind)
 		}
 	}
-	if product != 60 || wiring != 10 {
-		t.Fatalf("census split product=%d wiring=%d, want 60/10", product, wiring)
+	if product != 61 || wiring != 9 {
+		t.Fatalf("census split product=%d wiring=%d, want 61/9", product, wiring)
 	}
 }
 
@@ -156,7 +152,7 @@ func TestValidateSurfacesRejectsMissingCensusSlug(t *testing.T) {
 func TestValidateSurfacesRejectsUnknownSlug(t *testing.T) {
 	b := validTestBundle()
 	tru := true
-	b.Surfaces["task.delet"] = SurfacePolicy{CLI: &tru, TUI: &tru, MCP: &tru}
+	b.Surfaces["task.delet"] = SurfacePolicy{CLI: &tru, TUI: &tru}
 	err := ValidateBundle(b, b.Skills, b.Laws, b.Personas, b.Templates)
 	if err == nil {
 		t.Fatal("ValidateBundle() error = nil, want unknown slug")
@@ -169,14 +165,14 @@ func TestValidateSurfacesRejectsUnknownSlug(t *testing.T) {
 func TestValidateSurfacesRejectsOmittedSurfaceKey(t *testing.T) {
 	b := validTestBundle()
 	row := b.Surfaces["task.transition"]
-	row.MCP = nil
+	row.CLI = nil
 	b.Surfaces["task.transition"] = row
 	err := ValidateBundle(b, b.Skills, b.Laws, b.Personas, b.Templates)
 	if err == nil {
-		t.Fatal("ValidateBundle() error = nil, want omitted mcp")
+		t.Fatal("ValidateBundle() error = nil, want omitted cli")
 	}
-	if !strings.Contains(err.Error(), "task.transition") || !strings.Contains(err.Error(), "mcp is required") {
-		t.Fatalf("ValidateBundle() error = %q, want mcp is required", err)
+	if !strings.Contains(err.Error(), "task.transition") || !strings.Contains(err.Error(), "cli is required") {
+		t.Fatalf("ValidateBundle() error = %q, want tui is required", err)
 	}
 }
 
@@ -184,7 +180,7 @@ func TestValidateSurfacesRejectsFalseWithoutReason(t *testing.T) {
 	b := validTestBundle()
 	row := b.Surfaces["task.delete"]
 	fls := false
-	row.MCP = &fls
+	row.CLI = &fls
 	row.Reason = ""
 	b.Surfaces["task.delete"] = row
 	err := ValidateBundle(b, b.Skills, b.Laws, b.Personas, b.Templates)
@@ -221,11 +217,10 @@ func TestShippedSurfacesModuleMatchesCensus(t *testing.T) {
 			continue
 		}
 		if surfaceBoolVal(got.CLI) != surfaceBoolVal(wantRow.CLI) ||
-			surfaceBoolVal(got.TUI) != surfaceBoolVal(wantRow.TUI) ||
-			surfaceBoolVal(got.MCP) != surfaceBoolVal(wantRow.MCP) {
-			t.Errorf("%s: cli/tui/mcp = %v/%v/%v, want %v/%v/%v", slug,
-				surfaceBoolVal(got.CLI), surfaceBoolVal(got.TUI), surfaceBoolVal(got.MCP),
-				surfaceBoolVal(wantRow.CLI), surfaceBoolVal(wantRow.TUI), surfaceBoolVal(wantRow.MCP))
+			surfaceBoolVal(got.TUI) != surfaceBoolVal(wantRow.TUI) {
+			t.Errorf("%s: cli/tui = %v/%v, want %v/%v", slug,
+				surfaceBoolVal(got.CLI), surfaceBoolVal(got.TUI),
+				surfaceBoolVal(wantRow.CLI), surfaceBoolVal(wantRow.TUI))
 		}
 		if got.Reason != wantRow.Reason {
 			t.Errorf("%s: reason = %q, want %q", slug, got.Reason, wantRow.Reason)
@@ -275,7 +270,7 @@ func assertShippedKitSurfaceTable(t *testing.T, preset string) {
 }
 
 func assertDeniedSnapshotSurface(t *testing.T, row SurfacePolicy) {
-	if row.CLI == nil || *row.CLI || row.TUI == nil || *row.TUI || row.MCP == nil || *row.MCP {
+	if row.CLI == nil || *row.CLI || row.TUI == nil || *row.TUI {
 		t.Fatalf("wiring.set_snapshot = %+v, want all false", row)
 	}
 	if row.Reason != DeniedWiringReason {
@@ -284,7 +279,7 @@ func assertDeniedSnapshotSurface(t *testing.T, row SurfacePolicy) {
 }
 
 func assertEnabledTransitionSurface(t *testing.T, row SurfacePolicy) {
-	if row.CLI == nil || !*row.CLI || row.TUI == nil || !*row.TUI || row.MCP == nil || !*row.MCP {
+	if row.CLI == nil || !*row.CLI || row.TUI == nil || !*row.TUI {
 		t.Fatalf("task.transition = %+v, want all true", row)
 	}
 }
@@ -296,7 +291,7 @@ func TestLoadBundleRejectsOmittedSurfaceKeyInYAML(t *testing.T) {
 	}
 	table := CanonicalSurfaceTable()
 	row := table["command.resolve"]
-	row.MCP = nil
+	row.CLI = nil
 	table["command.resolve"] = row
 	data, err := yaml.Marshal(table)
 	if err != nil {
@@ -306,9 +301,9 @@ func TestLoadBundleRejectsOmittedSurfaceKeyInYAML(t *testing.T) {
 
 	_, err = LoadBundle(filepath.Join(tmp, "config", "omakase.yaml"))
 	if err == nil {
-		t.Fatal("LoadBundle() error = nil, want omitted mcp")
+		t.Fatal("LoadBundle() error = nil, want omitted cli")
 	}
-	if !strings.Contains(err.Error(), "command.resolve") || !strings.Contains(err.Error(), "mcp is required") {
-		t.Fatalf("LoadBundle() error = %q, want mcp is required on command.resolve", err)
+	if !strings.Contains(err.Error(), "command.resolve") || !strings.Contains(err.Error(), "cli is required") {
+		t.Fatalf("LoadBundle() error = %q, want tui is required on command.resolve", err)
 	}
 }

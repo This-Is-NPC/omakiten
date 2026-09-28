@@ -74,7 +74,7 @@ func logsGoldenTemplates() []domain.EventRow {
 		{
 			EntityType: "task", EntityID: 2421,
 			EventType: domain.EventTypeTaskCreated,
-			Source:    "mcp",
+			Source:    "cli",
 			Payload:   fmt.Sprintf(`{"title":%q,"bucket":"dev","priority":"high"}`, logsGoldenLongTitle),
 		},
 		{
@@ -110,13 +110,13 @@ func logsGoldenTemplates() []domain.EventRow {
 		{
 			EntityType: "task", EntityID: 2421,
 			EventType: domain.EventTypeTagAdded,
-			Source:    "mcp",
+			Source:    "cli",
 			Payload:   `{"tag_name":"characterization","entity_type":"task"}`,
 		},
 		{
 			EntityType: "task", EntityID: 2421,
 			EventType: domain.EventTypeDependencyAdded,
-			Source:    "mcp",
+			Source:    "cli",
 			Payload:   `{"depends_on_task_id":2419}`,
 		},
 		{
@@ -128,13 +128,13 @@ func logsGoldenTemplates() []domain.EventRow {
 		{
 			EntityType: "error", EntityID: 41,
 			EventType: domain.EventTypeErrorRecorded,
-			Source:    "mcp",
+			Source:    "cli",
 			Payload:   `{"tags":["golden","determinism"],"has_context":true}`,
 		},
 		{
 			EntityType: "system", EntityID: 0,
 			EventType: domain.EventTypeHookExecuted,
-			Source:    "mcp",
+			Source:    "cli",
 			Status:    "ok",
 			Payload:   `{"action":"shell","event_type":"task.created","success":true}`,
 		},
@@ -146,10 +146,10 @@ func logsGoldenTemplates() []domain.EventRow {
 		},
 		{
 			EntityType: "system", EntityID: 0,
-			EventType: domain.EventTypeMCPToolCall,
-			Source:    "mcp", Status: "error", DurationMs: 1843,
+			EventType: domain.EventTypeTUIToolCall,
+			Source:    "cli", Status: "error", DurationMs: 1843,
 			ErrorMessage: "guard refused the transition",
-			Payload:      fmt.Sprintf(`{"tool_name":%q,"source":"mcp","status":"error","duration_ms":1843}`, logsGoldenLongTool),
+			Payload:      fmt.Sprintf(`{"tool_name":%q,"source":"cli","status":"error","duration_ms":1843}`, logsGoldenLongTool),
 		},
 		{
 			EntityType: "system", EntityID: 0,
@@ -333,9 +333,9 @@ func logsGoldenControlFeed() []domain.EventRow {
 		{
 			EntityType: "system", EntityID: 0,
 			EventType: domain.EventTypeCLIToolCall,
-			Source:    "mcp\x00\u009dsource\u009c",
+			Source:    "cli\x00\u009dsource\u009c",
 			Status:    "ok",
-			Payload:   fmt.Sprintf(`{"tool_name":%q,"source":"mcp","status":"ok"}`, "tool \u0085 日本語 😀"),
+			Payload:   fmt.Sprintf(`{"tool_name":%q,"source":"cli","status":"ok"}`, "tool \u0085 日本語 😀"),
 		},
 		{
 			EntityType: "system", EntityID: 0,

@@ -18,7 +18,7 @@ import (
 // 5-field JSON object whose `detail` column is `domain.SummarizeEvent`
 // applied verbatim. The set of categories the CLI accepts mirrors
 // `domain.KnownEventCategories` exactly so the chip vocabulary stays
-// canonical across the CLI / TUI / MCP triad.
+// canonical across the CLI / TUI triad.
 //
 // Default scope: last `Snapshot.LogsWindowDays()` of every category for
 // the resolved project. `--since` overrides the time floor and

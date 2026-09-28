@@ -10,7 +10,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-const subtaskKitMCPCommandsWarning = "mcp_commands: ignored at depth >=1; MCP always resolves at project root"
+const subtaskKitCommandsWarning = "commands: ignored at depth >=1; agent always resolves at project root"
 
 type loadBundleOptions struct {
 	subtask bool
@@ -187,10 +187,10 @@ func prepareBundle(bundle *Bundle, path string, wired wiring, entities bundleEnt
 	bundle.Templates = pickTemplates(entities.templateItems, wired.Templates)
 	populateBundleCatalogs(bundle, entities)
 	bundle.Projects = pickProjects(wired.Projects)
-	bundle.MCPCommands = wired.MCPCommands
-	if subtask && len(bundle.MCPCommands) > 0 {
-		bundle.Warnings = append(bundle.Warnings, SourceWarning{Path: path, Message: subtaskKitMCPCommandsWarning})
-		bundle.MCPCommands = nil
+	bundle.Commands = wired.Commands
+	if subtask && len(bundle.Commands) > 0 {
+		bundle.Warnings = append(bundle.Warnings, SourceWarning{Path: path, Message: subtaskKitCommandsWarning})
+		bundle.Commands = nil
 	}
 	bundle.Warnings = append(bundle.Warnings, warnDanglingRefs(wired, entities.skills, entities.laws, entities.personItems, entities.templateItems)...)
 	bundle.Warnings = append(bundle.Warnings, appendBundleReferenceWarnings(*bundle, entities)...)
@@ -278,7 +278,7 @@ func populateBundleCatalogs(bundle *Bundle, entities bundleEntities) {
 }
 
 func appendBundleReferenceWarnings(bundle Bundle, entities bundleEntities) []SourceWarning {
-	warnings := warnMCPCommandRefs(
+	warnings := warnCommandRefs(
 		bundle,
 		slugSet(loadedPersonaSlugs(entities.personItems)),
 		slugSet(loadedLawSlugs(entities.laws)),

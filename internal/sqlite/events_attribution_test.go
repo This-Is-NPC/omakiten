@@ -33,7 +33,7 @@ LIMIT 1
 // agent_session_id on the row — none of the five callers thread these as
 // parameters.
 func TestInsertTaskEventStampsAttribution(t *testing.T) {
-	ctx := activity.WithAgent(context.Background(), "mcp", "tasks_move", "claude-opus-4-8", "sess-task")
+	ctx := activity.WithAgent(context.Background(), "cli", "tasks_move", "claude-opus-4-8", "sess-task")
 	store, project := openStoreWithProject(ctx, t)
 
 	task, err := store.CreateTask(context.Background(), project.ID, "t", "", domain.Priority(2), "backlog", nil, store.snap())
@@ -47,8 +47,8 @@ func TestInsertTaskEventStampsAttribution(t *testing.T) {
 	}
 
 	source, entrypoint, agentModel, agentSessionID := taskEventAttribution(t, store, project.ID, ev.EntityID, domain.EventTypeTaskMoved)
-	if source != "mcp" {
-		t.Errorf("source = %q, want mcp", source)
+	if source != "cli" {
+		t.Errorf("source = %q, want tui", source)
 	}
 	if entrypoint != "tasks_move" {
 		t.Errorf("entrypoint = %q, want tasks_move", entrypoint)
@@ -65,7 +65,7 @@ func TestInsertTaskEventStampsAttribution(t *testing.T) {
 // behaviour: an empty session string is written as NULL, never the literal
 // empty string, so GROUP BY queries on agent_session_id stay clean.
 func TestInsertTaskEventNullSessionWhenAbsent(t *testing.T) {
-	ctx := activity.WithAgent(context.Background(), "mcp", "tasks_move", "claude-sonnet-4-6", "")
+	ctx := activity.WithAgent(context.Background(), "cli", "tasks_move", "claude-sonnet-4-6", "")
 	store, project := openStoreWithProject(ctx, t)
 
 	task, err := store.CreateTask(context.Background(), project.ID, "t", "", domain.Priority(2), "backlog", nil, store.snap())
@@ -97,7 +97,7 @@ ORDER BY id DESC LIMIT 1
 // created_at tuple, and attribution lives only in the persisted row, not the
 // returned struct.
 func TestTaskEventCharacterizationUnchanged(t *testing.T) {
-	ctx := activity.WithAgent(context.Background(), "mcp", "tasks_move", "claude-opus-4-8", "sess-x")
+	ctx := activity.WithAgent(context.Background(), "cli", "tasks_move", "claude-opus-4-8", "sess-x")
 	store, project := openStoreWithProject(ctx, t)
 
 	task, err := store.CreateTask(context.Background(), project.ID, "t", "", domain.Priority(2), "backlog", nil, store.snap())
@@ -154,7 +154,7 @@ func TestTaskEventPathsStampAttribution(t *testing.T) {
 		wantModel   = "claude-opus-4-8"
 		wantSession = "sess-paths"
 	)
-	ctx := activity.WithAgent(context.Background(), "mcp", "okt", wantModel, wantSession)
+	ctx := activity.WithAgent(context.Background(), "cli", "okt", wantModel, wantSession)
 
 	assertStamped := func(t *testing.T, store *storeFixture, projectID, taskID int64, eventType string) {
 		t.Helper()

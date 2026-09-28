@@ -136,7 +136,7 @@ config:
       notification: kitten_knowledge
       message: "${{intl:notifications.omakase.solution_viewed_top.message}}"
 
-# surfaces is the per-operation CLI/TUI/MCP exposure table (70 rows).
+# surfaces is the per-operation CLI/TUI exposure table (70 rows).
 # Sibling of workflows: — not nested under workflow.operations (domain guards).
 surfaces:
   from: ./modules/surfaces.yaml
@@ -251,5 +251,5 @@ workflows:
 personas:
   from: ./themes/naruto.yaml#personas
 
-mcp_commands:
-  from: ./themes/naruto.yaml#mcp_commands
+commands:
+  from: ./themes/naruto.yaml#commands

@@ -12,47 +12,38 @@ import (
 	projectresolver "omakiten/internal/project"
 )
 
-// ServiceSettings carries the runtime-tunable knobs that shape MCP responses.
-// Mirrors `config.MCPSettings` but without importing internal/config — the
+// Mirrors `config.AgentSettings` but without importing internal/config — the
 // agent layer is config-neutral, so the runtime resolves the values from
 // the loaded bundle and pushes them in via SetSettings. The composition
 // root MUST call SetSettings before the service handles any request;
-// validator-required fields in `config.mcp.*` mean the bundle is
+// validator-required fields in `config.agent.*` mean the bundle is
 // guaranteed complete by the time it reaches here.
 type ServiceSettings struct {
 	// RecentCommentLimit caps how many comments tools like tasks.continue
 	// and project.overview ship per call. Sourced from
-	// config.mcp.recent_comment_limit (validator-required > 0).
+	// config.agent.recent_comment_limit (validator-required > 0).
 	RecentCommentLimit int
 
 	// MaxCommentChars truncates comment bodies past this length with `…`
-	// when shipped. Sourced from config.mcp.max_comment_chars (validator-
+	// when shipped. Sourced from config.agent.max_comment_chars (validator-
 	// required >= 0; 0 keeps full bodies).
 	MaxCommentChars int
 
 	// IncludeWorkflow toggles the `workflow` block in tasks.continue
 	// responses by default. Per-call `include_workflow` overrides this.
-	// Sourced from config.mcp.include_workflow_in_continue.
+	// Sourced from config.agent.include_workflow_in_continue.
 	IncludeWorkflow bool
 
-	// CachePrompts toggles emitting the cache_control hint on prompts/get
-	// content so Anthropic-aware MCP clients reuse the cached prompt.
-	// Sourced from config.mcp.cache_prompts.
-	CachePrompts bool
-
-	// NextWorkLimit caps the "likely next work" suggestion list shipped
-	// in project.resume. Sourced from config.mcp.next_work_limit
-	// (validator-required > 0).
 	NextWorkLimit int
 
 	// SimilarTaskLimit caps how many similar-task hints flow into
 	// tasks.create_intent / tasks.continue. Sourced from
-	// config.mcp.similar_task_limit (validator-required > 0).
+	// config.agent.similar_task_limit (validator-required > 0).
 	SimilarTaskLimit int
 
 	// SolutionsTopLimitDefault and SolutionsTopLimitMax mirror
 	// config.solutions.{default_top_limit, max_top_limit}. Used by
-	// ListTopSolutions to clamp caller-supplied limits so MCP
+	// ListTopSolutions to clamp caller-supplied limits so agent
 	// responses stay bounded; the agent constructs an ErrorService
 	// per call and writes these values via SetSolutionsDefaults.
 	SolutionsTopLimitDefault int
@@ -83,7 +74,7 @@ type Repository interface {
 // matches. Returns nil when neither is configured.
 type TaskTemplateLookup func(projectSlug string) *contract.TaskTemplateSummary
 
-// TemplateCatalog returns every loaded template so the read-only MCP
+// TemplateCatalog returns every loaded template so the read-only agent
 // endpoints (templates.list / templates.show) can browse the bundle without
 // reaching for the BundleEditor directly. The agent never mutates these
 // records — assignment happens in the TUI via direct file edits.
@@ -135,9 +126,8 @@ type Service struct {
 	// Wired by the composition root via SetEntityRepos; nil in tests
 	// that only exercise read-only catalog methods.
 	entity entityRepos
-	// surface is the construction-time consumer identity (cli/tui/mcp).
 	// Zero means unrestricted. Production composition roots wrap the
-	// cached Service with ForCLI/ForTUI/ForMCP so this field is never
+	// cached Service with ForCLI/ForTUI/Foragent so this field is never
 	// mutated on the shared ProjectRuntime pointer.
 	surface Surface
 }
@@ -150,7 +140,7 @@ type entityRepos struct {
 
 // NewService constructs the agent service with zero-value settings.
 // The composition root MUST call SetSettings with values resolved from
-// the user's config.mcp block before the service handles any request —
+// the user's config.agent block before the service handles any request —
 // the agent layer no longer carries hardcoded defaults. Tests that
 // construct a service without going through the runtime composition
 // root must call SetSettings explicitly.
@@ -243,10 +233,10 @@ func (s *Service) Selector() contract.ProjectSelector {
 
 // SetSettings replaces the service's runtime knobs with values from the
 // active bundle. The runtime composition root invokes this exactly once
-// at startup; the values flow from `bundle.Config.MCP.*`. The agent
+// at startup; the values flow from `bundle.Config.Agent.*`. The agent
 // layer cannot import internal/config (hexagonal rule), so the runtime
 // is the single point that bridges the two. Validator guarantees every
-// MCP field is set in the bundle, so settings here is always complete.
+// agent field is set in the bundle, so settings here is always complete.
 func (s *Service) SetSettings(settings ServiceSettings) {
 	s.settings = settings
 }
@@ -316,13 +306,6 @@ func (s *Service) WireOrphan(current, previous *config.Snapshot) {
 // may leave it unset.
 func (s *Service) SetEntityRepos(editor *app.BundleEditor, files app.EntityFileWriter, slugger app.Slugifier) {
 	s.entity = entityRepos{editor: editor, files: files, slugger: slugger}
-}
-
-// SettingsCachePrompts exposes the cache-prompts toggle for the MCP adapter.
-// The agent service does not reach across packages to render PromptResult,
-// so the adapter calls this when stamping `cache_control` hints.
-func (s *Service) SettingsCachePrompts() bool {
-	return s.settings.CachePrompts
 }
 
 func (s *Service) resolveProject(ctx context.Context, selector contract.ProjectSelector) (domain.ProjectContext, error) {

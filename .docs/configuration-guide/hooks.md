@@ -26,7 +26,7 @@ config:
 Mutating the block requires an app restart — the bundle is loaded once
 at startup, same as every other config block. (The TUI hot-reload path
 rebuilds the engine when the active YAML's mtime changes, so an in-app
-edit + save will be picked up by the next event; CLI / MCP processes
+edit + save will be picked up by the next event; CLI processes
 that run as one-shots reload by re-exec.)
 
 ### Per-project dispatch
@@ -47,10 +47,9 @@ caller intentionally builds a global runtime, its zero scope is explicit and
 its hooks are expected to observe all project events. A normal reload/import
 for project B therefore cannot activate project A's hooks.
 
-The consequence: a `mcp.tool_call` hook declared in project A's bundle
+The consequence: a `cli.tool_call` hook declared in project A's bundle
 will not fire on tool calls dispatched against project B's service,
-even when both run through the same `okt mcp serve` process. See
-[`mcp.md`](../mcp.md#per-project-routing) for how the dispatch
+[`agents.md`](../agents.md#use) for how the dispatch
 side decides which project a tool call belongs to.
 
 ### Event matching
@@ -197,7 +196,7 @@ The hook is rejected at `LoadBundle` when:
 - both `notification:` and `do:` are set in the same entry;
 - neither `notification:` nor `do:` is set.
 
-Outside the TUI (CLI / MCP processes) the notification dispatch is a silent
+Outside the TUI (CLI processes) the notification dispatch is a silent
 no-op so the same hook block stays valid in every entry point.
 
 ## Recipes
@@ -312,7 +311,7 @@ the script after reading stdin — the JSON body includes `source`,
 #!/usr/bin/env bash
 read -r event
 src=$(echo "$event" | jq -r '.source')
-[[ "$src" == "mcp" ]] || exit 0  # only act on agent activity
+[[ "$src" == "cli" ]] || exit 0  # only act on agent activity
 echo "$event" >> ~/agent-events.ndjson
 ```
 
@@ -407,7 +406,7 @@ chmod +x /home/me/scripts/log-comment.sh
 
 ### Step 4 — Restart and verify
 
-The hook bundle loads at startup. Restart whatever is running Omakiten (the TUI, the MCP server, an `okt` command in flight), then trigger the event:
+The hook bundle loads at startup. Restart whatever is running Omakiten (the TUI, the CLI, an `okt` command in flight), then trigger the event:
 
 ```bash
 okt comment add 1 -b "first hook test"
@@ -424,7 +423,7 @@ If nothing landed, jump to [Troubleshooting](#troubleshooting).
 
 ### Step 5 — Confirm the engine saw the hook
 
-Every dispatch emits a `hook.executed` row through the events store regardless of success. There is no MCP tool that lists raw events by `event_type`; query the SQLite log directly:
+Every dispatch emits a `hook.executed` row through the events store regardless of success. There is no CLI operation that lists raw events by `event_type`; query the SQLite log directly:
 
 ```bash
 sqlite3 "$HOME/.local/share/omakiten/omakiten.db" \
@@ -477,14 +476,14 @@ config:
 
 #### Filter by source / agent_model
 
-`when:` only sees the JSON payload, not the row columns. To branch on `source` (cli / mcp / tui) or `agent_model` (the model id MCP tools carry), read those off stdin in your script:
+`when:` only sees the JSON payload, not the row columns. To branch on `source` (cli / tui) or `agent_model` (the model id CLI operations carry), read those off stdin in your script:
 
 ```bash
 #!/usr/bin/env bash
 read -r event
 src=$(echo "$event" | jq -r '.source')
 model=$(echo "$event" | jq -r '.agent_model')
-[[ "$src" == "mcp" ]] || exit 0          # only act on agent activity
+[[ "$src" == "cli" ]] || exit 0          # only act on agent activity
 [[ "$model" == "claude-opus-4-7" ]] || exit 0
 echo "$event" >> ~/agent-events.ndjson
 ```
@@ -530,7 +529,7 @@ You can comment the YAML block out, or you can shut the channel gate with `confi
 
 ## See also
 
-- [`mcp.md`](../mcp.md) — agent-facing tool surface. The `search` and
+- [`agents.md`](../agents.md) — agent-facing tool surface. The `search` and
   `metrics.summary` tools are useful for hook payloads that enrich
   themselves with project state before dispatching.
 - [`system.md § config.hooks`](system.md#confighooks) — wiring shape

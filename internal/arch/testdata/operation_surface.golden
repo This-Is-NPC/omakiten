@@ -32,6 +32,7 @@ plan.wave.reorder product
 progress.record product
 project.edit product
 project.overview product
+project.list product
 project.resume product
 search product
 skill.get product
@@ -65,6 +66,5 @@ wiring.set_orphan_service wiring
 wiring.set_project_selector wiring
 wiring.set_settings wiring
 wiring.set_snapshot wiring
-wiring.settings_cache_prompts wiring
 wiring.snapshot wiring
 wiring.synonyms wiring

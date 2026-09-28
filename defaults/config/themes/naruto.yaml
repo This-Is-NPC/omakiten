@@ -1,7 +1,7 @@
-# Omakase (Naruto) themed roster — personas and mcp_commands.
+# Omakase (Naruto) themed roster — personas and commands.
 # Imported by omakase.yaml via fragment selectors:
 #   personas:     { from: ./modules/naruto.yaml#personas }
-#   mcp_commands: { from: ./modules/naruto.yaml#mcp_commands }
+#   commands: { from: ./modules/naruto.yaml#commands }
 personas:
   # Concierge + Scribe — intel/router and record-keeper. Repertoire includes
   # all four #359 note skills so the okt-note-* and okt-pause slots resolve.
@@ -121,7 +121,7 @@ personas:
       - markdown
       - okt-task-commit-playbook
 
-mcp_commands:
+commands:
   global:
     laws:
       - template-fidelity

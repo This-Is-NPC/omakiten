@@ -1,6 +1,6 @@
 # System configuration — runtime knobs
 
-The `config:` block in the active profile yaml carries the runtime knobs every service reads: output shape, context budgets, MCP shaping, TUI thresholds, SQLite engine pragmas, retention policies, search heuristics, tag synonyms. Every field below is parsed by `internal/config/loader.go` and validated by `internal/config/validator.go`, then `config.BuildSnapshot(bundle)` materialises the immutable `*config.Snapshot` every app service reads through.
+The `config:` block in the active profile yaml carries the runtime knobs every service reads: output shape, context budgets, CLI shaping, TUI thresholds, SQLite engine pragmas, retention policies, search heuristics, tag synonyms. Every field below is parsed by `internal/config/loader.go` and validated by `internal/config/validator.go`, then `config.BuildSnapshot(bundle)` materialises the immutable `*config.Snapshot` every app service reads through.
 
 YAML decoding uses `KnownFields(true)`, so unknown fields fail loud rather than silently. The embedded canonical kit ships as `defaults/config/omakase.yaml`; it is materialized into the user's `<config-dir>/` on first run alongside the other official presets (`izakaya.yaml`, `kaiseki.yaml`, `shokunin.yaml`).
 
@@ -15,7 +15,7 @@ For ConfigRoot precedence, `.active` resolution, and the `<root>/` layout, see [
 - [`config.workflow`](#configworkflow)
 - [`config.theme`](#configtheme)
 - [`config.languages`](#configlanguages)
-- [`config.mcp`](#configmcp)
+- [`config.agent`](#configagent)
 - [`config.tui`](#configtui)
 - [`config.sqlite`](#configsqlite)
 - [`config.solutions`](#configsolutions)
@@ -43,7 +43,7 @@ laws:         [ <slug>, … ]    # optional allowlist
 templates:    [ <slug>, … ]    # optional allowlist
 personas:     [ { slug, schema_version, skill_repertoire?, laws? }, … ]
 projects:     [ { slug, name, description?, laws? }, … ]
-mcp_commands: { <slug>: { persona?, laws?, laws_disabled?, templates? } }
+commands: { <slug>: { persona?, laws?, laws_disabled?, templates? } }
 ```
 
 | Field | Type | Required | Notes |
@@ -55,7 +55,7 @@ mcp_commands: { <slug>: { persona?, laws?, laws_disabled?, templates? } }
 | `skills` / `laws` / `templates` | list of slug strings | no | Strict allowlist when present; **autoload** otherwise. See [entities.md § autoload](entities.md#autoload-custom-overrides-and-slug-rules). |
 | `personas` | list of `PersonaWiring` | no | Role wiring (skill/law refs); body lives in `personas/<slug>.md`. See [entities.md § personas](entities.md#personas) and [command-bindings.md](command-bindings.md). |
 | `projects` | list of `ProjectWiring` | no | Declarative project wiring; the runtime project list is in SQLite. |
-| `mcp_commands` | map | no | Binds `okt-*` MCP prompts to a persona, skills, laws, and templates. See [command-bindings.md](command-bindings.md). |
+| `commands` | map | no | Binds `okt-*` agent playbooks to a persona, skills, laws, and templates. See [command-bindings.md](command-bindings.md). |
 
 Two additional inputs are loaded from sibling folders rather than `omakiten.yaml` top-level keys: `notifications/<slug>.yaml` (kit-wide notification cards referenced from `config.hooks`) and `languages/<code>.yaml` (CLI/TUI language packs picked via `config.languages.{cli,tui}`). They appear on the in-memory `Bundle` as `Notifications` and `Languages`, are validated alongside the YAML, and ship under `defaults/notifications/` and `defaults/languages/`.
 
@@ -117,7 +117,7 @@ Theme files are validated separately (`ValidateTheme`): `version: 1`, non-empty 
 
 ## `config.languages`
 
-Stores the language selected per surface. CLI and TUI values must resolve to loaded `languages/<code>.yaml` packs (bundled or `languages/custom/`), while `agent_output` is free-form text appended to MCP prompt composition as an output-language directive.
+Stores the language selected per surface. CLI and TUI values must resolve to loaded `languages/<code>.yaml` packs (bundled or `languages/custom/`), while `agent_output` is free-form text appended to agent playbook composition as an output-language directive.
 
 ```yaml
 config:
@@ -131,23 +131,22 @@ config:
 |---|---|---|---|
 | `cli` | language code | loaded pack, defaults to `en` when empty | CLI labels / help / CLI-owned errors. |
 | `tui` | language code | loaded pack, defaults to `en` when empty | Terminal UI labels and notifications. |
-| `agent_output` | string | free-form | Natural-language directive sent to the agent in composed MCP prompts. Empty means no directive. |
+| `agent_output` | string | free-form | Natural-language directive sent to the agent in composed agent playbooks. Empty means no directive. |
 
 See [languages.md](languages.md) for the bundled pack catalog, parity rule, and recipe for adding a new pack.
 
-## `config.mcp`
+## `config.agent`
 
-Tunes how MCP responses are shaped to fit the agent's context window. **Every field is required** — the validator rejects bundles missing any. The canonical values live in `defaults/config/omakase.yaml` (the embedded kit YAML the installer materialises into the user's config root); your local file inherits at install time. Customise by editing values, never by removing fields.
+Tunes how agent responses are shaped to fit the agent's context window. **Every field is required** — the validator rejects bundles missing any. The canonical values live in `defaults/config/omakase.yaml` (the embedded kit YAML the installer materialises into the user's config root); your local file inherits at install time. Customise by editing values, never by removing fields.
 
 Pointer booleans (`*bool`) require an explicit `true` or `false` — there is no "not declared" state.
 
 ```yaml
 config:
-  mcp:
+  agent:
     recent_comment_limit: 5            # int >0
     max_comment_chars: 0               # int >=0; 0 = no truncation
     include_workflow_in_continue: true # bool; required
-    cache_prompts: true                # bool; required
     next_work_limit: 5                 # int >0
     similar_task_limit: 5              # int >0
 ```
@@ -155,9 +154,8 @@ config:
 | Field | Type | Constraint | What it does |
 |---|---|---|---|
 | `recent_comment_limit` | int | `> 0` | Caps how many recent comments tools like `tasks.continue` and `project.overview` ship per call. Reverse-chronological — the most recent N. |
-| `max_comment_chars` | int | `>= 0` | Truncates comment bodies past this many runes when shipped over MCP, appending `…`. Zero disables truncation. Use to bound `tasks.continue` payloads on tasks with verbose `#resume` and `#documentation` comments. Does not affect `comments.list` (which is the read-the-full-thread endpoint). |
+| `max_comment_chars` | int | `>= 0` | Truncates comment bodies past this many runes when shipped over CLI, appending `…`. Zero disables truncation. Use to bound `tasks.continue` payloads on tasks with verbose `#resume` and `#documentation` comments. Does not affect `comments.list` (which is the read-the-full-thread endpoint). |
 | `include_workflow_in_continue` | `*bool` | required | Toggles the `workflow` block in `tasks.continue` responses. Per-call `include_workflow` argument overrides this default — set false once `/okt` already loaded the workflow shape for the session. |
-| `cache_prompts` | `*bool` | required | Emits a `_meta.anthropic.cache_control` hint on `prompts/get` content. Anthropic-aware MCP clients (recent Claude Code) reuse the cached prompt across calls; unaware clients ignore the hint silently. Disable only to work around a misbehaving client. |
 | `next_work_limit` | int | `> 0` | Caps the "likely next work" suggestion list shipped in `project.resume`. Increase for project-overview screens; keep small for narrow agent contexts. |
 | `similar_task_limit` | int | `> 0` | Caps how many similar-task hints `tasks.create_intent` surfaces during the dedup check. Tune up if you frequently create near-duplicate intents and want broader dedup coverage. |
 
@@ -167,10 +165,9 @@ Every field above is required and validated. Missing or out-of-range values fail
 
 | Rule | Error message shape |
 |---|---|
-| `recent_comment_limit <= 0` | `config.mcp.recent_comment_limit: must be > 0 (see defaults/config/omakase.yaml for canonical values)` |
-| `max_comment_chars < 0` | `config.mcp.max_comment_chars: must be >= 0 (0 = no truncation)` |
-| `include_workflow_in_continue` omitted | `config.mcp.include_workflow_in_continue: required boolean (see defaults/config/omakase.yaml)` |
-| `cache_prompts` omitted | `config.mcp.cache_prompts: required boolean (see defaults/config/omakase.yaml)` |
+| `recent_comment_limit <= 0` | `config.agent.recent_comment_limit: must be > 0 (see defaults/config/omakase.yaml for canonical values)` |
+| `max_comment_chars < 0` | `config.agent.max_comment_chars: must be >= 0 (0 = no truncation)` |
+| `include_workflow_in_continue` omitted | `config.agent.include_workflow_in_continue: required boolean (see defaults/config/omakase.yaml)` |
 | Same shape for `next_work_limit / similar_task_limit`. |
 
 ### Worked example — taming a long-lived task
@@ -181,14 +178,14 @@ Two settings collapse the bulk:
 
 ```yaml
 config:
-  mcp:
+  agent:
     recent_comment_limit: 3   # 5 → 3
     max_comment_chars: 500    # 0 → 500
 ```
 
 `recent_comment_limit: 3` keeps the most recent three; `max_comment_chars: 500` hard-caps each body. Add `include_workflow_in_continue: false` once `/okt` has loaded the workflow in the session to drop the per-call workflow block too. The exact byte saving depends on each comment's length and the active workflow's shape — the qualitative effect is "load only what is new since last call".
 
-Cross-reference: [mcp.md § tuning-context-cost](../mcp.md#tuning-context-cost) walks through how the tool result composes and which fields each setting trims.
+Cross-reference: [agents.md § tuning-context-cost](../configuration-guide/system.md#configagent) walks through how the tool result composes and which fields each setting trims.
 
 ## `config.tui`
 
@@ -225,13 +222,13 @@ config:
 
 | Field | Type | Constraint | What it does |
 |---|---|---|---|
-| `busy_timeout_ms` | int | `> 0` | Sets `PRAGMA busy_timeout`. Larger DBs or systems with concurrent writers (TUI + MCP server sharing a Store) may need a higher value to avoid `database is locked` errors. |
+| `busy_timeout_ms` | int | `> 0` | Sets `PRAGMA busy_timeout`. Larger DBs or systems with concurrent writers (TUI + CLI sharing a Store) may need a higher value to avoid `database is locked` errors. |
 | `cache_size_kb` | int | `> 0` | Sets `PRAGMA cache_size` using SQLite's negative-kilobyte form so hot task/event/dependency pages stay in cache across TUI read fan-out. |
 | `mmap_size_bytes` | int | `>= 0` | Sets `PRAGMA mmap_size`. Zero disables mmap; raise only on local filesystems where memory-mapped reads are safe. |
 
 ## `config.solutions`
 
-Caps the `solutions.list_top` MCP response shape. **Required block** — `default_top_limit` applies when the caller passes `<=0`; `max_top_limit` clamps caller-supplied limits so MCP responses stay bounded regardless of what the agent asks for.
+Caps the `solutions.list_top` agent response shape. **Required block** — `default_top_limit` applies when the caller passes `<=0`; `max_top_limit` clamps caller-supplied limits so agent responses stay bounded regardless of what the agent asks for.
 
 ```yaml
 config:
@@ -265,7 +262,7 @@ For the SQLite-consistent snapshot path, filename pattern, atomic rename, and `m
 
 Fallback recent-events limit, per-event channel policy, and **storage retention** for rows in the unified `events` table. **Required block.** `defaults` must declare all three channels; `overrides` can change any subset per event type and inherits unspecified channels from `defaults`.
 
-Retention is distinct from `config.views.logs.window_days`, which only scopes reads in the TUI / CLI / MCP inspectors.
+Retention is distinct from `config.views.logs.window_days`, which only scopes reads in the TUI / CLI inspectors.
 
 ```yaml
 config:
@@ -334,7 +331,7 @@ config:
 | `max_rows_per_pass` | int | `> 0`, `>= batch_rows` | Ceiling on rows a single pass may delete before it yields, however large the backlog. |
 | `max_duration_ms` | int | `> 0` | Wall-clock ceiling for a single pass, checked between batches. |
 
-**Not a substitute for project deletion.** `okt project delete` (`Store.DeleteProject` / `Store.DeleteProjectWithBackup`) already removes every event row of the project inside the same transaction as the `projects` row — that is the canonical, backed-up, audited path and it leaves nothing for the sweep to find. The sweep only reclaims what a process that *bypassed* that sequence left behind: typically a long-lived MCP or TUI session that still holds the old project id and keeps writing events after another process deleted the project. Deleting a project through this sweep is not possible and not intended; it never touches the `projects` table.
+**Not a substitute for project deletion.** `okt project delete` (`Store.DeleteProject` / `Store.DeleteProjectWithBackup`) already removes every event row of the project inside the same transaction as the `projects` row — that is the canonical, backed-up, audited path and it leaves nothing for the sweep to find. The sweep only reclaims what a process that *bypassed* that sequence left behind: typically a long-lived CLI or TUI session that still holds the old project id and keeps writing events after another process deleted the project. Deleting a project through this sweep is not possible and not intended; it never touches the `projects` table.
 
 **Operational behavior:**
 
@@ -565,7 +562,7 @@ The file references in this doc point at the source-of-truth code; if behavior e
 
 - A new `config.*` field lands in `internal/config/loader.go` / `internal/config/validator.go`.
 - An existing field's validation rule, default value, or allowed range changes.
-- The MCP / TUI / SQLite engine contract changes (new PRAGMA, retention rule, response shape).
+- The CLI / TUI / SQLite engine contract changes (new PRAGMA, retention rule, response shape).
 - The `from:` import contract changes (`internal/config/import_resolver.go`) — keep the example here and [path-resolution.md § Modular config imports](path-resolution.md#modular-imports) in sync.
 
 For workflow, command-binding, entity, enum, or view schemas, see the matching guide in this directory. For path / layout changes, see [path-resolution.md](path-resolution.md).

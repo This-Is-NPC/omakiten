@@ -8,7 +8,7 @@ import (
 // the storage and app layers. Subject metadata (task id, parent id,
 // depth, resolved kit) is added on top of the caller-supplied
 // event-specific fields. The shape is the contract every downstream
-// audit consumer (events table queries, hook payload templates, MCP
+// audit consumer (events table queries, hook payload templates, agent
 // adapters) reads against, so the JSON keys live in one place here
 // instead of being reassembled per call site.
 //

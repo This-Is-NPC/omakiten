@@ -290,7 +290,7 @@ func (s *PlanService) UnassignTask(ctx context.Context, project domain.ProjectCo
 }
 
 // Show resolves a plan by slug and folds its waves + tasks into a single
-// projection ready for MCP / TUI rendering. ErrPlanNotFound bubbles when
+// projection ready for CLI / TUI rendering. ErrPlanNotFound bubbles when
 // the slug is missing in the active project. Archived tasks are filtered
 // out of the counts but stay in the wave's Tasks list so the renderer
 // can decide whether to render them — keeps the percentage formula

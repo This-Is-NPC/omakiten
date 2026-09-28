@@ -9,7 +9,7 @@ Cold-start a task — assume no prior context exists in this session. Unlike a w
 
 ## Reconstruct from scratch
 
-Call `tasks.continue` for the task id, then call `comments.list` for the same task to read the full thread. Reconstruct the full picture: description, every comment, the dependency graph, and the latest `#resume` / `#tests-passing` checkpoints. Re-derive the current state, the open questions, and the immediate next increment rather than assuming any of it is already in context.
+Call `okt task continue` for the task id, then call `okt comment list` for the same task to read the full thread. Reconstruct the full picture: description, every comment, the dependency graph, and the latest `#resume` / `#tests-passing` checkpoints. Re-derive the current state, the open questions, and the immediate next increment rather than assuming any of it is already in context.
 
 ## Handoff
 

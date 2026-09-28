@@ -12,11 +12,10 @@ config:
   output: { json_minified: true, omit_empty: true }
   workflow: { active: default }
   theme: { active: catppuccin }
-  mcp:
+  agent:
     recent_comment_limit: 5
     max_comment_chars: 0
     include_workflow_in_continue: true
-    cache_prompts: true
     next_work_limit: 5
     similar_task_limit: 5
   tui:

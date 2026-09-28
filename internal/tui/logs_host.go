@@ -16,7 +16,7 @@ func (m Model) boundLogsScreen() logs.Screen {
 	settings := logs.ViewSettings{
 		Retention: logs.Retention{WindowDays: views.Logs.WindowDays}}
 	if snap := m.repos.activeSnapshot(); snap != nil {
-		resolved := snap.Events().ResolveRetention("mcp.tool_call")
+		resolved := snap.Events().ResolveRetention("cli.tool_call")
 		settings.Retention = logs.Retention{
 			Known:      true,
 			MaxAgeDays: resolved.MaxAgeDays,

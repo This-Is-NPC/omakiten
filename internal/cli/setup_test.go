@@ -228,8 +228,8 @@ func TestCLISetupHeadless_Selections(t *testing.T) {
 		wantHarnesses               []string
 		wantPreset, wantTUI         string
 	}{
-		"harness names":   {"claude-code,opencode", "omakase", "en", "en", []string{"claude-code", "opencode"}, "omakase", "en"},
-		"harness indexes": {"1,3", "omakase", "en", "en", []string{"claude-code", "opencode"}, "omakase", "en"},
+		"harness names":   {"agents,claude-code", "omakase", "en", "en", []string{"agents", "claude-code"}, "omakase", "en"},
+		"harness indexes": {"1,2", "omakase", "en", "en", []string{"agents", "claude-code"}, "omakase", "en"},
 		"skip harnesses":  {"0", "omakase", "en", "en", nil, "omakase", "en"},
 		"named preset":    {"0", "izakaya", "en", "en", nil, "izakaya", "en"},
 		"unknown preset":  {"0", "bogus", "en", "en", nil, "omakase", "en"},

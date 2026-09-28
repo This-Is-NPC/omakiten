@@ -1,7 +1,7 @@
-# Kaiseki (LOTR) themed roster — personas and mcp_commands.
+# Kaiseki (LOTR) themed roster — personas and commands.
 # Imported by kaiseki.yaml via fragment selectors:
 #   personas:     { from: ./modules/lotr.yaml#personas }
-#   mcp_commands: { from: ./modules/lotr.yaml#mcp_commands }
+#   commands: { from: ./modules/lotr.yaml#commands }
 personas:
   # Concierge + Scribe — chronicler/router and record-keeper. Repertoire carries
   # all four #359 note skills (handoff-synthesis, note-capture, standup-digest,
@@ -124,7 +124,7 @@ personas:
       - markdown
       - okt-task-commit-playbook
 
-mcp_commands:
+commands:
   global:
     laws: [template-fidelity, authorize-remote-writes, project-scope-only]
   # Kaiseki (LOTR) slot bindings (#189 W5.2). Each command binds the themed

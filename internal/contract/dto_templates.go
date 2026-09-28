@@ -1,6 +1,6 @@
 package contract
 
-// ListTemplatesInput drives the templates.list MCP endpoint. All fields are
+// ListTemplatesInput drives the templates.list operation. All fields are
 // optional; an unfiltered call returns every loaded template without body to
 // keep payloads compact.
 type ListTemplatesInput struct {

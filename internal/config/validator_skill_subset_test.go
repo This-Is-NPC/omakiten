@@ -10,9 +10,9 @@ func bundleWithCommandSkills(repertoire, cmdSkills []string) Bundle {
 		Personas: []Persona{
 			{Slug: "builder", SchemaVersion: 2, SkillRepertoire: repertoire},
 		},
-		MCPCommands: map[string]MCPCommandSpec{
-			MCPCommandsGlobalKey: {Laws: []string{"template-fidelity"}},
-			"okt-implement":      {Persona: "builder", Skills: cmdSkills},
+		Commands: map[string]CommandSpec{
+			CommandsGlobalKey: {Laws: []string{"template-fidelity"}},
+			"okt-implement":   {Persona: "builder", Skills: cmdSkills},
 		},
 	}
 }
@@ -21,8 +21,8 @@ func bundleWithCommandSkills(repertoire, cmdSkills []string) Bundle {
 // are all members of the persona's skill_repertoire validates clean.
 func TestSkillSubsetAcceptsSubset(t *testing.T) {
 	b := bundleWithCommandSkills([]string{"go", "sqlite", "markdown"}, []string{"go", "markdown"})
-	if err := validateMCPCommandSkillSubset(b); err != nil {
-		t.Fatalf("validateMCPCommandSkillSubset() = %v, want nil", err)
+	if err := validateCommandSkillSubsets(b); err != nil {
+		t.Fatalf("validateCommandSkillSubsets() = %v, want nil", err)
 	}
 }
 
@@ -31,9 +31,9 @@ func TestSkillSubsetAcceptsSubset(t *testing.T) {
 // command, the persona, and the missing skill.
 func TestSkillSubsetRejectsSuperset(t *testing.T) {
 	b := bundleWithCommandSkills([]string{"go", "sqlite"}, []string{"go", "rust", "cobol"})
-	err := validateMCPCommandSkillSubset(b)
+	err := validateCommandSkillSubsets(b)
 	if err == nil {
-		t.Fatalf("validateMCPCommandSkillSubset() = nil, want rejection")
+		t.Fatalf("validateCommandSkillSubsets() = nil, want rejection")
 	}
 	msg := err.Error()
 	for _, want := range []string{"okt-implement", "builder", "rust", "cobol"} {
@@ -47,8 +47,8 @@ func TestSkillSubsetRejectsSuperset(t *testing.T) {
 // skills imposes no constraint when the command selects no skills.
 func TestSkillSubsetEmptyCommandSkillsIsClean(t *testing.T) {
 	b := bundleWithCommandSkills([]string{"go"}, nil)
-	if err := validateMCPCommandSkillSubset(b); err != nil {
-		t.Fatalf("validateMCPCommandSkillSubset() = %v, want nil for skill-less command", err)
+	if err := validateCommandSkillSubsets(b); err != nil {
+		t.Fatalf("validateCommandSkillSubsets() = %v, want nil for skill-less command", err)
 	}
 }
 
@@ -57,7 +57,7 @@ func TestSkillSubsetEmptyCommandSkillsIsClean(t *testing.T) {
 // empty pool is a strict zero-member set, not a wildcard.
 func TestSkillSubsetEmptyRepertoireRejectsAnySelection(t *testing.T) {
 	b := bundleWithCommandSkills(nil, []string{"go"})
-	if err := validateMCPCommandSkillSubset(b); err == nil {
-		t.Fatalf("validateMCPCommandSkillSubset() = nil, want rejection against empty repertoire")
+	if err := validateCommandSkillSubsets(b); err == nil {
+		t.Fatalf("validateCommandSkillSubsets() = nil, want rejection against empty repertoire")
 	}
 }

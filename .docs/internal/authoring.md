@@ -40,7 +40,7 @@ The kit ships four official presets — `omakase`, `izakaya`, `kaiseki`, `shokun
 ### Workflow for adding a new entity (canonical: a new law)
 
 1. Create `defaults/laws/<slug>.md` with `name`, `severity`, and a body that explains the rule.
-2. Wire the law into the relevant preset under `defaults/config/<preset>.yaml` (`mcp_commands.<command>.laws`).
+2. Wire the law into the relevant preset under `defaults/config/<preset>.yaml` (`commands.<command>.laws`).
 3. Run `mise run check` — lint, vet, tests must stay green.
 
 Two hand-edited files total: the entity and the preset yaml. Release notes come from the PR / release-please flow.

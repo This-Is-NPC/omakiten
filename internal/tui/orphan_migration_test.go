@@ -174,7 +174,6 @@ func newOrphanMigrationModel(t *testing.T, store *snapstore.Store) Model {
 		RecentCommentLimit: 5,
 		MaxCommentChars:    0,
 		IncludeWorkflow:    true,
-		CachePrompts:       true,
 		NextWorkLimit:      5,
 		SimilarTaskLimit:   5,
 	})

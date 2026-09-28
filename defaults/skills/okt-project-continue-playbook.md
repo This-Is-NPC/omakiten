@@ -9,7 +9,7 @@ Warm-resume the current project from the last session. Assume continuity — you
 
 ## Recover the recent picture
 
-Recent project handoffs live in `comments.list` (scope=project). Call `project.overview` for the active snapshot and `tasks.list` for in-flight work, then pick up the most recent open thread without re-deriving the whole project.
+Recent project handoffs live in `okt comment list` (scope=project). Call `okt project overview` for the active snapshot and `okt list` for in-flight work, then pick up the most recent open thread without re-deriving the whole project.
 
 ## Surface what changed
 

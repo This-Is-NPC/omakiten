@@ -390,7 +390,7 @@ func TestStudioPersonasInspectorEnterNavigatesToCommand(t *testing.T) {
 	if outcome.Action.Target != screenhost.StudioCommands {
 		t.Fatalf("Target = %q, want %q", outcome.Action.Target, screenhost.StudioCommands)
 	}
-	wantIdx := CommandIndexFor(studioPersonasGoldenBundle().MCPCommands, "okt-task-review")
+	wantIdx := CommandIndexFor(studioPersonasGoldenBundle().Commands, "okt-task-review")
 	if next.studioCommandIndex != wantIdx {
 		t.Fatalf("parked command index = %d, want %d (okt-task-review)", next.studioCommandIndex, wantIdx)
 	}

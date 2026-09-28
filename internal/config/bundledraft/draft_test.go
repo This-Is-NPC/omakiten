@@ -62,7 +62,7 @@ func TestStudioDraftValidationBlocksInvalidCandidates(t *testing.T) {
 	}
 }
 
-func TestStudioDraftValidationUsesMCPCommandSkillSubset(t *testing.T) {
+func TestStudioDraftValidationUsesCommandSkillSubset(t *testing.T) {
 	store := &studioDraftStore{bundle: studioDraftBundle()}
 	editor := bundleeditor.New(store, filepath.Join(t.TempDir(), "omakiten.yaml"))
 	draft, err := New(editor)
@@ -71,7 +71,7 @@ func TestStudioDraftValidationUsesMCPCommandSkillSubset(t *testing.T) {
 	}
 
 	report := draft.Mutate(func(bundle *config.Bundle) error {
-		bundle.MCPCommands["task"] = config.MCPCommandSpec{Persona: "builder", Skills: []string{"deploy"}}
+		bundle.Commands["task"] = config.CommandSpec{Persona: "builder", Skills: []string{"deploy"}}
 		return nil
 	})
 
@@ -80,21 +80,21 @@ func TestStudioDraftValidationUsesMCPCommandSkillSubset(t *testing.T) {
 	}
 }
 
-func TestStudioDraftMCPCommandLawConflictBlocksCandidate(t *testing.T) {
+func TestStudioDraftCommandLawConflictBlocksCandidate(t *testing.T) {
 	store := &studioDraftStore{bundle: studioDraftBundle()}
 	draft, err := New(bundleeditor.New(store, filepath.Join(t.TempDir(), "omakiten.yaml")))
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	report := draft.SetMCPCommandSpec("task", config.MCPCommandSpec{Persona: "builder", Laws: []string{"safety"}, LawsDisabled: []string{"safety"}, Skills: []string{"code"}})
+	report := draft.SetCommandSpec("task", config.CommandSpec{Persona: "builder", Laws: []string{"safety"}, LawsDisabled: []string{"safety"}, Skills: []string{"code"}})
 
 	if report.ValidationError == nil || !strings.Contains(report.ValidationError.Error(), "both laws and laws_disabled") {
 		t.Fatalf("validation error = %v, want law conflict", report.ValidationError)
 	}
 }
 
-func TestStudioDraftMCPCommandTemplateOrderingAndApply(t *testing.T) {
+func TestStudioDraftCommandTemplateOrderingAndApply(t *testing.T) {
 	bundle := studioDraftBundle()
 	bundle.Templates = []config.TaskTemplate{{Slug: "requirements"}, {Slug: "acceptance"}}
 	bundle.AllTemplates = []config.TaskTemplate{{Slug: "requirements"}, {Slug: "acceptance"}}
@@ -104,11 +104,11 @@ func TestStudioDraftMCPCommandTemplateOrderingAndApply(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	report := draft.SetMCPCommandSpec("task", config.MCPCommandSpec{Persona: "builder", Skills: []string{"code"}, Templates: []string{"acceptance", "requirements"}})
+	report := draft.SetCommandSpec("task", config.CommandSpec{Persona: "builder", Skills: []string{"code"}, Templates: []string{"acceptance", "requirements"}})
 	if report.ValidationError != nil {
 		t.Fatalf("set command validation error = %v", report.ValidationError)
 	}
-	if got := strings.Join(report.Candidate.MCPCommands["task"].Templates, ","); got != "acceptance,requirements" {
+	if got := strings.Join(report.Candidate.Commands["task"].Templates, ","); got != "acceptance,requirements" {
 		t.Fatalf("template order = %q, want acceptance,requirements", got)
 	}
 	if _, err := draft.Apply(context.Background(), nil); err != nil {
@@ -117,7 +117,7 @@ func TestStudioDraftMCPCommandTemplateOrderingAndApply(t *testing.T) {
 	if store.saves != 1 {
 		t.Fatalf("saves = %d, want 1", store.saves)
 	}
-	if got := strings.Join(store.bundle.MCPCommands["task"].Templates, ","); got != "acceptance,requirements" {
+	if got := strings.Join(store.bundle.Commands["task"].Templates, ","); got != "acceptance,requirements" {
 		t.Fatalf("saved template order = %q, want acceptance,requirements", got)
 	}
 }
@@ -567,10 +567,9 @@ func studioDraftBundle() config.Bundle {
 			Output:   config.OutputSettings{JSONMinified: true, OmitEmpty: true},
 			Workflow: config.WorkflowSettings{Active: "omakase"},
 			Theme:    config.ThemeSettings{Active: "default"},
-			MCP: config.MCPSettings{
+			Agent: config.AgentSettings{
 				RecentCommentLimit:        5,
 				IncludeWorkflowInContinue: &tru,
-				CachePrompts:              &tru,
 				NextWorkLimit:             5,
 				SimilarTaskLimit:          5,
 			},
@@ -617,7 +616,7 @@ func studioDraftBundle() config.Bundle {
 		AllSkills:   []config.Skill{{Slug: "code"}, {Slug: "deploy"}},
 		Personas:    []config.Persona{{Slug: "builder", SkillRepertoire: []string{"code"}}},
 		AllPersonas: []config.Persona{{Slug: "builder", SkillRepertoire: []string{"code"}}},
-		MCPCommands: map[string]config.MCPCommandSpec{"task": {Persona: "builder", Skills: []string{"code"}}},
+		Commands:    map[string]config.CommandSpec{"task": {Persona: "builder", Skills: []string{"code"}}},
 		Surfaces:    config.CanonicalSurfaceTable(),
 	}
 }

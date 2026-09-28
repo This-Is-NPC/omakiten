@@ -88,8 +88,6 @@ linters:
               desc: domain is the inner core; depending on adapters inverts the hex direction
             - pkg: omakiten/internal/cli
               desc: domain is the inner core; depending on adapters inverts the hex direction
-            - pkg: omakiten/internal/mcp
-              desc: domain is the inner core; depending on adapters inverts the hex direction
             - pkg: omakiten/internal/operation
               desc: domain is the inner core; depending on adapters inverts the hex direction
             - pkg: omakiten/internal/app
@@ -109,8 +107,6 @@ linters:
             - pkg: omakiten/internal/tui
               desc: app talks to adapters via ports declared in app/ports.go
             - pkg: omakiten/internal/cli
-              desc: app talks to adapters via ports declared in app/ports.go
-            - pkg: omakiten/internal/mcp
               desc: app talks to adapters via ports declared in app/ports.go
             - pkg: omakiten/internal/operation
               desc: app talks to adapters via ports declared in app/ports.go
@@ -142,8 +138,6 @@ linters:
               desc: sqlite must not depend on a sibling adapter
             - pkg: omakiten/internal/cli
               desc: sqlite must not depend on a sibling adapter
-            - pkg: omakiten/internal/mcp
-              desc: sqlite must not depend on a sibling adapter
             - pkg: omakiten/internal/operation
               desc: sqlite must not depend on a sibling adapter
             - pkg: omakiten/internal/agentruntime
@@ -161,8 +155,6 @@ linters:
             - pkg: omakiten/internal/tui
               desc: configstore must not depend on a sibling adapter
             - pkg: omakiten/internal/cli
-              desc: configstore must not depend on a sibling adapter
-            - pkg: omakiten/internal/mcp
               desc: configstore must not depend on a sibling adapter
             - pkg: omakiten/internal/operation
               desc: configstore must not depend on a sibling adapter
@@ -240,8 +232,6 @@ linters:
               desc: this package consumes contracts rather than delivery implementations
             - pkg: omakiten/internal/cli
               desc: this package consumes contracts rather than delivery implementations
-            - pkg: omakiten/internal/mcp
-              desc: this package consumes contracts rather than delivery implementations
             - pkg: omakiten/internal/terminal
               desc: this package consumes contracts rather than delivery implementations
             - pkg: omakiten/internal/updater
@@ -269,8 +259,6 @@ linters:
             - pkg: omakiten/internal/cli
               desc: this package consumes contracts rather than delivery implementations
             - pkg: omakiten/internal/terminal
-              desc: this package consumes contracts rather than delivery implementations
-            - pkg: omakiten/internal/mcp
               desc: this package consumes contracts rather than delivery implementations
 
         screens-do-not-import-operation:

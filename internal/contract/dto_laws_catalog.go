@@ -1,6 +1,6 @@
 package contract
 
-// ListLawsInput drives the laws.list MCP endpoint and CLI `law list`.
+// ListLawsInput drives the laws.list operation and CLI `law list`.
 // Empty filter fields mean "any". Read-only; bodies omitted.
 type ListLawsInput struct {
 	Scope   string `json:"scope,omitempty"`

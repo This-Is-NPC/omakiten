@@ -5,7 +5,6 @@ import (
 	"strconv"
 	"strings"
 
-	"omakiten/internal/agentsetup"
 	"omakiten/internal/config"
 )
 
@@ -24,19 +23,9 @@ const (
 	StatusEmpty
 )
 
-// SupportedHarnesses returns the canonical MCP-harness slug list the
-// installer offers in the multi-select. Order matters — the numeric
-// "1,3,5" shorthand input format the bash installer accepts indexes
-// into this slice 1-based, so adding a harness at the front would shift
-// every numeric mapping users learned. The Go installer goes through
-// the same slice for the same reason.
-//
-// The list is sourced from internal/agentsetup so the picker and the
-// MCP-setup writer agree on which harnesses exist; drift here would
-// either surface harnesses the writer cannot configure, or hide
-// harnesses that ship with a working writer.
+// SupportedHarnesses returns the shared and Claude Code skill destinations.
 func SupportedHarnesses() []string {
-	return agentsetup.SupportedHarnesses()
+	return []string{"agents", "claude-code"}
 }
 
 // SupportedPresets returns the official preset names in menu order.

@@ -382,7 +382,7 @@ log line; only well-formed `${{intl:KEY}}` is substituted.
 
 ## See also
 
-- [`mcp.md`](../mcp.md) — agent-facing tool surface; useful when wiring
+- [`agents.md`](../agents.md) — agent-facing tool surface; useful when wiring
   a notification body to a query result instead of the raw triggering
   payload.
 - [`hooks.md`](hooks.md) — hook entries that dispatch notifications.
@@ -400,6 +400,6 @@ log line; only well-formed `${{intl:KEY}}` is substituted.
   non-dismiss keys so the app underneath stays inert.
 - A new notification event arriving while the current card is still
   typing is dropped; once Settled, the new payload replaces it.
-- The notification action is registered from CLI / MCP / TUI
+- The notification action is registered from CLI / TUI
   composition roots so hook validation works the same in every entry point.
   Outside the TUI it is a silent no-op.

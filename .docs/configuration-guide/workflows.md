@@ -94,7 +94,7 @@ buckets:
 | Field | Type | Notes |
 |---|---|---|
 | `id` | int `> 0`, unique within workflow | Referenced by `transitions[].from` / `to` and stored on tasks. |
-| `key` | string, unique within workflow | Stable bucket handle used by CLI/MCP/TUI. |
+| `key` | string, unique within workflow | Stable bucket handle used by CLI/TUI. |
 | `name` | string | Human label. |
 | `position` | int `>= 1` | Visual order. Lowest position is the default bucket for new tasks; highest position is the final bucket. |
 | `permissions` | object, optional | Per-bucket task/comment CRUD overrides. |

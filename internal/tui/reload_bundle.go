@@ -56,7 +56,7 @@ func (m *Model) reloadBundleIfChanged() (bool, error) {
 	before := m.repos.Cache.View(m.repos.ProjectID)
 	modelBefore := *m
 	modelBefore.studioApplyDiff = nil
-	// Intentional asymmetry vs the MCP Service() marker re-resolve
+	// Intentional asymmetry vs the agent Service() marker re-resolve
 	// (runtime.go): Resolve only re-stats m.repos.ConfigPath (and its
 	// watched sources), never the active-profile marker (.active). A TUI
 	// launched without --config therefore passively picks up in-place
@@ -158,7 +158,7 @@ func (m *Model) clearProjectRuntime() {
 // succeeded, and a missing event must not crash the TUI mid-render.
 //
 // The preview prefers operation.Service.MigrateOrphans(confirmed=false) so
-// the TUI shares the facade contract with CLI/MCP. When the facade is
+// the TUI shares the facade contract with CLI. When the facade is
 // unavailable (test fixtures without ProjectRuntime.Service) it falls
 // back to the Orphans repository: PreviewOrphanedCascade when either
 // snapshot declares a sub-task kit, otherwise PreviewOrphanedTasks —

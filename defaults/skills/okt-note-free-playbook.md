@@ -5,7 +5,7 @@ schema_version: 2
 role_affinity:
   - Scribe
 ---
-Capture a free-form knowledge note without ceremony. The note is persisted through the scope-aware `comments.*` surface.
+Capture a free-form knowledge note without ceremony. The note is persisted through the scope-aware `okt comment` surface.
 
 ## Resolve scope and kind
 
@@ -13,7 +13,7 @@ Resolve scope from `--scope` (default `project` when the cwd resolves; explicit 
 
 ## Persist via comments
 
-Call `templates.show note-free` to fetch the minimal scaffold, then persist via `comments.add` with the resolved scope (`project`, or `universal` for `--scope global`) and no `task_id`. Reject an empty body or empty title; when the cwd is ambiguous (multiple projects resolve) require `--project <slug>`.
+Call `okt template show note-free` to fetch the minimal scaffold, then persist via `okt comment add` with the resolved scope (`project`, or `universal` for `--scope global`) and no `task_id`. Reject an empty body or empty title; when the cwd is ambiguous (multiple projects resolve) require `--project <slug>`.
 
 ## Handoff
 

@@ -3,14 +3,12 @@ package agentruntime
 import (
 	"context"
 	"path/filepath"
-	"regexp"
 	"strings"
 	"testing"
 
 	"omakiten/internal/commandcatalog"
 	"omakiten/internal/config"
 	"omakiten/internal/contract"
-	"omakiten/internal/mcp"
 )
 
 // promptBudgets caps rendered prompt bytes against the bundled omakase kit.
@@ -55,30 +53,6 @@ var promptBudgets = map[string]int{
 	"okt-note-recap":        11900,
 	"okt-note-list":         6500,
 	"okt-note-show":         6500,
-}
-
-func TestPromptPlaybooksReferenceOnlyKnownMCPTools(t *testing.T) {
-	resolve := commandResolver(t, "omakase")
-	known := map[string]struct{}{}
-	for _, tool := range mcp.Tools() {
-		known[tool.Name] = struct{}{}
-	}
-	ignored := map[string]struct{}{"omakiten.yaml": {}, "package.json": {}, "task.assigned": {}}
-	dottedBacktick := regexp.MustCompile("`([a-z_]+(?:\\.[a-z_]+)+)(?:\\s|`)")
-
-	for _, name := range commandcatalog.CommandNames() {
-		resp := resolve(t, name)
-		matches := dottedBacktick.FindAllStringSubmatch(resp.Markdown, -1)
-		for _, match := range matches {
-			ref := match[1]
-			if _, ok := ignored[ref]; ok {
-				continue
-			}
-			if _, ok := known[ref]; !ok {
-				t.Fatalf("%s prompt references unknown MCP tool %q:\n%s", name, ref, resp.Markdown)
-			}
-		}
-	}
 }
 
 func assertFullCommandSurface(t *testing.T, name string, resp contract.ResolveCommandResponse) {
@@ -153,8 +127,8 @@ func assertCommandTemplates(t *testing.T, name string, resp contract.ResolveComm
 	if !strings.Contains(resp.Markdown, "## Templates\n") {
 		t.Fatalf("%s binds %d template(s) but renders no Templates section:\n%s", name, len(resp.Templates), resp.Markdown)
 	}
-	if !strings.Contains(resp.Markdown, "templates.show") {
-		t.Fatalf("%s binds templates but carries no templates.show JIT fetch hint:\n%s", name, resp.Markdown)
+	if !strings.Contains(resp.Markdown, "okt template show") {
+		t.Fatalf("%s binds templates but carries no okt template show JIT fetch hint:\n%s", name, resp.Markdown)
 	}
 }
 
@@ -196,7 +170,7 @@ func assertEntitySourcedPrompt(t *testing.T, preset, name string, resp contract.
 		t.Fatalf("%s/%s resolved to an empty prompt", preset, name)
 	}
 	if strings.TrimSpace(resp.Description) == "" {
-		t.Fatalf("%s/%s carries no prompts/list description — the bound okt-<slug>-playbook skill frontmatter did not flow through (the Go layer has no Description fallback)", preset, name)
+		t.Fatalf("%s/%s carries no command list description — the bound okt-<slug>-playbook skill frontmatter did not flow through (the Go layer has no Description fallback)", preset, name)
 	}
 	wantPlaybook := name
 	if wantPlaybook == "okt" {

@@ -5,11 +5,11 @@ import (
 )
 
 // TestNoteCommandSlugsRegistered pins that the okt-note-* slugs stay registered
-// and tier-decodable — the mcp_test note group + command count depend on them.
+// and tier-decodable — the command catalog consumers depend on them.
 func TestNoteCommandSlugsRegistered(t *testing.T) {
 	for _, slug := range []string{"okt-note-free", "okt-note-recap", "okt-note-list", "okt-note-show"} {
 		if _, ok := DescribeCommand(slug); !ok {
-			t.Fatalf("note slug %q was renamed/removed; mcp_test note group + count rely on it", slug)
+			t.Fatalf("note slug %q was renamed/removed; command catalog consumers rely on it", slug)
 		}
 	}
 }

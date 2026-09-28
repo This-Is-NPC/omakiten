@@ -347,7 +347,7 @@ func TestValidateNotification_actionsRejectsCollisionWithDismissKey(t *testing.T
 }
 
 func TestValidateNotification_actionsRejectsDeliveryCommands(t *testing.T) {
-	for _, blocked := range []string{"tui", "mcp", "unknown.operation", "wiring.snapshot"} {
+	for _, blocked := range []string{"tui", "cli", "unknown.operation", "wiring.snapshot"} {
 		b := validNotification()
 		b.Actions = []NotificationAction{
 			{Key: "x", ID: "x", Label: "X", Operation: blocked},

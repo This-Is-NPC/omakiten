@@ -8,6 +8,7 @@ import (
 )
 
 func TestConfigRefreshDefaultsCommandUsesDirectRefresh(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
 	root := t.TempDir()
 	dbPath := filepath.Join(t.TempDir(), "omakiten.db")
 	cfgPath := filepath.Join(root, "config", "omakase.yaml")

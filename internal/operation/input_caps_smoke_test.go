@@ -8,10 +8,10 @@ import (
 	"omakiten/internal/domain"
 )
 
-// TestCreateTaskInputCapsSmoke is the MCP-boundary smoke test for the
+// TestCreateTaskInputCapsSmoke is the agent-boundary smoke test for the
 // domain length caps: a title or description of len == cap+1 submitted
 // through Service.CreateTask is rejected with ErrValidation, confirming the
-// domain cap is inherited at the MCP trust boundary (not only the CLI/service
+// domain cap is inherited at the agent trust boundary (not only the CLI/service
 // path). len == cap is accepted.
 func TestCreateTaskInputCapsSmoke(t *testing.T) {
 	f := newAgentFixture(t)
@@ -47,7 +47,7 @@ func TestCreateTaskInputCapsSmoke(t *testing.T) {
 	})
 }
 
-// TestAddCommentInputCapSmoke is the MCP-boundary smoke test for the comment
+// TestAddCommentInputCapSmoke is the agent-boundary smoke test for the comment
 // body byte cap: a body of len == cap+1 submitted through Service.AddComment
 // is rejected with ErrValidation; len == cap is accepted.
 func TestAddCommentInputCapSmoke(t *testing.T) {

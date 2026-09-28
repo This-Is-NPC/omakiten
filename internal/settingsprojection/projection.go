@@ -15,7 +15,7 @@ type EffectiveSection struct {
 	Tuples []config.EffectiveTuple
 }
 
-var effectiveOrder = []string{"theme", "tricks", "priorities", "severities", "views", "context", "tui", "output", "search", "solutions", "mcp", "events", "sqlite", "backup", "hooks"}
+var effectiveOrder = []string{"theme", "tricks", "priorities", "severities", "views", "context", "tui", "output", "search", "solutions", "cli", "events", "sqlite", "backup", "hooks"}
 
 var hiddenSections = map[string]bool{"languages": true, "workflow": true, "template_defaults": true, "tag_synonyms": true}
 

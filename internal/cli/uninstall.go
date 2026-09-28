@@ -10,6 +10,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"omakiten/internal/domain"
+	"omakiten/internal/installer"
 	"omakiten/internal/lifecycle"
 )
 
@@ -98,28 +99,9 @@ func runUninstall(ctx context.Context, inputs uninstallInputs) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	binaryPath := lifecycle.BinaryPath(home)
-
-	if err := ctx.Err(); err != nil {
-		return nil, err
-	}
-	binaryRemoved, err := lifecycle.RemoveBinary(binaryPath)
+	result, err := uninstallFiles(ctx, home)
 	if err != nil {
-		return nil, domain.NewError(domain.ErrUninstallFailed, err.Error(), map[string]any{"binary": binaryPath})
-	}
-	if err := ctx.Err(); err != nil {
 		return nil, err
-	}
-	wrappersRemoved, err := lifecycle.RemoveAllWrappers(home)
-	if err != nil {
-		return nil, domain.NewError(domain.ErrUninstallFailed, err.Error(), nil)
-	}
-
-	result := map[string]any{
-		"code":           "uninstall_completed",
-		"binary_path":    binaryPath,
-		"binary_removed": binaryRemoved,
-		"wrappers":       wrappersRemoved,
 	}
 
 	if inputs.PurgeData {
@@ -143,6 +125,39 @@ func runUninstall(ctx context.Context, inputs uninstallInputs) (any, error) {
 		}
 		result["config_root"] = path
 		result["config_removed"] = removed
+	}
+
+	return result, nil
+}
+
+func uninstallFiles(ctx context.Context, home string) (map[string]any, error) {
+	binaryPath := lifecycle.BinaryPath(home)
+
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	binaryRemoved, err := lifecycle.RemoveBinary(binaryPath)
+	if err != nil {
+		return nil, domain.NewError(domain.ErrUninstallFailed, err.Error(), map[string]any{"binary": binaryPath})
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	wrappersRemoved, err := lifecycle.RemoveAllWrappers(home)
+	if err != nil {
+		return nil, domain.NewError(domain.ErrUninstallFailed, err.Error(), nil)
+	}
+
+	skillsRemoved, err := installer.RemoveSkills(home)
+	if err != nil {
+		return nil, err
+	}
+	result := map[string]any{
+		"skills_removed": skillsRemoved,
+		"code":           "uninstall_completed",
+		"binary_path":    binaryPath,
+		"binary_removed": binaryRemoved,
+		"wrappers":       wrappersRemoved,
 	}
 
 	return result, nil

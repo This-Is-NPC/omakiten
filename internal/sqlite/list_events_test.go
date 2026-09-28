@@ -509,7 +509,7 @@ func TestListEventsLimitAboveCapClamped(t *testing.T) {
 }
 
 // TestMaxListEventsLimitConstant pins the public constant so callers
-// referencing it (godoc, MCP schema) don't drift silently.
+// referencing it (godoc, agent schema) don't drift silently.
 func TestMaxListEventsLimitConstant(t *testing.T) {
 	if MaxListEventsLimit != 10_000 {
 		t.Fatalf("MaxListEventsLimit = %d, want 10000", MaxListEventsLimit)

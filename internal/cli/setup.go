@@ -207,13 +207,8 @@ type runSetupOptions struct {
 	SkipHarnesses bool
 }
 
-// runSetup applies the resolved inputs to the user-global install
-// (seed the config root if missing, point .active at the chosen
-// preset, write the languages block into omakiten.yaml, install the
-// shell-rc wrapper, configure each selected MCP harness). Idempotent
-// against an existing install: re-running with --update overwrites
-// language fields and the wrapper block in place without touching
-// other yaml fields or unrelated rc-file content.
+// runSetup installs the selected configuration, languages, wrapper and skills.
+// Update refreshes managed files and preserves unrelated user content.
 func runSetup(ctx context.Context, opts *runtimeOptions, inputs setupInputs, runOpts runSetupOptions) (any, error) {
 	rootDir, seedRes, activeDir, err := prepareSetupConfig(opts, inputs, runOpts.Update)
 	if err != nil {
@@ -241,7 +236,11 @@ func runSetup(ctx context.Context, opts *runtimeOptions, inputs setupInputs, run
 
 	result["harnesses_planned"] = inputs.Harnesses
 	if len(inputs.Harnesses) > 0 && !runOpts.SkipHarnesses {
-		result["harnesses"] = setupHarnesses(ctx, inputs.Harnesses)
+		skills, err := installer.InstallSkills("", inputs.Harnesses, runOpts.Update)
+		if err != nil {
+			return nil, err
+		}
+		result["skills"] = skills
 	}
 
 	return result, nil
@@ -290,23 +289,6 @@ func setupWrappers() (map[string]any, error) {
 		return nil, err
 	}
 	return map[string]any{"installed_into": installedInto, "powershell_installed_into": psInstalledInto}, nil
-}
-
-func setupHarnesses(ctx context.Context, harnesses []string) []map[string]any {
-	oktBin, err := os.Executable()
-	if err != nil {
-		oktBin = "okt"
-	}
-	harnessResults := installer.SetupHarnesses(ctx, oktBin, harnesses)
-	summary := make([]map[string]any, 0, len(harnessResults))
-	for _, r := range harnessResults {
-		entry := map[string]any{"harness": r.Harness, "status": r.Status, "exit_code": r.ExitCode}
-		if r.Err != nil {
-			entry["error"] = r.Err.Error()
-		}
-		summary = append(summary, entry)
-	}
-	return summary
 }
 
 // validateSetupLanguageChoice is the setup-surface equivalent of

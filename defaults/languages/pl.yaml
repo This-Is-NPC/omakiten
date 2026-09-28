@@ -120,7 +120,7 @@ keys:
   cli.project.resume.short: "Show distribution, likely next work, blocked work, and dependencies"
   cli.project.edit.short: "Update the active project description"
   cli.project.edit.flag.description: "new project description"
-  cli.projects.short: "Narzędzia cyklu życia projektu (delete — ops destrukcyjne)"
+  cli.projects.short: "Narzędzia cyklu życia projektu"
   cli.projects.delete.short: "Hard-delete zarejestrowanego projektu i każdego zależnego wiersza (nieodwracalne)"
   cli.projects.delete.long: |-
     Rozwiąż projekt po id numerycznym lub slug, zapisz snapshot
@@ -198,22 +198,10 @@ keys:
   cli.template.short: "List and show loaded templates (file-backed under templates/)"
   cli.template.list.short: "List loaded templates"
   cli.template.show.short: "Show a template (frontmatter + body)"
-  cli.mcp.short: "Eksponuj intencje agent Omakiten przez MCP"
-  cli.mcp.prompt.short: "Wyrenderuj rozwiązany markdown promptu okt-* na stdout"
-  cli.mcp.prompt.flag.list: "Wyświetla powierzchnię poleceń pogrupowaną według poziomu zamiast renderowania treści"
-  cli.mcp.prompt.list.title: "Powierzchnia poleceń — %d poleceń\n"
-  cli.mcp.prompt.list.orchestrators: "\nOrkiestratory (%d) — bezpośrednia ścieżka dyrygenta\n"
-  cli.mcp.prompt.list.system: "\nSystem (%d) — rozmawiaj z narzędziem, brak obiektu projektu\n"
-  cli.mcp.prompt.list.granular: "\nSzczegółowe (%d) — okt-<object>-<verb>, chirurgiczne\n"
-  cli.mcp.prompt.list.object: "%s (%d)\n"
-  cli.mcp.tools.short: "Wyświetl definicje narzędzi MCP Omakiten"
-  cli.mcp.call.short: "Wywołaj narzędzie MCP Omakiten z obiektem wejściowym JSON"
-  cli.mcp.serve.short: "Uruchom serwer stdio MCP Omakiten"
-  cli.mcp.install.short: "Skonfiguruj serwer MCP Omakiten w harness AI"
   cli.workflow.short: "Sprawdź konfigurację workflow"
   cli.workflow.show.short: "Pokaż aktywny workflow"
   cli.workflow.orphan.short: "Podgląd lub przepięcie tasks, których bucket został dezaktywowany przez zmianę workflow"
-  notice.subtask_kit.enabled.mcp_resolves_at_root: "Sub-task kit włączony: polecenia MCP, personas, laws, templates i skills nadal rozwiązywane z root kit projektu."
+  notice.subtask_kit.enabled.commands_resolve_at_root: "Sub-task kit włączony: polecenia CLI, personas, laws, templates i skills nadal rozwiązywane z root kit projektu."
   cli.config.init.long: |-
     Zaszczep samodzielną instalację config zakorzenioną w wybranym scope.
 
@@ -270,7 +258,7 @@ keys:
     Odczytuj i zapisuj config.languages.{cli,tui,agent_output} w aktywnym
     omakiten.yaml. languages.cli oraz languages.tui są walidowane względem
     paczek językowych wykrytych pod languages/; languages.agent_output jest
-    dowolny i przekazywany dosłownie do kompozytora promptów MCP.
+    dowolny i przekazywany dosłownie do kompozytora promptów CLI.
 
     Domyślnym celem jest rozwiązany omakiten.yaml (repo-local .omakiten/
     jeśli jest obecne, w przeciwnym razie user-global ConfigRoot). Użyj
@@ -278,7 +266,7 @@ keys:
     niezależnie od obecności repo-local.
 
     Zapisy wywołują BundleCache.Reload, więc kolejne wywołania okt oraz
-    długo działające narzędzia (TUI, serwer MCP) widzą nowy wybór. Bieżący
+    długo działające narzędzia (TUI, serwer CLI) widzą nowy wybór. Bieżący
     proces CLI oraz dowolne już działające wywołanie CLI nie są aktualizowane
     retroaktywnie; tylko kolejne wywołania podchwytują zmianę.
   cli.config.language.set.long: |-
@@ -291,7 +279,6 @@ keys:
     i --tui walidują względem kodów językowych wykrytych pod languages/.
     --agent przyjmuje dowolny niepusty ciąg (lub "" aby wyczyścić). --global
     przypina zapis do user-global omakiten.yaml.
-  cli.mcp.install.long: "Zapisuje konfigurację serwera MCP Omakiten do pliku config harness (np. Claude Desktop lub OpenCode)."
   cli.workflow.orphan.long: |-
     Tasks wskazujące na bucket workflow, który już nie istnieje po przełączeniu
     preset lub edycji omakiten.yaml, są osierocone. Domyślnie ta komenda
@@ -339,12 +326,6 @@ keys:
   cli.init.flag.name: "nazwa projektu"
   cli.init.flag.slug: "slug projektu"
   cli.init.flag.root: "ścieżka katalogu głównego projektu"
-  cli.init.flag.enable-mcp: "włącz globalny dostęp agent MCP dla obsługiwanego harness"
-  cli.init.flag.mcp-harness: "harness MCP do skonfigurowania"
-  cli.init.flag.mcp-config: "ścieżka config harness MCP"
-  cli.init.flag.mcp-command: "ścieżka polecenia zapisana do config MCP harness"
-  cli.init.flag.mcp-dry-run: "podgląd zmian config harness MCP bez zapisu"
-  cli.init.flag.mcp-force: "zastąp istniejący wpis harness MCP Omakiten"
   cli.init.flag.preset: "oficjalny preset workflow do skopiowania do .omakiten/config/<preset>.yaml i aktywacji"
   cli.init.flag.preset-force: "nadpisz istniejący config preset .omakiten"
   cli.config.init.flag.scope: "warstwa config do zaszczepienia: global lub local"
@@ -412,12 +393,6 @@ keys:
   cli.persona.edit.flag.skill: "id skill (zastępuje istniejący zestaw)"
   cli.persona.edit.flag.skill-slug: "slugs skill (zastępuje istniejący zestaw)"
   cli.persona.edit.flag.no-edit: "nie otwieraj $EDITOR (zastosuj tylko aktualizacje sterowane flagami)"
-  cli.mcp.call.flag.input: "obiekt wejściowy JSON"
-  cli.mcp.install.flag.harness: "Docelowy harness (%s)"
-  cli.mcp.install.flag.config-path: "Ścieżka do pliku config harness (domyślnie: domyślny harness). Akceptuje dowolną zapisywalną ścieżkę; brak wymuszanego ograniczenia katalogu — domyślnie standardowa lokalizacja harness."
-  cli.mcp.install.flag.command: "Polecenie do uruchomienia omakiten (domyślnie: bieżący plik wykonywalny)"
-  cli.mcp.install.flag.dry-run: "Podgląd zmian bez zapisu"
-  cli.mcp.install.flag.force: "Nadpisz istniejący config MCP Omakiten"
   cli.workflow.orphan.flag.confirm: "zastosuj przepięcie; bez tej flagi komenda wypisuje plan i wychodzi"
   cli.workflow.orphan.flag.dry-run: "wypisz plan migracji bez stosowania (domyślnie gdy brak --confirm)"
   cli.err.config_invalid: "config jest niepoprawny"
@@ -479,7 +454,7 @@ keys:
   tui.empty.graph_no_deps: "Brak zależności task."
   tui.empty.home_no_projects: "brak projektów"
   tui.empty.home_no_projects_full: "Brak zarejestrowanych projektów."
-  tui.empty.logs: "Brak aktywności. Użyj CLI, TUI lub MCP, aby pracować z Omakiten."
+  tui.empty.logs: "Brak aktywności. Użyj CLI, TUI lub CLI, aby pracować z Omakiten."
   tui.empty.stats: "Brak zarejestrowanej aktywności agent w tym okresie."
   tui.empty.table_no_tasks: "Brak tasks. Naciśnij n, aby utworzyć."
   tui.empty.table_filtered: "Żadne tasks nie pasują do skonfigurowanego filtra tabeli."
@@ -854,7 +829,7 @@ keys:
   tui.studio.buckets.label.position: "position"
   tui.studio.buckets.label.task_delete: "task delete"
   tui.studio.buckets.label.task_edit: "task edit"
-  tui.studio.commands.bindings_empty: "No known MCP commands."
+  tui.studio.commands.bindings_empty: "No known agent commands."
   tui.studio.commands.bindings_header: "COMMAND BINDINGS"
   tui.studio.commands.candidate_diff: "Candidate diff:"
   tui.studio.commands.field.laws: "laws"
@@ -879,12 +854,12 @@ keys:
   tui.studio.commands.msg.template_selection_changed: "template selection changed"
   tui.studio.commands.selected: "SELECTED: %s"
   tui.studio.commands.validation: "Validation: %s"
-  tui.studio.commands.warn.missing_law: "mcp_commands.%s.laws: missing law %q"
-  tui.studio.commands.warn.missing_law_disabled: "mcp_commands.%s.laws_disabled: missing law %q"
-  tui.studio.commands.warn.missing_persona: "mcp_commands.%s.persona: missing persona %q"
-  tui.studio.commands.warn.missing_skill: "mcp_commands.%s.skills: missing skill %q"
-  tui.studio.commands.warn.missing_template: "mcp_commands.%s.templates: missing template %q"
-  tui.studio.commands.warn.unknown_command: "mcp_commands.%s: unknown MCP command"
+  tui.studio.commands.warn.missing_law: "commands.%s.laws: missing law %q"
+  tui.studio.commands.warn.missing_law_disabled: "commands.%s.laws_disabled: missing law %q"
+  tui.studio.commands.warn.missing_persona: "commands.%s.persona: missing persona %q"
+  tui.studio.commands.warn.missing_skill: "commands.%s.skills: missing skill %q"
+  tui.studio.commands.warn.missing_template: "commands.%s.templates: missing template %q"
+  tui.studio.commands.warn.unknown_command: "commands.%s: unknown agent playbook"
   tui.studio.commands.warnings_header: "Command warnings:"
   tui.studio.diff.bucket_added: "Bucket added: %s"
   tui.studio.diff.bucket_key_changed: "Bucket key changed: %s -> %s"
@@ -1005,7 +980,7 @@ keys:
   tui.studio.personas.kicker: "PERSONAS"
   tui.studio.personas.known: "known"
   tui.studio.personas.msg.no_changes_to_save: "no Studio Personas changes to save"
-  tui.studio.personas.related.commands: "// COMMANDS (mcp_commands.persona = this slug)"
+  tui.studio.personas.related.commands: "// COMMANDS (commands.persona = this slug)"
   tui.studio.personas.related.heading: "RELATED"
   tui.studio.personas.related.kicker: "%d skills · %d laws · %d commands"
   tui.studio.personas.related.commands_empty: "No commands bind this persona."
@@ -1105,7 +1080,7 @@ keys:
   tui.settings.effective.section.theme: "motyw"
   tui.settings.effective.section.template_defaults: "domyślne szablony"
   tui.settings.effective.section.views: "widoki"
-  tui.settings.effective.section.mcp: "mcp"
+  tui.settings.effective.section.agent: "agent"
   tui.settings.effective.section.tui: "tui"
   tui.settings.effective.section.sqlite: "sqlite"
   tui.settings.effective.section.activity_log: "dziennik aktywności"
@@ -1381,12 +1356,12 @@ keys:
   notifications.kitten_link.description: "Czujny kotek dla tags, zależności i powiązanych pobocznych questów."
   notifications.kitten_orphan_migration.description: "Prompt po zmianie config, gdy tasks zostałyby osierocone przez zestaw bucket nowego workflow."
   notifications.kitten_success.description: "Dumny kotek-strażnik dla ukończonych rytuałów i pobłogosławionych poprawek."
-  cli.setup.short: "Uruchom picker pierwszego uruchomienia (język → preset → harness MCP)"
+  cli.setup.short: "Uruchom picker pierwszego uruchomienia (język → preset → harness CLI)"
   cli.setup.long: |-
     okt setup to picker po instalacji, do którego wrzuca cię instalator curl|bash.
 
     Prowadzi przez wybór języka (CLI / TUI / wyjście agent), wybór preset
-    oraz konfigurację harness MCP w pojedynczym programie bubbletea, a następnie
+    oraz konfigurację harness CLI w pojedynczym programie bubbletea, a następnie
     zapisuje wrapper okt() do shell-rc. Uruchom ponownie z --update, aby
     powrócić do wyborów.
 
@@ -1398,20 +1373,18 @@ keys:
   cli.setup.flag.tui-lang: "pomiń picker języka TUI ustawiając wybrany kod (taki sam kształt jak OKT_TUI_LANG=)"
   cli.setup.flag.agent-lang: "pomiń prompt języka wyjścia agent ustawiając wybraną dowolną wartość"
   cli.setup.flag.preset: "pomiń picker preset ustawiając wybraną nazwę preset (taki sam kształt jak OKT_PRESET=)"
-  cli.setup.flag.harnesses: "pomiń multi-select harness przy pomocy CSV nazw harness (taki sam kształt jak OKT_HARNESSES=)"
+  cli.setup.flag.harnesses: "Skill destinations: agents, claude-code, or 0 to skip"
   cli.setup.flag.skip-wrapper: "nie zapisuj bloku wrapper okt() do shell-rc (przydatne, gdy użytkownik zarządza plikami rc przez dotfiles)"
-  cli.setup.flag.skip-harnesses: "rozwiąż wejścia harness, ale nie wywołuj `okt mcp setup` (używane przez testy shell + smoke check dry-run)"
+  cli.setup.flag.skip-harnesses: "Skip installing the integration skill"
   cli.setup.status.preset_written: "=> Aktywny preset workflow: %s (%s/.active)"
   cli.setup.status.wrapper_written: "=> Zainstalowano wrapper shell okt() w: %s"
   cli.setup.status.wrapper_skipped: "=> Pomijam instalację shell-wrapper: nie znaleziono ~/.bashrc ani ~/.zshrc"
-  cli.setup.status.harness_configured: "=> Konfiguruję MCP dla %s"
-  cli.setup.status.harness_failed: "   (pominięto %s, exit %d — uruchom ręcznie: %s mcp setup --harness %s --force)"
   cli.setup.warn.unknown_preset: "ostrzeżenie: OKT_PRESET=%s nie jest obsługiwanym preset; powracam do %s"
   cli.setup.picker.lang.cli.title: "Wybierz język CLI"
   cli.setup.picker.agent.title: "Język wyjścia agent (dowolny tekst, np. \"English\" lub \"Português (Brasil)\")"
   cli.setup.picker.agent.placeholder: "en"
   cli.setup.picker.preset.title: "Wybierz preset workflow"
-  cli.setup.picker.harness.title: "Skonfiguruj harnesses MCP"
+  cli.setup.picker.harness.title: "Install the Omakiten skill"
   cli.setup.picker.hint.nav: "↑/↓ nawiguj · enter potwierdza · ctrl+c wyjdź"
   cli.setup.picker.hint.multi: "↑/↓ nawiguj · enter przełącza · tab potwierdza · ctrl+c wyjdź"
   cli.setup.picker.hint.input: "wpisuj aby edytować · enter potwierdza (puste ok) · ctrl+c wyjdź"
@@ -1656,5 +1629,14 @@ keys:
   tui.help.stats_insights.title: "Stats · wglądy"
   tui.help.stats_insights.refresh: "odśwież"
 
-  operations.denied.wiring: "Internal composition injector/getter; not available on CLI, TUI, or MCP."
+  operations.denied.wiring: "Internal composition injector/getter; not available on CLI or TUI."
   operations.denied.agent_delete: "Agents cannot delete this resource."
+
+  cli.command.short: "Discover and resolve configured agent playbooks"
+  cli.command.list.short: "List available playbooks"
+  cli.command.resolve.short: "Resolve persona, skills, laws and templates"
+  cli.command.resolve.flag.arguments: "Playbook arguments as a JSON object"
+  cli.init.flag.skill: "Install the Omakiten skill in this project"
+  cli.init.flag.claude-code: "Also install the skill for Claude Code (requires --skill)"
+
+  cli.projects.list.short: "List registered projects"

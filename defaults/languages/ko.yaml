@@ -120,7 +120,7 @@ keys:
   cli.project.resume.short: "Show distribution, likely next work, blocked work, and dependencies"
   cli.project.edit.short: "Update the active project description"
   cli.project.edit.flag.description: "new project description"
-  cli.projects.short: "Project 수명 주기 utilities (delete — destructive ops)"
+  cli.projects.short: "Project 수명 주기 utilities"
   cli.projects.delete.short: "등록된 project 와 모든 종속 row hard-delete (되돌릴 수 없음)"
   cli.projects.delete.long: |-
     숫자 id 또는 slug 로 project 를 해석하고 recovery
@@ -196,22 +196,10 @@ keys:
   cli.template.short: "List and show loaded templates (file-backed under templates/)"
   cli.template.list.short: "List loaded templates"
   cli.template.show.short: "Show a template (frontmatter + body)"
-  cli.mcp.short: "MCP 를 통해 Omakiten agent intents 노출"
-  cli.mcp.prompt.short: "해석된 okt-* prompt 마크다운을 stdout 에 렌더링"
-  cli.mcp.prompt.flag.list: "본문을 렌더링하는 대신 명령 표면을 계층별로 그룹화하여 나열"
-  cli.mcp.prompt.list.title: "명령 표면 — %d개 명령\n"
-  cli.mcp.prompt.list.orchestrators: "\n오케스트레이터 (%d) — 단순, 디렉터 경로\n"
-  cli.mcp.prompt.list.system: "\n시스템 (%d) — 도구와 대화, 프로젝트 객체 없음\n"
-  cli.mcp.prompt.list.granular: "\n세분화 (%d) — okt-<object>-<verb>, 정밀\n"
-  cli.mcp.prompt.list.object: "%s (%d)\n"
-  cli.mcp.tools.short: "Omakiten MCP tool 정의 목록"
-  cli.mcp.call.short: "JSON 입력 객체로 Omakiten MCP tool 호출"
-  cli.mcp.serve.short: "Omakiten MCP stdio 서버 실행"
-  cli.mcp.install.short: "AI harness 에 Omakiten MCP 서버 구성"
   cli.workflow.short: "workflow 구성 검사"
   cli.workflow.show.short: "활성 workflow 표시"
   cli.workflow.orphan.short: "workflow 교체로 bucket 이 비활성화된 tasks 미리보기 또는 재바인딩"
-  notice.subtask_kit.enabled.mcp_resolves_at_root: "Sub-task kit 활성: MCP commands, personas, laws, templates, skills 는 여전히 project root kit 에서 resolve."
+  notice.subtask_kit.enabled.commands_resolve_at_root: "Sub-task kit 활성: agent commands, personas, laws, templates, skills 는 여전히 project root kit 에서 resolve."
   cli.config.init.long: |-
     선택된 scope 에 뿌리를 둔 standalone config 설치를 생성합니다.
 
@@ -266,7 +254,7 @@ keys:
     활성 omakiten.yaml 의 config.languages.{cli,tui,agent_output} 를 읽고
     씁니다. languages.cli 와 languages.tui 는 languages/ 아래에서 발견된
     language packs 에 대해 검증; languages.agent_output 은 자유 형식이며
-    MCP prompt 합성기에 그대로 전달됩니다.
+    agent playbook 합성기에 그대로 전달됩니다.
 
     기본 대상은 해석된 omakiten.yaml (존재하면 repo-local .omakiten/,
     그렇지 않으면 user-global ConfigRoot). set/reset 에서 --global 을
@@ -274,7 +262,7 @@ keys:
     고정합니다.
 
     쓰기는 BundleCache.Reload 를 트리거하여 후속 okt 호출과 장기 실행
-    도구(TUI, MCP 서버)가 새 선택을 관찰하도록 합니다. 현재 CLI 프로세스와
+    도구(TUI, CLI 서버)가 새 선택을 관찰하도록 합니다. 현재 CLI 프로세스와
     이미 실행 중인 CLI 호출은 소급 업데이트되지 않습니다; 후속 호출만
     변경을 받아들입니다.
   cli.config.language.set.long: |-
@@ -287,7 +275,6 @@ keys:
     --tui 는 languages/ 아래에서 발견된 언어 코드에 대해 검증됩니다.
     --agent 는 비어 있지 않은 모든 문자열을 허용합니다(또는 비우려면 "").
     --global 은 쓰기를 user-global omakiten.yaml 에 고정합니다.
-  cli.mcp.install.long: "Omakiten MCP 서버 구성을 harness config 파일에 씁니다(예: Claude Desktop 또는 OpenCode)."
   cli.workflow.orphan.long: |-
     preset 전환 또는 omakiten.yaml 편집 후 더 이상 존재하지 않는 workflow
     bucket 을 가리키던 tasks 는 고아입니다. 기본적으로 이 명령은 마이그레이션
@@ -335,12 +322,6 @@ keys:
   cli.init.flag.name: "프로젝트 이름"
   cli.init.flag.slug: "프로젝트 slug"
   cli.init.flag.root: "프로젝트 루트 경로"
-  cli.init.flag.enable-mcp: "지원되는 harness 에 대해 글로벌 MCP agent 접근 활성화"
-  cli.init.flag.mcp-harness: "구성할 MCP harness"
-  cli.init.flag.mcp-config: "MCP harness config 경로"
-  cli.init.flag.mcp-command: "harness MCP config 에 기록되는 명령"
-  cli.init.flag.mcp-dry-run: "쓰지 않고 MCP harness config 변경 미리보기"
-  cli.init.flag.mcp-force: "기존 Omakiten MCP harness 항목 교체"
   cli.init.flag.preset: ".omakiten/config/<preset>.yaml 에 복사하고 활성화할 공식 workflow preset"
   cli.init.flag.preset-force: "기존 .omakiten preset config 덮어쓰기"
   cli.config.init.flag.scope: "시드할 config 레이어: global 또는 local"
@@ -408,12 +389,6 @@ keys:
   cli.persona.edit.flag.skill: "skill id (기존 집합 교체)"
   cli.persona.edit.flag.skill-slug: "skill slug (기존 집합 교체)"
   cli.persona.edit.flag.no-edit: "$EDITOR 를 열지 않음(플래그 기반 업데이트만 적용)"
-  cli.mcp.call.flag.input: "JSON 입력 객체"
-  cli.mcp.install.flag.harness: "대상 harness (%s)"
-  cli.mcp.install.flag.config-path: "harness config 파일 경로(기본값: harness 기본값). 쓰기 가능한 모든 경로를 허용하며 디렉터리 제한은 적용되지 않습니다 — 기본값은 harness의 표준 위치입니다."
-  cli.mcp.install.flag.command: "omakiten 을 실행할 명령(기본값: 현재 실행 파일)"
-  cli.mcp.install.flag.dry-run: "쓰지 않고 변경 미리보기"
-  cli.mcp.install.flag.force: "기존 Omakiten MCP config 덮어쓰기"
   cli.workflow.orphan.flag.confirm: "재바인딩 적용; 이 플래그 없이는 명령이 계획을 출력하고 종료"
   cli.workflow.orphan.flag.dry-run: "적용 없이 마이그레이션 계획 출력(--confirm 없을 때 기본값)"
   cli.err.config_invalid: "config 가 유효하지 않음"
@@ -475,7 +450,7 @@ keys:
   tui.empty.graph_no_deps: "아직 task 의존성이 없습니다."
   tui.empty.home_no_projects: "프로젝트 없음"
   tui.empty.home_no_projects_full: "등록된 프로젝트가 없습니다."
-  tui.empty.logs: "아직 활동이 없습니다. Omakiten 과 상호작용하려면 CLI, TUI 또는 MCP 를 사용하세요."
+  tui.empty.logs: "아직 활동이 없습니다. Omakiten 과 상호작용하려면 CLI, TUI 또는 CLI 를 사용하세요."
   tui.empty.stats: "이 기간 동안 기록된 agent 활동이 없습니다."
   tui.empty.table_no_tasks: "아직 tasks 가 없습니다. 생성하려면 n 을 누르세요."
   tui.empty.table_filtered: "구성된 테이블 필터와 일치하는 task 가 없습니다."
@@ -850,7 +825,7 @@ keys:
   tui.studio.buckets.label.position: "position"
   tui.studio.buckets.label.task_delete: "task delete"
   tui.studio.buckets.label.task_edit: "task edit"
-  tui.studio.commands.bindings_empty: "No known MCP commands."
+  tui.studio.commands.bindings_empty: "No known agent commands."
   tui.studio.commands.bindings_header: "COMMAND BINDINGS"
   tui.studio.commands.candidate_diff: "Candidate diff:"
   tui.studio.commands.field.laws: "laws"
@@ -875,12 +850,12 @@ keys:
   tui.studio.commands.msg.template_selection_changed: "template selection changed"
   tui.studio.commands.selected: "SELECTED: %s"
   tui.studio.commands.validation: "Validation: %s"
-  tui.studio.commands.warn.missing_law: "mcp_commands.%s.laws: missing law %q"
-  tui.studio.commands.warn.missing_law_disabled: "mcp_commands.%s.laws_disabled: missing law %q"
-  tui.studio.commands.warn.missing_persona: "mcp_commands.%s.persona: missing persona %q"
-  tui.studio.commands.warn.missing_skill: "mcp_commands.%s.skills: missing skill %q"
-  tui.studio.commands.warn.missing_template: "mcp_commands.%s.templates: missing template %q"
-  tui.studio.commands.warn.unknown_command: "mcp_commands.%s: unknown MCP command"
+  tui.studio.commands.warn.missing_law: "commands.%s.laws: missing law %q"
+  tui.studio.commands.warn.missing_law_disabled: "commands.%s.laws_disabled: missing law %q"
+  tui.studio.commands.warn.missing_persona: "commands.%s.persona: missing persona %q"
+  tui.studio.commands.warn.missing_skill: "commands.%s.skills: missing skill %q"
+  tui.studio.commands.warn.missing_template: "commands.%s.templates: missing template %q"
+  tui.studio.commands.warn.unknown_command: "commands.%s: unknown agent playbook"
   tui.studio.commands.warnings_header: "Command warnings:"
   tui.studio.diff.bucket_added: "Bucket added: %s"
   tui.studio.diff.bucket_key_changed: "Bucket key changed: %s -> %s"
@@ -1001,7 +976,7 @@ keys:
   tui.studio.personas.kicker: "PERSONAS"
   tui.studio.personas.known: "known"
   tui.studio.personas.msg.no_changes_to_save: "no Studio Personas changes to save"
-  tui.studio.personas.related.commands: "// COMMANDS (mcp_commands.persona = this slug)"
+  tui.studio.personas.related.commands: "// COMMANDS (commands.persona = this slug)"
   tui.studio.personas.related.heading: "RELATED"
   tui.studio.personas.related.kicker: "%d skills · %d laws · %d commands"
   tui.studio.personas.related.commands_empty: "No commands bind this persona."
@@ -1101,7 +1076,7 @@ keys:
   tui.settings.effective.section.theme: "테마"
   tui.settings.effective.section.template_defaults: "템플릿 기본값"
   tui.settings.effective.section.views: "뷰"
-  tui.settings.effective.section.mcp: "mcp"
+  tui.settings.effective.section.agent: "agent"
   tui.settings.effective.section.tui: "tui"
   tui.settings.effective.section.sqlite: "sqlite"
   tui.settings.effective.section.activity_log: "활동 로그"
@@ -1377,12 +1352,12 @@ keys:
   notifications.kitten_link.description: "tags, 의존성, 연결된 서브 퀘스트를 위한 경계심 있는 새끼 고양이."
   notifications.kitten_orphan_migration.description: "config 전환 후 새 workflow 의 bucket 집합에 의해 tasks 가 고아가 될 때의 프롬프트."
   notifications.kitten_success.description: "완료된 의식과 축복받은 수정을 위한 자랑스러운 수호 새끼 고양이."
-  cli.setup.short: "설치 후 초기 선택기 실행 (언어 → preset → MCP harness)"
+  cli.setup.short: "설치 후 초기 선택기 실행 (언어 → preset → skill destination)"
   cli.setup.long: |-
     okt setup 은 curl|bash 설치 프로그램이 호출하는 설치 후 선택기입니다.
 
     하나의 bubbletea 프로그램에서 언어 선택 (CLI / TUI / agent 출력),
-    preset 선택, MCP harness 구성을 진행한 다음 shell rc 의 okt()
+    preset 선택, skill destination 구성을 진행한 다음 shell rc 의 okt()
     래퍼를 작성합니다. 선택을 다시 검토하려면 --update 로 재실행하세요.
 
     Headless / 비대화형 shell 은 일치하는 환경 변수가 채워진 각 화면을
@@ -1393,20 +1368,18 @@ keys:
   cli.setup.flag.tui-lang: "선택된 코드 설정으로 TUI 언어 선택기 건너뛰기 (OKT_TUI_LANG= 와 같은 형식)"
   cli.setup.flag.agent-lang: "선택된 자유 형식 값 설정으로 agent 출력 언어 프롬프트 건너뛰기"
   cli.setup.flag.preset: "선택된 preset 이름 설정으로 preset 선택기 건너뛰기 (OKT_PRESET= 와 같은 형식)"
-  cli.setup.flag.harnesses: "harness 이름의 CSV 로 harness 다중 선택 건너뛰기 (OKT_HARNESSES= 와 같은 형식)"
+  cli.setup.flag.harnesses: "Skill destinations: agents, claude-code, or 0 to skip"
   cli.setup.flag.skip-wrapper: "okt() shell rc 래퍼 블록을 작성하지 않음 (사용자가 dotfiles 로 rc 파일을 관리할 때 유용)"
-  cli.setup.flag.skip-harnesses: "harness 입력을 해석하지만 `okt mcp setup` 을 호출하지 않음 (shell 테스트 + dry-run smoke 검사에서 사용)"
+  cli.setup.flag.skip-harnesses: "Skip installing the integration skill"
   cli.setup.status.preset_written: "=> 활성 workflow preset: %s (%s/.active)"
   cli.setup.status.wrapper_written: "=> okt() shell 래퍼를 설치함: %s"
   cli.setup.status.wrapper_skipped: "=> shell 래퍼 설치 건너뛰기: ~/.bashrc 또는 ~/.zshrc 를 찾을 수 없음"
-  cli.setup.status.harness_configured: "=> %s 용 MCP 구성 중"
-  cli.setup.status.harness_failed: "   (%s 건너뜀, exit %d — 수동으로 재실행: %s mcp setup --harness %s --force)"
   cli.setup.warn.unknown_preset: "warn: OKT_PRESET=%s 은(는) 지원되는 preset 이 아닙니다; %s 로 대체"
   cli.setup.picker.lang.cli.title: "CLI 언어 선택"
   cli.setup.picker.agent.title: "agent 출력 언어 (자유 텍스트, 예: \"English\" 또는 \"한국어\")"
   cli.setup.picker.agent.placeholder: "en"
   cli.setup.picker.preset.title: "workflow preset 선택"
-  cli.setup.picker.harness.title: "MCP harness 구성"
+  cli.setup.picker.harness.title: "Install the Omakiten skill"
   cli.setup.picker.hint.nav: "↑/↓ 탐색 · enter 확인 · ctrl+c 종료"
   cli.setup.picker.hint.multi: "↑/↓ 탐색 · enter 전환 · tab 확인 · ctrl+c 종료"
   cli.setup.picker.hint.input: "입력하여 편집 · enter 확인 (빈칸 가능) · ctrl+c 종료"
@@ -1650,5 +1623,14 @@ keys:
   tui.help.stats_insights.title: "Stats · 인사이트"
   tui.help.stats_insights.refresh: "새로고침"
 
-  operations.denied.wiring: "Internal composition injector/getter; not available on CLI, TUI, or MCP."
+  operations.denied.wiring: "Internal composition injector/getter; not available on CLI or TUI."
   operations.denied.agent_delete: "Agents cannot delete this resource."
+
+  cli.command.short: "Discover and resolve configured agent playbooks"
+  cli.command.list.short: "List available playbooks"
+  cli.command.resolve.short: "Resolve persona, skills, laws and templates"
+  cli.command.resolve.flag.arguments: "Playbook arguments as a JSON object"
+  cli.init.flag.skill: "Install the Omakiten skill in this project"
+  cli.init.flag.claude-code: "Also install the skill for Claude Code (requires --skill)"
+
+  cli.projects.list.short: "List registered projects"

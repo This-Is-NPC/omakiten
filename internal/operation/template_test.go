@@ -41,7 +41,7 @@ func TestCreateTaskIntentIncludesTemplateOnSimilarityFork(t *testing.T) {
 	// Title/description matching an existing fixture task triggers the
 	// confirmation fork — template must still be returned so the agent has
 	// the scaffold ready when the user confirms a separate task.
-	resp, err := fixture.service.CreateTaskIntent(fixture.ctx, contract.CreateTaskInput{Description: "Add MCP agent integration for AI harnesses"})
+	resp, err := fixture.service.CreateTaskIntent(fixture.ctx, contract.CreateTaskInput{Description: "Add agent agent integration for AI harnesses"})
 	if err != nil {
 		t.Fatalf("CreateTaskIntent() error = %v", err)
 	}

@@ -4,10 +4,10 @@ How to configure Omakiten through the active profile yaml plus the sibling entit
 
 | Doc | Covers |
 |---|---|
-| [system.md](system.md) | Runtime knobs — `config.{output,context,workflow,mcp,tui,sqlite,solutions,backup,events,search,tag_synonyms}` plus top-level shape and validation. |
+| [system.md](system.md) | Runtime knobs — `config.{output,context,workflow,agent,tui,sqlite,solutions,backup,events,search,tag_synonyms}` plus top-level shape and validation. |
 | [workflows.md](workflows.md) | `workflows[]` schema — buckets, transitions, operations, task/comment permissions. |
 | [studio.md](studio.md) | Studio TUI workbench — IA, supported/blocked edits, preview/apply flow, bucket impact warnings, imported-block blocking, prompt preview composition. |
-| [command-bindings.md](command-bindings.md) | `mcp_commands` and persona skill-repertoire bindings for MCP prompt composition. |
+| [command-bindings.md](command-bindings.md) | `commands` and persona skill-repertoire bindings for agent playbook composition. |
 | [entities.md](entities.md) | Entity asset loaders — skills, laws, personas, projects, templates, frontmatter, autoload/custom rules. |
 | [enums.md](enums.md) | `config.template_defaults`, `config.priorities`, and `config.severities`. |
 | [views.md](views.md) | `config.views` sort/filter/window defaults for board/table/graph/logs/task activity. |

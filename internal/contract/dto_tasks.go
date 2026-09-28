@@ -59,7 +59,7 @@ type TaskSummary struct {
 type ContinueTaskInput struct {
 	ProjectSelector
 	TaskID int64 `json:"task_id"`
-	// IncludeWorkflow overrides config.mcp.include_workflow_in_continue for
+	// IncludeWorkflow overrides config.agent.include_workflow_in_continue for
 	// this single call. nil → use the configured default; *true → force
 	// inclusion; *false → skip the workflow block. Use *false on subsequent
 	// continues in a session where `okt` already loaded the workflow shape.
@@ -75,7 +75,7 @@ type ContinueTaskResponse struct {
 	NextStepPrompt string              `json:"next_step_prompt"`
 	// AgentOutputLanguage carries config.languages.agent_output verbatim
 	// so the agent can introspect the directive without re-reading the
-	// composed MCP prompt. Empty when unset — consumers treat empty as
+	// composed playbook. Empty when unset — consumers treat empty as
 	// "no directive in effect".
 	AgentOutputLanguage string `json:"agent_output_language,omitempty"`
 }
@@ -158,8 +158,7 @@ type ArchiveTaskInput struct {
 	TaskID int64 `json:"task_id"`
 }
 
-// AssignTaskInput drives the CLI `okt assign` recovery path. Empty Assignee
-// clears tasks.assigned_to. Not an MCP tool (D10 / D13).
+// AssignTaskInput identifies a task and its assignee; an empty assignee clears it.
 type AssignTaskInput struct {
 	ProjectSelector
 	TaskID   int64  `json:"task_id"`
@@ -177,7 +176,7 @@ type ArchiveTaskResponse struct {
 	Task    TaskSummary    `json:"task"`
 }
 
-// EditTaskInput is the MCP-side shape for tasks.edit. Title, Description,
+// EditTaskInput is the agent-side shape for tasks.edit. Title, Description,
 // and Priority are pointers so the caller can opt into partial updates: a
 // nil pointer means "leave this field alone", while a non-nil pointer
 // (even pointing at "") signals an explicit edit. At least one of the

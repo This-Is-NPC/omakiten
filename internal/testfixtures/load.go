@@ -1,7 +1,6 @@
 // Package testfixtures wires test packages to the YAML config files that
 // live next to them under testdata/. Each fixture is a partial scenario;
 // the helper merges the embedded kit YAML (`defaults/omakiten.yaml`) on
-// top so missing canonical blocks (priorities, severities, mcp, views,
 // tui, template_defaults) inherit from the shipped kit. This mirrors
 // the production install pipeline where the kit YAML is materialised
 // into the user's config root on first run.
@@ -71,7 +70,7 @@ func loadFromPath(t testing.TB, path string) (config.Bundle, *domain.EnumRegistr
 	}
 	// Strict decoding so typos or removed-but-still-declared keys fail
 	// loudly. Yaml:"-" fields (Skills/Personas/Laws/Templates/Projects
-	// /MCPCommands) are loaded by production from per-entity folders,
+	// /Commands) are loaded by production from per-entity folders,
 	// not from the wiring file — fixtures that need them wire inline.
 	dec := yaml.NewDecoder(bytes.NewReader(data))
 	dec.KnownFields(true)
@@ -110,7 +109,7 @@ func mergeKitDefaults(b *config.Bundle) {
 	kit := config.MustLoadKitConfig()
 	cfg := &b.Config
 	mergeCollectionDefaults(cfg, kit)
-	mergeMCPDefaults(cfg, kit)
+	mergeagentDefaults(cfg, kit)
 	mergeTUIDefaults(cfg, kit)
 	mergeSQLiteDefaults(cfg, kit)
 	mergeEventDefaults(cfg, kit)
@@ -137,25 +136,22 @@ func mergeCollectionDefaults(cfg *config.Settings, kit config.Settings) {
 	}
 }
 
-func mergeMCPDefaults(cfg *config.Settings, kit config.Settings) {
-	if cfg.MCP.RecentCommentLimit == 0 {
-		cfg.MCP.RecentCommentLimit = kit.MCP.RecentCommentLimit
+func mergeagentDefaults(cfg *config.Settings, kit config.Settings) {
+	if cfg.Agent.RecentCommentLimit == 0 {
+		cfg.Agent.RecentCommentLimit = kit.Agent.RecentCommentLimit
 	}
-	if cfg.MCP.NextWorkLimit == 0 {
-		cfg.MCP.NextWorkLimit = kit.MCP.NextWorkLimit
+	if cfg.Agent.NextWorkLimit == 0 {
+		cfg.Agent.NextWorkLimit = kit.Agent.NextWorkLimit
 	}
-	if cfg.MCP.SimilarTaskLimit == 0 {
-		cfg.MCP.SimilarTaskLimit = kit.MCP.SimilarTaskLimit
+	if cfg.Agent.SimilarTaskLimit == 0 {
+		cfg.Agent.SimilarTaskLimit = kit.Agent.SimilarTaskLimit
 	}
 	// MaxCommentChars: kit ships 0 as canonical (no truncation); the
 	// only invalid value is negative, which the validator catches. So
 	// we don't need to merge here unless the fixture explicitly set a
 	// negative — leave alone.
-	if cfg.MCP.IncludeWorkflowInContinue == nil {
-		cfg.MCP.IncludeWorkflowInContinue = kit.MCP.IncludeWorkflowInContinue
-	}
-	if cfg.MCP.CachePrompts == nil {
-		cfg.MCP.CachePrompts = kit.MCP.CachePrompts
+	if cfg.Agent.IncludeWorkflowInContinue == nil {
+		cfg.Agent.IncludeWorkflowInContinue = kit.Agent.IncludeWorkflowInContinue
 	}
 }
 

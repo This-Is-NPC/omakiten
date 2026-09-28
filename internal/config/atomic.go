@@ -5,7 +5,6 @@ package config
 //
 // WriteAtomic is a generic primitive: it serves both omakiten-owned config
 // paths (the config root and its entity subtrees) and foreign harness paths
-// such as ~/.claude/.mcp.json or an arbitrary --config-path target. It must
 // therefore stay neutral about the parent directory's mode and never chmod a
 // directory it did not create — clobbering the mode of ~/.claude/ (shared with
 // Claude Code) or a user-chosen --config-path parent would be both surprising

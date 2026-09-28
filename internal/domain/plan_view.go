@@ -16,7 +16,7 @@ type PlanShow struct {
 }
 
 // PlanWaveView pairs a wave with its tasks and per-wave done/total
-// counts. Used by the TUI network diagram and by MCP plans.show.
+// counts. Used by the TUI network diagram and by agent plans.show.
 type PlanWaveView struct {
 	Wave       PlanWave      `json:"wave"`
 	Tasks      []PlanTaskRow `json:"tasks,omitempty"`

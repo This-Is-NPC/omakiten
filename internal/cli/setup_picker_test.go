@@ -130,7 +130,7 @@ func setupPickerSelectHarnesses(t *testing.T, m setupPickerModel) {
 	t.Helper()
 	supported := installer.SupportedHarnesses()
 	want := []string{}
-	for _, name := range []string{"claude-code", "opencode"} {
+	for _, name := range []string{"agents", "claude-code"} {
 		index := harnessIndex(supported, name)
 		if index < 0 {
 			continue

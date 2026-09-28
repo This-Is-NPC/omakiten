@@ -38,7 +38,7 @@ type LogsRow struct {
 	Summary string `json:"summary"`
 }
 
-// ListLogsInput is the MCP-side shape for `logs.list`. Every field is
+// ListLogsInput is the agent-side shape for `logs.list`. Every field is
 // optional; the service applies defaults sourced from the active
 // project's Snapshot (window) and from the SQL layer (no cap, desc).
 //
@@ -49,7 +49,7 @@ type LogsRow struct {
 //   - Since is a duration expression like "24h" or "7d" understood
 //     by config.parseDuration. Omitted → use Snapshot.LogsWindowDays
 //     (default 30 days).
-//   - Limit caps the response. 0 / omitted → no cap from MCP; the
+//   - Limit caps the response. 0 / omitted → no cap from agent; the
 //     SQL layer still applies its row safety ceiling.
 //   - Order accepts "asc" or "desc" (case-insensitive). Anything else
 //     falls back to "desc".
@@ -62,7 +62,7 @@ type ListLogsInput struct {
 }
 
 // ListLogsResponse is the wire shape `logs.list` returns. Rows is
-// `nil` (encoded as `[]` by the MCP envelope) when no events match
+// `nil` (encoded as `[]` by the agent envelope) when no events match
 // the filter — callers can rely on the field always being present.
 type ListLogsResponse struct {
 	Project ProjectSummary `json:"project"`

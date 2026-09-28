@@ -512,7 +512,7 @@ func TestSweepOrphanEventsDueAfterActivityLogPrune(t *testing.T) {
 	beginLog := func() {
 		t.Helper()
 		if _, err := store.BeginActivityLog(ctx, domain.ActivityLog{
-			Source:     domain.ActivitySourceMCP,
+			Source:     domain.ActivitySourceTUI,
 			Entrypoint: "test",
 			Operation:  "test",
 			Status:     "running",

@@ -350,7 +350,7 @@ func normalizeLawInput(input domain.LawInput, slugger Slugifier, severityValidat
 }
 
 // normalizeSeverity validates that the supplied severity id is in the
-// active config.severities table. Callers (CLI, MCP) translate user
+// active config.severities table. Callers (CLI) translate user
 // input from label to id via the bundle-scoped registry before reaching
 // this point; this function only accepts ids and is the second-line
 // guard against stale ids (e.g. caller cached an id whose entry was

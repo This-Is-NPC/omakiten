@@ -29,11 +29,11 @@ New to the codebase? Start with the [Developer Guide](.docs/internal/dev-guide.m
 | Setting | Value |
 |---------|-------|
 | Tool | Omakiten local task database |
-| Access method | `okt` CLI, `okt tui`, or Omakiten MCP tools |
+| Access method | `okt` CLI or `okt tui` |
 | Project/Board URL | Not applicable; local-first project state |
-| How to read tasks | `okt list`, `okt tui`, or MCP `tasks.list` / `project.resume` |
-| How to create issues | `okt add` or MCP `tasks.create_intent` / `tasks.create` |
-| How to update status | `okt move`, `okt workflow orphans`, TUI actions, or MCP `tasks.move` |
+| How to read tasks | `okt list`, `okt task continue`, `okt project resume`, or `okt tui` |
+| How to create issues | `okt add` or `okt task create-intent` |
+| How to update status | `okt move`, `okt workflow orphans`, or TUI actions |
 
 ## Project Knowledge Base
 
@@ -72,7 +72,7 @@ The codebase follows hexagonal architecture (`internal/app/doc.go`). Three layer
 Rules in plain English:
 
 - `internal/domain` is the inner core; it imports nothing else from `internal/`.
-- `internal/app` talks to adapters via ports declared in `internal/app/ports.go`; it never imports `internal/sqlite`, `internal/configstore`, `internal/tui`, `internal/cli`, `internal/mcp`, `internal/operationruntime`.
+- `internal/app` reaches adapters through `internal/app/ports.go`; it imports no storage or delivery adapter.
 - `internal/sqlite` and `internal/configstore` are leaf adapters; they never import each other, `internal/app`, or any consumer adapter.
 - `internal/tui` consumes neutral contracts and ports; it imports no CLI, operation
   implementation, runtime or storage adapter. `internal/terminal` binds those ports.
@@ -96,7 +96,7 @@ states ownership, assembly rules and the existing verification mechanisms. Read 
 ### Testing
 
 - Standard library `testing` only.
-- Prefer table-driven tests; integration-style tests for CLI/MCP flows are welcome and live alongside the package.
+- Prefer table-driven tests; integration-style tests for CLI flows are welcome and live alongside the package.
 - Coverage is enforced by one full all-package run: `mise run test`, which instruments all project packages with `-coverpkg=./...`, writes the profile and function summary under `.tmp/coverage/`, and invokes `scripts/check-coverage.sh`. Cross-package integration tests count the adapters they exercise through ports. The checker compares the unrounded aggregate statement ratio against the fixed 78.0% floor and fails closed for missing, empty, malformed, stale, missing-total, or below-floor evidence. Focused checker fixtures run separately via the named-file `scripts/check-coverage_test.sh` and do not add a package or coverage denominator; there are no per-package floors or exemptions.
 
 #### Patterns for new test files
@@ -175,14 +175,14 @@ The classic `tests := []struct{ name string … }{}` + `for _, tt := range tests
 
 - **Property tests with random-sequence invariants** for stateful components (cursors, scrollers, anything with resync logic). Generate a small parameter space (viewport size, item count) and a random sequence of state-mutating ops; assert the invariant holds after EACH op, not just at the end. Reference: `internal/tui/components/list/window_test.go` — pins `cursor ∈ [0, max(0, itemCount-1)]` AND `cursor ∈ VisibleRange()` after every `MoveCursor` / `WithItemCount` / `WithViewport`. Use plain `math/rand` with a seed printed via `t.Logf` so a failing seed reproduces deterministically.
 
-- **`testscript`** (`github.com/rogpeppe/go-internal/testscript`) is on the radar for end-to-end CLI / MCP flows but is **not adopted** — the rule above is "standard library `testing` only". Promotion would need an explicit amendment.
+- **`testscript`** (`github.com/rogpeppe/go-internal/testscript`) is on the radar for end-to-end CLI flows but is **not adopted** — the rule above is "standard library `testing` only". Promotion would need an explicit amendment.
 
 Keep tests that protect observable behavior. Remove fixtures and tests that only exercise a deleted API; do not restore retired guards or speculative tests.
 
 ### Documentation
 
 - Every `internal/*` package carries a 2-4 sentence package comment so `go doc` answers "what is this for?" without opening source. The comment may live in a dedicated `doc.go` (preferred for packages that span many files) or in the comment block immediately above `package <name>` in the main file. Pick one shape per package; do not add `doc.go` to a package whose main file already carries the description.
-- User-facing docs live under `.docs/` in the 21-file shape indexed by [`.docs/README.md`](.docs/README.md): six root surfaces (`cli`, `tui`, `mcp`, `workflow`, `presets`, `why_omakiten`) plus the `configuration-guide/` subdir (system, entities, guards, hooks, notifications, themes, languages, path-resolution, project-overrides). New bundled language packs follow the recipe in [`.docs/configuration-guide/languages.md`](.docs/configuration-guide/languages.md).
+- User-facing docs live under `.docs/` in the 21-file shape indexed by [`.docs/README.md`](.docs/README.md): six root surfaces (`cli`, `tui`, `agents`, `workflow`, `presets`, `why_omakiten`) plus the `configuration-guide/` subdir (system, entities, guards, hooks, notifications, themes, languages, path-resolution, project-overrides). New bundled language packs follow the recipe in [`.docs/configuration-guide/languages.md`](.docs/configuration-guide/languages.md).
 - Contributor / architecture docs live under `.docs/internal/` (`architecture.md`, `dev-guide.md`, `data-model.md`, `requirements.md`). Authoring rules and the atom map sit in [`.docs/README.md`](.docs/README.md) § Authoring.
 - Project-level reference (curated by `/document`): `.docs/internal/architecture.md`, `.docs/internal/requirements.md`.
 - When changing behavior covered by an existing guide, update the guide in the same PR.

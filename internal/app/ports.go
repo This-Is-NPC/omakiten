@@ -172,7 +172,7 @@ type CommentRepository interface {
 // so the service layer never has to know the underlying table layout.
 //
 // The generic read methods (ListEvents, EventCategoryCounts) feed the
-// Logs inspector surfaces (TUI / CLI / MCP) introduced by umbrella
+// Logs inspector surfaces (TUI / CLI) introduced by umbrella
 // task #320 — they share the same port so the Repositories
 // composition root only wires one EventRepository implementation.
 type EventRepository interface {
@@ -183,10 +183,6 @@ type EventRepository interface {
 	// subject is the project as a whole.
 	RecordEntityEvent(ctx context.Context, entityType string, entityID int64, projectID int64, eventType string, payload string) error
 	ListTaskActivity(ctx context.Context, projectID, taskID int64, order string) ([]domain.Event, error)
-	// ListEvents is the generic Logs inspector read path. Zero values on
-	// the filter degrade to "no filter" per domain.EventFilter godoc.
-	// Backs the `logs.list` MCP tool + TUI / CLI siblings so every
-	// consumer reads the same shape.
 	ListEvents(ctx context.Context, filter domain.EventFilter) ([]domain.EventRow, error)
 	// EventCategoryCounts returns per-category totals over the optional
 	// project + time window. Every known category is present in the
@@ -264,14 +260,7 @@ type SearchRepository interface {
 	Search(ctx context.Context, query string, projectID int64, entityTypes []domain.SearchEntityType) ([]domain.SearchHit, error)
 }
 
-// PlanRepository persists plans, waves, and task↔plan attachment. Plans
-// are scoped per project; every method takes projectID and rejects rows
-// belonging to a different project via the ErrPlanNotFound /
-// ErrPlanWaveNotFound codes instead of leaking data across snapshots.
-//
-// Only the methods the current slice of MCP wiring needs live here; the
-// add-wave / assign-task / claim-next surfaces land alongside their
-// respective tool dispatches.
+// PlanRepository persists project-scoped plans, waves and task assignments.
 type PlanRepository interface {
 	CreatePlan(ctx context.Context, projectID int64, slug, name, goalBody string) (domain.Plan, error)
 	GetPlanBySlug(ctx context.Context, projectID int64, slug string) (domain.Plan, error)

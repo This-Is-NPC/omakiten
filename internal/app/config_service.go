@@ -47,7 +47,7 @@ func (s *ConfigService) Import(ctx context.Context, path string) (bundle config.
 
 	// Build an instance-scoped EnumRegistry from the bundle's priority +
 	// severity tables. Returned to the caller so each surface (CLI, TUI,
-	// MCP agent) threads the registry into the services it constructs;
+	// agent agent) threads the registry into the services it constructs;
 	// no process-global state is touched.
 	registry = config.BuildEnumRegistry(bundle)
 

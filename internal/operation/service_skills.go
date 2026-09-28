@@ -9,10 +9,6 @@ import (
 	"omakiten/internal/domain"
 )
 
-// ListSkills returns every loaded skill (slug + name + description), ordered by
-// slug for a stable response. Bodies are omitted so the listing stays compact —
-// callers fetch a single body via ShowSkill. Read-only: skills are user-authored
-// and MCP exposes no create/edit/delete path.
 func (s *Service) ListSkills(_ context.Context, _ contract.ListSkillsInput) (contract.ListSkillsResponse, error) {
 	if err := s.allow("skill.list"); err != nil {
 		return contract.ListSkillsResponse{}, err

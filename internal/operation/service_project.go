@@ -5,7 +5,16 @@ import (
 
 	"omakiten/internal/app"
 	"omakiten/internal/contract"
+	"omakiten/internal/domain"
 )
+
+// ListProjects discovers registered projects before a caller selects a scope.
+func (s *Service) ListProjects(ctx context.Context) ([]domain.Project, error) {
+	if err := s.allow("project.list"); err != nil {
+		return nil, err
+	}
+	return s.repo.ListProjects(ctx)
+}
 
 func (s *Service) Overview(ctx context.Context, input contract.OverviewInput) (contract.OverviewResponse, error) {
 	if err := s.allow("project.overview"); err != nil {

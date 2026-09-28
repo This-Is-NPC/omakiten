@@ -1,7 +1,7 @@
-# Izakaya (Howl's Moving Castle) themed roster — personas and mcp_commands.
+# Izakaya (Howl's Moving Castle) themed roster — personas and commands.
 # Imported by izakaya.yaml via fragment selectors:
 #   personas:     { from: ./modules/howl.yaml#personas }
-#   mcp_commands: { from: ./modules/howl.yaml#mcp_commands }
+#   commands: { from: ./modules/howl.yaml#commands }
 personas:
   # Concierge + Tester — the hearth-fire that sees every room and routes work,
   # then proves what burns clean before it ships.
@@ -114,7 +114,7 @@ personas:
       - okt-task-review-playbook
       - okt-task-secure-playbook
 
-mcp_commands:
+commands:
   global:
     laws: [template-fidelity, authorize-remote-writes, project-scope-only]
   # Izakaya (Howl's Moving Castle) slot bindings — #189 W5.3.

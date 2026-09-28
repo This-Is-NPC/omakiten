@@ -1,6 +1,6 @@
 # Omakiten documentation
 
-Public documentation for the Omakiten CLI/TUI/MCP toolkit, grouped by audience.
+Public documentation for the Omakiten CLI/TUI toolkit, grouped by audience.
 
 ## Root — orientation and user-facing surfaces
 
@@ -12,7 +12,7 @@ Public documentation for the Omakiten CLI/TUI/MCP toolkit, grouped by audience.
 | [command-surface.md](command-surface.md) | Stable `okt-*` command tiers, roles, scopes, and write behavior. | A command is added, removed, renamed, or changes scope/role/write behavior. |
 | [cli.md](cli.md) | `okt` command reference — flags, subcommands, output envelope. | A subcommand or global flag lands. |
 | [tui.md](tui.md) | Terminal UI surfaces — views, key bindings, markdown rendering, the dev-editorial design language. | A view, panel, or key binding changes. |
-| [mcp.md](mcp.md) | MCP surface — tools, resources, prompts, scope controls, per-project routing. | A tool or prompt lands; the dispatch contract changes. |
+| [agents.md](agents.md) | Agent skill installation, CLI context recovery and playbook resolution. | Skill installation or the agent workflow changes. |
 
 ## configuration-guide/ — how to configure features
 
@@ -20,9 +20,9 @@ Each doc inlines the YAML schema for the feature it teaches. See [configuration-
 
 | Doc | What it covers |
 |---|---|
-| [system.md](configuration-guide/system.md) | `config.{output,context,workflow,mcp,tui,sqlite,solutions,backup,events,search,tag_synonyms}` plus top-level shape and validation. |
+| [system.md](configuration-guide/system.md) | `config.{output,context,workflow,agent,tui,sqlite,solutions,backup,events,search,tag_synonyms}` plus top-level shape and validation. |
 | [workflows.md](configuration-guide/workflows.md) | Workflow schema — buckets, transitions, operations, task/comment permissions. |
-| [command-bindings.md](configuration-guide/command-bindings.md) | `mcp_commands`, persona skill repertoires, and prompt composition bindings. |
+| [command-bindings.md](configuration-guide/command-bindings.md) | `commands`, persona skill repertoires, and prompt composition bindings. |
 | [entities.md](configuration-guide/entities.md) | Entity asset loaders — skills, laws, personas, projects, templates, frontmatter, autoload/custom rules. |
 | [enums.md](configuration-guide/enums.md) | `template_defaults`, priority labels, severity labels. |
 | [views.md](configuration-guide/views.md) | View sort/filter/window defaults. |
@@ -47,4 +47,3 @@ Each doc inlines the YAML schema for the feature it teaches. See [configuration-
 | [tui-screen-assembly.md](internal/tui-screen-assembly.md) | Normative screen ownership, component assembly rules, existing verification and refactoring workflow. | A pattern's enforcement changes, a gate lands or is retired, or the runbook's steps change. |
 | [data-model.md](internal/data-model.md) | Current SQLite schema map and the relationship to the in-memory bundle. | The table list or operational data contract changes. |
 | [authoring.md](internal/authoring.md) | Rules for editing `.docs/` — atom map, token budgets, what NOT to prescribe, and workflows for adding entities or language packs. | A new entity type, token budget, or authoring rule changes. |
-| [claim-next-agent-ceiling.md](internal/claim-next-agent-ceiling.md) | Manual `plans.claim_next` concurrency reference — historical status, freshness check, protocol, reproduction command, per-level results, and raw JSON. | The claim path, benchmark protocol, toolchain, connection pool, SQLite inputs, or target environment change; or a new full manual reference run is completed. |

@@ -14,7 +14,7 @@ Read the diff for design coherence, naming, test coverage of the meaningful bran
 
 ## Surface findings
 
-Call `templates.show` for any bound findings scaffold, fill it, and persist it with `comments.add` on the task. Surface findings by severity; stay read-only with respect to files.
+Call `okt template show` for any bound findings scaffold, fill it, and persist it with `okt comment add` on the task. Surface findings by severity; stay read-only with respect to files.
 
 ## Handoff
 

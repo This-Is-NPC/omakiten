@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"omakiten/internal/activity"
 	"omakiten/internal/app/guards"
 	"omakiten/internal/config"
 	"omakiten/internal/domain"
@@ -430,25 +431,40 @@ func TestWorkflowMoveTaskInvokesPlanFinalizerOnFinalBucket(t *testing.T) {
 }
 
 func TestWorkflowMoveTaskBlockersInGuard(t *testing.T) {
-	f := &fakeStores{
-		bucketsByKey:  map[string]domain.Bucket{"dev": {ID: 2, Key: "dev"}},
-		allowedFromTo: map[[2]int64]bool{{1, 2}: true},
-		guards: map[[2]int64][]domain.TransitionGuard{
-			{1, 2}: {{Type: "blockers_in", Buckets: []string{"done"}}},
-		},
-		currentBucketID: 1,
-		blockerLists: map[int64][]domain.TaskBlocker{
-			5: {{TaskID: 9, Title: "blocker", BucketKey: "backlog"}},
-		},
+	for name, model := range map[string]string{"user": "", "agent": "test-model"} {
+		t.Run(name, func(t *testing.T) {
+			f := &fakeStores{
+				bucketsByKey:  map[string]domain.Bucket{"dev": {ID: 2, Key: "dev"}},
+				allowedFromTo: map[[2]int64]bool{{1, 2}: true},
+				guards: map[[2]int64][]domain.TransitionGuard{
+					{1, 2}: {{Type: "blockers_in", Buckets: []string{"done"}}},
+				},
+				currentBucketID: 1,
+				blockerLists: map[int64][]domain.TaskBlocker{
+					5: {{TaskID: 9, Title: "blocker", BucketKey: "backlog"}},
+				},
+			}
+			svc := newWorkflowServiceForTest(f)
+			ctx := activity.WithAgent(context.Background(), "cli", "okt move", model, "")
+			_, err := svc.MoveTask(ctx, domain.ProjectContext{ID: 1}, 5, "dev")
+			var coded *domain.CodedError
+			if !errors.As(err, &coded) || coded.Code != domain.ErrGuardViolation {
+				t.Fatalf("err = %v, want guard_violation", err)
+			}
+			if !hasEvent(f.eventCalls, domain.EventTypeGuardViolated) {
+				t.Fatalf("guard.violated event not emitted; got %#v", f.eventCalls)
+			}
+			assertGuardCaller(t, f.eventCalls, name)
+		})
 	}
-	svc := newWorkflowServiceForTest(f)
-	_, err := svc.MoveTask(context.Background(), domain.ProjectContext{ID: 1}, 5, "dev")
-	var coded *domain.CodedError
-	if !errors.As(err, &coded) || coded.Code != domain.ErrGuardViolation {
-		t.Fatalf("err = %v, want guard_violation", err)
-	}
-	if !hasEvent(f.eventCalls, domain.EventTypeGuardViolated) {
-		t.Fatalf("guard.violated event not emitted; got %#v", f.eventCalls)
+}
+
+func assertGuardCaller(t *testing.T, calls []recordedEvent, caller string) {
+	t.Helper()
+	for _, event := range calls {
+		if event.eventType == domain.EventTypeGuardViolated && !strings.Contains(event.payload, `"attempted_by":"`+caller+`"`) {
+			t.Fatalf("incorrect caller attribution: %s", event.payload)
+		}
 	}
 }
 

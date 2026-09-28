@@ -605,16 +605,8 @@ func openWithOptions(ctx context.Context, path string, opts Options, afterOpen f
 		afterOpen()
 	}
 
-	// SQLite is single-writer regardless of pool size, so the pool stays small
-	// when the TUI and MCP server share one Store. The ordinary-work budget was
-	// originally reduced from four connections to two because the TUI is
-	// read-mostly and extra slots cost file descriptors and duplicate page
-	// caches without adding writer concurrency. The idle cap remains two.
-	//
-	// The ceiling is three because DataVersion lazily pins one connection for
-	// the Store's lifetime (see versionConn). Before that first probe all three
-	// slots are ordinary; afterward the pin leaves the intended two slots for
-	// TUI, MCP, and other Store work.
+	// SQLite writes are serialized. Two ordinary connections remain available
+	// while the pinned recovery connection occupies the third pool slot.
 	db.SetMaxOpenConns(3)
 	db.SetMaxIdleConns(2)
 

@@ -16,7 +16,7 @@ type Project struct {
 // project_tags bridge entries (project-scoped tag attachments), not
 // the tags table itself which stays global. ActivityLogEntries counts
 // rows in events with event_type='operation' / cli.tool_call /
-// mcp.tool_call / tui.tool_call — the per-call activity log
+// cli.tool_call / tui.tool_call — the per-call activity log
 // associated with the project.
 type ProjectDeleteCounters struct {
 	Tasks              int `json:"tasks"`

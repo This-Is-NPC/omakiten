@@ -383,7 +383,7 @@ func TestModelPanelFitsBelow80Columns(t *testing.T) {
 }
 
 // TestViewSanitizesUntrustedModelNames pins the escape-injection guard: agent
-// model ids arrive from MCP input and must not be able to repaint the operator's
+// model ids arrive from agent input and must not be able to repaint the operator's
 // terminal.
 func TestViewSanitizesUntrustedModelNames(t *testing.T) {
 	t.Parallel()

@@ -1,9 +1,6 @@
 package contract
 
-// ListSkillsInput drives the skills.list MCP endpoint. The endpoint is
-// read-only and takes no filters: it returns every loaded skill slug with its
-// short description, never the body. Skills are authored by the user — the
-// agent never creates, edits, or deletes them through MCP.
+// ListSkillsInput requests the loaded skill catalog without filters.
 type ListSkillsInput struct{}
 
 // ListSkillsResponse carries the catalog of loaded skills without bodies.

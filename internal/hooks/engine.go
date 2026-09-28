@@ -23,7 +23,7 @@ type EventRecorder interface {
 // callback runs synchronously on the publisher's goroutine to inspect
 // matches; matched hooks then dispatch their action on a dedicated
 // goroutine (fire-and-forget) so slow scripts cannot block the
-// publisher (UI / CLI / MCP request paths).
+// publisher (UI / CLI / agent request paths).
 type Engine struct {
 	hooks    []Hook
 	registry *ActionRegistry

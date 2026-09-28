@@ -86,62 +86,6 @@ func TestBundleCacheMtimeChangeTriggersRebuild(t *testing.T) {
 	}
 }
 
-func TestSurfacesFingerprintChangesWhenMCPFlips(t *testing.T) {
-	a := config.CanonicalSurfaceTable()
-	b := config.CanonicalSurfaceTable()
-	denied := false
-	row := b["task.delete"]
-	row.MCP = &denied
-	row.Reason = "test"
-	b["task.delete"] = row
-
-	snapA := config.BuildSnapshot(config.Bundle{Surfaces: a})
-	snapB := config.BuildSnapshot(config.Bundle{Surfaces: b})
-	if surfacesFingerprint(snapA) == surfacesFingerprint(snapB) {
-		t.Fatal("fingerprint did not change when task.delete mcp flipped")
-	}
-	if surfacesFingerprint(snapA) != surfacesFingerprint(config.BuildSnapshot(config.Bundle{Surfaces: config.CanonicalSurfaceTable()})) {
-		t.Fatal("identical canonical tables produced different fingerprints")
-	}
-}
-
-func TestBundleCacheReloadNotifiesWhenSurfacesChange(t *testing.T) {
-	ctx := context.Background()
-	rt := openTestRuntime(t)
-	defer func() { _ = rt.Close() }()
-
-	cache := rt.Cache()
-	var n atomic.Int32
-	cache.SetSurfacesChangedNotify(func() { n.Add(1) })
-
-	if _, err := cache.Reload(ctx, rt.defaultProjectID, rt.configPath); err != nil {
-		t.Fatalf("Reload (unchanged): %v", err)
-	}
-	if got := n.Load(); got != 0 {
-		t.Fatalf("Reload without surfaces change notified %d times", got)
-	}
-
-	bundle, err := config.LoadBundle(rt.configPath)
-	if err != nil {
-		t.Fatalf("LoadBundle: %v", err)
-	}
-	denied := false
-	row := bundle.Surfaces["task.delete"]
-	row.MCP = &denied
-	row.Reason = "test deny delete"
-	bundle.Surfaces["task.delete"] = row
-	if err := config.SaveBundle(rt.configPath, bundle); err != nil {
-		t.Fatalf("SaveBundle: %v", err)
-	}
-
-	if _, err := cache.Reload(ctx, rt.defaultProjectID, rt.configPath); err != nil {
-		t.Fatalf("Reload (surfaces changed): %v", err)
-	}
-	if got := n.Load(); got != 1 {
-		t.Fatalf("Reload after surfaces change notified %d times, want 1", got)
-	}
-}
-
 func TestRuntimeServiceResolvesMtimeChanges(t *testing.T) {
 	ctx := context.Background()
 	rt := openTestRuntime(t)
@@ -781,7 +725,7 @@ func TestPerProjectIsolation(t *testing.T) {
 // a caller that captured *Snapshot before Reload continues to read
 // the prior workflow shape after Reload installs a new pointer. The
 // agent service inside that captured runtime holds the old Snapshot,
-// so an in-flight MCP call mid-dispatch never observes a torn view of
+// so an in-flight agent call mid-dispatch never observes a torn view of
 // the bundle.
 //
 // The implementation guarantee comes from Snapshot being an immutable
@@ -892,7 +836,7 @@ func readConcurrentSnapshots(ctx context.Context, cache *BundleCache, projectID 
 		_ = pr.Snapshot.Skills()
 		_ = pr.Snapshot.Laws()
 		_ = pr.Snapshot.Templates()
-		_ = pr.Snapshot.MCPCommands()
+		_ = pr.Snapshot.Commands()
 		_ = pr.Snapshot.Synonyms()
 		_ = pr.Snapshot.Stopwords()
 	}

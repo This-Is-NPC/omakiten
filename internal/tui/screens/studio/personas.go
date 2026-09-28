@@ -334,7 +334,7 @@ func (m *Screen) handleStudioPersonasKey(msg tea.KeyMsg) screenhost.Outcome {
 // openPersonaRelated is the Settings-style preview jump from a related row.
 // Skills emit ActionOpenEntity with EntityKind "skills" (entitylist.KindSkills);
 // the host stacks entitydetail. Commands have no entitydetail kind — enter
-// parks studioCommandIndex on that MCP key and returns Navigate(StudioCommands).
+// parks studioCommandIndex on that agent key and returns Navigate(StudioCommands).
 // The host stores this Screen (one value for every Studio sub) before
 // navigateToScreen, so Bind(StudioCommands) reuses the parked index.
 func (m *Screen) openPersonaRelated(related []studioprojection.RelatedRow) screenhost.Outcome {
@@ -355,8 +355,8 @@ func (m *Screen) openPersonaRelated(related []studioprojection.RelatedRow) scree
 		}}
 	case relatedCommand:
 		bundle := m.studioPersonasCandidate()
-		m.studioCommandIndex = CommandIndexFor(bundle.MCPCommands, row.Value)
-		m.studioCommandsClamp(len(studioCommandRows(bundle.MCPCommands, m.knownCommandNames())))
+		m.studioCommandIndex = CommandIndexFor(bundle.Commands, row.Value)
+		m.studioCommandsClamp(len(studioCommandRows(bundle.Commands, m.knownCommandNames())))
 		// list IDs are shared ("list") across Studio subs; pin the cursor so
 		// Bind(StudioCommands) paints this key, not the leftover persona index.
 		m.grid = m.grid.WithCursor(sectionCommandsList, m.studioCommandIndex)
@@ -431,7 +431,7 @@ func (m Screen) studioPersonasBundle() (config.Bundle, bundledraft.Report) {
 			Kit:          snap.Kit(),
 			Personas:     snap.Personas(),
 			AllPersonas:  snap.AllPersonas(),
-			MCPCommands:  snap.MCPCommands(),
+			Commands:     snap.Commands(),
 			AllSkills:    snap.AllSkills(),
 			Skills:       snap.Skills(),
 			AllLaws:      snap.AllLaws(),

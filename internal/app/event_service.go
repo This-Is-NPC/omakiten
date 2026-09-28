@@ -46,7 +46,7 @@ func (s *EventService) ListTaskActivity(ctx context.Context, project domain.Proj
 }
 
 // ListEventsParams is the per-call shape EventService.ListEvents accepts.
-// Defaults are applied here so MCP / CLI / TUI surfaces hand the
+// Defaults are applied here so CLI / TUI surfaces hand the
 // service raw parsed inputs without re-doing the resolution math:
 //
 //   - Empty Categories  → no category filter (every event_type).
@@ -67,7 +67,7 @@ type ListEventsParams struct {
 }
 
 // ListEvents returns rows from the unified events log for the given
-// project. Backs the generic Logs inspector surface so MCP / CLI / TUI
+// project. Backs the generic Logs inspector surface so CLI / TUI
 // all read the same shape; SummarizeEvent renders the per-row detail
 // string at projection time.
 //

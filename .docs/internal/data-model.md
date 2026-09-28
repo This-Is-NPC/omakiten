@@ -276,7 +276,7 @@ solutions: id, error_id (FK), description, steps,
 error_tags: error_id, tag_id          -- cascades on errors delete
 ```
 
-**Cross-project by design.** Errors carry an optional `project_id` (so you can filter), but the unified `search` tool (with `entity_types=["error"]`) and `solutions.list_top` are global so prior fixes are reusable across projects (see `.docs/mcp.md` § Tools).
+**Cross-project by design.** Errors carry an optional `project_id` (so you can filter), but the unified `search` tool (with `entity_types=["error"]`) and `solutions.list_top` are global so prior fixes are reusable across projects (see `.docs/agents.md` § Tools).
 
 `solutions.success` is a tri-state:
 
@@ -308,7 +308,7 @@ Indexes: `idx_errors_project`, `idx_errors_created_at(DESC)`, `idx_solutions_err
 | `task`/`project`/`error` | `tag.added` / `tag.removed` | entity id | Tag attached/detached. `payload={entity_type, entity_id, tag_id, tag_name}`. |
 | `task` | `dependency.added` / `dependency.removed` | dependent task id | Dependency edge insert/delete. `payload={depends_on_task_id}`. |
 | `task`/`comment` | `guard.violated` | task/comment id per `payload.target` | Any operation rejected by a configured guard. `payload={operation, rule, hint, target, attempted_by}` — `operation` and `rule` are free-form strings supplied by the call site. |
-| `system` | `cli.tool_call` / `mcp.tool_call` / `tui.tool_call` | (null) | Per-call activity log entry written by `activity.Track`. `payload={tool_name, source, entrypoint, status, duration_ms, error_message, args}` mirrors the operation columns so hooks can filter without reading SQL columns. The legacy `operation` event type is not emitted. |
+| `system` | `cli.tool_call` / `tui.tool_call` | (null) | Per-call activity log entry written by `activity.Track`. `payload={tool_name, source, entrypoint, status, duration_ms, error_message, args}` mirrors the operation columns so hooks can filter without reading SQL columns. The legacy `operation` event type is not emitted. |
 | `system` | `hook.executed` | (null) | Hook action finished (success or failure). `payload={hook_index, action, event_type, target_event_id, success, error, duration_ms}`. |
 | `system` | `bundle.swapped` | (null) | Active config bundle replaced via the TUI hot-reload path. `payload={from_workflow, to_workflow, orphan_count, groups}`. |
 | `system` | `bundle.imported` | (null) | A fresh bundle reached the runtime (source-of-truth flipped). `payload={path, hash, workflow_key, workflow_count, persona_count, skill_count, law_count, template_count}`. |
@@ -326,7 +326,7 @@ The canonical event-type vocabulary is the `EventType*` constants in `internal/d
 
 The `events` row carries every column it might need; unused columns are nullable. Three indexes:
 
-- `idx_events_entity(entity_type, entity_id, created_at)` — feeds the per-task activity feed (`task_activity.list` MCP tool, the TUI's activity column, `internal/sqlite/events.go:ListTaskActivity`).
+- `idx_events_entity(entity_type, entity_id, created_at)` — feeds the per-task activity feed (`task_activity.list` CLI operation, the TUI's activity column, `internal/sqlite/events.go:ListTaskActivity`).
 - `idx_events_type_started(event_type, created_at)` — feeds the unified logs view (`internal/sqlite/events.go:ListEvents`) and the synchronous tool-call pruner.
 - `idx_events_agent_type(agent_model, event_type, created_at)` — feeds the `metrics.summary` aggregation queries (`internal/sqlite/metrics.go:AgentMetricsSummary`).
 
@@ -350,9 +350,9 @@ There is no background goroutine and no timer: the sweep is forced once at the e
 
 | Surface | What it sees | File |
 |---|---|---|
-| `comments.list` default (CLI/MCP/TUI) | `entity_type='task' AND event_type='comment'` ordered ascending by id | `internal/sqlite/comments.go:ListComments` |
+| `comments.list` default (CLI/TUI) | `entity_type='task' AND event_type='comment'` ordered ascending by id | `internal/sqlite/comments.go:ListComments` |
 | `comments.list` filtered (scope/kind/tag/pinned/query/since/comment_id) | `event_type='comment'` with scope, kind, pinned, tag-join, FTS5 (`search_index`), and `created_at` floor predicates layered on | `internal/sqlite/comments.go:QueryComments` |
-| `task_activity.list` MCP tool, TUI activity column | `entity_type='task'` ordered chronologically (asc default, desc optional) | `internal/sqlite/events.go:ListTaskActivity` |
+| `task_activity.list` CLI operation, TUI activity column | `entity_type='task'` ordered chronologically (asc default, desc optional) | `internal/sqlite/events.go:ListTaskActivity` |
 | Logs view (TUI), `okt logs`, `logs.list` | Unified `EventRow` projection over the selected category/window, ordered by created time, with `domain.SummarizeEvent` supplying the display detail | `internal/sqlite/events.go:ListEvents` |
 | Guard `comments_min` | `count(*) WHERE entity_type='task' AND event_type='comment' AND entity_id=?` | `internal/sqlite/guards.go:CountTaskComments` |
 | Guard `comments_tagged` | join `events` ⨝ `event_tags` ⨝ `tags` filtered by tag name | `internal/sqlite/guards.go:CountTaskCommentsTagged` |
@@ -363,7 +363,7 @@ There is no background goroutine and no timer: the sweep is forced once at the e
 `tasks.bucket_id` and `tasks.priority_id` are integer references into per-project YAML data, not SQL FKs.
 
 - **Bucket id → bucket key**: `config.Snapshot.BucketByID(id)` (`internal/config/snapshot.go`). The Snapshot is rebuilt from `config.Bundle.Workflows[*].Buckets[*]` on every `ConfigService.Import` (or hot-reload via `Repositories.Cache.Reload`). The bucket's stable id is the YAML-declared `local_id` (the canonical ids `1=backlog`, `2=dev`, `3=review`, `4=done` for `omakase`; other presets carry their own).
-- **Priority id → priority label**: resolved through the `*domain.EnumRegistry` returned by `ConfigService.Import` and injected into every service that needs labels (`TaskService`, `WorkflowService`, `TUIQueryService`, agent `Service`). The on-the-wire JSON shape is the raw int id — label projection happens at the DTO boundary so different surfaces (TUI, CLI table, MCP DTO) can resolve to different shapes if they want.
+- **Priority id → priority label**: resolved through the `*domain.EnumRegistry` returned by `ConfigService.Import` and injected into every service that needs labels (`TaskService`, `WorkflowService`, `TUIQueryService`, agent `Service`). The on-the-wire JSON shape is the raw int id — label projection happens at the DTO boundary so different surfaces (TUI, CLI table, CLI DTO) can resolve to different shapes if they want.
 
 A task pointing at a `bucket_id` the active Snapshot cannot resolve is an **orphan**. Orphans surface through `app.OrphanRepository`:
 
@@ -372,7 +372,7 @@ A task pointing at a `bucket_id` the active Snapshot cannot resolve is an **orph
 - `PreviewOrphanedCascade` — sub-task-kit-aware preview keyed on a `domain.OrphanCascadePlan` (root + sub resolver pairs + kit identities). Routes root-tree rows through the root snapshot, sub-task rows through the sub-kit snapshot, and returns the combined report.
 - `RebindOrphanedCascade` — atomic counterpart to `PreviewOrphanedCascade`. Opens **one** transaction in the adapter and runs the root rebind + the sub-task rebind inside it; a sub-task failure rolls back the root-pass writes too. Events from both passes buffer until commit, so subscribers never observe a partial migration. `OrphanService.Preview` / `Migrate` route through the cascade entry points whenever either snapshot in the pair declares a sub-task kit; pre-cascade projects keep using `PreviewOrphanedTasks` / `RebindOrphanedTasks` byte-for-byte. The plan struct lives in `internal/domain/orphan_cascade.go`.
 
-The same rebind primitives are reached from the CLI (`okt workflow orphans --confirm`) and the MCP (`orphans.migrate` tool, two-phase confirmation) — `internal/sqlite/orphans.go`, `internal/app/orphan_service.go`, `internal/cli/workflow.go`, `internal/operation/service_orphan.go`.
+The same rebind primitives are reached from the CLI (`okt workflow orphans --confirm`) and the CLI (`orphans.migrate` tool, two-phase confirmation) — `internal/sqlite/orphans.go`, `internal/app/orphan_service.go`, `internal/cli/workflow.go`, `internal/operation/service_orphan.go`.
 
 ## Project-scope invariant
 
@@ -382,7 +382,7 @@ The cross-project exceptions (errors, solutions, global tag list, template catal
 
 ## Connection settings
 
-`internal/sqlite/store.go:Open` limits the pool to three open connections and two idle connections. All three slots serve ordinary work until the first `DataVersion` call lazily pins one for the Store's lifetime; after that pin, two ordinary slots remain for TUI, MCP, and other Store operations.
+`internal/sqlite/store.go:Open` limits the pool to three open connections and two idle connections. All three slots serve ordinary work until the first `DataVersion` call lazily pins one for the Store's lifetime; after that pin, two ordinary slots remain for TUI, CLI, and other Store operations.
 
 The Store's DSN configures every newly opened connection with:
 

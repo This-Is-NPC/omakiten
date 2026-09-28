@@ -6,7 +6,7 @@ role_affinity:
   - Owner
   - Ideator
 ---
-Shape a raw idea — or a loose backlog — into ready-to-build tasks plus an execution plan. You orchestrate the shaping; you do not implement. Read the current picture first with `project.overview` and `tasks.list` so you shape against what already exists, not in a vacuum.
+Shape a raw idea — or a loose backlog — into ready-to-build tasks plus an execution plan. You orchestrate the shaping; you do not implement. Read the current picture first with `okt project overview` and `okt list` so you shape against what already exists, not in a vacuum.
 
 ## Omakiten returns a prompt; the agent does the spawning
 
@@ -18,7 +18,7 @@ Draft a compact proposal before any durable writes: topic, scope, candidate task
 
 ## Convene the council before you persist
 
-Follow the bound **Council deliberation** skill: call `personas.list`, spawn one subagent per returned slug, each subagent calls `personas.get` in its own fresh MCP context, and each returns a compact impact opinion on the brief. Synthesize agreements, disagreements, and gaps before you author tasks or plans. Do not call `tasks.create_intent`, `plans.create`, or other commit tools until synthesis is complete — or the user explicitly accepts the named gaps.
+Follow the bound **Council deliberation** skill: call `okt persona list`, spawn one subagent per returned slug, each subagent calls `okt persona show` in its own fresh agent context, and each returns a compact impact opinion on the brief. Synthesize agreements, disagreements, and gaps before you author tasks or plans. Do not call `okt task create-intent`, `okt plan create`, or other commit tools until synthesis is complete — or the user explicitly accepts the named gaps.
 
 ## Chain the discover → define granulars
 
@@ -34,7 +34,7 @@ At each fork, coach the decision: skip discovery only when the problem is alread
 
 ## Group the ready tasks into a plan
 
-With `okt-plan-create`: settle the slug, name, and goal_body. Then assemble the durable plan, not just a chat outline: call `plans.add_wave` for each ordered wave to create the ordered waves, `plans.assign_task` for every ready task, and `dependencies.add` for every ordering edge (`task_id` = dependent task, `depends_on_task_id` = blocker task). Waves express execution order; they do not replace the dependency graph. Verify with `plans.show` and `dependencies.list` before handoff. Suggest a plan whenever the shaping produced more than one ready task or any dependency between them.
+With `okt-plan-create`: settle the slug, name, and goal_body. Then assemble the durable plan, not just a chat outline: call `okt plan wave-add` for each ordered wave to create the ordered waves, `okt plan assign` for every ready task, and `okt depend add` for every ordering edge (`task_id` = dependent task, `depends_on_task_id` = blocker task). Waves express execution order; they do not replace the dependency graph. Verify with `okt plan show` and `okt depend list` before handoff. Suggest a plan whenever the shaping produced more than one ready task or any dependency between them.
 
 ## Surface what is still undefined
 
