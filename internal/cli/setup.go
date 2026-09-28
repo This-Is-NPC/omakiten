@@ -55,7 +55,7 @@ func newSetupCommand(opts *runtimeOptions) *cobra.Command {
 			harnessSet := cmd.Flags().Changed("harnesses") || envSet("OKT_HARNESSES")
 			presetSet := cmd.Flags().Changed("preset") || envSet("OKT_PRESET")
 
-			inputs, needs, err := resolveSetupInputs(cmd, setupFlagValues{
+			inputs, needs := resolveSetupInputs(cmd, setupFlagValues{
 				CLILang:      cliLang,
 				TUILang:      tuiLang,
 				AgentLang:    agentLang,
@@ -65,10 +65,6 @@ func newSetupCommand(opts *runtimeOptions) *cobra.Command {
 				HarnessesCSV: harnessesCSV,
 				HarnessesSet: harnessSet,
 			})
-			if err != nil {
-				return writeError(cmd, err)
-			}
-
 			return runJSON(cmd, func(ctx context.Context) (any, error) {
 				finalInputs, err := runSetupPicker(ctx, inputs, needs)
 				if err != nil {
@@ -114,14 +110,14 @@ type setupFlagValues struct {
 // defaults to the CLI choice") still lives here so the headless path
 // preserves the existing contract — picker callers see TUILang
 // pre-populated from CLI and adjust if they want.
-func resolveSetupInputs(cmd *cobra.Command, flags setupFlagValues) (setupInputs, pickerNeeds, error) {
+func resolveSetupInputs(cmd *cobra.Command, flags setupFlagValues) (setupInputs, pickerNeeds) {
 	inputs := setupInputs{}
 	needs := pickerNeeds{}
 	resolveSetupLanguages(cmd, flags, &inputs, &needs)
 	resolveSetupAgentLanguage(cmd, flags, &inputs, &needs)
 	resolveSetupPreset(cmd, flags, &inputs, &needs)
 	resolveSetupHarnesses(cmd, flags, &inputs, &needs)
-	return inputs, needs, nil
+	return inputs, needs
 }
 
 func resolveSetupLanguages(cmd *cobra.Command, flags setupFlagValues, inputs *setupInputs, needs *pickerNeeds) {
@@ -261,7 +257,7 @@ func prepareSetupConfig(opts *runtimeOptions, inputs setupInputs, update bool) (
 	}
 	bundle.Config.Languages = config.LanguageSettings{CLI: inputs.CLILang, TUI: inputs.TUILang, AgentOutput: inputs.AgentLang}
 	for _, choice := range []struct{ flag, value string }{{"cli-lang", inputs.CLILang}, {"tui-lang", inputs.TUILang}} {
-		if err := validateSetupLanguageChoice(choice.flag, choice.value, bundle.Languages); err != nil {
+		if err := validateInitLanguageChoice(choice.flag, choice.value, availableLanguageCodes(bundle.Languages)); err != nil {
 			return "", config.SeedResult{}, "", err
 		}
 	}
@@ -289,28 +285,6 @@ func setupWrappers() (map[string]any, error) {
 		return nil, err
 	}
 	return map[string]any{"installed_into": installedInto, "powershell_installed_into": psInstalledInto}, nil
-}
-
-// validateSetupLanguageChoice is the setup-surface equivalent of
-// validateInitLanguageChoice — it rejects unknown codes against the
-// freshly-loaded bundle.Languages so a typo like `OKT_CLI_LANG=ne`
-// surfaces as a coded error rather than silently activating the
-// catalog fallback chain at runtime.
-func validateSetupLanguageChoice(flag, value string, available []config.Language) error {
-	v := strings.TrimSpace(value)
-	if v == "" {
-		return nil
-	}
-	for _, lang := range available {
-		if lang.Code == v {
-			return nil
-		}
-	}
-	codes := make([]string, 0, len(available))
-	for _, lang := range available {
-		codes = append(codes, lang.Code)
-	}
-	return domain.NewError(domain.ErrValidation, fmt.Sprintf(t("cli.err.unknown_language_code"), flag, v), map[string]any{"available": codes})
 }
 
 // flagOrEnv returns the flag value when the user explicitly supplied
