@@ -96,7 +96,7 @@ holds each line. Read it before adding or refactoring a screen.
 
 - Standard library `testing` only.
 - Prefer table-driven tests; integration-style tests for CLI/MCP flows are welcome and live alongside the package.
-- Coverage is enforced by one full all-package run: `go test -coverprofile=coverage.out ./...`, followed by `go tool cover -func=coverage.out > /tmp/okt-coverage.func` and `scripts/check-coverage.sh coverage.out /tmp/okt-coverage.func .`. The checker compares the unrounded aggregate statement ratio against the fixed 78.0% floor and fails closed for missing, empty, malformed, stale, missing-total, or below-floor evidence. Focused checker fixtures run separately via the named-file `scripts/check-coverage_test.sh` and do not add a package or coverage denominator; there are no per-package floors or exemptions.
+- Coverage is enforced by one full all-package run: `mise run test`, which writes the profile and function summary under `.tmp/coverage/` and invokes `scripts/check-coverage.sh`. The checker compares the unrounded aggregate statement ratio against the fixed 78.0% floor and fails closed for missing, empty, malformed, stale, missing-total, or below-floor evidence. Focused checker fixtures run separately via the named-file `scripts/check-coverage_test.sh` and do not add a package or coverage denominator; there are no per-package floors or exemptions.
 
 #### Patterns for new test files
 

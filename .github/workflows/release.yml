@@ -63,15 +63,16 @@ jobs:
         with:
           name: unsigned-release-${{ needs.release-please.outputs.tag_name }}
           if-no-files-found: error
+          include-hidden-files: true
           retention-days: 1
           path: |
-            dist/okt_Darwin_arm64.tar.gz
-            dist/okt_Darwin_x86_64.tar.gz
-            dist/okt_Linux_arm64.tar.gz
-            dist/okt_Linux_x86_64.tar.gz
-            dist/okt_Windows_arm64.zip
-            dist/okt_Windows_x86_64.zip
-            dist/checksums.txt
+            .tmp/release/okt_Darwin_arm64.tar.gz
+            .tmp/release/okt_Darwin_x86_64.tar.gz
+            .tmp/release/okt_Linux_arm64.tar.gz
+            .tmp/release/okt_Linux_x86_64.tar.gz
+            .tmp/release/okt_Windows_arm64.zip
+            .tmp/release/okt_Windows_x86_64.zip
+            .tmp/release/checksums.txt
 
   sign-and-attest:
     needs: [release-please, build]
@@ -105,7 +106,7 @@ jobs:
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: unsigned-release-${{ needs.release-please.outputs.tag_name }}
-          path: dist
+          path: .tmp/release
 
       - name: Bind metadata to the tag and source commit
         id: metadata
@@ -115,10 +116,10 @@ jobs:
           commit="$(git rev-parse HEAD)"
           test "$(git rev-list -n 1 "$TAG")" = "$commit"
           test "${{ needs.build.outputs.commit }}" = "$commit"
-          manifest="dist/release-manifest-${TAG}.json"
-          provenance="dist/release-provenance-${TAG}.intoto.json"
+          manifest=".tmp/release/release-manifest-${TAG}.json"
+          provenance=".tmp/release/release-provenance-${TAG}.intoto.json"
           go run ./cmd/okt-release-metadata create \
-            --dist dist \
+            --dist .tmp/release \
             --repository "$GITHUB_REPOSITORY" \
             --tag "$TAG" \
             --commit "$commit" \
@@ -132,11 +133,11 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          manifest_bundle="dist/release-manifest-${TAG}.sigstore.json"
-          checksums_bundle="dist/checksums-${TAG}.sigstore.json"
-          provenance_bundle="dist/release-provenance-${TAG}.sigstore.json"
+          manifest_bundle=".tmp/release/release-manifest-${TAG}.sigstore.json"
+          checksums_bundle=".tmp/release/checksums-${TAG}.sigstore.json"
+          provenance_bundle=".tmp/release/release-provenance-${TAG}.sigstore.json"
           cosign sign-blob --bundle "$manifest_bundle" --yes "${{ steps.metadata.outputs.manifest }}"
-          cosign sign-blob --bundle "$checksums_bundle" --yes dist/checksums.txt
+          cosign sign-blob --bundle "$checksums_bundle" --yes .tmp/release/checksums.txt
           cosign attest-blob --statement "${{ steps.metadata.outputs.provenance }}" --bundle "$provenance_bundle" --yes
           printf 'manifest_bundle=%s\nchecksums_bundle=%s\nprovenance_bundle=%s\n' \
             "$manifest_bundle" "$checksums_bundle" "$provenance_bundle" >>"$GITHUB_OUTPUT"
@@ -154,8 +155,8 @@ jobs:
             --bundle "${{ steps.signing.outputs.checksums_bundle }}" \
             --certificate-identity "$COSIGN_CERTIFICATE_IDENTITY" \
             --certificate-oidc-issuer "$COSIGN_OIDC_ISSUER" \
-            dist/checksums.txt
-          for archive in dist/*.tar.gz dist/*.zip; do
+            .tmp/release/checksums.txt
+          for archive in .tmp/release/*.tar.gz .tmp/release/*.zip; do
             cosign verify-blob-attestation \
               --bundle "${{ steps.signing.outputs.provenance_bundle }}" \
               --certificate-identity "$COSIGN_CERTIFICATE_IDENTITY" \
@@ -164,7 +165,7 @@ jobs:
               "$archive"
           done
           go run ./cmd/okt-release-metadata verify \
-            --dist dist \
+            --dist .tmp/release \
             --repository "$GITHUB_REPOSITORY" \
             --tag "$TAG" \
             --commit "${{ steps.metadata.outputs.commit }}" \
@@ -173,26 +174,27 @@ jobs:
 
       - name: Verify real keyless release through both production installers
         shell: bash
-        run: scripts/release-installer-gate.sh "$TAG" dist
+        run: scripts/release-installer-gate.sh "$TAG" .tmp/release
 
       - name: Stage verified release files
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: signed-release-${{ needs.release-please.outputs.tag_name }}
           if-no-files-found: error
+          include-hidden-files: true
           retention-days: 1
           path: |
-            dist/okt_Darwin_arm64.tar.gz
-            dist/okt_Darwin_x86_64.tar.gz
-            dist/okt_Linux_arm64.tar.gz
-            dist/okt_Linux_x86_64.tar.gz
-            dist/okt_Windows_arm64.zip
-            dist/okt_Windows_x86_64.zip
-            dist/checksums.txt
-            dist/release-manifest-${{ needs.release-please.outputs.tag_name }}.json
-            dist/release-manifest-${{ needs.release-please.outputs.tag_name }}.sigstore.json
-            dist/checksums-${{ needs.release-please.outputs.tag_name }}.sigstore.json
-            dist/release-provenance-${{ needs.release-please.outputs.tag_name }}.sigstore.json
+            .tmp/release/okt_Darwin_arm64.tar.gz
+            .tmp/release/okt_Darwin_x86_64.tar.gz
+            .tmp/release/okt_Linux_arm64.tar.gz
+            .tmp/release/okt_Linux_x86_64.tar.gz
+            .tmp/release/okt_Windows_arm64.zip
+            .tmp/release/okt_Windows_x86_64.zip
+            .tmp/release/checksums.txt
+            .tmp/release/release-manifest-${{ needs.release-please.outputs.tag_name }}.json
+            .tmp/release/release-manifest-${{ needs.release-please.outputs.tag_name }}.sigstore.json
+            .tmp/release/checksums-${{ needs.release-please.outputs.tag_name }}.sigstore.json
+            .tmp/release/release-provenance-${{ needs.release-please.outputs.tag_name }}.sigstore.json
 
   publish:
     needs: [release-please, sign-and-attest]
@@ -205,7 +207,7 @@ jobs:
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: signed-release-${{ needs.release-please.outputs.tag_name }}
-          path: dist
+          path: .tmp/release
 
       - name: Upload assets and publish the draft
         env:
@@ -215,19 +217,19 @@ jobs:
         run: |
           set -euo pipefail
           assets=(
-            dist/okt_Darwin_arm64.tar.gz
-            dist/okt_Darwin_x86_64.tar.gz
-            dist/okt_Linux_arm64.tar.gz
-            dist/okt_Linux_x86_64.tar.gz
-            dist/okt_Windows_arm64.zip
-            dist/okt_Windows_x86_64.zip
-            dist/checksums.txt
-            "dist/release-manifest-${TAG}.json"
-            "dist/release-manifest-${TAG}.sigstore.json"
-            "dist/checksums-${TAG}.sigstore.json"
-            "dist/release-provenance-${TAG}.sigstore.json"
+            .tmp/release/okt_Darwin_arm64.tar.gz
+            .tmp/release/okt_Darwin_x86_64.tar.gz
+            .tmp/release/okt_Linux_arm64.tar.gz
+            .tmp/release/okt_Linux_x86_64.tar.gz
+            .tmp/release/okt_Windows_arm64.zip
+            .tmp/release/okt_Windows_x86_64.zip
+            .tmp/release/checksums.txt
+            ".tmp/release/release-manifest-${TAG}.json"
+            ".tmp/release/release-manifest-${TAG}.sigstore.json"
+            ".tmp/release/checksums-${TAG}.sigstore.json"
+            ".tmp/release/release-provenance-${TAG}.sigstore.json"
           )
-          test "$(find dist -maxdepth 1 -type f | wc -l)" -eq "${#assets[@]}"
+          test "$(find .tmp/release -maxdepth 1 -type f | wc -l)" -eq "${#assets[@]}"
           for asset in "${assets[@]}"; do test -f "$asset"; done
           gh release upload "$TAG" "${assets[@]}" --repo "$GITHUB_REPOSITORY"
           gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --draft=false --latest

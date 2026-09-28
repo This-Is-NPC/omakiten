@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+source "$(dirname "${BASH_SOURCE[0]}")/lib/workspace.sh"
 tmpdir="$(mktemp -d)"
 trap 'rm -rf "$tmpdir"' EXIT
 
 dist="$tmpdir/dist"
 config="$tmpdir/goreleaser.yml"
-cp "$repo_root/.goreleaser.yml" "$config"
+sed '/^dist:/d' "$repo_root/.goreleaser.yml" > "$config"
 printf '\ndist: %s\n' "$dist" >>"$config"
 
 cd "$repo_root"

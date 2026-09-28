@@ -118,6 +118,16 @@ func newestGo(root string) (int64, error) {
 			return e
 		}
 		if d.IsDir() {
+			if path != root {
+				name := d.Name()
+				if strings.HasPrefix(name, ".") || strings.HasPrefix(name, "_") {
+					return filepath.SkipDir
+				}
+				switch name {
+				case "bin", "build", "dist", "dev_env", "vendor", "node_modules":
+					return filepath.SkipDir
+				}
+			}
 			return nil
 		}
 		if filepath.Ext(path) != ".go" {

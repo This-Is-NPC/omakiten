@@ -21,6 +21,7 @@ jobs:
           set -euo pipefail
           version="0.11.0"
           archive="shellcheck-v${version}.linux.x86_64.tar.xz"
+          cd "$RUNNER_TEMP"
           curl -fsSLO "https://github.com/koalaman/shellcheck/releases/download/v${version}/${archive}"
           echo "8c3be12b05d5c177a04c29e3c78ce89ac86f1595681cab149b65b97c4e227198  ${archive}" | sha256sum -c -
           tar -xJf "$archive"
@@ -117,5 +118,4 @@ jobs:
           GOARCH: ${{ matrix.goarch }}
         run: |
           set -euo pipefail
-          go test -c -o "$RUNNER_TEMP/omakiten-config-${GOOS}-${GOARCH}.test" ./internal/config
-          go test -c -o "$RUNNER_TEMP/omakiten-paths-${GOOS}-${GOARCH}.test" ./internal/paths
+          scripts/test-cross-build.sh "$GOOS/$GOARCH"

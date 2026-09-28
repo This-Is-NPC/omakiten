@@ -56,19 +56,22 @@ mise run purge            # removes ~/.config/omakiten and ~/.local/share/omakit
 
 ## Mise Tasks Reference
 
-Every task is defined in `.mise.toml` at the repo root. Run with `mise run <name>` (or just `mise <name>`).
+Every task is defined in `.mise.toml` at the repo root. Build, test, and formatting jobs live in executable scripts under `scripts/`. Run with `mise run <name>` (or just `mise <name>`).
 
 ### Build & verification
 
 | Task | What it does |
 |---|---|
-| `fmt` | `gofmt -w .` over the whole tree. |
-| `build` | Builds `bin/okt` with the current `git describe` version baked in via `-ldflags`. |
 | `release:dry-run` | Builds all six GoReleaser archives in a temporary directory, generates the manifest and SLSA v1 statement, signs them with an ephemeral local fixture key, and verifies every digest. It never publishes or contacts the keyless production signing path. |
-| `test` | Runs one full all-package test pass with aggregate coverage, then enforces the unrounded 78.0% statement floor through the fail-closed checker. |
+| `fmt` | Formats Go sources under `internal/`, `cmd/`, `defaults/`, `rules/`, and `scripts/`; skips scratch files. |
+| `build` | Builds `.tmp/build/okt` with the current `git describe` version baked in via `-ldflags`. |
+| `test` | Runs one full all-package test pass, writes coverage under `.tmp/coverage/`, then enforces the unrounded 78.0% statement floor through the fail-closed checker. |
+| `test:cross-build` | Compiles config, path, and SQLite safety tests for the six release targets, plus config/path tests for Plan 9, into `.tmp/tests/`. Each binary is named by package, OS, and architecture. |
+| `test:profile <package> --bench <pattern>` | Profiles one package, placing its test binary and CPU/memory profiles under `.tmp/profiles/<import-path>/`. |
+| `workspace:check` | Rejects misplaced generated files in the root and source directories, while allowing `.tmp/`, persistent dev state, tool configuration, and checked-in fixtures. |
 | `lint` | `golangci-lint run` against `.golangci.yml`. |
 | `vuln` | `govulncheck ./...`. |
-| `check` | **PR gate.** Depends on `test`, `lint`, `vuln`, `docs:check`. |
+| `check` | **PR gate.** Depends on `fmt:check`, `test`, `lint`, `vuln`, `docs:check`, and `workspace:check`. |
 | `docs:refresh` | Runs `go run ./cmd/okt-docs-refresh --root .` to remove legacy generated-doc artifacts and validate that `.docs/` no longer carries old include/auto markers. |
 | `docs:check` | Same binary with `--check` — exits non-zero on drift; the local merge gate runs this. |
 
@@ -76,14 +79,14 @@ Every task is defined in `.mise.toml` at the repo root. Run with `mise run <name
 
 | Task | What it does |
 |---|---|
-| `install` | `build` → installs `bin/okt` to `$HOME/.local/bin/okt`, syncs `defaults/` into `$HOME/.config/omakiten`, then runs `okt setup --update` (the same bubbletea picker `curl\|bash` users get; honours every `OKT_*` env var). The `--update` flag is load-bearing — it force-refreshes shipped defaults so repeat runs pick up edits under `defaults/` instead of silently keeping the pre-install copy on disk. Finishes with `okt init` against the repo. |
-| `install:mcp:claude` | `build` → wires the local `bin/okt` into Claude Code's MCP config (`~/.claude.json`). |
+| `install` | `build` → installs `.tmp/build/okt` to `$HOME/.local/bin/okt`, syncs `defaults/` into `$HOME/.config/omakiten`, then runs `okt setup --update` (the same bubbletea picker `curl\|bash` users get; honours every `OKT_*` env var). The `--update` flag is load-bearing — it force-refreshes shipped defaults so repeat runs pick up edits under `defaults/` instead of silently keeping the pre-install copy on disk. Finishes with `okt init` against the repo. |
+| `install:mcp:claude` | `build` → wires the local `.tmp/build/okt` into Claude Code's MCP config (`~/.claude.json`). |
 | `install:mcp:claude-desktop` | Same, for Claude Desktop. |
 | `install:mcp:opencode` | Same, for OpenCode. |
 | `uninstall` | Removes `~/.local/bin/okt` and the shell wrapper. **Does not** touch config or data. |
 | `purge` | Wipes `~/.config/omakiten` and `~/.local/share/omakiten`. Use after `uninstall` for a fresh-machine simulation. |
 | `dev:sync` | Mirrors `defaults/` into `dev_env/` (overwrites root, leaves `dev_env/custom/`). |
-| `dev:install` | `dev:sync` + builds `bin/okt`, resets dev-only `custom/` overlays, and runs `okt setup --update --skip-wrapper --skip-harnesses` so repeated fresh-install runs cannot load stale config/entity schemas. Use `tui:bare` when custom overlays or seeded fixtures must survive. |
+| `dev:install` | `dev:sync` + builds `.tmp/build/okt`, resets dev-only `custom/` overlays, and runs `okt setup --update --skip-wrapper --skip-harnesses` so repeated fresh-install runs cannot load stale config/entity schemas. Use `tui:bare` when custom overlays or seeded fixtures must survive. |
 | `tui` | Runs `dev:install` inside its raw-terminal task, then opens the TUI against the synchronized `dev_env/config/omakase.yaml`; `tui:bare` skips installation and opens the preset named by `dev_env/config/.active` so seeded fixtures survive without repo-local config discovery. |
 | `gallery` | Opens the dev-only TUI component gallery (`cmd/okt-gallery`) — one shared component at a time, against the shipped theme. Not part of `build`; nothing in the `okt` binary imports it. |
 | `gallery:dump` | Renders every component variant to stdout with no TTY, so it pipes to a file and diffs across a refactor. |
@@ -143,6 +146,46 @@ Both `internal/cli/root.go` and `internal/agentruntime/runtime.go` reach the sam
 
 `ConfigService.Import` loads and hashes the YAML bundle without writing SQL configuration rows. It returns `(bundle, hash, *domain.EnumRegistry)`; the composition root then calls `config.BuildSnapshot(bundle)` to materialise the per-project Snapshot and emits `bundle.imported` via `Store.RecordEntityEvent`. Anything that needs to react to a bundle change subscribes to `bundle.imported` on the in-process bus. See [configuration-guide/README.md § How config reads work at runtime](../configuration-guide/project-overrides.md) for the full data flow.
 
+## Generated files and local state
+
+`.tmp/` is the single workspace directory for disposable output. Its leading dot
+keeps archived Go files out of `go test ./...` package discovery. Git ignores it.
+
+| Path | Contents |
+|---|---|
+| `.tmp/build/` | Local binaries produced by `mise run build`. |
+| `.tmp/coverage/` | Aggregate coverage profile and function summary from `mise run test`. |
+| `.tmp/tests/` | Compiled test binaries, named by package and target. |
+| `.tmp/profiles/` | Benchmark test binaries and CPU/memory profiles. |
+| `.tmp/cache/` | Go build and golangci-lint caches configured by mise, plus local tool dependencies. |
+| `.tmp/archive/` | Preserved local recovery copies and historical scratch notes. |
+
+Persistent development configuration and databases stay under `dev_env/`; they
+are not disposable build output. Tool-discovery files such as `opencode.json`
+remain at the paths their tools require. Public installer scripts and release
+configuration also retain their discovery paths.
+
+The local OpenCode dependency directory is stored in `.tmp/cache/opencode/`
+and linked from `.opencode/node_modules` so its plugin still resolves dependencies.
+
+Use the mise tasks above instead of writing coverage or profiling output in the
+root. For a focused manual compile, supply `-o` under `.tmp/tests/`. For a manual
+profile, supply both `-o` and `-outputdir` under `.tmp/profiles/`: Go keeps a test
+binary when CPU or memory profiling is enabled, even without `go test -c`.
+Temporary downloads in CI use `RUNNER_TEMP`; release archives go under
+`.tmp/release/`. Golden fixtures and the curated benchmark reference under
+`.docs/internal/` are versioned evidence and remain beside their consumers.
+
+Ephemeral compiler files, installer fixtures, and `testing.T.TempDir` use the
+system temporary directory, honoring the caller's `TMPDIR`. Do not redirect
+that directory onto the project filesystem: durable-write tests perform many
+file and directory syncs, and moving them off a memory-backed temporary
+filesystem can make the suite time out. Persistent reports and binaries still
+use the `.tmp/` paths above.
+
+Archive contents can include unique recovery data. Inspect them before deleting
+anything; they are ignored by Git and cannot be recovered from a commit.
+
 ## Local Workflows
 
 ### Quick iteration loop
@@ -154,10 +197,11 @@ go test -race -count=1 ./internal/agentsetup/...  # narrow when iterating
 mise run check                               # before committing
 
 # compile filesystem safety tests for every release target plus Plan 9
-for target in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64 windows/arm64 plan9/amd64; do
-  GOOS="${target%/*}" GOARCH="${target#*/}" go test -c ./internal/config
-  GOOS="${target%/*}" GOARCH="${target#*/}" go test -c ./internal/paths
-done
+mise run test:cross-build
+mise run test:cross-build --target windows/arm64  # compile one target
+
+# keep benchmark binaries and profiles out of the source tree
+mise run test:profile ./internal/token --bench .
 ```
 
 ### Test the full installer flow locally
@@ -243,8 +287,8 @@ While iterating on `internal/agentsetup`:
 
 ```bash
 mise run build
-./bin/okt mcp setup --harness codex --dry-run     # preview
-./bin/okt mcp setup --harness codex --force       # actually write
+./.tmp/build/okt mcp setup --harness codex --dry-run     # preview
+./.tmp/build/okt mcp setup --harness codex --force       # actually write
 ```
 
 `--dry-run` and `--force` apply to every supported harness.
@@ -332,9 +376,7 @@ Assert on state the screen exposes — a non-zero `Scroll()`, a cursor off its d
 Coverage is enforced as one aggregate all-package run. The checker compares the unrounded profile statement ratio against a 78.0% floor and fails closed for missing, empty, malformed, stale, missing-total, or below-floor evidence; it does not define per-package floors or exemptions. Focused checker fixtures cover canonical grammar, extra fields and garbage ranges, portable nanosecond staleness, multi-file roots, ratio boundaries, and every failure case. The named-file checker fixture task does not add a package or coverage denominator.
 
 ```bash
-go test -coverprofile=coverage.out ./...
-go tool cover -func=coverage.out > /tmp/okt-coverage.func
-scripts/check-coverage.sh coverage.out /tmp/okt-coverage.func .
+mise run test
 scripts/check-coverage_test.sh
 ```
 
@@ -437,7 +479,7 @@ The first signed release is the first release after `v0.30.0`. Treat `v0.30.0` a
 
 ### `mise run install` succeeded but `okt --version` still shows the old version
 
-`bin/okt` is installed into `$HOME/.local/bin/okt`, but PATH may resolve `okt` from somewhere else (a stale `go install ./cmd/okt` puts it in `$(go env GOPATH)/bin`). The install task prints a `WARN` when this happens:
+`.tmp/build/okt` is installed into `$HOME/.local/bin/okt`, but PATH may resolve `okt` from somewhere else (a stale `go install ./cmd/okt` puts it in `$(go env GOPATH)/bin`). The install task prints a `WARN` when this happens:
 
 ```text
 WARN: PATH resolves okt to /home/you/go/bin/okt, not /home/you/.local/bin/okt.

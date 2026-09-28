@@ -165,6 +165,10 @@ assuming a version or inventing a command.
 - Refresh golden fixtures one package at a time with `go test ./path/to/pkg -update`.
   A full-tree run never rewrites fixtures, and `-update` is the single supported switch.
 
+Generated output belongs under `.tmp/`; see the generated-file layout in
+`.docs/internal/dev-guide.md`. Profiling commands must set both `-o` and
+`-outputdir` so Go does not leave a test binary in the working directory.
+
 ### Architecture boundaries
 
 The codebase is hexagonal and the boundaries are enforced by tests in `internal/arch`.
