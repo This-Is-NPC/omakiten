@@ -5,11 +5,11 @@ import (
 	"path/filepath"
 	"testing"
 
-	"omakiten/internal/app"
 	"omakiten/internal/config"
 	"omakiten/internal/configstore"
 	"omakiten/internal/domain"
 	"omakiten/internal/testfixtures"
+	"omakiten/internal/testfixtures/bundleeditor"
 	"omakiten/internal/testfixtures/runtimecache"
 	"omakiten/internal/testfixtures/snapstore"
 	"omakiten/internal/token"
@@ -19,11 +19,15 @@ import (
 // the moment any read path reaches LoadBundle. Used by the refresh
 // hot-path tests to prove the TUI never re-walks disk on a tick.
 type loadCountingBundleStore struct {
-	inner app.BundleStore
+	inner *configstore.Adapter
 }
 
 func (s *loadCountingBundleStore) LoadBundle(path string) (config.Bundle, error) {
 	panic("LoadBundle called: TUI refresh must read from the cached snapshot, not the bundle editor")
+}
+
+func (s *loadCountingBundleStore) LoadBundlePlan(path string) (config.Bundle, map[string]string, error) {
+	return s.inner.LoadBundlePlan(path)
 }
 
 func (s *loadCountingBundleStore) SaveBundle(path string, bundle config.Bundle) error {
@@ -38,12 +42,16 @@ func (s *loadCountingBundleStore) WriteAtomic(path string, data []byte) error {
 	return s.inner.WriteAtomic(path, data)
 }
 
-func (s *loadCountingBundleStore) EnsureDefaultFiles(rootDir string) error {
-	return s.inner.EnsureDefaultFiles(rootDir)
+func (s *loadCountingBundleStore) RemoveFile(path string) error {
+	return s.inner.RemoveFile(path)
 }
 
-func (s *loadCountingBundleStore) MigrateLayout(rootDir string) error {
-	return s.inner.MigrateLayout(rootDir)
+func (s *loadCountingBundleStore) ValidatePath(root, path string) error {
+	return s.inner.ValidatePath(root, path)
+}
+
+func (s *loadCountingBundleStore) EnsureDefaultFiles(rootDir string) error {
+	return s.inner.EnsureDefaultFiles(rootDir)
 }
 
 func (s *loadCountingBundleStore) ConfigRootFromYAMLPath(path string) string {
@@ -58,7 +66,7 @@ func noScanBundle(tb testing.TB) config.Bundle {
 	tb.Helper()
 	bundle, _ := testfixtures.LoadBundle(tb, "default_workflow.yaml")
 	bundle.Skills = []config.Skill{{Slug: "go", Name: "Go"}}
-	bundle.Personas = []config.Persona{{Slug: "agent", Name: "Agent", Skills: []string{"go"}}}
+	bundle.Personas = []config.Persona{{Slug: "agent", Name: "Agent", SkillRepertoire: []string{"go"}}}
 	bundle.Laws = []config.Law{{Slug: "scope", Severity: "error", Body: "Stay in scope.", Scope: "global"}}
 	return bundle
 }
@@ -80,8 +88,8 @@ func buildRefreshHotPathModel(tb testing.TB) Model {
 	store := snapstore.Open(tb, dbPath)
 
 	files := configstore.New()
-	editor := app.NewBundleEditor(files, configPath)
-	resolved, err := editor.Apply(ctx, nil)
+	editor := bundleeditor.New(files, configPath)
+	resolved, err := applyBundleEditor(ctx, editor, nil)
 	if err != nil {
 		tb.Fatalf("editor.Apply seed: %v", err)
 	}
@@ -98,7 +106,7 @@ func buildRefreshHotPathModel(tb testing.TB) Model {
 
 	// Swap in the panicking BundleStore after the initial seed Apply so
 	// any subsequent refresh-driven LoadBundle blows up loudly.
-	noScanEditor := app.NewBundleEditor(&loadCountingBundleStore{inner: files}, configPath)
+	noScanEditor := bundleeditor.New(&loadCountingBundleStore{inner: files}, configPath)
 
 	model, err := NewModel(ctx, project.Context(), Repositories{
 		Tasks:        store,
@@ -106,11 +114,8 @@ func buildRefreshHotPathModel(tb testing.TB) Model {
 		Dependencies: store,
 		Editor:       noScanEditor,
 		BundleStore:  files,
-		EntityFiles:  files,
-		Slugger:      files,
 		Catalog:      newTestCatalog(tb),
-		Cache:        runtimecache.Install(0, store.Snapshot()),
-		Workflow:     app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot()),
+		Cache:        runtimecache.InstallWithStore(0, store),
 	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
 	if err != nil {
 		tb.Fatalf("NewModel: %v", err)
@@ -121,7 +126,7 @@ func buildRefreshHotPathModel(tb testing.TB) Model {
 // TestModelRefreshNeverLoadsBundleFromDisk pins the perf invariant: a
 // refresh tick must source every entity slice from the cached snapshot
 // and never round-trip through the editor's BundleStore. Regressing
-// either branch (activeViewSettings or TUIQueryService.Snapshot) would
+// either branch (activeViewSettings or TUIQuery.Snapshot) would
 // trip the panic store and fail the test.
 func TestModelRefreshNeverLoadsBundleFromDisk(t *testing.T) {
 	model := buildRefreshHotPathModel(t)

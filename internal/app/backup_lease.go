@@ -39,6 +39,11 @@ type backupDirectoryLease struct {
 	generated map[string]os.FileInfo
 }
 
+type backupPruneEntry struct {
+	name string
+	info os.FileInfo
+}
+
 // WithLease holds a rooted, cross-process backup-directory lease for the full
 // callback. Unix locks the pinned directory inode; Windows pins the persistent
 // lock path with a no-delete-share handle before taking its byte-range lock.
@@ -254,54 +259,14 @@ func (l *backupDirectoryLease) pruneRetaining(retainedPath string, retention int
 		return nil
 	}
 
-	var retainedName string
-	var retainedInfo os.FileInfo
-	if retainedPath != "" {
-		var err error
-		retainedName, err = l.nameWithinRoot(retainedPath)
-		if err != nil {
-			return err
-		}
-		retainedInfo = l.generated[retainedName]
-		currentRetained, err := l.root.Lstat(retainedName)
-		if err != nil {
-			return fmt.Errorf("stat retained backup: %w", err)
-		}
-		if currentRetained.Mode()&os.ModeSymlink != 0 || !currentRetained.Mode().IsRegular() {
-			return errors.New("retained backup is not a regular file")
-		}
-		if retainedInfo != nil && !os.SameFile(retainedInfo, currentRetained) {
-			return errors.New("retained backup changed while leased")
-		}
-		retainedInfo = currentRetained
+	retainedName, retainedInfo, err := l.retainedBackup(retainedPath)
+	if err != nil {
+		return err
 	}
 
-	directory, err := l.root.Open(".")
+	candidates, err := l.backupPruneCandidates()
 	if err != nil {
-		return fmt.Errorf("open backup root for pruning: %w", err)
-	}
-	entries, readErr := directory.ReadDir(-1)
-	closeErr := directory.Close()
-	if err := errors.Join(readErr, closeErr); err != nil {
-		return fmt.Errorf("list backup root: %w", err)
-	}
-	type backupEntry struct {
-		name string
-		info os.FileInfo
-	}
-	candidates := make([]backupEntry, 0, len(entries))
-	for _, entry := range entries {
-		if !backupFilenamePattern.MatchString(entry.Name()) {
-			continue
-		}
-		info, err := l.root.Lstat(entry.Name())
-		if err != nil {
-			return fmt.Errorf("lstat backup candidate %s: %w", entry.Name(), err)
-		}
-		if info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
-			continue
-		}
-		candidates = append(candidates, backupEntry{name: entry.Name(), info: info})
+		return err
 	}
 	if len(candidates) <= retention {
 		return nil
@@ -322,6 +287,59 @@ func (l *backupDirectoryLease) pruneRetaining(retainedPath string, retention int
 		}
 		keep[candidate.name] = struct{}{}
 	}
+	return l.removePrunedBackups(candidates, keep, retainedName, retainedInfo)
+}
+
+func (l *backupDirectoryLease) retainedBackup(retainedPath string) (string, os.FileInfo, error) {
+	if retainedPath == "" {
+		return "", nil, nil
+	}
+	name, err := l.nameWithinRoot(retainedPath)
+	if err != nil {
+		return "", nil, err
+	}
+	retainedInfo := l.generated[name]
+	current, err := l.root.Lstat(name)
+	if err != nil {
+		return "", nil, fmt.Errorf("stat retained backup: %w", err)
+	}
+	if current.Mode()&os.ModeSymlink != 0 || !current.Mode().IsRegular() {
+		return "", nil, errors.New("retained backup is not a regular file")
+	}
+	if retainedInfo != nil && !os.SameFile(retainedInfo, current) {
+		return "", nil, errors.New("retained backup changed while leased")
+	}
+	return name, current, nil
+}
+
+func (l *backupDirectoryLease) backupPruneCandidates() ([]backupPruneEntry, error) {
+	directory, err := l.root.Open(".")
+	if err != nil {
+		return nil, fmt.Errorf("open backup root for pruning: %w", err)
+	}
+	entries, readErr := directory.ReadDir(-1)
+	closeErr := directory.Close()
+	if err := errors.Join(readErr, closeErr); err != nil {
+		return nil, fmt.Errorf("list backup root: %w", err)
+	}
+	candidates := make([]backupPruneEntry, 0, len(entries))
+	for _, entry := range entries {
+		if !backupFilenamePattern.MatchString(entry.Name()) {
+			continue
+		}
+		info, err := l.root.Lstat(entry.Name())
+		if err != nil {
+			return nil, fmt.Errorf("lstat backup candidate %s: %w", entry.Name(), err)
+		}
+		if info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
+			continue
+		}
+		candidates = append(candidates, backupPruneEntry{name: entry.Name(), info: info})
+	}
+	return candidates, nil
+}
+
+func (l *backupDirectoryLease) removePrunedBackups(candidates []backupPruneEntry, keep map[string]struct{}, retainedName string, retainedInfo os.FileInfo) error {
 	for _, candidate := range candidates {
 		if _, ok := keep[candidate.name]; ok {
 			continue
@@ -360,70 +378,18 @@ func (l *backupDirectoryLease) nameWithinRoot(path string) (string, error) {
 }
 
 func openBackupRoot(path string) (*os.Root, string, os.FileInfo, error) {
-	absPath, err := filepath.Abs(path)
-	if err != nil {
-		return nil, "", nil, fmt.Errorf("resolve backup directory: %w", err)
-	}
-	absPath = filepath.Clean(absPath)
-
-	existingPath := absPath
-	missing := make([]string, 0, 4)
-	for {
-		info, statErr := os.Lstat(existingPath)
-		if statErr == nil {
-			if info.Mode()&os.ModeSymlink != 0 || !info.IsDir() {
-				return nil, "", nil, errors.New("backup directory path has a non-directory or symlink component")
-			}
-			break
-		}
-		if !os.IsNotExist(statErr) {
-			return nil, "", nil, fmt.Errorf("inspect backup directory: %w", statErr)
-		}
-		parent := filepath.Dir(existingPath)
-		if parent == existingPath {
-			return nil, "", nil, errors.New("backup directory has no existing ancestor")
-		}
-		missing = append(missing, filepath.Base(existingPath))
-		existingPath = parent
-	}
-	_, existingInfo, err := validateBackupDirectoryPath(existingPath)
+	absPath, existingPath, missing, err := resolveBackupRootPath(path)
 	if err != nil {
 		return nil, "", nil, err
 	}
-	root, err := os.OpenRoot(existingPath)
+	root, err := openExistingBackupRoot(existingPath)
 	if err != nil {
-		return nil, "", nil, fmt.Errorf("open backup root: %w", err)
-	}
-	rootInfo, err := root.Stat(".")
-	if err != nil || !os.SameFile(existingInfo, rootInfo) {
-		_ = root.Close()
-		return nil, "", nil, errors.New("backup directory changed while opening")
+		return nil, "", nil, err
 	}
 
-	for index := len(missing) - 1; index >= 0; index-- {
-		name := missing[index]
-		if err := root.Mkdir(name, 0o700); err != nil && !errors.Is(err, os.ErrExist) {
-			_ = root.Close()
-			return nil, "", nil, fmt.Errorf("create backup directory component %s: %w", name, err)
-		}
-		pathInfo, err := root.Lstat(name)
-		if err != nil || pathInfo.Mode()&os.ModeSymlink != 0 || !pathInfo.IsDir() {
-			_ = root.Close()
-			return nil, "", nil, errors.New("created backup directory component changed identity")
-		}
-		next, err := root.OpenRoot(name)
-		if err != nil {
-			_ = root.Close()
-			return nil, "", nil, fmt.Errorf("open created backup directory component %s: %w", name, err)
-		}
-		nextInfo, err := next.Stat(".")
-		if err != nil || !os.SameFile(pathInfo, nextInfo) {
-			_ = next.Close()
-			_ = root.Close()
-			return nil, "", nil, errors.New("created backup directory changed while opening")
-		}
-		_ = root.Close()
-		root = next
+	root, err = createMissingBackupDirectories(root, missing)
+	if err != nil {
+		return nil, "", nil, err
 	}
 
 	_, info, err := validateBackupDirectoryPath(absPath)
@@ -431,7 +397,7 @@ func openBackupRoot(path string) (*os.Root, string, os.FileInfo, error) {
 		_ = root.Close()
 		return nil, "", nil, err
 	}
-	rootInfo, err = root.Stat(".")
+	rootInfo, err := root.Stat(".")
 	if err != nil || !os.SameFile(info, rootInfo) {
 		_ = root.Close()
 		return nil, "", nil, errors.New("backup directory changed while creating")
@@ -441,6 +407,87 @@ func openBackupRoot(path string) (*os.Root, string, os.FileInfo, error) {
 		return nil, "", nil, err
 	}
 	return root, absPath, info, nil
+}
+
+func resolveBackupRootPath(path string) (string, string, []string, error) {
+	absPath, err := filepath.Abs(path)
+	if err != nil {
+		return "", "", nil, fmt.Errorf("resolve backup directory: %w", err)
+	}
+	absPath = filepath.Clean(absPath)
+
+	existingPath := absPath
+	missing := make([]string, 0, 4)
+	for {
+		info, statErr := os.Lstat(existingPath)
+		if statErr == nil {
+			if info.Mode()&os.ModeSymlink != 0 || !info.IsDir() {
+				return "", "", nil, errors.New("backup directory path has a non-directory or symlink component")
+			}
+			break
+		}
+		if !os.IsNotExist(statErr) {
+			return "", "", nil, fmt.Errorf("inspect backup directory: %w", statErr)
+		}
+		parent := filepath.Dir(existingPath)
+		if parent == existingPath {
+			return "", "", nil, errors.New("backup directory has no existing ancestor")
+		}
+		missing = append(missing, filepath.Base(existingPath))
+		existingPath = parent
+	}
+	return absPath, existingPath, missing, nil
+}
+
+func openExistingBackupRoot(path string) (*os.Root, error) {
+	_, existingInfo, err := validateBackupDirectoryPath(path)
+	if err != nil {
+		return nil, err
+	}
+	root, err := os.OpenRoot(path)
+	if err != nil {
+		return nil, fmt.Errorf("open backup root: %w", err)
+	}
+	rootInfo, err := root.Stat(".")
+	if err != nil || !os.SameFile(existingInfo, rootInfo) {
+		_ = root.Close()
+		return nil, errors.New("backup directory changed while opening")
+	}
+	return root, nil
+}
+
+func createMissingBackupDirectories(root *os.Root, missing []string) (*os.Root, error) {
+	for index := len(missing) - 1; index >= 0; index-- {
+		name := missing[index]
+		next, err := openBackupRootComponent(root, name)
+		if err != nil {
+			_ = root.Close()
+			return nil, err
+		}
+		_ = root.Close()
+		root = next
+	}
+	return root, nil
+}
+
+func openBackupRootComponent(root *os.Root, name string) (*os.Root, error) {
+	if err := root.Mkdir(name, 0o700); err != nil && !errors.Is(err, os.ErrExist) {
+		return nil, fmt.Errorf("create backup directory component %s: %w", name, err)
+	}
+	pathInfo, err := root.Lstat(name)
+	if err != nil || pathInfo.Mode()&os.ModeSymlink != 0 || !pathInfo.IsDir() {
+		return nil, errors.New("created backup directory component changed identity")
+	}
+	next, err := root.OpenRoot(name)
+	if err != nil {
+		return nil, fmt.Errorf("open created backup directory component %s: %w", name, err)
+	}
+	nextInfo, err := next.Stat(".")
+	if err != nil || !os.SameFile(pathInfo, nextInfo) {
+		_ = next.Close()
+		return nil, errors.New("created backup directory changed while opening")
+	}
+	return next, nil
 }
 
 func validateBackupDirectoryPath(path string) (string, os.FileInfo, error) {

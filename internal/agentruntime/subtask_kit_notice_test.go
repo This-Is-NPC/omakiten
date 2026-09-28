@@ -36,6 +36,9 @@ func TestBundleCacheFiresSubtaskKitNoticeOnFirstEnablement(t *testing.T) {
 	if len(events) != 1 {
 		t.Fatalf("expected 1 transparency notice event, got %d", len(events))
 	}
+	if events[0].ProjectID != rt.defaultProjectID {
+		t.Fatalf("transparency notice ProjectID = %d, want %d", events[0].ProjectID, rt.defaultProjectID)
+	}
 	if !strings.Contains(events[0].Payload, config.SubtaskKitTransparencyNoticeKey()) {
 		t.Fatalf("payload missing i18n key: %q", events[0].Payload)
 	}

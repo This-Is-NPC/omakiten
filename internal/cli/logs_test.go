@@ -73,27 +73,32 @@ func TestParseLogCategories(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			got, err := parseLogCategories(tc.input)
-			if tc.wantErr != "" {
-				if err == nil {
-					t.Fatalf("parseLogCategories(%v) error = nil, want failure containing %q", tc.input, tc.wantErr)
-				}
-				var coded *domain.CodedError
-				if !errorsAs(err, &coded) {
-					t.Fatalf("parseLogCategories(%v) error = %T, want CodedError", tc.input, err)
-				}
-				if coded.Code != domain.ErrValidation {
-					t.Fatalf("parseLogCategories(%v) code = %s, want %s", tc.input, coded.Code, domain.ErrValidation)
-				}
-				return
-			}
-			if err != nil {
-				t.Fatalf("parseLogCategories(%v) error = %v", tc.input, err)
-			}
-			if !reflect.DeepEqual(got, tc.want) {
-				t.Fatalf("parseLogCategories(%v) = %v, want %v", tc.input, got, tc.want)
-			}
+			assertParseLogCategories(t, tc.input, tc.want, tc.wantErr)
 		})
+	}
+}
+
+func assertParseLogCategories(t *testing.T, input []string, want []domain.EventCategory, wantErr string) {
+	t.Helper()
+	got, err := parseLogCategories(input)
+	if wantErr != "" {
+		if err == nil {
+			t.Fatalf("parseLogCategories(%v) error = nil, want failure containing %q", input, wantErr)
+		}
+		var coded *domain.CodedError
+		if !errorsAs(err, &coded) {
+			t.Fatalf("parseLogCategories(%v) error = %T, want CodedError", input, err)
+		}
+		if coded.Code != domain.ErrValidation {
+			t.Fatalf("parseLogCategories(%v) code = %s, want %s", input, coded.Code, domain.ErrValidation)
+		}
+		return
+	}
+	if err != nil {
+		t.Fatalf("parseLogCategories(%v) error = %v", input, err)
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("parseLogCategories(%v) = %v, want %v", input, got, want)
 	}
 }
 
@@ -105,75 +110,50 @@ func TestParseLogCategories(t *testing.T) {
 // `anchor.UTC() - dur` — no wall-clock tolerance required.
 func TestResolveLogSinceFlagWins(t *testing.T) {
 	t.Parallel()
-	snap := stubLogsSnapshot{window: 30 * 24 * time.Hour}
 	anchorUTC := cliFakeClockAnchor.UTC()
+	cases := []struct {
+		name, flag       string
+		window, duration time.Duration
+		invalid          bool
+	}{
+		{name: "flag overrides snapshot window", flag: "24h", duration: 24 * time.Hour, window: 30 * 24 * time.Hour},
+		{name: "days suffix accepted", flag: "7d", duration: 7 * 24 * time.Hour, window: 30 * 24 * time.Hour},
+		{name: "falls back to snapshot window when flag empty", duration: 30 * 24 * time.Hour, window: 30 * 24 * time.Hour},
+		{name: "invalid duration returns coded error", flag: "not-a-duration", invalid: true, window: 30 * 24 * time.Hour},
+		{name: "zero window returns zero time floor", window: 0},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			assertResolveLogSince(t, tc.flag, stubLogsSnapshot{window: tc.window}, tc.duration, tc.invalid, anchorUTC)
+		})
+	}
+}
 
-	t.Run("flag overrides snapshot window", func(t *testing.T) {
-		t.Parallel()
-		fake := clock.New(cliFakeClockAnchor)
-		got, err := resolveLogSince("24h", snap, fake.Now)
-		if err != nil {
-			t.Fatalf("resolveLogSince() error = %v", err)
-		}
-		want := anchorUTC.Add(-24 * time.Hour)
-		if !got.Equal(want) {
-			t.Fatalf("resolveLogSince(24h) = %v, want %v", got, want)
-		}
-	})
-
-	t.Run("days suffix accepted", func(t *testing.T) {
-		t.Parallel()
-		fake := clock.New(cliFakeClockAnchor)
-		got, err := resolveLogSince("7d", snap, fake.Now)
-		if err != nil {
-			t.Fatalf("resolveLogSince(7d) error = %v", err)
-		}
-		want := anchorUTC.Add(-7 * 24 * time.Hour)
-		if !got.Equal(want) {
-			t.Fatalf("resolveLogSince(7d) = %v, want %v", got, want)
-		}
-	})
-
-	t.Run("falls back to snapshot window when flag empty", func(t *testing.T) {
-		t.Parallel()
-		fake := clock.New(cliFakeClockAnchor)
-		got, err := resolveLogSince("", snap, fake.Now)
-		if err != nil {
-			t.Fatalf("resolveLogSince() error = %v", err)
-		}
-		want := anchorUTC.Add(-30 * 24 * time.Hour)
-		if !got.Equal(want) {
-			t.Fatalf("resolveLogSince() = %v, want %v", got, want)
-		}
-	})
-
-	t.Run("invalid duration returns coded error", func(t *testing.T) {
-		t.Parallel()
-		fake := clock.New(cliFakeClockAnchor)
-		_, err := resolveLogSince("not-a-duration", snap, fake.Now)
-		if err == nil {
-			t.Fatalf("resolveLogSince(not-a-duration) error = nil, want failure")
-		}
+func assertResolveLogSince(t *testing.T, flag string, snap stubLogsSnapshot, duration time.Duration, invalid bool, anchor time.Time) {
+	t.Helper()
+	fake := clock.New(cliFakeClockAnchor)
+	got, err := resolveLogSince(flag, snap, fake.Now)
+	if invalid {
 		var coded *domain.CodedError
-		if !errorsAs(err, &coded) {
-			t.Fatalf("resolveLogSince(not-a-duration) error = %T, want CodedError", err)
+		if err == nil || !errorsAs(err, &coded) || coded.Code != domain.ErrValidation {
+			t.Fatalf("resolveLogSince(%s) error = %v, want validation error", flag, err)
 		}
-		if coded.Code != domain.ErrValidation {
-			t.Fatalf("resolveLogSince(not-a-duration) code = %s, want %s", coded.Code, domain.ErrValidation)
-		}
-	})
-
-	t.Run("zero window returns zero time floor", func(t *testing.T) {
-		t.Parallel()
-		fake := clock.New(cliFakeClockAnchor)
-		got, err := resolveLogSince("", stubLogsSnapshot{window: 0}, fake.Now)
-		if err != nil {
-			t.Fatalf("resolveLogSince() error = %v", err)
-		}
+		return
+	}
+	if err != nil {
+		t.Fatalf("resolveLogSince(%s) error = %v", flag, err)
+	}
+	if duration == 0 {
 		if !got.IsZero() {
 			t.Fatalf("resolveLogSince(empty, zero snap) = %v, want zero time", got)
 		}
-	})
+		return
+	}
+	want := anchor.Add(-duration)
+	if !got.Equal(want) {
+		t.Fatalf("resolveLogSince(%s) = %v, want %v", flag, got, want)
+	}
 }
 
 // TestProjectLogRowsCarriesSummary asserts the JSON projection's
@@ -247,93 +227,69 @@ func TestCLILogsRunsAndShapeMatchesAC(t *testing.T) {
 	runCLI(t, dbPath, configPath, "add", "-t", "First")
 	runCLI(t, dbPath, configPath, "comment", "add", "1", "-b", "remember this")
 
-	t.Run("default scope returns events", func(t *testing.T) {
-		out := runCLI(t, dbPath, configPath, "logs")
-		events := decodeLogEvents(t, out)
-		if len(events) == 0 {
-			t.Fatalf("okt logs returned zero events; output = %s", out)
-		}
-		for _, ev := range events {
-			if ev["summary"] == nil || ev["summary"] == "" {
-				t.Fatalf("event missing summary: %v", ev)
-			}
-			if ev["category"] == nil || ev["category"] == "" {
-				t.Fatalf("event missing category: %v", ev)
-			}
-			if ev["time"] == nil || ev["time"] == "" {
-				t.Fatalf("event missing time: %v", ev)
-			}
-			if ev["event_type"] == nil || ev["event_type"] == "" {
-				t.Fatalf("event missing event_type: %v", ev)
+	assertCLILogsDefault(t, dbPath, configPath)
+	assertCLILogsFilters(t, dbPath, configPath)
+	assertCLILogsLimitAndSince(t, dbPath, configPath)
+	assertCLILogsInvalidInputs(t, dbPath, configPath)
+}
+
+func assertCLILogsDefault(t *testing.T, dbPath, configPath string) {
+	t.Helper()
+	events := decodeLogEvents(t, runCLI(t, dbPath, configPath, "logs"))
+	if len(events) == 0 {
+		t.Fatal("okt logs returned zero events")
+	}
+	for _, ev := range events {
+		for _, key := range []string{"summary", "category", "time", "event_type"} {
+			if ev[key] == nil || ev[key] == "" {
+				t.Fatalf("event missing %s: %v", key, ev)
 			}
 		}
-	})
+	}
+}
 
-	t.Run("category filter narrows results", func(t *testing.T) {
-		out := runCLI(t, dbPath, configPath, "logs", "--category", "comment")
-		events := decodeLogEvents(t, out)
-		if len(events) == 0 {
-			t.Fatalf("okt logs --category comment returned zero events; output = %s", out)
+func assertCLILogsFilters(t *testing.T, dbPath, configPath string) {
+	t.Helper()
+	events := decodeLogEvents(t, runCLI(t, dbPath, configPath, "logs", "--category", "comment"))
+	if len(events) == 0 {
+		t.Fatal("comment category returned zero events")
+	}
+	for _, ev := range events {
+		if ev["category"] != string(domain.EventCategoryComment) {
+			t.Fatalf("category filter leaked %v: %v", ev["category"], ev)
 		}
-		for _, ev := range events {
-			if ev["category"] != string(domain.EventCategoryComment) {
-				t.Fatalf("category filter leaked %v: %v", ev["category"], ev)
-			}
+	}
+	events = decodeLogEvents(t, runCLI(t, dbPath, configPath, "logs", "--category", "task", "--category", "comment"))
+	allowed := map[string]bool{string(domain.EventCategoryTask): true, string(domain.EventCategoryComment): true}
+	for _, ev := range events {
+		cat, _ := ev["category"].(string)
+		if !allowed[cat] {
+			t.Fatalf("category union leaked %q: %v", cat, ev)
 		}
-	})
+	}
+	events = decodeLogEvents(t, runCLI(t, dbPath, configPath, "logs", "--category", "task,comment"))
+	if len(events) == 0 {
+		t.Fatal("comma-separated category returned zero events")
+	}
+}
 
-	t.Run("repeatable category flag ANDs categories", func(t *testing.T) {
-		out := runCLI(t, dbPath, configPath, "logs", "--category", "task", "--category", "comment")
-		events := decodeLogEvents(t, out)
-		if len(events) == 0 {
-			t.Fatalf("okt logs --category task --category comment returned zero events; output = %s", out)
-		}
-		allowed := map[string]bool{
-			string(domain.EventCategoryTask):    true,
-			string(domain.EventCategoryComment): true,
-		}
-		for _, ev := range events {
-			cat, _ := ev["category"].(string)
-			if !allowed[cat] {
-				t.Fatalf("category union leaked %q: %v", cat, ev)
-			}
-		}
-	})
+func assertCLILogsLimitAndSince(t *testing.T, dbPath, configPath string) {
+	t.Helper()
+	events := decodeLogEvents(t, runCLI(t, dbPath, configPath, "logs", "--limit", "1"))
+	if len(events) != 1 {
+		t.Fatalf("okt logs --limit 1 returned %d events, want 1", len(events))
+	}
+	// The 24h window includes the rows written above.
+	events = decodeLogEvents(t, runCLI(t, dbPath, configPath, "logs", "--since", "24h"))
+	if len(events) == 0 {
+		t.Fatal("okt logs --since 24h returned zero events")
+	}
+}
 
-	t.Run("comma-separated category form parses", func(t *testing.T) {
-		out := runCLI(t, dbPath, configPath, "logs", "--category", "task,comment")
-		events := decodeLogEvents(t, out)
-		if len(events) == 0 {
-			t.Fatalf("okt logs --category task,comment returned zero events; output = %s", out)
-		}
-	})
-
-	t.Run("limit caps rows", func(t *testing.T) {
-		out := runCLI(t, dbPath, configPath, "logs", "--limit", "1")
-		events := decodeLogEvents(t, out)
-		if len(events) != 1 {
-			t.Fatalf("okt logs --limit 1 returned %d events, want 1", len(events))
-		}
-	})
-
-	t.Run("since shorthand parses", func(t *testing.T) {
-		// 24h window will still include the rows we just wrote.
-		out := runCLI(t, dbPath, configPath, "logs", "--since", "24h")
-		events := decodeLogEvents(t, out)
-		if len(events) == 0 {
-			t.Fatalf("okt logs --since 24h returned zero events; output = %s", out)
-		}
-	})
-
-	t.Run("invalid category surfaces validation_error", func(t *testing.T) {
-		runCLIExpectError(t, dbPath, configPath, "validation_error",
-			"logs", "--category", "made-up")
-	})
-
-	t.Run("invalid since surfaces validation_error", func(t *testing.T) {
-		runCLIExpectError(t, dbPath, configPath, "validation_error",
-			"logs", "--since", "not-a-duration")
-	})
+func assertCLILogsInvalidInputs(t *testing.T, dbPath, configPath string) {
+	t.Helper()
+	runCLIExpectError(t, dbPath, configPath, "validation_error", "logs", "--category", "made-up")
+	runCLIExpectError(t, dbPath, configPath, "validation_error", "logs", "--since", "not-a-duration")
 }
 
 // stubLogsSnapshot is a small shim that fulfils the interface

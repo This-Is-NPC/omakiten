@@ -29,6 +29,44 @@ func TestHashFile(t *testing.T) {
 	}
 }
 
+func TestLoadBundlePlanHashesCapturedWiringAndEntityBytes(t *testing.T) {
+	tmp := t.TempDir()
+	if err := EnsureDefaultFiles(tmp); err != nil {
+		t.Fatalf("EnsureDefaultFiles() error = %v", err)
+	}
+	path := filepath.Join(tmp, "config", "omakase.yaml")
+	bundle, hashes, err := LoadBundlePlan(path)
+	if err != nil {
+		t.Fatalf("LoadBundlePlan() error = %v", err)
+	}
+	paths := append([]string{path}, bundle.SourcePaths[1:]...)
+	if len(bundle.Skills) > 0 {
+		paths = append(paths, bundle.Skills[0].SourcePath)
+	}
+	for _, sourcePath := range paths {
+		raw, err := os.ReadFile(sourcePath)
+		if err != nil {
+			t.Fatalf("ReadFile(%s) error = %v", sourcePath, err)
+		}
+		if got, want := hashes[sourcePath], hashBytes(raw); got != want {
+			t.Fatalf("hash[%s] = %q, want %q from captured bytes", sourcePath, got, want)
+		}
+	}
+	if len(bundle.Skills) > 0 {
+		raw, err := os.ReadFile(bundle.Skills[0].SourcePath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, body, err := SplitFrontmatter(raw)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if bundle.Skills[0].Body != string(body) {
+			t.Fatalf("planned skill body was not parsed from the captured source bytes")
+		}
+	}
+}
+
 func TestWriteAtomic(t *testing.T) {
 	tmp := t.TempDir()
 	path := filepath.Join(tmp, "dir", "file.txt")
@@ -51,8 +89,14 @@ func TestEnsureDefaultFiles(t *testing.T) {
 	if err := EnsureDefaultFiles(tmp); err != nil {
 		t.Fatalf("EnsureDefaultFiles() error = %v", err)
 	}
+	assertDefaultLayout(t, tmp)
+	if err := EnsureDefaultFiles(tmp); err != nil {
+		t.Fatalf("EnsureDefaultFiles() second call error = %v", err)
+	}
+}
 
-	// New layout: yaml lives under config/, entity dirs are siblings.
+func assertDefaultLayout(t *testing.T, tmp string) {
+	t.Helper()
 	if _, err := os.Stat(filepath.Join(tmp, "config", "omakase.yaml")); err != nil {
 		t.Fatalf("config/omakiten.yaml missing: %v", err)
 	}
@@ -87,11 +131,6 @@ func TestEnsureDefaultFiles(t *testing.T) {
 		if _, err := os.Stat(filepath.Join(tmp, "templates", name)); err != nil {
 			t.Fatalf("default template %s missing: %v", name, err)
 		}
-	}
-
-	// Second call should not error and should not overwrite
-	if err := EnsureDefaultFiles(tmp); err != nil {
-		t.Fatalf("EnsureDefaultFiles() second call error = %v", err)
 	}
 }
 
@@ -138,6 +177,29 @@ func TestLoadThemeMissing(t *testing.T) {
 	}
 }
 
+type unsafeThemeReader struct {
+	err error
+}
+
+func (r unsafeThemeReader) readFile(path string, _ int64) ([]byte, error) {
+	if strings.Contains(filepath.ToSlash(path), "/custom/") {
+		return nil, r.err
+	}
+	return []byte("version: 1\nkey: default\nname: Default\ncolors:\n  bg: '#000000'\n"), nil
+}
+
+func (unsafeThemeReader) listFiles(string, []string, bool, int64) ([]entityFile, error) {
+	return nil, nil
+}
+
+func TestResolveActiveThemeDoesNotFallbackOnUnsafeCustomError(t *testing.T) {
+	unsafeErr := errors.New("custom theme is unsafe")
+	_, _, err := resolveActiveThemeReader(t.TempDir(), "dark", unsafeThemeReader{err: unsafeErr})
+	if !errors.Is(err, unsafeErr) {
+		t.Fatalf("resolveActiveThemeReader error = %v, want %v", err, unsafeErr)
+	}
+}
+
 // TestLoadBundlePopulatesActiveTheme pins the new contract: LoadBundle
 // resolves themes/<active>.yaml (custom→default precedence) during the
 // bundle assembly so downstream consumers read tokens through
@@ -151,11 +213,26 @@ func TestLoadBundlePopulatesActiveTheme(t *testing.T) {
 		t.Fatalf("EnsureDefaultFiles() error = %v", err)
 	}
 	yamlPath := filepath.Join(tmp, "config", "omakase.yaml")
+	assertActiveThemeLoads(t, tmp, yamlPath)
+}
 
+func assertActiveThemeLoads(t *testing.T, tmp, yamlPath string) {
+	t.Helper()
 	bundle, err := LoadBundle(yamlPath)
 	if err != nil {
 		t.Fatalf("LoadBundle(happy path) error = %v", err)
 	}
+	assertActiveThemeHappy(t, bundle)
+	removeActiveThemeFiles(t, tmp, bundle.Config.Theme.Active)
+	bundle, err = LoadBundle(yamlPath)
+	if err != nil {
+		t.Fatalf("LoadBundle(theme missing) error = %v, want nil (degraded path)", err)
+	}
+	assertMissingActiveTheme(t, bundle)
+}
+
+func assertActiveThemeHappy(t *testing.T, bundle Bundle) {
+	t.Helper()
 	if bundle.ActiveTheme.Name == "" {
 		t.Fatalf("LoadBundle: ActiveTheme.Name = \"\", want populated from themes/<active>.yaml")
 	}
@@ -171,42 +248,40 @@ func TestLoadBundlePopulatesActiveTheme(t *testing.T) {
 			t.Fatalf("LoadBundle(happy path): unexpected theme warning %+v", w)
 		}
 	}
+}
 
-	// Now break the theme: remove every themes/<active>*.yaml file so
-	// the loader can no longer resolve the active token set, and assert
-	// the loader returns (Bundle, nil) with a zero-Theme + a warning.
-	active := bundle.Config.Theme.Active
+func removeActiveThemeFiles(t *testing.T, tmp, active string) {
+	t.Helper()
 	for _, candidate := range []string{
 		filepath.Join(tmp, "themes", "custom", active+".yaml"),
 		filepath.Join(tmp, "themes", active+".yaml"),
 	} {
 		_ = os.Remove(candidate)
 	}
+}
 
-	bundle2, err := LoadBundle(yamlPath)
-	if err != nil {
-		t.Fatalf("LoadBundle(theme missing) error = %v, want nil (degraded path)", err)
+func assertMissingActiveTheme(t *testing.T, bundle Bundle) {
+	t.Helper()
+	if bundle.ActiveTheme.Name != "" {
+		t.Fatalf("LoadBundle(theme missing): ActiveTheme = %+v, want zero-Theme", bundle.ActiveTheme)
 	}
-	if bundle2.ActiveTheme.Name != "" {
-		t.Fatalf("LoadBundle(theme missing): ActiveTheme = %+v, want zero-Theme", bundle2.ActiveTheme)
-	}
-	if bundle2.ActiveThemeErr == nil {
+	if bundle.ActiveThemeErr == nil {
 		t.Fatal("LoadBundle(theme missing): ActiveThemeErr = nil, want non-nil")
 	}
-	if !errors.Is(bundle2.ActiveThemeErr, os.ErrNotExist) {
-		t.Fatalf("LoadBundle(theme missing): ActiveThemeErr = %v, want wraps os.ErrNotExist", bundle2.ActiveThemeErr)
+	if !errors.Is(bundle.ActiveThemeErr, os.ErrNotExist) {
+		t.Fatalf("LoadBundle(theme missing): ActiveThemeErr = %v, want wraps os.ErrNotExist", bundle.ActiveThemeErr)
 	}
-	if msg := bundle2.ActiveThemeErr.Error(); !strings.Contains(msg, "custom=") || !strings.Contains(msg, "default=") {
+	if msg := bundle.ActiveThemeErr.Error(); !strings.Contains(msg, "custom=") || !strings.Contains(msg, "default=") {
 		t.Fatalf("LoadBundle(theme missing): ActiveThemeErr message %q does not name both candidate paths", msg)
 	}
 	var sawWarning bool
-	for _, w := range bundle2.Warnings {
+	for _, w := range bundle.Warnings {
 		if filepath.Base(filepath.Dir(w.Path)) == "themes" || filepath.Base(filepath.Dir(filepath.Dir(w.Path))) == "themes" {
 			sawWarning = true
 			break
 		}
 	}
 	if !sawWarning {
-		t.Fatalf("LoadBundle(theme missing): no themes-scoped warning in %+v", bundle2.Warnings)
+		t.Fatalf("LoadBundle(theme missing): no themes-scoped warning in %+v", bundle.Warnings)
 	}
 }

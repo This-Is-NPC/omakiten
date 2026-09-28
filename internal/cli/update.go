@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"crypto/sha256"
@@ -22,6 +21,8 @@ import (
 
 	"omakiten/internal/domain"
 	"omakiten/internal/lifecycle"
+	"omakiten/internal/paths"
+	"omakiten/internal/releaseverify"
 	"omakiten/internal/sqlite"
 )
 
@@ -79,7 +80,7 @@ type AssetDownloader interface {
 
 // updateValidatorResult is the parsed output of a single staged-binary
 // health check. The fields mirror the structured payload `okt config
-// validate --migrate` emits under details (#365 AC 1): OK gates the
+// validate` emits under details: OK gates the
 // swap, Errors carries the per-kind {kind, path, message,
 // suggested_command} entries the user surfaces to repair the bundle,
 // RawOutput preserves the validator's stdout so the update envelope
@@ -98,6 +99,8 @@ type updateValidatorResult struct {
 type updateValidatorFn func(ctx context.Context, binaryPath, configPath string) (updateValidatorResult, error)
 
 type updateDefaultsRefresherFn func(ctx context.Context, binaryPath string) error
+
+type updateEventStoreFactory func(ctx context.Context) (healthCheckEventStore, func())
 
 // updateClient bundles the two injected dependencies plus the
 // command-version + binary-path resolution helpers so RunE can stay
@@ -131,8 +134,8 @@ type updateClient struct {
 	// pre-swap health check — tests use that path to exercise the
 	// post-validate flow without exec'ing a real subprocess.
 	ConfigPath string
-	// Validator gates the swap on a successful `okt config validate
-	// --migrate` run against the *new* binary so schema drift caught
+	// Validator gates the swap on a successful `okt config validate`
+	// run against the *new* binary so schema drift caught
 	// only by the upcoming release surfaces here, pre-swap, instead
 	// of as a silent next-launch failure (#365 AC 2). nil = swap
 	// proceeds unchanged (back-compat for direct tests that already
@@ -144,6 +147,10 @@ type updateClient struct {
 	// activity-write failures are swallowed regardless so the swap's
 	// success criterion is the binary state, not the audit row.
 	EventStore healthCheckEventStore
+	// EventStoreFactory lazily opens the activity store after version checks,
+	// confirmation, and staging. Its cleanup is deferred across validation,
+	// backup, swap, and finish; failures are telemetry-only.
+	EventStoreFactory updateEventStoreFactory
 	// DefaultsRefresher runs the newly swapped binary's direct defaults
 	// refresh command after the binary update is durable. nil skips the
 	// post-swap refresh, which keeps direct unit tests from exec'ing fake
@@ -153,7 +160,17 @@ type updateClient struct {
 	// to the post-swap refresh subprocess. It also drives the repair
 	// command surfaced when the binary swap succeeded but refresh failed.
 	DefaultsRefreshConfigPath string
+	// ReleaseVerifier authenticates the signed release metadata before the
+	// downloaded archive is trusted. nil aborts the update: there is no
+	// unsigned path, so an unset verifier is a bug, not a fallback.
+	ReleaseVerifier releaseVerifierFn
 }
+
+// releaseVerifierFn authenticates one downloaded release set and returns the
+// digest the archive must have. Injected so the updater tests can drive the
+// swap path without minting Sigstore bundles, while the strict policy itself
+// is exercised in internal/releaseverify.
+type releaseVerifierFn func(ctx context.Context, rel releaseverify.Release) (releaseverify.Result, error)
 
 // updateBackupRunner is the narrow port runUpdate uses to invoke the
 // pre-swap snapshot. Local alias for app.BackupRunner so this file
@@ -177,29 +194,7 @@ func newUpdateCommand(opts *runtimeOptions) *cobra.Command {
 		Long:  opts.t("cli.update.long"),
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return runJSON(cmd, func(ctx context.Context) (any, error) {
-				client, err := defaultUpdateClientFactory(cmd.Root().Version)
-				if err != nil {
-					return nil, err
-				}
-				client.BackupFactory = func(_ context.Context) (updateBackupRunner, error) {
-					return updateBackupForOpts(cmd, opts)
-				}
-				if !check {
-					if err := prepareUpdateDiscovery(ctx, opts); err != nil {
-						return nil, err
-					}
-					if !skipDefaults {
-						refreshConfigPath, err := resolvedUpdateConfigPathForRefresh(opts)
-						if err != nil {
-							return nil, err
-						}
-						client.DefaultsRefreshConfigPath = refreshConfigPath
-						client.DefaultsRefresher = updateDefaultsRefresherForConfigPath(refreshConfigPath)
-					}
-					cleanup := wireHealthCheckEmission(ctx, opts, &client)
-					defer cleanup()
-				}
-				return runUpdate(ctx, client, updateInputs{Check: check, Yes: yes, SkipDefaults: skipDefaults})
+				return runUpdateCommand(ctx, cmd, opts, updateInputs{Check: check, Yes: yes, SkipDefaults: skipDefaults})
 			})
 		},
 	}
@@ -210,6 +205,34 @@ func newUpdateCommand(opts *runtimeOptions) *cobra.Command {
 	return cmd
 }
 
+func runUpdateCommand(ctx context.Context, cmd *cobra.Command, opts *runtimeOptions, inputs updateInputs) (any, error) {
+	client, err := defaultUpdateClientFactory(cmd.Root().Version)
+	if err != nil {
+		return nil, err
+	}
+	client.BackupFactory = func(_ context.Context) (updateBackupRunner, error) {
+		return updateBackupForOpts(cmd, opts)
+	}
+	if inputs.Check {
+		return runUpdate(ctx, client, inputs)
+	}
+	if err := prepareUpdateDiscovery(ctx, opts); err != nil {
+		return nil, err
+	}
+	if !inputs.SkipDefaults {
+		refreshConfigPath, err := resolvedUpdateConfigPathForRefresh(opts)
+		if err != nil {
+			return nil, err
+		}
+		client.DefaultsRefreshConfigPath = refreshConfigPath
+		client.DefaultsRefresher = updateDefaultsRefresherForConfigPath(refreshConfigPath)
+	}
+	if err := wireHealthCheckEmission(opts, &client); err != nil {
+		return nil, err
+	}
+	return runUpdate(ctx, client, inputs)
+}
+
 func prepareUpdateDiscovery(ctx context.Context, opts *runtimeOptions) error {
 	if opts == nil || opts.configPath != "" || (opts.project == "" && opts.projectID == 0) {
 		return nil
@@ -218,7 +241,7 @@ func prepareUpdateDiscovery(ctx context.Context, opts *runtimeOptions) error {
 	if err != nil {
 		return err
 	}
-	store, err := sqlite.Open(ctx, dbPath)
+	store, err := sqlite.OpenCurrentReadOnly(ctx, dbPath)
 	if err != nil {
 		return err
 	}
@@ -247,41 +270,40 @@ func resolvedUpdateConfigPathForRefresh(opts *runtimeOptions) (string, error) {
 
 // wireHealthCheckEmission resolves the runtime knobs the production
 // `runUpdate` needs to fire the pre-swap health check (#365) and the
-// matching activity rows (#369), mutating client in place. Both
-// resolutions are fail-soft: an unresolvable config path drops the
-// validator branch, an unresolvable / unopenable DB path drops the
-// emission. Each fallback is logged to stderr (same channel
-// `emitHealthCheckEvent` uses) so a missing audit row is traceable.
-//
-// Returns a cleanup func the RunE closure defers so the staged-in
-// sqlite handle (when one was opened) is closed at function exit.
-// The cleanup is always non-nil; it is a no-op when no store was
-// opened so callers can `defer cleanup()` unconditionally.
+// matching activity rows (#369), mutating client in place. Config path
+// resolution is fail-closed because skipping staged validation could swap an
+// unsafe binary. DB resolution remains fail-soft because activity emission is
+// observability, not an update safety gate.
 //
 // Extracted as a Sprout Method (Feathers) so newUpdateCommand's
 // RunE closure stays at one level of abstraction; the per-finding
 // stderr fprints stay co-located with the resolution they
 // guard against.
-func wireHealthCheckEmission(ctx context.Context, opts *runtimeOptions, client *updateClient) func() {
+func wireHealthCheckEmission(opts *runtimeOptions, client *updateClient) error {
+	if opts == nil {
+		return domain.NewError(domain.ErrValidation, "update config path is unavailable; refusing to update", nil)
+	}
 	if cfgPath, cfgErr := opts.resolvedConfigPath(); cfgErr == nil {
 		client.ConfigPath = cfgPath
 	} else {
-		fmt.Fprintf(os.Stderr, "okt update: config path unavailable, skipping pre-swap health check: %v\n", cfgErr)
+		return domain.NewError(domain.ErrValidation, "update config path is unavailable; refusing to update: "+cfgErr.Error(), nil)
 	}
 	client.Validator = defaultUpdateValidator
 
 	dbPath, dbErr := opts.resolvedDBPath()
 	if dbErr != nil {
 		fmt.Fprintf(os.Stderr, "okt update: db path unavailable, activity rows skipped: %v\n", dbErr)
-		return func() {}
+		return nil
 	}
-	store, openErr := sqlite.Open(ctx, dbPath)
-	if openErr != nil {
-		fmt.Fprintf(os.Stderr, "okt update: sqlite open %s failed, activity rows skipped: %v\n", dbPath, openErr)
-		return func() {}
+	client.EventStoreFactory = func(openCtx context.Context) (healthCheckEventStore, func()) {
+		store, openErr := sqlite.Open(openCtx, dbPath)
+		if openErr != nil {
+			fmt.Fprintf(os.Stderr, "okt update: sqlite open %s failed, activity rows skipped: %v\n", dbPath, openErr)
+			return nil, func() {}
+		}
+		return store, func() { _ = store.Close() }
 	}
-	client.EventStore = store
-	return func() { _ = store.Close() }
+	return nil
 }
 
 // updateInputs is the resolved flag set runUpdate consumes. Kept as a
@@ -298,104 +320,27 @@ type updateInputs struct {
 // compare, optionally confirm + swap. Returns the JSON envelope
 // payload. --check short-circuits before any side-effect.
 func runUpdate(ctx context.Context, c updateClient, inputs updateInputs) (any, error) {
-	if current := strings.TrimSpace(c.Current); current == "" || current == "dev" {
-		return nil, domain.NewError(domain.ErrValidation, t("cli.update.err.dev_build"), nil)
-	}
-	if currentGOOS == "windows" {
-		return nil, domain.NewError(domain.ErrUpdateFailed, t("cli.update.err.windows_unsupported"), nil)
-	}
-
-	latest, err := c.Fetcher.Latest(ctx)
+	current, latest, err := resolveUpdateVersions(ctx, c)
 	if err != nil {
-		return nil, domain.NewError(domain.ErrUpdateFailed, fmt.Sprintf(t("cli.update.err.fetch_latest"), err.Error()), nil)
+		return nil, err
 	}
-	current := normalizeVersion(c.Current)
-	latest = normalizeVersion(latest)
-
-	action := "upgrade"
-	if current == latest {
-		action = "noop"
+	action := updateAction(current, latest)
+	if inputs.Check || action == "noop" {
+		return updateStatus(current, latest, action), nil
 	}
-
-	if inputs.Check {
-		code := "update_not_required"
-		if action == "upgrade" {
-			code = "update_available"
-		}
-		return map[string]any{
-			"code":    code,
-			"current": current,
-			"latest":  latest,
-			"action":  action,
-			"applied": false,
-		}, nil
+	if err := validateUpdateTarget(current, latest); err != nil {
+		return nil, err
 	}
-
-	if action == "noop" {
-		return map[string]any{
-			"code":    "update_not_required",
-			"current": current,
-			"latest":  latest,
-			"action":  action,
-			"applied": false,
-		}, nil
+	if err := confirmUpdate(ctx, current, latest, inputs.Yes); err != nil {
+		return nil, err
 	}
-
-	if !inputs.Yes {
-		if !stdinIsTTY() {
-			return nil, domain.NewError(domain.ErrValidation, t("cli.update.picker.no_tty"), nil)
-		}
-		confirmed, err := runUpdateConfirm(ctx, current, latest)
-		if err != nil {
-			return nil, err
-		}
-		if !confirmed {
-			return nil, domain.NewError(domain.ErrValidation, t("cli.update.picker.aborted"), nil)
-		}
-	}
-
 	asset, err := assetName(currentGOOS, goruntime.GOARCH)
 	if err != nil {
 		return nil, domain.NewError(domain.ErrUpdateFailed, err.Error(), nil)
 	}
-
-	expectedSum, err := fetchAssetChecksum(ctx, c.Downloader, latest, asset)
+	stagedPath, verified, err := stageUpdateBinary(ctx, c, current, latest, asset)
 	if err != nil {
-		return nil, domain.NewError(domain.ErrUpdateFailed, fmt.Sprintf(t("cli.update.err.fetch_checksum"), err.Error()), nil)
-	}
-
-	body, err := c.Downloader.Download(ctx, latest, asset)
-	if err != nil {
-		return nil, domain.NewError(domain.ErrUpdateFailed, fmt.Sprintf(t("cli.update.err.download_asset"), asset, err.Error()), nil)
-	}
-	defer body.Close()
-
-	archiveBytes, err := io.ReadAll(io.LimitReader(body, maxAssetSize+1))
-	if err != nil {
-		return nil, domain.NewError(domain.ErrUpdateFailed, fmt.Sprintf(t("cli.update.err.download_asset"), asset, err.Error()), nil)
-	}
-	if int64(len(archiveBytes)) > maxAssetSize {
-		return nil, domain.NewError(domain.ErrUpdateFailed, fmt.Sprintf(t("cli.update.err.asset_too_large"), asset, maxAssetSize), nil)
-	}
-	gotSum := fmt.Sprintf("%x", sha256.Sum256(archiveBytes))
-	if !strings.EqualFold(gotSum, expectedSum) {
-		return nil, domain.NewError(domain.ErrUpdateFailed, fmt.Sprintf(t("cli.update.err.checksum_mismatch"), expectedSum, gotSum), nil)
-	}
-
-	binary, err := lifecycle.ExtractBinary(bytes.NewReader(archiveBytes), currentGOOS, lifecycle.BinaryName())
-	if err != nil {
-		return nil, domain.NewError(domain.ErrUpdateFailed, fmt.Sprintf(t("cli.update.err.extract_asset"), lifecycle.BinaryName(), err.Error()), nil)
-	}
-
-	// Stage the new binary next to the live path so the rename at the
-	// end of this function is an atomic same-filesystem move. The
-	// staged file is the artefact the validator execs — running the
-	// new binary's `config validate --migrate` against the on-disk
-	// config catches schema drift introduced by this release before
-	// the swap, satisfying the pre-swap gate from #365 AC 2.
-	stagedPath, err := stageBinary(c.BinaryPath, bytes.NewReader(binary))
-	if err != nil {
-		return nil, domain.NewError(domain.ErrUpdateFailed, fmt.Sprintf(t("cli.update.err.stage_binary_fmt"), err.Error()), nil)
+		return nil, err
 	}
 	swapped := false
 	defer func() {
@@ -403,90 +348,202 @@ func runUpdate(ctx context.Context, c updateClient, inputs updateInputs) (any, e
 			_ = os.Remove(stagedPath)
 		}
 	}()
-
-	if c.Validator != nil && strings.TrimSpace(c.ConfigPath) != "" {
-		result, vErr := c.Validator(ctx, stagedPath, c.ConfigPath)
-		if vErr != nil {
-			return nil, domain.NewError(domain.ErrUpdateFailed, fmt.Sprintf(t("cli.update.err.config_validation_exec_fmt"), vErr.Error()), map[string]any{
-				"reason":      "config_validation_exec_failed",
-				"current":     current,
-				"latest":      latest,
-				"binary_path": c.BinaryPath,
-				"staged_path": stagedPath,
-				"cause":       vErr.Error(),
-			})
-		}
-		if !result.OK {
-			firstKind := ""
-			if len(result.Errors) > 0 {
-				if k, ok := result.Errors[0]["kind"].(string); ok {
-					firstKind = k
-				}
-			}
-			emitHealthCheckEvent(ctx, c.EventStore, domain.EventTypeUpdateHealthCheckFailed, map[string]any{
-				"from_version":               current,
-				"to_version":                 latest,
-				"staged_path":                stagedPath,
-				"validator_error_count":      len(result.Errors),
-				"validator_first_error_kind": firstKind,
-				"validator_raw_excerpt":      string(result.RawOutput),
-			})
-			emitHealthCheckEvent(ctx, c.EventStore, domain.EventTypeUpdateSwapAborted, map[string]any{
-				"from_version":          current,
-				"to_version":            latest,
-				"reason":                "config_validation_failed",
-				"validator_error_count": len(result.Errors),
-			})
-			return nil, domain.NewError(domain.ErrUpdateFailed, fmt.Sprintf(t("cli.update.err.config_validation_failed_fmt"), len(result.Errors), firstKind), map[string]any{
-				"reason":        "config_validation_failed",
-				"current":       current,
-				"latest":        latest,
-				"binary_path":   c.BinaryPath,
-				"staged_path":   stagedPath,
-				"errors":        result.Errors,
-				"validator_raw": string(result.RawOutput),
-			})
-		}
-		emitHealthCheckEvent(ctx, c.EventStore, domain.EventTypeUpdateHealthCheckPassed, map[string]any{
-			"from_version": current,
-			"to_version":   latest,
-			"binary_path":  c.BinaryPath,
-			"staged_path":  stagedPath,
-		})
+	cleanupEventStore := openUpdateEventStore(ctx, &c)
+	defer cleanupEventStore()
+	if err := validateStagedUpdate(ctx, c, current, latest, stagedPath); err != nil {
+		return nil, err
 	}
-
-	// Pre-swap snapshot: write a recovery .db under StateDir/backups
-	// AFTER the validator gate so failed health checks do not leave
-	// orphan backups (#365 AC 3). BackupFactory still resolves lazily
-	// so `okt update --check` and the noop fast path skip it
-	// entirely.
-	backupRunner := c.Backup
-	if c.BackupFactory != nil {
-		runner, factoryErr := c.BackupFactory(ctx)
-		if factoryErr != nil {
-			return nil, domain.NewError(domain.ErrUpdateFailed, fmt.Sprintf(t("cli.update.err.backup_failed_fmt"), factoryErr.Error()), map[string]any{
-				"reason": "backup_failed",
-				"cause":  factoryErr.Error(),
-			})
-		}
-		backupRunner = runner
+	backupPath, err := runUpdateBackup(ctx, c)
+	if err != nil {
+		return nil, err
 	}
-	var backupPath string
-	if backupRunner != nil {
-		path, err := backupRunner.Run(ctx)
-		if err != nil {
-			return nil, domain.NewError(domain.ErrUpdateFailed, fmt.Sprintf(t("cli.update.err.backup_failed_fmt"), err.Error()), map[string]any{
-				"reason": "backup_failed",
-				"cause":  err.Error(),
-			})
-		}
-		backupPath = path
-	}
-
 	if err := swapStagedBinary(stagedPath, c.BinaryPath); err != nil {
 		return nil, domain.NewError(domain.ErrUpdateFailed, fmt.Sprintf(t("cli.update.err.swap_binary"), c.BinaryPath, err.Error()), nil)
 	}
 	swapped = true
+	return finishUpdate(ctx, c, inputs, current, latest, action, verified, backupPath)
+}
+
+func openUpdateEventStore(ctx context.Context, client *updateClient) func() {
+	if client.EventStoreFactory == nil {
+		return func() {}
+	}
+	store, cleanup := client.EventStoreFactory(ctx)
+	if store != nil {
+		client.EventStore = store
+	}
+	if cleanup == nil {
+		return func() {}
+	}
+	return cleanup
+}
+
+func resolveUpdateVersions(ctx context.Context, c updateClient) (string, string, error) {
+	if current := strings.TrimSpace(c.Current); current == "" || current == "dev" {
+		return "", "", domain.NewError(domain.ErrValidation, t("cli.update.err.dev_build"), nil)
+	}
+	if currentGOOS == "windows" {
+		return "", "", domain.NewError(domain.ErrUpdateFailed, t("cli.update.err.windows_unsupported"), nil)
+	}
+	latest, err := c.Fetcher.Latest(ctx)
+	if err != nil {
+		return "", "", domain.NewError(domain.ErrUpdateFailed, fmt.Sprintf(t("cli.update.err.fetch_latest"), err.Error()), nil)
+	}
+	return normalizeVersion(c.Current), normalizeVersion(latest), nil
+}
+
+func updateAction(current, latest string) string {
+	if current == latest {
+		return "noop"
+	}
+	return "upgrade"
+}
+
+func updateStatus(current, latest, action string) map[string]any {
+	code := "update_not_required"
+	if action == "upgrade" {
+		code = "update_available"
+	}
+	return map[string]any{"code": code, "current": current, "latest": latest, "action": action, "applied": false}
+}
+
+func validateUpdateTarget(current, latest string) error {
+	// Strict release policy runs before confirmation and before any release byte
+	// is fetched, so a rollback target or legacy release cannot reach the swap.
+	if err := releaseverify.RequireUpgrade(current, latest); err != nil {
+		return domain.NewError(domain.ErrUpdateFailed, fmt.Sprintf(t("cli.update.err.downgrade_blocked_fmt"), latest, current), nil)
+	}
+	if err := releaseverify.RequireSignedTarget(latest); err != nil {
+		return domain.NewError(domain.ErrUpdateFailed, fmt.Sprintf(t("cli.update.err.unsigned_release_fmt"), latest, releaseverify.LegacyChecksumCutoff), nil)
+	}
+	return nil
+}
+
+func confirmUpdate(ctx context.Context, current, latest string, yes bool) error {
+	if yes {
+		return nil
+	}
+	if !stdinIsTTY() {
+		return domain.NewError(domain.ErrValidation, t("cli.update.picker.no_tty"), nil)
+	}
+	confirmed, err := runUpdateConfirm(ctx, current, latest)
+	if err != nil {
+		return err
+	}
+	if !confirmed {
+		return domain.NewError(domain.ErrValidation, t("cli.update.picker.aborted"), nil)
+	}
+	return nil
+}
+
+func stageUpdateBinary(ctx context.Context, c updateClient, current, latest, asset string) (string, releaseverify.Result, error) {
+	if c.ReleaseVerifier == nil {
+		return "", releaseverify.Result{}, domain.NewError(domain.ErrUpdateFailed, t("cli.update.err.verifier_unavailable"), nil)
+	}
+	archiveBytes, verified, err := downloadAndVerifyUpdate(ctx, c, current, latest, asset)
+	if err != nil {
+		return "", releaseverify.Result{}, err
+	}
+	binary, err := lifecycle.ExtractBinary(bytes.NewReader(archiveBytes), currentGOOS, lifecycle.BinaryName())
+	if err != nil {
+		return "", releaseverify.Result{}, domain.NewError(domain.ErrUpdateFailed, fmt.Sprintf(t("cli.update.err.extract_asset"), lifecycle.BinaryName(), err.Error()), nil)
+	}
+	stagedPath, err := stageBinary(c.BinaryPath, bytes.NewReader(binary))
+	if err != nil {
+		return "", releaseverify.Result{}, domain.NewError(domain.ErrUpdateFailed, fmt.Sprintf(t("cli.update.err.stage_binary_fmt"), err.Error()), nil)
+	}
+	return stagedPath, verified, nil
+}
+
+func downloadAndVerifyUpdate(ctx context.Context, c updateClient, current, latest, asset string) ([]byte, releaseverify.Result, error) {
+	archiveBytes, err := downloadAsset(ctx, c.Downloader, latest, asset)
+	if err != nil {
+		return nil, releaseverify.Result{}, domain.NewError(domain.ErrUpdateFailed, err.Error(), nil)
+	}
+	metadata := make(map[string][]byte, 5)
+	for _, name := range []string{releaseverify.ChecksumsName, releaseverify.ManifestName(latest), releaseverify.ManifestBundleName(latest), releaseverify.ChecksumsBundleName(latest), releaseverify.ProvenanceBundleName(latest)} {
+		data, err := downloadAsset(ctx, c.Downloader, latest, name)
+		if err != nil {
+			return nil, releaseverify.Result{}, domain.NewError(domain.ErrUpdateFailed, fmt.Sprintf(t("cli.update.err.fetch_release_metadata_fmt"), name, err.Error()), nil)
+		}
+		metadata[name] = data
+	}
+	verified, err := c.ReleaseVerifier(ctx, releaseverify.Release{
+		Repository:       updateRepo,
+		Version:          latest,
+		ArchiveName:      asset,
+		Archive:          archiveBytes,
+		Checksums:        metadata[releaseverify.ChecksumsName],
+		Manifest:         metadata[releaseverify.ManifestName(latest)],
+		ManifestBundle:   metadata[releaseverify.ManifestBundleName(latest)],
+		ChecksumsBundle:  metadata[releaseverify.ChecksumsBundleName(latest)],
+		ProvenanceBundle: metadata[releaseverify.ProvenanceBundleName(latest)],
+	})
+	if err != nil {
+		return nil, releaseverify.Result{}, domain.NewError(domain.ErrUpdateFailed, fmt.Sprintf(t("cli.update.err.signature_verification_failed_fmt"), err.Error()), map[string]any{"reason": "release_verification_failed", "current": current, "latest": latest, "binary_path": c.BinaryPath, "cause": err.Error()})
+	}
+	gotSum := fmt.Sprintf("%x", sha256.Sum256(archiveBytes))
+	if !strings.EqualFold(gotSum, verified.ArchiveSHA256) {
+		return nil, releaseverify.Result{}, domain.NewError(domain.ErrUpdateFailed, fmt.Sprintf(t("cli.update.err.checksum_mismatch"), verified.ArchiveSHA256, gotSum), nil)
+	}
+	return archiveBytes, verified, nil
+}
+
+func validateStagedUpdate(ctx context.Context, c updateClient, current, latest, stagedPath string) error {
+	if c.Validator == nil {
+		return nil
+	}
+	if strings.TrimSpace(c.ConfigPath) == "" {
+		return domain.NewError(domain.ErrUpdateFailed, "staged config validation requires a resolved config path; binary unchanged", map[string]any{
+			"reason":      "config_validation_path_unavailable",
+			"current":     current,
+			"latest":      latest,
+			"binary_path": c.BinaryPath,
+			"staged_path": stagedPath,
+		})
+	}
+	result, err := c.Validator(ctx, stagedPath, c.ConfigPath)
+	if err != nil {
+		return domain.NewError(domain.ErrUpdateFailed, fmt.Sprintf(t("cli.update.err.config_validation_exec_fmt"), err.Error()), map[string]any{"reason": "config_validation_exec_failed", "current": current, "latest": latest, "binary_path": c.BinaryPath, "staged_path": stagedPath, "cause": err.Error()})
+	}
+	if result.OK {
+		emitHealthCheckEvent(ctx, c.EventStore, domain.EventTypeUpdateHealthCheckPassed, map[string]any{"from_version": current, "to_version": latest, "binary_path": c.BinaryPath, "staged_path": stagedPath})
+		return nil
+	}
+	firstKind := updateValidatorFirstKind(result.Errors)
+	emitHealthCheckEvent(ctx, c.EventStore, domain.EventTypeUpdateHealthCheckFailed, map[string]any{"from_version": current, "to_version": latest, "staged_path": stagedPath, "validator_error_count": len(result.Errors), "validator_first_error_kind": firstKind, "validator_raw_excerpt": string(result.RawOutput)})
+	emitHealthCheckEvent(ctx, c.EventStore, domain.EventTypeUpdateSwapAborted, map[string]any{"from_version": current, "to_version": latest, "reason": "config_validation_failed", "validator_error_count": len(result.Errors)})
+	return domain.NewError(domain.ErrUpdateFailed, fmt.Sprintf(t("cli.update.err.config_validation_failed_fmt"), len(result.Errors), firstKind), map[string]any{"reason": "config_validation_failed", "current": current, "latest": latest, "binary_path": c.BinaryPath, "staged_path": stagedPath, "errors": result.Errors, "validator_raw": string(result.RawOutput)})
+}
+
+func updateValidatorFirstKind(errors []map[string]any) string {
+	if len(errors) == 0 {
+		return ""
+	}
+	firstKind, _ := errors[0]["kind"].(string)
+	return firstKind
+}
+
+func runUpdateBackup(ctx context.Context, c updateClient) (string, error) {
+	backupRunner := c.Backup
+	if c.BackupFactory != nil {
+		runner, err := c.BackupFactory(ctx)
+		if err != nil {
+			return "", domain.NewError(domain.ErrUpdateFailed, fmt.Sprintf(t("cli.update.err.backup_failed_fmt"), err.Error()), map[string]any{"reason": "backup_failed", "cause": err.Error()})
+		}
+		backupRunner = runner
+	}
+	if backupRunner == nil {
+		return "", nil
+	}
+	path, err := backupRunner.Run(ctx)
+	if err != nil {
+		return "", domain.NewError(domain.ErrUpdateFailed, fmt.Sprintf(t("cli.update.err.backup_failed_fmt"), err.Error()), map[string]any{"reason": "backup_failed", "cause": err.Error()})
+	}
+	return path, nil
+}
+
+func finishUpdate(ctx context.Context, c updateClient, inputs updateInputs, current, latest, action string, verified releaseverify.Result, backupPath string) (map[string]any, error) {
 
 	emitHealthCheckEvent(ctx, c.EventStore, domain.EventTypeUpdateSwapCompleted, map[string]any{
 		"from_version": current,
@@ -524,6 +581,8 @@ func runUpdate(ctx context.Context, c updateClient, inputs updateInputs) (any, e
 		"backup_path":              backupPath,
 		"defaults_refreshed":       defaultsRefreshed,
 		"defaults_refresh_skipped": inputs.SkipDefaults,
+		"signature_verified":       true,
+		"source_commit":            verified.SourceCommit,
 	}, nil
 }
 
@@ -605,7 +664,29 @@ func defaultUpdateClient(version string) (updateClient, error) {
 		Current:           version,
 		BinaryPath:        bin,
 		DefaultsRefresher: defaultUpdateDefaultsRefresher,
+		ReleaseVerifier:   defaultReleaseVerifier,
 	}, nil
+}
+
+// defaultReleaseVerifier resolves the Sigstore trust anchors lazily — only
+// once an update is actually about to be applied — and refuses to continue if
+// they cannot be refreshed. The cache lives under the user's state dir so a
+// repeat update does not need a fresh TUF round trip, and so the refreshed
+// metadata is never written to a shared temp path.
+func defaultReleaseVerifier(ctx context.Context, rel releaseverify.Release) (releaseverify.Result, error) {
+	stateDir, err := paths.StateDir()
+	if err != nil {
+		return releaseverify.Result{}, fmt.Errorf("resolve sigstore root cache: %w", err)
+	}
+	trust, err := releaseverify.TrustedRoot(ctx, filepath.Join(stateDir, "sigstore"))
+	if err != nil {
+		return releaseverify.Result{}, err
+	}
+	verifier, err := releaseverify.New(trust, rel.Repository)
+	if err != nil {
+		return releaseverify.Result{}, err
+	}
+	return verifier.Verify(rel)
 }
 
 func defaultUpdateDefaultsRefresher(ctx context.Context, binaryPath string) error {
@@ -686,12 +767,13 @@ func (b *cappedOutputBuffer) String() string {
 }
 
 // defaultUpdateValidator runs the staged binary's `okt config validate
-// --migrate --config <configPath>` and parses its JSON envelope. A
+// --config <configPath>` and parses its JSON envelope. A
 // non-zero exit code from the validator is the normal failure path
 // (returned as result.OK=false, not as a Go error) — only spawn
-// failures or unparseable output produce an error here. The validator
-// inherits the parent's env so the staged binary sees the same
-// `OMAKITEN_HOME` / XDG state the live binary would on next launch.
+// failures, context cancellation, signal termination, or unparseable output
+// produce an error here. The validator inherits the parent's env so the
+// staged binary sees the same `OMAKITEN_HOME` / XDG state the live binary
+// would on next launch.
 //
 // Stdout and stderr are captured into SEPARATE buffers — the staged
 // binary's `emitBundleWarnings` writes to stderr while the JSON
@@ -701,32 +783,23 @@ func (b *cappedOutputBuffer) String() string {
 // stderr after the call so warnings stay visible without poisoning
 // the parse.
 func defaultUpdateValidator(ctx context.Context, binaryPath, configPath string) (updateValidatorResult, error) {
-	cmd := exec.CommandContext(ctx, binaryPath, "config", "validate", "--migrate", "--config", configPath)
+	cmd := exec.CommandContext(ctx, binaryPath, "config", "validate", "--config", configPath)
 	cmd.Env = os.Environ()
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 	runErr := cmd.Run()
-	// Mirror the validator subprocess's stderr to the parent, capped
-	// so a misbehaving validator that floods stderr with multi-MB
-	// output cannot block the parse or hide the JSON envelope behind
-	// noise. The first 64 KiB carries the warnings that motivated
-	// the split; anything larger is a runaway and warrants the
-	// truncation marker.
-	if stderr.Len() > 0 {
-		const stderrMirrorCap = 64 << 10
-		buf := stderr.Bytes()
-		if len(buf) > stderrMirrorCap {
-			_, _ = os.Stderr.Write(buf[:stderrMirrorCap])
-			fmt.Fprintf(os.Stderr, "\n[okt update: validator stderr truncated after %d bytes; %d more bytes suppressed]\n", stderrMirrorCap, len(buf)-stderrMirrorCap)
-		} else {
-			_, _ = os.Stderr.Write(buf)
-		}
+	mirrorValidatorStderr(stderr.Bytes())
+	if ctxErr := ctx.Err(); ctxErr != nil {
+		return updateValidatorResult{OK: false, RawOutput: stdout.Bytes()}, fmt.Errorf("validator execution: %w", ctxErr)
 	}
 
 	var exitErr *exec.ExitError
 	exitedNonZero := errors.As(runErr, &exitErr)
 	if exitedNonZero {
+		if exitErr.ProcessState != nil && exitErr.ExitCode() < 0 {
+			return updateValidatorResult{OK: false, RawOutput: stdout.Bytes()}, fmt.Errorf("validator terminated by signal: %w", runErr)
+		}
 		// Non-zero exit is the documented validator-fail path;
 		// surface OK=false with parsed errors rather than treating
 		// it as exec infrastructure breakage.
@@ -736,30 +809,43 @@ func defaultUpdateValidator(ctx context.Context, binaryPath, configPath string) 
 		return updateValidatorResult{OK: false, RawOutput: stdout.Bytes()}, runErr
 	}
 
-	raw := bytes.TrimSpace(stdout.Bytes())
-	if len(raw) == 0 {
-		// Non-zero exit + empty stdout is still a structured failure
-		// from the user's perspective (the validator decided to
-		// abort); only the zero-exit + empty stdout combination is
-		// genuine infra weirdness worth surfacing as an error.
-		if exitedNonZero {
-			return updateValidatorResult{OK: false, RawOutput: nil}, nil
-		}
-		return updateValidatorResult{OK: false, RawOutput: nil}, fmt.Errorf("validator produced no output")
+	result, err := parseValidatorOutput(stdout.Bytes(), exitedNonZero)
+	if exitedNonZero {
+		result.OK = false
 	}
+	return result, err
+}
 
+func mirrorValidatorStderr(buf []byte) {
+	if len(buf) == 0 {
+		return
+	}
+	const stderrMirrorCap = 64 << 10
+	if len(buf) > stderrMirrorCap {
+		_, _ = os.Stderr.Write(buf[:stderrMirrorCap])
+		fmt.Fprintf(os.Stderr, "\n[okt update: validator stderr truncated after %d bytes; %d more bytes suppressed]\n", stderrMirrorCap, len(buf)-stderrMirrorCap)
+		return
+	}
+	_, _ = os.Stderr.Write(buf)
+}
+
+func parseValidatorOutput(output []byte, exitedNonZero bool) (updateValidatorResult, error) {
+	raw := bytes.TrimSpace(output)
+	if len(raw) == 0 {
+		if exitedNonZero {
+			return updateValidatorResult{OK: false}, nil
+		}
+		return updateValidatorResult{OK: false}, fmt.Errorf("validator produced no output")
+	}
 	var env map[string]any
 	if err := json.Unmarshal(raw, &env); err != nil {
 		return updateValidatorResult{OK: false, RawOutput: raw}, fmt.Errorf("parse validator envelope: %w", err)
 	}
-
 	result := updateValidatorResult{RawOutput: raw}
 	if okFlag, _ := env["ok"].(bool); okFlag {
 		result.OK = true
 		return result, nil
 	}
-
-	// Failure envelope: details.errors carries the structured kinds.
 	if details, ok := env["details"].(map[string]any); ok {
 		if errs, ok := details["errors"].([]any); ok {
 			for _, e := range errs {
@@ -868,34 +954,25 @@ func assetName(goos, goarch string) (string, error) {
 	return fmt.Sprintf("okt_%s_%s%s", osTok, archTok, ext), nil
 }
 
-// fetchAssetChecksum downloads `checksums.txt` from the release and
-// returns the hex sha256 expected for `asset`. goreleaser publishes
-// the file as `<sha256>  <filename>` lines (two-space separator) —
-// the same shape `sha256sum -c` consumes.
-func fetchAssetChecksum(ctx context.Context, dl AssetDownloader, tag, asset string) (string, error) {
-	body, err := dl.Download(ctx, tag, "checksums.txt")
+// downloadAsset streams one release asset into memory under the shared size
+// cap. Every asset the updater consumes — the archive and the four signed
+// metadata files — goes through this single reader so a compromised CDN
+// cannot OOM the host with any one of them, and so no asset can be read
+// without the cap.
+func downloadAsset(ctx context.Context, dl AssetDownloader, tag, asset string) ([]byte, error) {
+	body, err := dl.Download(ctx, tag, asset)
 	if err != nil {
-		return "", err
+		return nil, fmt.Errorf(t("cli.update.err.download_asset"), asset, err.Error())
 	}
 	defer body.Close()
-	scanner := bufio.NewScanner(body)
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-		if line == "" {
-			continue
-		}
-		fields := strings.Fields(line)
-		if len(fields) < 2 {
-			continue
-		}
-		if fields[1] == asset {
-			return strings.ToLower(fields[0]), nil
-		}
+	data, err := io.ReadAll(io.LimitReader(body, maxAssetSize+1))
+	if err != nil {
+		return nil, fmt.Errorf(t("cli.update.err.download_asset"), asset, err.Error())
 	}
-	if err := scanner.Err(); err != nil {
-		return "", err
+	if int64(len(data)) > maxAssetSize {
+		return nil, fmt.Errorf(t("cli.update.err.asset_too_large"), asset, maxAssetSize)
 	}
-	return "", fmt.Errorf("checksum for %s not in checksums.txt", asset)
+	return data, nil
 }
 
 // stageBinary writes body to a sibling tmp file next to dst with +x

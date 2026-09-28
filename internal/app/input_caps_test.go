@@ -184,95 +184,64 @@ func TestCommentServiceScopedMetadataInputCaps(t *testing.T) {
 		return comment
 	}
 
+	testTitleCaps(t, ctx, service, project.Context(), seed)
+	testKindCaps(t, ctx, service, project.Context(), seed)
+}
+
+func testTitleCaps(t *testing.T, ctx context.Context, service *CommentService, project domain.ProjectContext, seed func(*testing.T) domain.Comment) {
 	t.Run("create title at cap passes", func(t *testing.T) {
 		title := strings.Repeat("t", domain.MaxCommentTitleRunes)
-		comment, err := service.AddScoped(ctx, project.Context(), domain.CommentWrite{
-			Scope:      domain.CommentScopeProject,
-			Body:       "body",
-			Title:      title,
-			AuthorType: "agent",
-		})
-		if err != nil {
-			t.Fatalf("AddScoped(title len==cap) error = %v, want nil", err)
-		}
-		if comment.Title != title {
-			t.Fatalf("comment title at cap was altered; got %d runes, want %d (no truncation)", len([]rune(comment.Title)), domain.MaxCommentTitleRunes)
+		comment, err := service.AddScoped(ctx, project, domain.CommentWrite{Scope: domain.CommentScopeProject, Body: "body", Title: title, AuthorType: "agent"})
+		if err != nil || comment.Title != title {
+			t.Fatalf("AddScoped(title at cap) = comment=%q err=%v, want unchanged title", comment.Title, err)
 		}
 	})
-
 	t.Run("create title over cap rejects", func(t *testing.T) {
 		title := strings.Repeat("t", domain.MaxCommentTitleRunes+1)
-		_, err := service.AddScoped(ctx, project.Context(), domain.CommentWrite{
-			Scope:      domain.CommentScopeProject,
-			Body:       "body",
-			Title:      title,
-			AuthorType: "agent",
-		})
+		_, err := service.AddScoped(ctx, project, domain.CommentWrite{Scope: domain.CommentScopeProject, Body: "body", Title: title, AuthorType: "agent"})
 		assertCodedError(t, err, domain.ErrValidation)
 	})
-
 	t.Run("edit title at cap passes", func(t *testing.T) {
 		comment := seed(t)
 		title := strings.Repeat("e", domain.MaxCommentTitleRunes)
-		edited, err := service.EditScoped(ctx, project.Context(), comment.ID, domain.CommentEdit{Title: &title}, nil)
-		if err != nil {
-			t.Fatalf("EditScoped(title len==cap) error = %v, want nil", err)
-		}
-		if edited.Title != title {
-			t.Fatalf("edited title at cap was altered; got %d runes, want %d (no truncation)", len([]rune(edited.Title)), domain.MaxCommentTitleRunes)
+		edited, err := service.EditScoped(ctx, project, comment.ID, domain.CommentEdit{Title: &title}, nil)
+		if err != nil || edited.Title != title {
+			t.Fatalf("EditScoped(title at cap) = comment=%q err=%v, want unchanged title", edited.Title, err)
 		}
 	})
-
 	t.Run("edit title over cap rejects", func(t *testing.T) {
 		comment := seed(t)
 		title := strings.Repeat("e", domain.MaxCommentTitleRunes+1)
-		_, err := service.EditScoped(ctx, project.Context(), comment.ID, domain.CommentEdit{Title: &title}, nil)
+		_, err := service.EditScoped(ctx, project, comment.ID, domain.CommentEdit{Title: &title}, nil)
 		assertCodedError(t, err, domain.ErrValidation)
 	})
+}
 
+func testKindCaps(t *testing.T, ctx context.Context, service *CommentService, project domain.ProjectContext, seed func(*testing.T) domain.Comment) {
 	t.Run("create kind at cap passes", func(t *testing.T) {
 		kind := strings.Repeat("k", domain.MaxCommentKindRunes)
-		comment, err := service.AddScoped(ctx, project.Context(), domain.CommentWrite{
-			Scope:      domain.CommentScopeProject,
-			Body:       "body",
-			Kind:       kind,
-			AuthorType: "agent",
-		})
-		if err != nil {
-			t.Fatalf("AddScoped(kind len==cap) error = %v, want nil", err)
-		}
-		if comment.Kind != kind {
-			t.Fatalf("comment kind at cap was altered; got %d runes, want %d (no truncation)", len([]rune(comment.Kind)), domain.MaxCommentKindRunes)
+		comment, err := service.AddScoped(ctx, project, domain.CommentWrite{Scope: domain.CommentScopeProject, Body: "body", Kind: kind, AuthorType: "agent"})
+		if err != nil || comment.Kind != kind {
+			t.Fatalf("AddScoped(kind at cap) = comment=%q err=%v, want unchanged kind", comment.Kind, err)
 		}
 	})
-
 	t.Run("create kind over cap rejects", func(t *testing.T) {
 		kind := strings.Repeat("k", domain.MaxCommentKindRunes+1)
-		_, err := service.AddScoped(ctx, project.Context(), domain.CommentWrite{
-			Scope:      domain.CommentScopeProject,
-			Body:       "body",
-			Kind:       kind,
-			AuthorType: "agent",
-		})
+		_, err := service.AddScoped(ctx, project, domain.CommentWrite{Scope: domain.CommentScopeProject, Body: "body", Kind: kind, AuthorType: "agent"})
 		assertCodedError(t, err, domain.ErrValidation)
 	})
-
 	t.Run("edit kind at cap passes", func(t *testing.T) {
 		comment := seed(t)
 		kind := strings.Repeat("m", domain.MaxCommentKindRunes)
-		edited, err := service.EditScoped(ctx, project.Context(), comment.ID, domain.CommentEdit{Kind: &kind}, nil)
-		if err != nil {
-			t.Fatalf("EditScoped(kind len==cap) error = %v, want nil", err)
-		}
-		if edited.Kind != kind {
-			t.Fatalf("edited kind at cap was altered; got %d runes, want %d (no truncation)", len([]rune(edited.Kind)), domain.MaxCommentKindRunes)
+		edited, err := service.EditScoped(ctx, project, comment.ID, domain.CommentEdit{Kind: &kind}, nil)
+		if err != nil || edited.Kind != kind {
+			t.Fatalf("EditScoped(kind at cap) = comment=%q err=%v, want unchanged kind", edited.Kind, err)
 		}
 	})
-
 	t.Run("edit kind over cap rejects", func(t *testing.T) {
 		comment := seed(t)
 		kind := strings.Repeat("m", domain.MaxCommentKindRunes+1)
-		_, err := service.EditScoped(ctx, project.Context(), comment.ID, domain.CommentEdit{Kind: &kind}, nil)
+		_, err := service.EditScoped(ctx, project, comment.ID, domain.CommentEdit{Kind: &kind}, nil)
 		assertCodedError(t, err, domain.ErrValidation)
 	})
 }

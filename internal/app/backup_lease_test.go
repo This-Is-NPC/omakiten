@@ -215,6 +215,24 @@ func TestBackupPruneRejectsReplacedDirectoryAndAttackerTimestampFile(t *testing.
 	if runtime.GOOS == "windows" {
 		t.Skip("Windows does not permit renaming this test's open directory handle")
 	}
+	source, dest, moved, attackerPath, originalNames := backupPruneReplacementFixture(t)
+	svc := NewBackupService(BackupOptions{SourcePath: source, DestDir: dest, Retention: 1})
+	if err := svc.WithLease(context.Background(), func(lease BackupLease) error {
+		return replaceBackupDirectoryAndRejectPrune(lease, dest, moved, filepath.Dir(attackerPath))
+	}); err != nil {
+		t.Fatalf("WithLease: %v", err)
+	}
+	if body, err := os.ReadFile(attackerPath); err != nil || string(body) != "unrelated" {
+		t.Fatalf("attacker timestamp file changed: body=%q err=%v", body, err)
+	}
+	for _, name := range originalNames {
+		if _, err := os.Stat(filepath.Join(moved, name)); err != nil {
+			t.Fatalf("original backup %s was removed after replacement: %v", name, err)
+		}
+	}
+}
+
+func backupPruneReplacementFixture(t *testing.T) (string, string, string, string, []string) {
 	dir := t.TempDir()
 	source := filepath.Join(dir, "source.db")
 	if err := os.WriteFile(source, []byte("source"), 0o600); err != nil {
@@ -237,35 +255,24 @@ func TestBackupPruneRejectsReplacedDirectoryAndAttackerTimestampFile(t *testing.
 	if err := os.Mkdir(attacker, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	attackerName := "2026-07-13T10-00-02.000000000Z.db"
-	attackerPath := filepath.Join(attacker, attackerName)
+	attackerPath := filepath.Join(attacker, "2026-07-13T10-00-02.000000000Z.db")
 	if err := os.WriteFile(attackerPath, []byte("unrelated"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	moved := filepath.Join(dir, "original-backups")
-	svc := NewBackupService(BackupOptions{SourcePath: source, DestDir: dest, Retention: 1})
-	if err := svc.WithLease(context.Background(), func(lease BackupLease) error {
-		if err := os.Rename(dest, moved); err != nil {
-			return err
-		}
-		if err := os.Symlink(attacker, dest); err != nil {
-			return err
-		}
-		if err := lease.PruneRetaining(""); err == nil {
-			return errors.New("prune accepted a replaced backup directory")
-		}
-		return nil
-	}); err != nil {
-		t.Fatalf("WithLease: %v", err)
+	return source, dest, filepath.Join(dir, "original-backups"), attackerPath, originalNames
+}
+
+func replaceBackupDirectoryAndRejectPrune(lease BackupLease, dest, moved, attacker string) error {
+	if err := os.Rename(dest, moved); err != nil {
+		return err
 	}
-	if body, err := os.ReadFile(attackerPath); err != nil || string(body) != "unrelated" {
-		t.Fatalf("attacker timestamp file changed: body=%q err=%v", body, err)
+	if err := os.Symlink(attacker, dest); err != nil {
+		return err
 	}
-	for _, name := range originalNames {
-		if _, err := os.Stat(filepath.Join(moved, name)); err != nil {
-			t.Fatalf("original backup %s was removed after replacement: %v", name, err)
-		}
+	if err := lease.PruneRetaining(""); err == nil {
+		return errors.New("prune accepted a replaced backup directory")
 	}
+	return nil
 }
 
 func TestBackupFailedPruneBoundsDisabledRetentionAndProtectsRecovery(t *testing.T) {

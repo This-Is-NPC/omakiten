@@ -1,0 +1,350 @@
+package operation
+
+import (
+	"context"
+	"fmt"
+	"strings"
+
+	"omakiten/internal/app"
+	"omakiten/internal/domain"
+)
+
+func (s *Service) ContinueTask(ctx context.Context, input ContinueTaskInput) (ContinueTaskResponse, error) {
+	if err := s.allow("task.continue"); err != nil {
+		return ContinueTaskResponse{}, err
+	}
+	if input.TaskID <= 0 {
+		return ContinueTaskResponse{}, domain.NewError(domain.ErrValidation, "task id must be positive", map[string]any{"task_id": input.TaskID})
+	}
+
+	project, err := s.resolveProject(ctx, input.ProjectSelector)
+	if err != nil {
+		return ContinueTaskResponse{}, err
+	}
+
+	tasks, err := app.NewTaskServiceFromStore(s.repo, s.registry, s.snapshot).List(ctx, project, domain.TaskFilter{})
+	if err != nil {
+		return ContinueTaskResponse{}, err
+	}
+	task, ok := findTask(tasks, input.TaskID)
+	if !ok {
+		return ContinueTaskResponse{}, domain.NewError(domain.ErrTaskNotFound, "task not found in active project", map[string]any{"task_id": input.TaskID, "project_id": project.ID})
+	}
+
+	// Workflow shape is heavy (~150 tokens) and rarely changes mid-session.
+	// Skip the lookup when the caller has opted out via include_workflow=false
+	// or when config.mcp.include_workflow_in_continue is false and the caller
+	// did not override.
+	includeWorkflow := s.settings.IncludeWorkflow
+	if input.IncludeWorkflow != nil {
+		includeWorkflow = *input.IncludeWorkflow
+	}
+	var workflowSum WorkflowSummary
+	if includeWorkflow {
+		workflowSum = workflowSummary(s.snapshot.Workflow())
+	}
+
+	dependencies, err := app.NewDependencyService(s.repo).List(ctx, project, input.TaskID)
+	if err != nil {
+		return ContinueTaskResponse{}, err
+	}
+	comments, err := s.newCommentService().List(ctx, project, input.TaskID)
+	if err != nil {
+		return ContinueTaskResponse{}, err
+	}
+
+	var agentOutputLang string
+	if s.snapshot != nil {
+		agentOutputLang = s.snapshot.AgentOutputLanguage()
+	}
+	return ContinueTaskResponse{
+		Project:             projectSummary(project),
+		Task:                taskSummary(task, s.registry),
+		Workflow:            workflowSum,
+		Dependencies:        dependencySummaries(dependencies),
+		Comments:            s.shapedRecentComments(comments),
+		NextStepPrompt:      fmt.Sprintf("Continue task #%d from this checkpoint, then record material progress with `progress.record`.", task.ID),
+		AgentOutputLanguage: agentOutputLang,
+	}, nil
+}
+
+// shapedRecentComments applies the configured recent-comment cap and the
+// per-comment body truncation in one place so every endpoint that ships
+// comments uses the same shaping rules.
+func (s *Service) shapedRecentComments(comments []domain.Comment) []CommentSummary {
+	out := recentComments(comments, s.settings.RecentCommentLimit)
+	if s.settings.MaxCommentChars > 0 {
+		for i := range out {
+			out[i].Body = truncateBody(out[i].Body, s.settings.MaxCommentChars)
+		}
+	}
+	return out
+}
+
+func (s *Service) ListTasks(ctx context.Context, input ListTasksInput) (ListTasksResponse, error) {
+	if err := s.allow("task.list"); err != nil {
+		return ListTasksResponse{}, err
+	}
+	project, err := s.resolveProject(ctx, input.ProjectSelector)
+	if err != nil {
+		return ListTasksResponse{}, err
+	}
+	filter := domain.TaskFilter{BucketKey: strings.TrimSpace(input.BucketKey)}
+	if input.ParentID.Set {
+		if input.ParentID.Value == nil {
+			filter.ParentMode = domain.ParentRoots
+		} else {
+			filter.ParentMode = domain.ParentChildren
+			filter.ParentValue = *input.ParentID.Value
+		}
+	}
+	tasks, err := app.NewTaskServiceFromStore(s.repo, s.registry, s.snapshot).List(ctx, project, filter)
+	if err != nil {
+		return ListTasksResponse{}, err
+	}
+	return ListTasksResponse{Project: projectSummary(project), Tasks: taskSummaries(tasks, s.registry)}, nil
+}
+
+func (s *Service) CreateTaskIntent(ctx context.Context, input CreateTaskInput) (CreateTaskResponse, error) {
+	if err := s.allow("task.create_intent"); err != nil {
+		return CreateTaskResponse{}, err
+	}
+	return s.createTaskIntent(ctx, input)
+}
+
+func (s *Service) createTaskIntent(ctx context.Context, input CreateTaskInput) (CreateTaskResponse, error) {
+	project, err := s.resolveProject(ctx, input.ProjectSelector)
+	if err != nil {
+		return CreateTaskResponse{}, err
+	}
+
+	title, description := taskTitleAndDescription(input.Title, input.Description)
+	if title == "" {
+		return CreateTaskResponse{}, domain.NewError(domain.ErrValidation, "task title or description is required", nil)
+	}
+
+	template := s.activeTaskTemplate(project.Slug)
+	if input.TemplateSlug != "" {
+		merged, applied, err := s.applyTemplateBody(input.TemplateSlug, description, TemplateKindTask)
+		if err != nil {
+			return CreateTaskResponse{}, err
+		}
+		description = merged
+		template = applied
+	}
+
+	// Enforce the title/description size caps on the merged (post-template)
+	// input BEFORE any list/similarity work. createTask validates these again at
+	// the domain boundary, but reaching it requires loading the full project
+	// task list and tokenizing title+description for the similarity scan — so an
+	// over-cap MCP payload (a 64 KiB+ description) would otherwise force that
+	// whole scan before being rejected. Validate up front so the reject is O(1).
+	if err := domain.ValidateTaskTitle(strings.TrimSpace(title)); err != nil {
+		return CreateTaskResponse{}, err
+	}
+	if err := domain.ValidateTaskDescription(strings.TrimSpace(description)); err != nil {
+		return CreateTaskResponse{}, err
+	}
+
+	if !input.SkipSimilarityCheck && !input.Confirmed {
+		if response, found, err := s.similarTaskConfirmation(ctx, project, title, description, template); err != nil {
+			return CreateTaskResponse{}, err
+		} else if found {
+			return response, nil
+		}
+	}
+
+	taskService := app.NewTaskServiceFromStore(s.repo, s.registry, s.snapshot)
+	var task domain.Task
+	if input.ParentID != nil {
+		task, err = taskService.AddSub(ctx, project, *input.ParentID, title, description, strings.TrimSpace(input.Priority), strings.TrimSpace(input.BucketKey))
+	} else {
+		task, err = taskService.Add(ctx, project, title, description, strings.TrimSpace(input.Priority), strings.TrimSpace(input.BucketKey))
+	}
+	if err != nil {
+		return CreateTaskResponse{}, err
+	}
+	summary := taskSummary(task, s.registry)
+	return CreateTaskResponse{Project: projectSummary(project), Task: &summary, Template: template}, nil
+}
+
+func (s *Service) similarTaskConfirmation(ctx context.Context, project domain.ProjectContext, title, description string, template *TaskTemplateSummary) (CreateTaskResponse, bool, error) {
+	tasks, err := app.NewTaskServiceFromStore(s.repo, s.registry, s.snapshot).List(ctx, project, domain.TaskFilter{})
+	if err != nil {
+		return CreateTaskResponse{}, false, err
+	}
+	similar := similarTasks(title+" "+description, tasks, s.settings.SimilarTaskLimit, s.registry, s.stopwords)
+	if len(similar) == 0 {
+		return CreateTaskResponse{}, false, nil
+	}
+	return CreateTaskResponse{
+		Project: projectSummary(project), SimilarTasks: similar, Template: template,
+		Confirmation: Confirmation{
+			RequiresConfirmation: true,
+			Reason: "Similar tasks already exist in this project. Surface them to the user verbatim and ask " +
+				"whether to continue an existing one (call `tasks.continue` with the chosen id) or create a " +
+				"separate task (call `tasks.create_intent` again with the same description and `confirmed=true`).",
+			Options: []ConfirmationOption{
+				{Action: "continue_existing", Label: "Continue one of the similar tasks"},
+				{Action: "create_separate", Label: "Create a separate task with confirmed=true"},
+			},
+		},
+	}, true, nil
+}
+
+func (s *Service) activeTaskTemplate(projectSlug string) *TaskTemplateSummary {
+	if s.taskTemplateLookup == nil {
+		return nil
+	}
+	return s.taskTemplateLookup(projectSlug)
+}
+
+func (s *Service) CreateTask(ctx context.Context, input CreateTaskInput) (CreateTaskResponse, error) {
+	if err := s.allow("task.create"); err != nil {
+		return CreateTaskResponse{}, err
+	}
+	input.SkipSimilarityCheck = true
+	return s.createTaskIntent(ctx, input)
+}
+
+// EditTask exposes app.TaskService.Edit through MCP. The handler does
+// nothing more than serialize input → invoke the service → serialize
+// output: every policy decision (bucket permissions, archive gate,
+// priority registry lookup) lives in the service so the MCP surface
+// carries no canonical defaults of its own.
+func (s *Service) EditTask(ctx context.Context, input EditTaskInput) (EditTaskResponse, error) {
+	if err := s.allow("task.edit"); err != nil {
+		return EditTaskResponse{}, err
+	}
+	project, err := s.resolveProject(ctx, input.ProjectSelector)
+	if err != nil {
+		return EditTaskResponse{}, err
+	}
+	update := domain.TaskUpdate{}
+	if input.Title != nil {
+		update.Title = input.Title
+	}
+	if input.Description != nil {
+		update.Description = input.Description
+	}
+	if input.Priority != nil {
+		label := strings.TrimSpace(*input.Priority)
+		if label == "" {
+			return EditTaskResponse{}, domain.NewError(domain.ErrValidation,
+				"priority must be a non-empty label when provided; omit the field to leave it unchanged",
+				map[string]any{"priority": *input.Priority})
+		}
+		p, ok := s.registry.PriorityFromLabel(label)
+		if !ok {
+			return EditTaskResponse{}, domain.NewError(domain.ErrValidation,
+				"unknown priority label; must match a value in config.priorities",
+				map[string]any{"priority": label})
+		}
+		update.Priority = &p
+	}
+	if input.ParentID.Set {
+		update.ChangeParent = true
+		update.NewParentID = input.ParentID.Value
+	}
+	task, err := app.NewTaskServiceFromStore(s.repo, s.registry, s.snapshot).Edit(ctx, project, input.TaskID, update)
+	if err != nil {
+		return EditTaskResponse{}, err
+	}
+	return EditTaskResponse{Project: projectSummary(project), Task: taskSummary(task, s.registry)}, nil
+}
+
+func (s *Service) MoveTask(ctx context.Context, input MoveTaskInput) (MoveTaskResponse, error) {
+	if err := s.allow("task.transition"); err != nil {
+		return MoveTaskResponse{}, err
+	}
+	project, err := s.resolveProject(ctx, input.ProjectSelector)
+	if err != nil {
+		return MoveTaskResponse{}, err
+	}
+	task, err := app.NewTaskServiceFromStore(s.repo, s.registry, s.snapshot).Move(ctx, project, input.TaskID, input.BucketKey)
+	if err != nil {
+		return MoveTaskResponse{}, err
+	}
+	return MoveTaskResponse{Project: projectSummary(project), Task: taskSummary(task, s.registry)}, nil
+}
+
+func (s *Service) DeleteTask(ctx context.Context, input DeleteTaskInput) (DeleteTaskResponse, error) {
+	if err := s.allow("task.delete"); err != nil {
+		return DeleteTaskResponse{}, err
+	}
+	project, err := s.resolveProject(ctx, input.ProjectSelector)
+	if err != nil {
+		return DeleteTaskResponse{}, err
+	}
+	if !input.Confirmed {
+		return DeleteTaskResponse{
+			Project: projectSummary(project),
+			Confirmation: Confirmation{
+				RequiresConfirmation: true,
+				Reason:               "Deleting a task is destructive and cascades to comments, tags, dependencies, and events. Confirm with confirmed=true to proceed; consider tasks.archive instead for a reversible alternative.",
+				Options: []ConfirmationOption{
+					{Action: "archive_instead", Label: "Call tasks.archive(task_id) — reversible escape hatch"},
+					{Action: "confirm_delete", Label: "Retry tasks.delete with confirmed=true to hard-delete"},
+				},
+			},
+		}, nil
+	}
+	event, err := app.NewTaskServiceFromStore(s.repo, s.registry, s.snapshot).Delete(ctx, project, input.TaskID)
+	if err != nil {
+		return DeleteTaskResponse{}, err
+	}
+	snapshot := eventSummary(event)
+	return DeleteTaskResponse{Project: projectSummary(project), Snapshot: &snapshot}, nil
+}
+
+func (s *Service) ArchiveTask(ctx context.Context, input ArchiveTaskInput) (ArchiveTaskResponse, error) {
+	if err := s.allow("task.archive"); err != nil {
+		return ArchiveTaskResponse{}, err
+	}
+	project, err := s.resolveProject(ctx, input.ProjectSelector)
+	if err != nil {
+		return ArchiveTaskResponse{}, err
+	}
+	task, _, err := app.NewTaskServiceFromStore(s.repo, s.registry, s.snapshot).Archive(ctx, project, input.TaskID)
+	if err != nil {
+		return ArchiveTaskResponse{}, err
+	}
+	return ArchiveTaskResponse{Project: projectSummary(project), Task: taskSummary(task, s.registry)}, nil
+}
+
+func (s *Service) UnarchiveTask(ctx context.Context, input ArchiveTaskInput) (ArchiveTaskResponse, error) {
+	if err := s.allow("task.unarchive"); err != nil {
+		return ArchiveTaskResponse{}, err
+	}
+	project, err := s.resolveProject(ctx, input.ProjectSelector)
+	if err != nil {
+		return ArchiveTaskResponse{}, err
+	}
+	task, _, err := app.NewTaskServiceFromStore(s.repo, s.registry, s.snapshot).Unarchive(ctx, project, input.TaskID)
+	if err != nil {
+		return ArchiveTaskResponse{}, err
+	}
+	return ArchiveTaskResponse{Project: projectSummary(project), Task: taskSummary(task, s.registry)}, nil
+}
+
+// AssignTask sets or clears tasks.assigned_to. Census slug task.assign
+// is distinct from plan.task.assign (attach a task to a plan wave).
+// CLI recovery for a crashed claim; not registered as an MCP tool (D10).
+func (s *Service) AssignTask(ctx context.Context, input AssignTaskInput) (AssignTaskResponse, error) {
+	if err := s.allow("task.assign"); err != nil {
+		return AssignTaskResponse{}, err
+	}
+	project, err := s.resolveProject(ctx, input.ProjectSelector)
+	if err != nil {
+		return AssignTaskResponse{}, err
+	}
+	task, event, err := app.NewTaskServiceFromStore(s.repo, s.registry, s.snapshot).Assign(ctx, project, input.TaskID, input.Assignee)
+	if err != nil {
+		return AssignTaskResponse{}, err
+	}
+	return AssignTaskResponse{
+		Project: projectSummary(project),
+		Task:    taskSummary(task, s.registry),
+		Event:   eventSummary(event),
+	}, nil
+}

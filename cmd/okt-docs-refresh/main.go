@@ -81,27 +81,33 @@ func findLegacyMarkers(docsDir string) ([]string, error) {
 		if !strings.HasSuffix(path, ".md") {
 			return nil
 		}
-		raw, err := os.ReadFile(path)
-		if err != nil {
-			return err
-		}
-		fences := codeFenceSpans(raw)
-		matches := legacyMarkerRe.FindAllIndex(raw, -1)
-		for _, match := range matches {
-			if insideAny(match[0], fences) {
-				continue
-			}
-			rel, err := filepath.Rel(filepath.Dir(docsDir), path)
-			if err != nil {
-				return err
-			}
-			line := lineNumber(raw, match[0])
-			marker := strings.TrimSpace(string(raw[match[0]:match[1]]))
-			problems = append(problems, fmt.Sprintf("%s:%d contains legacy marker %s", rel, line, marker))
-		}
-		return nil
+		markers, err := legacyMarkersInFile(filepath.Dir(docsDir), path)
+		problems = append(problems, markers...)
+		return err
 	})
 	return problems, err
+}
+
+func legacyMarkersInFile(docsRoot, path string) ([]string, error) {
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	fences := codeFenceSpans(raw)
+	problems := []string{}
+	for _, match := range legacyMarkerRe.FindAllIndex(raw, -1) {
+		if insideAny(match[0], fences) {
+			continue
+		}
+		rel, err := filepath.Rel(docsRoot, path)
+		if err != nil {
+			return nil, err
+		}
+		line := lineNumber(raw, match[0])
+		marker := strings.TrimSpace(string(raw[match[0]:match[1]]))
+		problems = append(problems, fmt.Sprintf("%s:%d contains legacy marker %s", rel, line, marker))
+	}
+	return problems, nil
 }
 
 type span struct{ start, end int }

@@ -195,84 +195,92 @@ func TestAdapterPlansWaveOpsThroughCallTool(t *testing.T) {
 	adapter := NewAdapter(service)
 
 	createPlan(t, ctx, adapter, "waves", "Waves")
-
-	addWave := func(name string) (int64, int) {
-		t.Helper()
-		payload, isErr := callPlanTool(t, ctx, adapter, "plans.add_wave", map[string]any{"slug": "waves", "name": name})
-		if isErr {
-			t.Fatalf("plans.add_wave(%s) IsError: %v", name, payload)
-		}
-		wave, _ := payload["wave"].(map[string]any)
-		return int64(wave["id"].(float64)), int(wave["position"].(float64))
-	}
-
-	w1ID, w1Pos := addWave("Alpha")
-	w2ID, w2Pos := addWave("Bravo")
+	w1ID, w1Pos := addPlanWave(t, ctx, adapter, "Alpha")
+	w2ID, w2Pos := addPlanWave(t, ctx, adapter, "Bravo")
 	if w1Pos == w2Pos {
 		t.Fatalf("waves got identical positions: %d, %d", w1Pos, w2Pos)
 	}
 
-	// rename_wave: Alpha → Renamed; reflected in show.
-	if renamePayload, isErr := callPlanTool(t, ctx, adapter, "plans.rename_wave", map[string]any{
-		"wave_id": w1ID, "name": "Renamed",
-	}); isErr {
-		t.Fatalf("plans.rename_wave IsError: %v", renamePayload)
-	}
-	if name := waveName(t, showPlan(t, ctx, adapter, "waves"), w1ID); name != "Renamed" {
-		t.Fatalf("rename_wave: wave %d name = %q, want Renamed", w1ID, name)
-	}
+	assertPlanWaveRename(t, ctx, adapter, w1ID)
+	assertPlanWaveReorder(t, ctx, adapter, w1ID, w2ID, w1Pos, w2Pos)
+	assertPlanWaveRemoval(t, ctx, adapter, w2ID)
+	assertPlanWaveUnassign(t, ctx, adapter, w1ID)
+}
 
-	// reorder_wave: move w1 to w2's slot → positions swap.
-	if reorderPayload, isErr := callPlanTool(t, ctx, adapter, "plans.reorder_wave", map[string]any{
+func addPlanWave(t *testing.T, ctx context.Context, adapter *Adapter, name string) (int64, int) {
+	t.Helper()
+	payload, isErr := callPlanTool(t, ctx, adapter, "plans.add_wave", map[string]any{"slug": "waves", "name": name})
+	if isErr {
+		t.Fatalf("plans.add_wave(%s) IsError: %v", name, payload)
+	}
+	wave, _ := payload["wave"].(map[string]any)
+	return int64(wave["id"].(float64)), int(wave["position"].(float64))
+}
+
+func assertPlanWaveRename(t *testing.T, ctx context.Context, adapter *Adapter, waveID int64) {
+	t.Helper()
+	payload, isErr := callPlanTool(t, ctx, adapter, "plans.rename_wave", map[string]any{
+		"wave_id": waveID, "name": "Renamed",
+	})
+	if isErr {
+		t.Fatalf("plans.rename_wave IsError: %v", payload)
+	}
+	if name := waveName(t, showPlan(t, ctx, adapter, "waves"), waveID); name != "Renamed" {
+		t.Fatalf("rename_wave: wave %d name = %q, want Renamed", waveID, name)
+	}
+}
+
+func assertPlanWaveReorder(t *testing.T, ctx context.Context, adapter *Adapter, w1ID, w2ID int64, w1Pos, w2Pos int) {
+	t.Helper()
+	payload, isErr := callPlanTool(t, ctx, adapter, "plans.reorder_wave", map[string]any{
 		"wave_id": w1ID, "position": w2Pos,
-	}); isErr {
-		t.Fatalf("plans.reorder_wave IsError: %v", reorderPayload)
+	})
+	if isErr {
+		t.Fatalf("plans.reorder_wave IsError: %v", payload)
 	}
 	shown := showPlan(t, ctx, adapter, "waves")
-	if gotW1 := wavePosition(t, shown, w1ID); gotW1 != w2Pos {
-		t.Fatalf("reorder_wave: wave %d position = %d, want %d", w1ID, gotW1, w2Pos)
+	if got := wavePosition(t, shown, w1ID); got != w2Pos {
+		t.Fatalf("reorder_wave: wave %d position = %d, want %d", w1ID, got, w2Pos)
 	}
-	if gotW2 := wavePosition(t, shown, w2ID); gotW2 != w1Pos {
-		t.Fatalf("reorder_wave: wave %d position = %d, want %d (swap)", w2ID, gotW2, w1Pos)
+	if got := wavePosition(t, shown, w2ID); got != w1Pos {
+		t.Fatalf("reorder_wave: wave %d position = %d, want %d (swap)", w2ID, got, w1Pos)
 	}
+}
 
-	// Assign the seeded task #1 to w2, then remove_wave w2 → wave gone, task
-	// survives with its wave membership cleared (no longer appears under w2).
-	if assignPayload, isErr := callPlanTool(t, ctx, adapter, "plans.assign_task", map[string]any{
-		"slug": "waves", "task_id": int64(1), "wave_id": w2ID,
-	}); isErr {
-		t.Fatalf("plans.assign_task IsError: %v", assignPayload)
-	}
-	if !waveHasTask(t, showPlan(t, ctx, adapter, "waves"), w2ID, 1) {
-		t.Fatalf("task #1 not under wave %d after assign", w2ID)
-	}
-	if removePayload, isErr := callPlanTool(t, ctx, adapter, "plans.remove_wave", map[string]any{
-		"wave_id": w2ID, "confirmed": true,
-	}); isErr {
-		t.Fatalf("plans.remove_wave IsError: %v", removePayload)
-	}
-	afterRemove := showPlan(t, ctx, adapter, "waves")
-	if waveExists(t, afterRemove, w2ID) {
-		t.Fatalf("wave %d still present after remove_wave: %v", w2ID, afterRemove["waves"])
-	}
-	// Member task wave_id nulled: it must not appear under any remaining wave.
-	if anyWaveHasTask(t, afterRemove, 1) {
-		t.Fatalf("task #1 still attached to a wave after its wave was removed: %v", afterRemove["waves"])
-	}
-
-	// unassign: re-attach task #1 to the surviving wave (w1, now at w2Pos),
-	// then unassign → detached=true and task no longer under any wave.
-	if assignPayload, isErr := callPlanTool(t, ctx, adapter, "plans.assign_task", map[string]any{
-		"slug": "waves", "task_id": int64(1), "wave_id": w1ID,
-	}); isErr {
-		t.Fatalf("plans.assign_task (re-attach) IsError: %v", assignPayload)
-	}
-	unassignPayload, isErr := callPlanTool(t, ctx, adapter, "plans.unassign", map[string]any{"task_id": int64(1)})
+func assertPlanWaveRemoval(t *testing.T, ctx context.Context, adapter *Adapter, waveID int64) {
+	t.Helper()
+	payload, isErr := callPlanTool(t, ctx, adapter, "plans.assign_task", map[string]any{
+		"slug": "waves", "task_id": int64(1), "wave_id": waveID,
+	})
 	if isErr {
-		t.Fatalf("plans.unassign IsError: %v", unassignPayload)
+		t.Fatalf("plans.assign_task IsError: %v", payload)
 	}
-	if unassignPayload["detached"] != true {
-		t.Fatalf("plans.unassign detached = %v, want true", unassignPayload["detached"])
+	if !waveHasTask(t, showPlan(t, ctx, adapter, "waves"), waveID, 1) {
+		t.Fatalf("task #1 not under wave %d after assign", waveID)
+	}
+	payload, isErr = callPlanTool(t, ctx, adapter, "plans.remove_wave", map[string]any{
+		"wave_id": waveID, "confirmed": true,
+	})
+	if isErr {
+		t.Fatalf("plans.remove_wave IsError: %v", payload)
+	}
+	shown := showPlan(t, ctx, adapter, "waves")
+	if waveExists(t, shown, waveID) || anyWaveHasTask(t, shown, 1) {
+		t.Fatalf("wave %d or task #1 still attached after remove_wave: %v", waveID, shown["waves"])
+	}
+}
+
+func assertPlanWaveUnassign(t *testing.T, ctx context.Context, adapter *Adapter, waveID int64) {
+	t.Helper()
+	payload, isErr := callPlanTool(t, ctx, adapter, "plans.assign_task", map[string]any{
+		"slug": "waves", "task_id": int64(1), "wave_id": waveID,
+	})
+	if isErr {
+		t.Fatalf("plans.assign_task (re-attach) IsError: %v", payload)
+	}
+	payload, isErr = callPlanTool(t, ctx, adapter, "plans.unassign", map[string]any{"task_id": int64(1)})
+	if isErr || payload["detached"] != true {
+		t.Fatalf("plans.unassign = %v, want detached=true", payload)
 	}
 	if anyWaveHasTask(t, showPlan(t, ctx, adapter, "waves"), 1) {
 		t.Fatalf("task #1 still under a wave after unassign")

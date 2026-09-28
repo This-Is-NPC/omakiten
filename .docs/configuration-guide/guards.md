@@ -2,7 +2,7 @@
 
 Guards are policy rules attached to a single workflow **transition**. They run in `app.WorkflowService.MoveTask` after the transition is confirmed allowed (`workflow_invalid_transition` is checked first); the first failing guard short-circuits the move with a coded `guard_violation` error.
 
-Guards live next to transitions in the active profile yaml and are evaluated by `internal/app/guards/evaluator.go` (`Evaluator.EvaluateTransition` / `EvaluateOperation`, dispatched per-guard-type via `runGuards`) against the in-memory `*config.Snapshot` rebuilt on every bundle import. Migration 005 originally persisted the JSON on the `workflow_transitions` row; migration 020 dropped that table along with every other config table, so guards are now read directly from YAML via the Snapshot — there is no SQL mirror. Validation runs at `okt config validate` time via `internal/config/validator.go:validateWorkflows`.
+Guards live next to transitions in the active profile yaml and are evaluated by `internal/app/guards/evaluator.go` (`Evaluator.EvaluateTransition` / `EvaluateOperation`, dispatched per-guard-type via `runGuards`) against the in-memory `*config.Snapshot` rebuilt on every bundle import. Guards are read directly from YAML via the Snapshot; there is no SQL mirror. Validation runs at `okt config validate` time via `internal/config/validator.go:validateWorkflows`.
 
 The same guard shapes also drive **operation policies** (`operations.{archive,delete,unarchive}.guards`) — see [Operation guards](#operation-guards). Bucket/comment CRUD policy is configured under workflow permissions; this page only documents how permission denials surface as guard failures.
 

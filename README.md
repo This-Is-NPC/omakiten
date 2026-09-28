@@ -69,6 +69,13 @@ Claude Code, OpenCode, or any supported AI tool in any project — they all read
 
 ## Install
 
+### Convenience install (not signature-verified)
+
+These one-liners trust the installer script you just fetched and GitHub's TLS.
+They are quick and they are the common path, but they are **not** end-to-end
+verified — for that, use the [verified install](#verified-install-strict-mode)
+below.
+
 **Linux / macOS / WSL:**
 
 ```bash
@@ -81,6 +88,63 @@ curl -fsSL https://raw.githubusercontent.com/This-Is-NPC/omakiten/master/install
 irm https://raw.githubusercontent.com/This-Is-NPC/omakiten/master/install.ps1 | iex
 ```
 
+### Verified install (strict mode)
+
+Strict mode authenticates the release before a single byte is extracted. It
+requires a **Cosign you installed yourself**; the Bash installer also requires
+`jq` for strict JSON/DSSE validation. The installer never downloads or
+implicitly runs either prerequisite, and there is no unsigned fallback anywhere
+inside strict mode. Install Cosign first (see
+[sigstore/cosign releases](https://github.com/sigstore/cosign/releases)), then:
+
+**Linux / macOS:**
+
+```bash
+cosign version   # must be v3.0.0 or newer; jq must also be on PATH
+curl -fsSL -o install.sh https://raw.githubusercontent.com/This-Is-NPC/omakiten/master/install.sh
+OKT_VERIFY_MODE=strict bash install.sh
+```
+
+**Windows amd64 (PowerShell):**
+
+```powershell
+cosign version   # must be v3.0.0 or newer
+irm https://raw.githubusercontent.com/This-Is-NPC/omakiten/master/install.ps1 -OutFile install.ps1
+$env:OKT_VERIFY_MODE = "strict"
+.\install.ps1
+```
+
+**Windows arm64 (PowerShell):** Sigstore publishes no native `windows/arm64`
+Cosign build. The supported arrangement is the signed `cosign-windows-amd64.exe`
+running under Windows-on-ARM x64 emulation:
+
+```powershell
+# after placing cosign-windows-amd64.exe somewhere durable
+$env:OKT_COSIGN = "C:\Tools\cosign-windows-amd64.exe"
+& $env:OKT_COSIGN version   # must be v3.0.0 or newer
+irm https://raw.githubusercontent.com/This-Is-NPC/omakiten/master/install.ps1 -OutFile install.ps1
+$env:OKT_VERIFY_MODE = "strict"
+.\install.ps1
+```
+
+Strict mode exits non-zero — **before any binary reaches the install
+directory** — when Cosign is missing or older than `v3.0.0`, when a signature
+bundle is missing or invalid, when the certificate identity or OIDC issuer is
+not the pinned release-workflow pair, when the signed manifest is bound to a
+different tag, or when the archive digest disagrees with the authenticated
+metadata. Unsupported verifier/platform combinations fail with the guidance
+above rather than degrading to the checksum path.
+
+**Old releases are not installable in strict mode.** `v0.30.0` and everything
+before it were published without signed metadata and can never be authenticated
+after the fact, so strict mode refuses them outright. For an already-installed
+`v0.30.0` binary, use its one-time immutable self-update transition to move to a
+current release; binaries older than `v0.30.0` must be replaced with a verified
+install of the first signed release.
+
+Full trust model and the manual Cosign commands:
+[CLI guide → Bootstrap trust model](.docs/cli.md#bootstrap-trust-model).
+
 The installer walks you through language, workflow preset, and which AI tools to connect. For headless installs (CI, Docker, dotfiles):
 
 ```bash
@@ -90,18 +154,37 @@ OKT_CLI_LANG=en OKT_AGENT_LANG="English" OKT_PRESET=omakase OKT_HARNESSES=claude
 
 Supported tools: `claude-code`, `claude-desktop`, `codex`, `crush`, `github-copilot`, `opencode`.
 
-Both installers verify the downloaded release archive's SHA-256 against the
-goreleaser-published `checksums.txt` **before** extracting or running it — the
-same gate every in-app `okt update` applies. By default, the checksum trust root
-is pinned to `https://github.com/This-Is-NPC/omakiten/...` even when an artifact
-download mirror is configured for tests or private release infrastructure. A
-mirror can provide `checksums.txt` only with the explicit opt-in
-`OKT_ALLOW_MIRROR_CHECKSUM=1` plus the separate `OKT_CHECKSUM_BASE=<mirror>`
+In the default convenience mode both installers verify the downloaded release
+archive's SHA-256 against the goreleaser-published `checksums.txt` **before**
+extracting or running it. That is a corruption and swap check against the
+served checksum file, not an authenticity check. By default, the checksum trust
+root is pinned to `https://github.com/This-Is-NPC/omakiten/...` even when an
+artifact download mirror is configured for tests or private release
+infrastructure. A mirror can provide `checksums.txt` only with the explicit
+opt-in `OKT_ALLOW_MIRROR_CHECKSUM=1` plus the separate `OKT_CHECKSUM_BASE=<mirror>`
 override; enabling that means you trust the mirror for the checksum authority. A
 checksum mismatch or unavailable pinned checksum aborts the install non-zero and
 does not install or replace the binary in `INSTALL_DIR` (any binary already on
-your PATH from a prior install is left untouched, not removed). This model assumes TLS to the checksum origin;
-release signing / SLSA provenance is not implemented yet.
+your PATH from a prior install is left untouched, not removed). Releases after
+the legacy `v0.30.0` cutoff also publish a version-bound manifest, keyless Cosign
+bundles for the manifest and `checksums.txt`, and SLSA v1 provenance for every
+archive.
+
+Both **strict** consumers of that metadata fail closed. `OKT_VERIFY_MODE=strict`
+in the installers, and `okt update` in the binary, authenticate the signed
+manifest, `checksums.txt`, and SLSA provenance — pinning the exact OIDC issuer
+and release-workflow identity — before parsing a checksum or extracting an
+archive. There is no unsigned fallback and no skip flag in either, mirrored
+installs included: a mirror must serve matching authenticated metadata or the
+install refuses. `okt update` additionally refuses downgrades, and both refuse
+any target at or before the `v0.30.0` cutoff. A failed verification leaves the
+installed binary byte-identical and places nothing new on your PATH. Moving off
+a pre-cutoff binary is a verified reinstall of the first signed release, not a
+self-update, except for an already-installed `v0.30.0` binary using its one-time
+immutable transition. Older pre-cutoff binaries still require reinstall. Trust
+models and manual Cosign commands:
+[bootstrap](.docs/cli.md#bootstrap-trust-model) and
+[update](.docs/cli.md#update-trust-model).
 
 ---
 

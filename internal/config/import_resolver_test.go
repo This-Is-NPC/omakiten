@@ -327,6 +327,32 @@ func TestResolveImportsRejectsSymlinkEscape(t *testing.T) {
 	}
 }
 
+func TestResolveImportsRejectsReplacementSymlinkBeforeRead(t *testing.T) {
+	dir := t.TempDir()
+	outside := t.TempDir()
+	rootPath := writeImportYAML(t, dir, "root.yml", "value:\n  from: ./child.yml\n")
+	childPath := writeImportYAML(t, dir, "child.yml", "safe: true\n")
+	victim := writeImportYAML(t, outside, "victim.yml", "secret: true\n")
+
+	resolvedPath, err := resolveImportPath(rootPath, "./child.yml")
+	if err != nil {
+		t.Fatalf("resolveImportPath: %v", err)
+	}
+	if resolvedPath != childPath {
+		t.Fatalf("resolved path = %q, want lexical child path %q", resolvedPath, childPath)
+	}
+	if err := os.Remove(childPath); err != nil {
+		t.Fatalf("remove child before replacement: %v", err)
+	}
+	if err := os.Symlink(victim, childPath); err != nil {
+		t.Fatalf("replace child with symlink: %v", err)
+	}
+
+	if _, err := readFileBounded(resolvedPath, importFileMaxBytes); err == nil || !strings.Contains(err.Error(), "symlink") {
+		t.Fatalf("replacement read error = %v, want symlink rejection", err)
+	}
+}
+
 func TestResolveImportsRejectsOversizedImport(t *testing.T) {
 	dir := t.TempDir()
 	big := strings.Repeat("k: vvvvvvvvvv\n", int(importFileMaxBytes/12)+1024)

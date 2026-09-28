@@ -5,8 +5,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"omakiten/internal/app"
 	"omakiten/internal/domain"
+	"omakiten/internal/operation"
 )
 
 func newLawCommand(opts *runtimeOptions) *cobra.Command {
@@ -35,12 +35,11 @@ func newLawListCommand(opts *runtimeOptions) *cobra.Command {
 				}
 				defer rt.close()
 
-				service := rt.lawService()
-				laws, err := service.ListFiltered(ctx, app.LawListFilter{Scope: scope, Project: project, Persona: persona})
-				if err != nil {
-					return nil, err
-				}
-				return map[string]any{"laws": laws}, nil
+				return rt.operationService().ListLaws(ctx, operation.ListLawsInput{
+					Scope:   scope,
+					Project: project,
+					Persona: persona,
+				})
 			})
 		},
 	}
@@ -63,11 +62,7 @@ func newLawShowCommand(opts *runtimeOptions) *cobra.Command {
 				}
 				defer rt.close()
 
-				law, err := rt.lawService().Show(ctx, args[0])
-				if err != nil {
-					return nil, err
-				}
-				return map[string]any{"law": law}, nil
+				return rt.operationService().ShowLaw(ctx, operation.ShowLawInput{Slug: args[0]})
 			})
 		},
 	}
@@ -86,37 +81,7 @@ func newLawAddCommand(opts *runtimeOptions) *cobra.Command {
 					return nil, err
 				}
 				defer rt.close()
-
-				service := rt.lawService()
-				if body == "" {
-					body = " "
-				}
-				severityID, err := parseSeverity(severity, rt.activeRegistry())
-				if err != nil {
-					return nil, err
-				}
-				law, err := service.Add(ctx, domain.LawInput{
-					Key:      key,
-					Name:     name,
-					Severity: severityID,
-					Body:     body,
-					Scope:    domain.LawScope(scope),
-					Project:  project,
-					Persona:  persona,
-				})
-				if err != nil {
-					return nil, err
-				}
-				if !noEdit {
-					if err := openEditorAndReimport(ctx, rt, law.SourcePath); err != nil {
-						return nil, err
-					}
-					law, err = service.Show(ctx, law.Key)
-					if err != nil {
-						return nil, err
-					}
-				}
-				return map[string]any{"law": law}, nil
+				return runLawAdd(ctx, rt, key, name, severity, body, scope, project, persona, noEdit)
 			})
 		},
 	}
@@ -146,45 +111,7 @@ func newLawEditCommand(opts *runtimeOptions) *cobra.Command {
 					return nil, err
 				}
 				defer rt.close()
-
-				service := rt.lawService()
-				slug, err := resolveLawSlug(ctx, service, args[0])
-				if err != nil {
-					return nil, err
-				}
-				if cmd.Flags().Changed("name") || cmd.Flags().Changed("severity") || cmd.Flags().Changed("body") {
-					update := domain.LawUpdate{}
-					if cmd.Flags().Changed("name") {
-						update.Name = &name
-					}
-					if cmd.Flags().Changed("severity") {
-						value, err := parseSeverity(severity, rt.activeRegistry())
-						if err != nil {
-							return nil, err
-						}
-						update.Severity = &value
-					}
-					if cmd.Flags().Changed("body") {
-						update.Body = &body
-					}
-					if _, err := service.Edit(ctx, slug, update); err != nil {
-						return nil, err
-					}
-				}
-				law, err := service.Show(ctx, slug)
-				if err != nil {
-					return nil, err
-				}
-				if !noEdit {
-					if err := openEditorAndReimport(ctx, rt, law.SourcePath); err != nil {
-						return nil, err
-					}
-					law, err = service.Show(ctx, slug)
-					if err != nil {
-						return nil, err
-					}
-				}
-				return map[string]any{"law": law}, nil
+				return runLawEdit(ctx, cmd, rt, args[0], name, severity, body, noEdit)
 			})
 		},
 	}
@@ -193,6 +120,82 @@ func newLawEditCommand(opts *runtimeOptions) *cobra.Command {
 	cmd.Flags().StringVarP(&body, "body", "b", "", opts.t("cli.law.edit.flag.body"))
 	cmd.Flags().BoolVar(&noEdit, "no-edit", false, opts.t("cli.law.edit.flag.no-edit"))
 	return cmd
+}
+
+func runLawAdd(ctx context.Context, rt *runtime, key, name, severity, body, scope, project, persona string, noEdit bool) (any, error) {
+	if body == "" {
+		body = " "
+	}
+	severityID, err := parseSeverity(severity, rt.activeRegistry())
+	if err != nil {
+		return nil, err
+	}
+	service := rt.operationService()
+	law, err := service.AddLaw(ctx, domain.LawInput{
+		Key: key, Name: name, Severity: severityID, Body: body,
+		Scope: domain.LawScope(scope), Project: project, Persona: persona,
+	})
+	if err != nil {
+		return nil, err
+	}
+	if !noEdit {
+		if err := openEditorAndReimport(ctx, rt, law.SourcePath); err != nil {
+			return nil, err
+		}
+		law, err = service.LawEntity(ctx, law.Key)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return map[string]any{"law": law}, nil
+}
+
+func runLawEdit(ctx context.Context, cmd *cobra.Command, rt *runtime, slug, name, severity, body string, noEdit bool) (any, error) {
+	service := rt.operationService()
+	update, changed, err := lawEditUpdate(cmd, rt, name, severity, body)
+	if err != nil {
+		return nil, err
+	}
+	if changed {
+		if _, err := service.EditLaw(ctx, slug, update); err != nil {
+			return nil, err
+		}
+	}
+	law, err := service.LawEntity(ctx, slug)
+	if err != nil {
+		return nil, err
+	}
+	if !noEdit {
+		if err := openEditorAndReimport(ctx, rt, law.SourcePath); err != nil {
+			return nil, err
+		}
+		law, err = service.LawEntity(ctx, slug)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return map[string]any{"law": law}, nil
+}
+
+func lawEditUpdate(cmd *cobra.Command, rt *runtime, name, severity, body string) (domain.LawUpdate, bool, error) {
+	if !cmd.Flags().Changed("name") && !cmd.Flags().Changed("severity") && !cmd.Flags().Changed("body") {
+		return domain.LawUpdate{}, false, nil
+	}
+	update := domain.LawUpdate{}
+	if cmd.Flags().Changed("name") {
+		update.Name = &name
+	}
+	if cmd.Flags().Changed("severity") {
+		value, err := parseSeverity(severity, rt.activeRegistry())
+		if err != nil {
+			return domain.LawUpdate{}, false, err
+		}
+		update.Severity = &value
+	}
+	if cmd.Flags().Changed("body") {
+		update.Body = &body
+	}
+	return update, true, nil
 }
 
 func newLawRemoveCommand(opts *runtimeOptions) *cobra.Command {
@@ -208,12 +211,9 @@ func newLawRemoveCommand(opts *runtimeOptions) *cobra.Command {
 				}
 				defer rt.close()
 
-				service := rt.lawService()
-				slug, err := resolveLawSlug(ctx, service, args[0])
+				service := rt.operationService()
+				slug, err := service.RemoveLaw(ctx, args[0])
 				if err != nil {
-					return nil, err
-				}
-				if err := service.Remove(ctx, slug); err != nil {
 					return nil, err
 				}
 				return map[string]any{"removed": true, "slug": slug}, nil

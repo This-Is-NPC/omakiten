@@ -2,326 +2,57 @@ package tui
 
 import (
 	"fmt"
+	"omakiten/internal/tui/components/tokenstrip"
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
 
 	"omakiten/internal/domain"
-	"omakiten/internal/tui/components/cardlist"
-	"omakiten/internal/tui/components/scrollwindow"
 )
 
-// renderEntityCell builds the inner content of one entity column.
-// The cards wrap into multiple grid columns when the available width
-// allows, and per-row scroll keeps the focused card on-screen with
-// "▲ N above" / "▼ N below" summaries for hidden cards. Per-kind row
-// offset stored in `m.entityScroll[kind]` (encoded as the first visible
-// card index, snapped to a row boundary at render time).
-func (m Model) renderEntityCell(kind entityKind) string {
-	return m.renderEntityCellWithViewport(kind, m.entityViewportRows(), m.entityCellContentWidth())
-}
-
-// renderEntityCellWithViewport renders the wrapped entity grid with an
-// explicit viewport budget and content-width budget — used by
-// `renderSettingsEntity` (which knows the kanbanColumn inner width
-// exactly). The grid packs cards left-to-right then top-to-bottom; each
-// row's height is the tallest card in that row so the column stays
-// visually flush regardless of badge wrap.
-func (m Model) renderEntityCellWithViewport(kind entityKind, viewport int, contentWidth int) string {
-	focused := m.entityKind == kind
-	count := m.entityCount(kind)
-	cursor := m.selectedEntityIndex(kind)
-
-	headerStyle := m.styles.hintAccent
-	if !focused {
-		headerStyle = m.styles.muted
-	}
-	headerText := fmt.Sprintf("// %s · %d", strings.ToUpper(kind.plural()), count)
-
-	separatorWidth := contentWidth
-	if separatorWidth < entityListWidth {
-		separatorWidth = entityListWidth
-	}
-	lines := []string{
-		headerStyle.Render(headerText),
-		m.hRule(separatorWidth),
-	}
-
-	if count == 0 {
-		lines = append(lines, m.styles.empty.Render(m.t("tui.board.empty")))
-		return strings.Join(lines, "\n")
-	}
-
-	cols := entityGridCols(contentWidth)
-
-	rendered := make([]string, count)
-	cardHeights := make([]int, count)
-	for index := 0; index < count; index++ {
-		rendered[index] = m.renderEntityCard(kind, index, focused && index == cursor)
-		cardHeights[index] = strings.Count(rendered[index], "\n") + 1
-	}
-
-	// Pack cards into rows of `cols`; each row's text is the JoinHorizontal
-	// of its cards, and each row's height is the tallest card in the row.
-	numRows := (count + cols - 1) / cols
-	rowText := make([]string, numRows)
-	rowHeights := make([]int, numRows)
-	for r := 0; r < numRows; r++ {
-		var cells []string
-		h := 0
-		for c := 0; c < cols; c++ {
-			i := r*cols + c
-			if i >= count {
-				break
-			}
-			cells = append(cells, rendered[i])
-			if cardHeights[i] > h {
-				h = cardHeights[i]
-			}
-		}
-		if len(cells) == 1 {
-			rowText[r] = cells[0]
-		} else {
-			pieces := make([]string, 0, len(cells)*2-1)
-			for idx, cell := range cells {
-				if idx > 0 {
-					pieces = append(pieces, " ")
-				}
-				pieces = append(pieces, cell)
-			}
-			rowText[r] = lipgloss.JoinHorizontal(lipgloss.Top, pieces...)
-		}
-		rowHeights[r] = h
-	}
-
-	if viewport <= 0 {
-		// Height unknown — render every row; the screen-level clamp keeps
-		// the view bounded by terminal height.
-		lines = append(lines, rowText...)
-		return strings.Join(lines, "\n")
-	}
-
-	// Read the row-aligned scroll offset from the cardlist that
-	// owns it via syncFocusedEntityScroll. The cardlist's Scroll()
-	// is a row index — partial-row alignment is impossible because
-	// the component never sees individual cards, only whole-row
-	// items.
-	rowOffset := 0
-	if list, ok := m.entityLists[kind]; ok {
-		rowOffset = list.Scroll()
-	}
-	// Shared scroll math (scrollwindow.Slice) returns the row-end; the
-	// entity grid's only twist is that hints count CARDS, not rows, so
-	// we translate row offsets to card counts when emitting the
-	// indicator strings.
-	end := scrollwindow.Slice(rowOffset, rowHeights, viewport, scrollwindow.HintsSplit)
-	if rowOffset < 0 {
-		rowOffset = 0
-	}
-	if rowOffset > numRows-1 {
-		rowOffset = numRows - 1
-	}
-	cardsAbove := rowOffset * cols
-	if cardsAbove > count {
-		cardsAbove = count
-	}
-	cardsBelow := count - end*cols
-	if cardsBelow < 0 {
-		cardsBelow = 0
-	}
-	if cardsAbove > 0 {
-		lines = append(lines, m.styles.hint.Render(fmt.Sprintf(m.t("tui.scroll.above_fmt"), cardsAbove)))
-	}
-	lines = append(lines, rowText[rowOffset:end]...)
-	if cardsBelow > 0 {
-		lines = append(lines, m.styles.hint.Render(fmt.Sprintf(m.t("tui.scroll.below_fmt"), cardsBelow)))
-	}
-	return strings.Join(lines, "\n")
-}
-
-// entityGridCols computes how many entity cards fit side-by-side inside
-// the kanbanColumn at the given content width. `entityListWidth` is the
-// inner width passed to the card style — `entityCardCellWidth` adds the
-// ±1 border so we measure the visible card on the terminal grid.
-func entityGridCols(contentWidth int) int {
-	const horizontalGap = 1
-	cell := entityCardCellWidth + horizontalGap
-	if cell <= 0 {
-		return 1
-	}
-	cols := (contentWidth + horizontalGap) / cell
-	if cols < 1 {
-		return 1
-	}
-	return cols
-}
-
-// entityCellContentWidth returns the width budget passed to the entity
-// grid renderer when no explicit content width is supplied (e.g. by
-// older callers / tests). Mirrors what `renderSettingsEntity` would
-// compute given the current available width.
-func (m Model) entityCellContentWidth() int {
-	w := m.availableWidth() - 4
-	if w < entityListWidth {
-		return entityListWidth
-	}
-	return w
-}
-
-// entityViewportRows is the number of terminal rows available for entity
-// cards inside the active Settings entity column. Sources its chrome
-// from the shared `panelViewportRows` helper so it tracks live header /
-// status / nav changes. Per-column chrome = 2 borders + 2 header rows
-// (kicker / separator) = 4.
-func (m Model) entityViewportRows() int {
-	return m.panelViewportRows(4)
-}
-
-// syncFocusedEntityScroll syncs the focused-kind cardlist.Model so the
-// selected card's row stays fully inside the column viewport. The
-// cardlist's items are ROWS of the wrapped grid; the cursor is the
-// cursor card's row index. Routes through WithItems + WithViewport
-// + WithCursor so scrollwindow.Resync owns scroll correctness — a
-// partial-row alignment is structurally impossible because the
-// cardlist never sees individual cards, only whole-row items.
-func (m *Model) syncFocusedEntityScroll() {
-	kind := m.entityKind
-	count := m.entityCount(kind)
-	viewport := m.entityViewportRows()
-	contentWidth := m.entityCellContentWidth()
-	if viewport <= 0 || count == 0 {
-		if m.entityLists != nil {
-			delete(m.entityLists, kind)
-		}
-		return
-	}
-
-	cols := entityGridCols(contentWidth)
-	cursor := m.selectedEntityIndex(kind)
-	cursorRow := cursor / cols
-	numRows := (count + cols - 1) / cols
-
-	items := make([]cardlist.Item, numRows)
-	for r := 0; r < numRows; r++ {
-		h := 0
-		for c := 0; c < cols; c++ {
-			i := r*cols + c
-			if i >= count {
-				break
-			}
-			rendered := m.renderEntityCard(kind, i, false)
-			ch := strings.Count(rendered, "\n") + 1
-			if ch > h {
-				h = ch
-			}
-		}
-		// Items carry only Height; the entity surface builds its
-		// own rowText assembly (JoinHorizontal of cards) so the
-		// cardlist's View path is not the rendering surface. We
-		// only need its scroll-position decision.
-		items[r] = cardlist.Item{Content: "", Height: h}
-	}
-
-	if m.entityLists == nil {
-		m.entityLists = map[entityKind]cardlist.Model{}
-	}
-	list, exists := m.entityLists[kind]
-	if !exists {
-		list = cardlist.New()
-	}
-	m.entityLists[kind] = list.WithItems(items).WithViewport(viewport).WithCursor(cursorRow)
-}
-
-func (m Model) renderEntityCard(kind entityKind, index int, selected bool) string {
-	label := m.entityCardLabel(kind, index)
-	wrapped := wrapWords(label, cardContentWidth, cardContentWidth)
-
-	// Badges line (truncated to fit card width)
-	badgeLine := m.renderEntityBadges(kind, index, cardContentWidth)
-
-	lines := make([]string, 0, len(wrapped)+1)
-	lines = append(lines, wrapped...)
-	if badgeLine != "" {
-		lines = append(lines, badgeLine)
-	}
-
-	style := m.styles.entityCard
-	if selected {
-		style = m.styles.entityCardSelected
-	}
-	return style.Render(strings.Join(lines, "\n"))
-}
-
-func (m Model) renderEntityBadges(kind entityKind, index int, maxWidth int) string {
+func (m Model) entityBadges(kind entityKind, index int) []string {
 	switch kind {
 	case entityKindLaw:
-		return wrapBadges(m.renderLawBadges(index), maxWidth)
+		return m.renderLawBadges(index)
 	case entityKindPersona:
-		return wrapBadges(m.renderPersonaBadges(index), maxWidth)
+		return m.renderPersonaBadges(index)
 	case entityKindSkill:
-		return wrapBadges(m.renderSkillBadges(index), maxWidth)
+		return m.renderSkillBadges(index)
 	case entityKindTemplate:
-		return wrapBadges(m.renderTemplateBadges(index), maxWidth)
+		return m.renderTemplateBadges(index)
 	case entityKindTag:
-		return wrapBadges(m.renderTagBadges(index), maxWidth)
+		return m.renderTagBadges(index)
 	}
-	return ""
+	return nil
 }
 
-// wrapBadges joins badges with single-space separators, breaking onto a new
-// line whenever the next badge would overflow maxWidth. Every badge is kept;
-// no truncation. A badge wider than maxWidth on its own occupies its own line.
-func wrapBadges(badges []string, maxWidth int) string {
-	if len(badges) == 0 {
-		return ""
+// entityStateBadges are the trailing FIX / ACTIVE / CUSTOM markers, in the
+// order every entity column reads them. All five families end this way; four
+// of them used to spell it out.
+func (m Model) entityStateBadges(warning string, active, custom bool) []string {
+	s := m.styles.screenStyles()
+	var badges []string
+	if strings.TrimSpace(warning) != "" {
+		badges = append(badges, tokenstrip.Fix(s, m.t))
 	}
-	var lines []string
-	var current []string
-	currentWidth := 0
-	for _, badge := range badges {
-		w := lipgloss.Width(badge)
-		sep := 0
-		if len(current) > 0 {
-			sep = 1
-		}
-		if len(current) > 0 && currentWidth+sep+w > maxWidth {
-			lines = append(lines, strings.Join(current, " "))
-			current = []string{badge}
-			currentWidth = w
-			continue
-		}
-		current = append(current, badge)
-		currentWidth += sep + w
+	if active {
+		badges = append(badges, tokenstrip.Active(s, m.t))
 	}
-	if len(current) > 0 {
-		lines = append(lines, strings.Join(current, " "))
+	if custom {
+		badges = append(badges, tokenstrip.Custom(s, m.t))
 	}
-	return strings.Join(lines, "\n")
-}
-
-// customBadge returns a single CUSTOM marker styled as info — same visual
-// weight as other scope-style badges so the user can scan a column for
-// user-owned overrides at a glance.
-func (m Model) customBadge() string {
-	return m.styles.badgeInfo.Render(m.t("tui.badge.custom"))
-}
-
-// activeBadge marks a catalog entry wired into the active bundle. The
-// Settings view lists every preset's entities; this badge lets the user
-// scan a column for the subset actually in force.
-func (m Model) activeBadge() string {
-	return m.styles.badgeActive.Render(m.t("tui.badge.active"))
+	return badges
 }
 
 func (m Model) renderLawBadges(index int) []string {
 	law := m.laws[index]
+	s := m.styles.screenStyles()
 	var badges []string
 
-	// Severity badge — color comes from config.severities[].color via
-	// styles.badgeForColor, so renaming or recoloring a severity in
-	// YAML re-paints the badges without touching this switch.
-	if badge := m.severityBadge(law.Severity); badge != "" {
-		badges = append(badges, badge)
+	// Severity badge — color comes from config.severities[].color, so renaming
+	// or recoloring a severity in YAML re-paints the badges.
+	if pill := m.severityBadge(law.Severity); pill != "" {
+		badges = append(badges, pill)
 	}
 
 	// Scope badge — only meaningful for laws wired into the active bundle.
@@ -335,43 +66,22 @@ func (m Model) renderLawBadges(index int) []string {
 		case domain.LawScopePersona:
 			scope = m.t("tui.badge.persona")
 		}
-		badges = append(badges, m.styles.badgeScope.Render(scope))
+		badges = append(badges, tokenstrip.Scope(s, scope))
 	}
 
 	// Token count: matches computeMetrics (key + body) so the per-entity weight
 	// matches the totals shown in the Token budget panel.
-	tokens := m.counter.Count(law.Key + " " + law.Body)
-	badges = append(badges, m.tokenBadge(tokens))
+	badges = append(badges, m.tokenBadge(m.counter.Count(law.Key+" "+law.Body)))
 
-	if strings.TrimSpace(law.Warning) != "" {
-		badges = append(badges, m.styles.badgeFix.Render(m.t("tui.badge.fix")))
-	}
-	if law.Active {
-		badges = append(badges, m.activeBadge())
-	}
-	if law.IsCustom {
-		badges = append(badges, m.customBadge())
-	}
-
-	return badges
+	return append(badges, m.entityStateBadges(law.Warning, law.Active, law.IsCustom)...)
 }
 
 func (m Model) renderPersonaBadges(index int) []string {
 	persona := m.personas[index]
 	// Token count: matches computeMetrics — only the description counts toward
 	// the budget. Body is not bundled into context for personas.
-	tokens := m.counter.Count(persona.Description)
-	badges := []string{m.tokenBadge(tokens)}
-	if strings.TrimSpace(persona.Warning) != "" {
-		badges = append(badges, m.styles.badgeFix.Render(m.t("tui.badge.fix")))
-	}
-	if persona.Active {
-		badges = append(badges, m.activeBadge())
-	}
-	if persona.IsCustom {
-		badges = append(badges, m.customBadge())
-	}
-	return badges
+	badges := []string{m.tokenBadge(m.counter.Count(persona.Description))}
+	return append(badges, m.entityStateBadges(persona.Warning, persona.Active, persona.IsCustom)...)
 }
 
 func (m Model) renderSkillBadges(index int) []string {
@@ -379,24 +89,13 @@ func (m Model) renderSkillBadges(index int) []string {
 	// Skills are not part of the computeMetrics total — their bodies attach to
 	// personas at injection time. The badge is informational so users can see
 	// how heavy a skill body is before wiring it.
-	tokens := m.counter.Count(skill.Body)
-	badges := []string{m.tokenBadge(tokens)}
-	if strings.TrimSpace(skill.Warning) != "" {
-		badges = append(badges, m.styles.badgeFix.Render(m.t("tui.badge.fix")))
-	}
-	if skill.Active {
-		badges = append(badges, m.activeBadge())
-	}
-	if skill.IsCustom {
-		badges = append(badges, m.customBadge())
-	}
-	return badges
+	badges := []string{m.tokenBadge(m.counter.Count(skill.Body))}
+	return append(badges, m.entityStateBadges(skill.Warning, skill.Active, skill.IsCustom)...)
 }
 
 func (m Model) renderTemplateBadges(index int) []string {
 	template := m.templates[index]
-	tokens := m.counter.Count(template.Body)
-	badges := []string{m.tokenBadge(tokens)}
+	badges := []string{m.tokenBadge(m.counter.Count(template.Body))}
 	// DEFAULT marks the template that is the active scaffold for a kind.
 	// Project-scoped defaults include the project slug so the user can
 	// distinguish them from the global default at a glance.
@@ -405,27 +104,14 @@ func (m Model) renderTemplateBadges(index int) []string {
 		if template.ProjectSlug != "" {
 			label += "·" + strings.ToUpper(template.ProjectSlug)
 		}
-		badges = append(badges, m.styles.badgeInfo.Render(label))
+		badges = append(badges, m.styles.screenStyles().BadgeInfo.Render(label))
 	}
-	if template.Active {
-		badges = append(badges, m.activeBadge())
-	}
-	if template.IsCustom {
-		badges = append(badges, m.customBadge())
-	}
-	return badges
+	// A template carries no warning of its own, so the FIX slot stays empty.
+	return append(badges, m.entityStateBadges("", template.Active, template.IsCustom)...)
 }
 
 func (m Model) tokenBadge(tokens int) string {
-	label := fmt.Sprintf(m.t("tui.badge.tokens_fmt"), tokens)
-	switch {
-	case tokens > m.tokenBadgeRed:
-		return m.styles.badgeTokenRed.Render(label)
-	case tokens > m.tokenBadgeYellow:
-		return m.styles.badgeTokenYellow.Render(label)
-	default:
-		return m.styles.badgeTokenGreen.Render(label)
-	}
+	return tokenstrip.Spend(m.styles.screenStyles(), m.t, tokens, m.tokenBadgeYellow, m.tokenBadgeRed)
 }
 
 func (m Model) entityCardLabel(kind entityKind, index int) string {
@@ -447,18 +133,18 @@ func (m Model) entityCardLabel(kind entityKind, index int) string {
 func (m Model) renderTagBadges(index int) []string {
 	tag := m.tags[index]
 	label := fmt.Sprintf(m.t("tui.badge.use_fmt"), tag.UsageCount)
-	var badge string
+	// An unused tag is the one the user is being asked to act on, so it takes
+	// the alarm tone rather than the neutral one.
+	style := m.styles.screenStyles().BadgeInfo
 	if tag.UsageCount == 0 {
-		badge = m.styles.badgeHigh.Render(label)
-	} else {
-		badge = m.styles.badgeInfo.Render(label)
+		style = m.styles.screenStyles().BadgeHigh
 	}
-	return []string{badge}
+	return []string{style.Render(label)}
 }
 
 // severityStyle returns the foreground style for the severity badge
 // label based on config.severities[].color. Same four-token enum as
-// styles.badgeForColor (`error`, `warning`, `success`, `info`); unknown
+// tokenstrip.ForColor (`error`, `warning`, `success`, `info`); unknown
 // or empty values fall back to muted so the entity-screen badge keeps
 // rendering. Theme authors edit palette tokens once and both badge
 // types follow.

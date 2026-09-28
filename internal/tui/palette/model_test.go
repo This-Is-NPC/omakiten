@@ -1,9 +1,13 @@
 package palette
 
 import (
+	"strings"
 	"testing"
+	"unicode"
 
 	tea "github.com/charmbracelet/bubbletea"
+
+	"omakiten/internal/tui/components/screenkit"
 )
 
 func keyMsg(s string) tea.KeyMsg {
@@ -151,5 +155,48 @@ func TestModelSetStatusFromOutside(t *testing.T) {
 	m.SetStatus("handler said no")
 	if m.Status() != "handler said no" {
 		t.Fatalf("Status() = %q, want %q", m.Status(), "handler said no")
+	}
+}
+
+func TestPaletteViewSanitizesStatusControls(t *testing.T) {
+	raw := "error \x1b]0;palette\a\x00\x9b31m漢字"
+	m := NewModel()
+	m.SetStatus(raw)
+
+	lines := strings.Split(m.View(), "\n")
+	got := lines[len(lines)-1]
+	want := screenkit.Sanitize(raw)
+	if got != want {
+		t.Fatalf("status view line = %q, want %q", got, want)
+	}
+	for _, r := range got {
+		if unicode.IsControl(r) {
+			t.Fatalf("status view contains control U+%04X: %q", r, got)
+		}
+	}
+}
+
+func TestPaletteViewSanitizesQueryWithoutChangingSearchMessage(t *testing.T) {
+	raw := "ports\x1b]0;palette\a\x00漢字"
+	m := NewModel()
+	m, _ = m.Update(keyMsg("tab"))
+	m.search.SetValue(raw)
+	wantQuery := m.Search()
+
+	view := m.View()
+	if strings.Contains(view, "\x1b]0;palette") || strings.Contains(view, "\x00") {
+		t.Fatalf("query view contains terminal control: %q", view)
+	}
+	if !strings.Contains(view, screenkit.Sanitize(wantQuery)) {
+		t.Fatalf("query view lost harmless text: %q", view)
+	}
+
+	_, cmd := m.Update(keyMsg("enter"))
+	msg, ok := runCmd(cmd).(SearchMsg)
+	if !ok {
+		t.Fatalf("search submit message = %T, want SearchMsg", runCmd(cmd))
+	}
+	if msg.Query != wantQuery {
+		t.Fatalf("SearchMsg.Query = %q, want unchanged query %q", msg.Query, wantQuery)
 	}
 }

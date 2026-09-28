@@ -18,7 +18,10 @@ import (
 // added on entity_loader / language_loader / loader.
 func TestSaveBundleRejectsOversizedWiringHeader(t *testing.T) {
 	dir := t.TempDir()
-	path := filepath.Join(dir, "omakiten.yaml")
+	path := filepath.Join(dir, "config", "omakiten.yaml")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("create config dir: %v", err)
+	}
 
 	// Seed an on-disk wiring that overruns MaxWiringFileBytes by one
 	// byte. The body itself is YAML-shaped only superficially; the

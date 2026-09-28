@@ -68,25 +68,9 @@ func (s *Store) AddScopedComment(ctx context.Context, w domain.CommentWrite) (do
 		scope = domain.CommentScopeTask
 	}
 
-	var entityIDArg, projectIDArg any
-	switch scope {
-	case domain.CommentScopeTask:
-		if err := s.ensureTaskExists(ctx, w.ProjectID, w.TaskID); err != nil {
-			return domain.Comment{}, err
-		}
-		entityIDArg = w.TaskID
-		projectIDArg = w.ProjectID
-	case domain.CommentScopeProject:
-		if w.ProjectID <= 0 {
-			return domain.Comment{}, domain.NewError(domain.ErrValidation, "project comment requires a project id", nil)
-		}
-		entityIDArg = w.ProjectID
-		projectIDArg = w.ProjectID
-	case domain.CommentScopeUniversal:
-		entityIDArg = nil
-		projectIDArg = nil
-	default:
-		return domain.Comment{}, domain.NewError(domain.ErrValidation, "unknown comment scope", map[string]any{"scope": w.Scope})
+	entityIDArg, projectIDArg, err := s.commentScopeArgs(ctx, scope, w.ProjectID, w.TaskID, w.Scope)
+	if err != nil {
+		return domain.Comment{}, err
 	}
 
 	tx, err := s.db.BeginTx(ctx, nil)
@@ -152,6 +136,25 @@ RETURNING id, created_at
 	return comment, nil
 }
 
+func (s *Store) commentScopeArgs(ctx context.Context, scope string, projectID, taskID int64, requestedScope string) (any, any, error) {
+	switch scope {
+	case domain.CommentScopeTask:
+		if err := s.ensureTaskExists(ctx, projectID, taskID); err != nil {
+			return nil, nil, err
+		}
+		return taskID, projectID, nil
+	case domain.CommentScopeProject:
+		if projectID <= 0 {
+			return nil, nil, domain.NewError(domain.ErrValidation, "project comment requires a project id", nil)
+		}
+		return projectID, projectID, nil
+	case domain.CommentScopeUniversal:
+		return nil, nil, nil
+	default:
+		return nil, nil, domain.NewError(domain.ErrValidation, "unknown comment scope", map[string]any{"scope": requestedScope})
+	}
+}
+
 // ListComments returns task-scoped comments for a project. taskID=0 lists every
 // task comment in the project (the per-project task-comment feed); a positive
 // taskID narrows to a single task. Project/universal comments are out of scope
@@ -173,42 +176,64 @@ func (s *Store) ListComments(ctx context.Context, projectID, taskID int64) ([]do
 // QueryComments is the filterable handoff-log surface. The filter fields AND
 // together. Scope, kind, pinned, and the created_at window filter on events
 // columns; Tag joins event_tags; Search runs an FTS5 MATCH against the unified
-// search_index (which indexes body+title for comment rows, migration 032).
+// search_index (which indexes body+title for comment rows).
 func (s *Store) QueryComments(ctx context.Context, filter domain.CommentFilter) ([]domain.Comment, error) {
+	query, args, hasSearch, err := commentQuery(filter)
+	if err != nil {
+		return nil, err
+	}
+	comments, err := s.queryCommentRows(ctx, query, args)
+	if hasSearch {
+		err = classifyFTSQueryError(err)
+	}
+	return comments, err
+}
+
+func commentQuery(filter domain.CommentFilter) (string, []any, bool, error) {
+	hasSearch := filter.Search != ""
 	if filter.Search != "" {
 		query, err := domain.ValidateSearchQuery(filter.Search)
 		if err != nil {
-			return nil, err
+			return "", nil, false, err
 		}
 		filter.Search = query
 	}
 	var b strings.Builder
 	b.WriteString("SELECT " + commentSelectColumnsE + " FROM events e")
+	joins, conds, args := commentQueryJoins(filter)
+	b.WriteString(joins)
+	extraConds, extraArgs := commentQueryFilters(filter)
+	conds = append(conds, extraConds...)
+	args = append(args, extraArgs...)
 
+	b.WriteString(" WHERE " + strings.Join(conds, " AND "))
+	b.WriteString(" ORDER BY e.created_at, e.id")
+	return b.String(), args, hasSearch, nil
+}
+
+func commentQueryJoins(filter domain.CommentFilter) (string, []string, []any) {
+	var joins strings.Builder
 	var conds []string
 	var args []any
-
 	if filter.Tag != "" {
-		b.WriteString(" JOIN event_tags et ON et.event_id = e.id JOIN tags t ON t.id = et.tag_id")
+		joins.WriteString(" JOIN event_tags et ON et.event_id = e.id JOIN tags t ON t.id = et.tag_id")
 		conds = append(conds, "t.name = ?")
 		args = append(args, filter.Tag)
 	}
 	if filter.Search != "" {
-		b.WriteString(" JOIN search_index si ON si.entity_type = 'comment' AND si.entity_id = e.id")
+		joins.WriteString(" JOIN search_index si ON si.entity_type = 'comment' AND si.entity_id = e.id")
 		conds = append(conds, "search_index MATCH ?")
 		args = append(args, filter.Search)
 	}
+	return joins.String(), conds, args
+}
 
-	conds = append(conds, "e.event_type = 'comment'")
+func commentQueryFilters(filter domain.CommentFilter) ([]string, []any) {
+	conds := []string{"e.event_type = 'comment'"}
+	var args []any
 	if filter.CommentID > 0 {
 		conds = append(conds, "e.id = ?")
 		args = append(args, filter.CommentID)
-		// A get-by-id read names a globally unique row, but must NOT leak another
-		// project's task/project comment. Mirror commentByIDTx: scope task/project
-		// rows to the caller's project while universal rows (project_id NULL) fall
-		// through so a universal note stays readable cross-project. The general
-		// `filter.ProjectID > 0` clause below would also exclude universals, so the
-		// id path carries its own project filter that whitelists project-less rows.
 		if filter.ProjectID > 0 {
 			conds = append(conds, "(e.project_id = ? OR e.project_id IS NULL)")
 			args = append(args, filter.ProjectID)
@@ -218,8 +243,6 @@ func (s *Store) QueryComments(ctx context.Context, filter domain.CommentFilter) 
 		conds = append(conds, "e.entity_type = ?")
 		args = append(args, filter.Scope)
 	}
-	// The get-by-id path above applies its own universal-aware project filter, so
-	// skip the strict equality here (which would exclude project-less universals).
 	if filter.ProjectID > 0 && filter.CommentID <= 0 {
 		conds = append(conds, "e.project_id = ?")
 		args = append(args, filter.ProjectID)
@@ -235,10 +258,6 @@ func (s *Store) QueryComments(ctx context.Context, filter domain.CommentFilter) 
 	if filter.PinnedOnly {
 		conds = append(conds, "e.pinned = 1")
 	}
-	// created_at is stored "YYYY-MM-DD HH:MM:SS" (space separator); bounds may
-	// arrive as RFC3339 ("...T...Z"), which would sort wrong under a raw string
-	// compare. datetime() normalizes both the column and the bound to a common
-	// shape so the window comparison is chronological, not lexicographic.
 	if filter.CreatedAfter != "" {
 		conds = append(conds, "datetime(e.created_at) >= datetime(?)")
 		args = append(args, filter.CreatedAfter)
@@ -247,15 +266,7 @@ func (s *Store) QueryComments(ctx context.Context, filter domain.CommentFilter) 
 		conds = append(conds, "datetime(e.created_at) <= datetime(?)")
 		args = append(args, filter.CreatedBefore)
 	}
-
-	b.WriteString(" WHERE " + strings.Join(conds, " AND "))
-	b.WriteString(" ORDER BY e.created_at, e.id")
-
-	comments, err := s.queryCommentRows(ctx, b.String(), args)
-	if filter.Search != "" {
-		err = classifyFTSQueryError(err)
-	}
-	return comments, err
+	return conds, args
 }
 
 // queryCommentRows runs a comment SELECT built on commentSelectColumns, scans
@@ -331,27 +342,6 @@ func (s *Store) EditComment(ctx context.Context, projectID, commentID int64, edi
 		return domain.Comment{}, domain.Event{}, err
 	}
 
-	// Tri-state patch: a nil Body/Title/Kind/Pinned pointer preserves the
-	// loaded row's existing value so a metadata-only edit can't silently wipe
-	// the body, and a body-only edit can't wipe a title, kind, or pinned flag.
-	// Only an explicit non-nil pointer overwrites. updated_at still bumps below.
-	newBody := prev.Body
-	if edit.Body != nil {
-		newBody = *edit.Body
-	}
-	newTitle := prev.Title
-	if edit.Title != nil {
-		newTitle = *edit.Title
-	}
-	newKind := prev.Kind
-	if edit.Kind != nil {
-		newKind = *edit.Kind
-	}
-	newPinned := prev.Pinned
-	if edit.Pinned != nil {
-		newPinned = *edit.Pinned
-	}
-
 	// Load the existing tag set up front: it is needed both to detect whether a
 	// provided tag set actually differs (the no-op guard) and to echo back the
 	// unchanged tags when the patch leaves tags alone.
@@ -361,88 +351,34 @@ func (s *Store) EditComment(ctx context.Context, projectID, commentID int64, edi
 	}
 	prevTags := existingTags[commentID]
 
-	scalarChanged := prev.Body != newBody || prev.Title != newTitle ||
-		prev.Kind != newKind || prev.Pinned != newPinned
-	// Tags change only when explicitly provided AND the resolved set differs from
-	// what is stored; re-supplying the identical set is not a change.
-	tagsChanged := edit.Tags != nil && !sameTagSet(prevTags, *edit.Tags)
-
-	updated := prev
-	updated.Body = newBody
-	updated.Title = newTitle
-	updated.Kind = newKind
-	updated.Pinned = newPinned
-	updated.Tags = prevTags
+	updated, scalarChanged, tagsChanged := resolveCommentEdit(prev, prevTags, edit)
 
 	// Idempotent no-op: a patch whose resolved values equal the stored row must
 	// not bump updated_at or emit a content-free comment.edited. prev is the
 	// in-tx snapshot, so this comparison is race-free.
 	if !scalarChanged && !tagsChanged {
-		if err := tx.Commit(); err != nil {
+		if err := commitCommentNoOp(tx); err != nil {
 			return domain.Comment{}, domain.Event{}, err
 		}
 		committed = true
 		return updated, domain.Event{}, nil
 	}
 
-	var titleArg, kindArg any
-	if newTitle != "" {
-		titleArg = newTitle
-	}
-	if newKind != "" {
-		kindArg = newKind
-	}
-	if _, err := tx.ExecContext(ctx, `
-UPDATE events SET body = ?, title = ?, kind = ?, pinned = ?, updated_at = datetime('now')
-WHERE id = ? AND event_type = 'comment'
-`, newBody, titleArg, kindArg, boolToInt(newPinned), commentID); err != nil {
+	if err := updateCommentTx(ctx, tx, commentID, &updated, tagsChanged, edit.Tags); err != nil {
 		return domain.Comment{}, domain.Event{}, err
-	}
-
-	// Tags are tri-state: a nil edit.Tags pointer leaves the existing tag set
-	// untouched (a body-only or metadata-only edit must not wipe tags), while a
-	// non-nil pointer replaces them wholesale (an empty slice clears all tags).
-	// Only re-attach when the set actually changed.
-	if tagsChanged {
-		if _, err := tx.ExecContext(ctx, `DELETE FROM event_tags WHERE event_id = ?`, commentID); err != nil {
-			return domain.Comment{}, domain.Event{}, err
-		}
-		attached, err := attachTagsTx(ctx, tx, tagPivotEvent, commentID, *edit.Tags)
-		if err != nil {
-			return domain.Comment{}, domain.Event{}, err
-		}
-		updated.Tags = attached
 	}
 
 	// Name every changed field with a {from,to} entry so the activity feed can
 	// tell a pin from a title from a kind change — a metadata-only edit must not
 	// emit a content-free {comment_id} payload.
-	payload := map[string]any{"comment_id": commentID}
-	if prev.Body != newBody {
-		payload["body"] = map[string]any{"from": prev.Body, "to": newBody}
-	}
-	if prev.Title != newTitle {
-		payload["title"] = map[string]any{"from": prev.Title, "to": newTitle}
-	}
-	if prev.Kind != newKind {
-		payload["kind"] = map[string]any{"from": prev.Kind, "to": newKind}
-	}
-	if prev.Pinned != newPinned {
-		payload["pinned"] = map[string]any{"from": prev.Pinned, "to": newPinned}
-	}
-	payloadJSON, err := json.Marshal(payload)
+	payloadJSON, err := commentEditPayload(prev, updated, commentID)
 	if err != nil {
 		return domain.Comment{}, domain.Event{}, err
 	}
 
-	var event domain.Event
-	if s.shouldLogEvent(domain.EventTypeCommentEdited) {
-		event, err = insertEntityEvent(ctx, tx, updated.Scope, entityIDForScope(updated), projectID, domain.EventTypeCommentEdited, string(payloadJSON))
-		if err != nil {
-			return domain.Comment{}, domain.Event{}, fmt.Errorf("emit comment.edited: %w", err)
-		}
-	} else {
-		event = domain.Event{EntityType: updated.Scope, EntityID: entityIDForScope(updated), ProjectID: projectID, EventType: domain.EventTypeCommentEdited, Payload: string(payloadJSON)}
+	event, err := s.commentEditEvent(ctx, tx, updated, projectID, string(payloadJSON))
+	if err != nil {
+		return domain.Comment{}, domain.Event{}, err
 	}
 
 	if err := tx.Commit(); err != nil {
@@ -451,6 +387,88 @@ WHERE id = ? AND event_type = 'comment'
 	committed = true
 	s.publishEvent(ctx, event)
 	return updated, event, nil
+}
+
+func commitCommentNoOp(tx *sql.Tx) error {
+	return tx.Commit()
+}
+
+func (s *Store) commentEditEvent(ctx context.Context, tx *sql.Tx, updated domain.Comment, projectID int64, payload string) (domain.Event, error) {
+	if s.shouldLogEvent(domain.EventTypeCommentEdited) {
+		event, err := insertEntityEvent(ctx, tx, updated.Scope, entityIDForScope(updated), projectID, domain.EventTypeCommentEdited, payload)
+		if err != nil {
+			return domain.Event{}, fmt.Errorf("emit comment.edited: %w", err)
+		}
+		return event, nil
+	}
+	return domain.Event{EntityType: updated.Scope, EntityID: entityIDForScope(updated), ProjectID: projectID, EventType: domain.EventTypeCommentEdited, Payload: payload}, nil
+}
+
+func resolveCommentEdit(prev domain.Comment, prevTags []domain.Tag, edit domain.CommentEdit) (domain.Comment, bool, bool) {
+	updated := prev
+	if edit.Body != nil {
+		updated.Body = *edit.Body
+	}
+	if edit.Title != nil {
+		updated.Title = *edit.Title
+	}
+	if edit.Kind != nil {
+		updated.Kind = *edit.Kind
+	}
+	if edit.Pinned != nil {
+		updated.Pinned = *edit.Pinned
+	}
+	updated.Tags = prevTags
+	scalarChanged := prev.Body != updated.Body || prev.Title != updated.Title ||
+		prev.Kind != updated.Kind || prev.Pinned != updated.Pinned
+	tagsChanged := edit.Tags != nil && !sameTagSet(prevTags, *edit.Tags)
+	return updated, scalarChanged, tagsChanged
+}
+
+func updateCommentTx(ctx context.Context, tx *sql.Tx, commentID int64, updated *domain.Comment, tagsChanged bool, tags *[]domain.Tag) error {
+	var titleArg, kindArg any
+	if updated.Title != "" {
+		titleArg = updated.Title
+	}
+	if updated.Kind != "" {
+		kindArg = updated.Kind
+	}
+	if _, err := tx.ExecContext(ctx, `
+UPDATE events SET body = ?, title = ?, kind = ?, pinned = ?, updated_at = datetime('now')
+WHERE id = ? AND event_type = 'comment'
+`, updated.Body, titleArg, kindArg, boolToInt(updated.Pinned), commentID); err != nil {
+		return err
+	}
+	if !tagsChanged {
+		return nil
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM event_tags WHERE event_id = ?`, commentID); err != nil {
+		return err
+	}
+	attached, err := attachTagsTx(ctx, tx, tagPivotEvent, commentID, *tags)
+	if err != nil {
+		return err
+	}
+	updated.Tags = attached
+	return nil
+}
+
+func commentEditPayload(prev, updated domain.Comment, commentID int64) (string, error) {
+	payload := map[string]any{"comment_id": commentID}
+	if prev.Body != updated.Body {
+		payload["body"] = map[string]any{"from": prev.Body, "to": updated.Body}
+	}
+	if prev.Title != updated.Title {
+		payload["title"] = map[string]any{"from": prev.Title, "to": updated.Title}
+	}
+	if prev.Kind != updated.Kind {
+		payload["kind"] = map[string]any{"from": prev.Kind, "to": updated.Kind}
+	}
+	if prev.Pinned != updated.Pinned {
+		payload["pinned"] = map[string]any{"from": prev.Pinned, "to": updated.Pinned}
+	}
+	data, err := json.Marshal(payload)
+	return string(data), err
 }
 
 // sameTagSet reports whether two tag slices carry the same set of tag names,

@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"strings"
 
-	"omakiten/internal/app"
 	"omakiten/internal/config"
 	"omakiten/internal/domain"
 )
@@ -114,35 +113,30 @@ func (m Model) defaultSeverityID() domain.Severity {
 // scaffoldEntity calls into the appropriate service to create a placeholder
 // entity file and returns its absolute path so the TUI can hand it to $EDITOR.
 func (m Model) scaffoldEntity(ctx context.Context, kind entityKind, repos Repositories, name string) (string, error) {
+	svc := repos.operationService()
+	if svc == nil {
+		return "", fmt.Errorf("operation service is not wired")
+	}
 	switch kind {
 	case entityKindSkill:
-		service := app.NewSkillService(repos.entityServiceRepos(), repos.activeSnapshot())
-		skill, err := service.Add(ctx, domain.SkillInput{Name: name})
+		skill, err := svc.AddSkill(ctx, domain.SkillInput{Name: name})
 		if err != nil {
 			return "", err
 		}
 		return skill.SourcePath, nil
 	case entityKindLaw:
-		service := app.NewLawService(repos.entityServiceRepos(), repos.activeSnapshot(), m.registry)
-		// New laws default to the configured `default: true` severity
-		// (typically "warning"). DefaultSeverity returns SeverityZero
-		// when the registry is empty (uninitialised tests), in which
-		// case the validator on the next bundle import surfaces the
-		// missing severity — better than silently picking a label.
 		severityID := m.defaultSeverityID()
-		law, err := service.Add(ctx, domain.LawInput{
+		law, err := svc.AddLaw(ctx, domain.LawInput{
 			Key:      slugFromName(name),
 			Name:     name,
 			Severity: severityID,
-			Body:     "TODO: write the law body.",
-		})
+			Body:     "TODO: write the law body."})
 		if err != nil {
 			return "", err
 		}
 		return law.SourcePath, nil
 	case entityKindPersona:
-		service := app.NewPersonaService(repos.entityServiceRepos(), repos.activeSnapshot())
-		persona, err := service.Add(ctx, domain.PersonaInput{Name: name})
+		persona, err := svc.AddPersona(ctx, domain.PersonaInput{Name: name})
 		if err != nil {
 			return "", err
 		}

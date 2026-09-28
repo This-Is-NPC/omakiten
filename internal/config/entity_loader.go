@@ -2,9 +2,7 @@ package config
 
 import (
 	"fmt"
-	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -12,10 +10,9 @@ import (
 
 // skillFrontmatter mirrors the YAML inside skills/<slug>.md.
 type skillFrontmatter struct {
-	Name        string `yaml:"name"`
-	Description string `yaml:"description,omitempty"`
-	// SchemaVersion + RoleAffinity are schema-v2 fields (task #268).
-	SchemaVersion int      `yaml:"schema_version,omitempty"`
+	Name          string   `yaml:"name"`
+	Description   string   `yaml:"description,omitempty"`
+	SchemaVersion int      `yaml:"schema_version"`
 	RoleAffinity  []string `yaml:"role_affinity,omitempty"`
 }
 
@@ -25,11 +22,10 @@ type lawFrontmatter struct {
 }
 
 type personaFrontmatter struct {
-	Name        string   `yaml:"name"`
-	Description string   `yaml:"description,omitempty"`
-	Laws        []string `yaml:"laws,omitempty"`
-	// SchemaVersion + SkillRepertoire are schema-v2 fields (task #268).
-	SchemaVersion   int      `yaml:"schema_version,omitempty"`
+	Name            string   `yaml:"name"`
+	Description     string   `yaml:"description,omitempty"`
+	Laws            []string `yaml:"laws,omitempty"`
+	SchemaVersion   int      `yaml:"schema_version"`
 	SkillRepertoire []string `yaml:"skill_repertoire,omitempty"`
 }
 
@@ -47,13 +43,21 @@ type templateFrontmatter struct {
 // with custom winning, so the user's `<entity>/custom/<slug>.md` overrides any
 // default with the same slug. Returns empty slice when dir does not exist.
 func LoadSkills(dir string) ([]Skill, []SourceWarning, error) {
-	return LoadFromDir(dir, LoadOptions[Skill]{
+	return loadSkillsReader(dir, nil)
+}
+
+func loadSkillsReader(dir string, reader bundleSourceReader) ([]Skill, []SourceWarning, error) {
+	opts := LoadOptions[Skill]{
 		Suffixes:     []string{".md"},
 		MaxFileBytes: MaxEntityFileBytes,
 		Decode:       decodeSkillFile,
 		SlugOf:       func(s Skill) string { return s.Slug },
 		Collision:    CollideOverwrite,
-	})
+	}
+	if reader == nil {
+		return LoadFromDir(dir, opts)
+	}
+	return loadFromDirReader(dir, opts, reader)
 }
 
 func decodeSkillFile(path string, raw []byte, isCustom bool) (Skill, *SourceWarning, error) {
@@ -67,6 +71,9 @@ func decodeSkillFile(path string, raw []byte, isCustom bool) (Skill, *SourceWarn
 	}
 	if strings.TrimSpace(meta.Name) == "" {
 		return Skill{}, nil, parseError(path, fmt.Errorf("skill name is required"))
+	}
+	if meta.SchemaVersion != CurrentEntitySchemaVersion {
+		return Skill{}, nil, parseError(path, fmt.Errorf("skill schema_version must be %d", CurrentEntitySchemaVersion))
 	}
 	slug := slugFromFilename(path)
 	return Skill{
@@ -82,13 +89,21 @@ func decodeSkillFile(path string, raw []byte, isCustom bool) (Skill, *SourceWarn
 }
 
 func LoadLaws(dir string) ([]Law, []SourceWarning, error) {
-	return LoadFromDir(dir, LoadOptions[Law]{
+	return loadLawsReader(dir, nil)
+}
+
+func loadLawsReader(dir string, reader bundleSourceReader) ([]Law, []SourceWarning, error) {
+	opts := LoadOptions[Law]{
 		Suffixes:     []string{".md"},
 		MaxFileBytes: MaxEntityFileBytes,
 		Decode:       decodeLawFile,
 		SlugOf:       func(l Law) string { return l.Slug },
 		Collision:    CollideOverwrite,
-	})
+	}
+	if reader == nil {
+		return LoadFromDir(dir, opts)
+	}
+	return loadFromDirReader(dir, opts, reader)
 }
 
 func decodeLawFile(path string, raw []byte, isCustom bool) (Law, *SourceWarning, error) {
@@ -119,13 +134,21 @@ func decodeLawFile(path string, raw []byte, isCustom bool) (Law, *SourceWarning,
 }
 
 func LoadPersonas(dir string) ([]Persona, []SourceWarning, error) {
-	return LoadFromDir(dir, LoadOptions[Persona]{
+	return loadPersonasReader(dir, nil)
+}
+
+func loadPersonasReader(dir string, reader bundleSourceReader) ([]Persona, []SourceWarning, error) {
+	opts := LoadOptions[Persona]{
 		Suffixes:     []string{".md"},
 		MaxFileBytes: MaxEntityFileBytes,
 		Decode:       decodePersonaFile,
 		SlugOf:       func(p Persona) string { return p.Slug },
 		Collision:    CollideOverwrite,
-	})
+	}
+	if reader == nil {
+		return LoadFromDir(dir, opts)
+	}
+	return loadFromDirReader(dir, opts, reader)
 }
 
 func decodePersonaFile(path string, raw []byte, isCustom bool) (Persona, *SourceWarning, error) {
@@ -139,6 +162,9 @@ func decodePersonaFile(path string, raw []byte, isCustom bool) (Persona, *Source
 	}
 	if strings.TrimSpace(meta.Name) == "" {
 		return Persona{}, nil, parseError(path, fmt.Errorf("persona name is required"))
+	}
+	if meta.SchemaVersion != CurrentEntitySchemaVersion {
+		return Persona{}, nil, parseError(path, fmt.Errorf("persona schema_version must be %d", CurrentEntitySchemaVersion))
 	}
 	slug := slugFromFilename(path)
 	return Persona{
@@ -162,13 +188,21 @@ func decodePersonaFile(path string, raw []byte, isCustom bool) (Persona, *Source
 // that the agent uses as a scaffold. Frontmatter requires `name`; `description`
 // and `entity` are optional metadata for humans browsing the kit.
 func LoadTemplates(dir string) ([]TaskTemplate, []SourceWarning, error) {
-	return LoadFromDir(dir, LoadOptions[TaskTemplate]{
+	return loadTemplatesReader(dir, nil)
+}
+
+func loadTemplatesReader(dir string, reader bundleSourceReader) ([]TaskTemplate, []SourceWarning, error) {
+	opts := LoadOptions[TaskTemplate]{
 		Suffixes:     []string{".md"},
 		MaxFileBytes: MaxEntityFileBytes,
 		Decode:       decodeTemplateFile,
 		SlugOf:       func(t TaskTemplate) string { return t.Slug },
 		Collision:    CollideOverwrite,
-	})
+	}
+	if reader == nil {
+		return LoadFromDir(dir, opts)
+	}
+	return loadFromDirReader(dir, opts, reader)
 }
 
 func decodeTemplateFile(path string, raw []byte, isCustom bool) (TaskTemplate, *SourceWarning, error) {
@@ -206,6 +240,7 @@ func decodeTemplateFile(path string, raw []byte, isCustom bool) (TaskTemplate, *
 type entityFile struct {
 	Path     string
 	IsCustom bool
+	Raw      []byte
 }
 
 // listFilesIn returns every file directly under dir whose lowercase
@@ -222,30 +257,6 @@ type entityFile struct {
 // loader (.yaml/.yml) — all three previously inlined the same
 // os.ReadDir + suffix-filter + sort sequence with the same edge
 // cases.
-func listFilesIn(dir string, exts []string, isCustom bool) ([]entityFile, error) {
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil, nil
-		}
-		return nil, fmt.Errorf("read dir %s: %w", dir, err)
-	}
-	var files []entityFile
-	for _, entry := range entries {
-		if entry.IsDir() {
-			continue
-		}
-		name := entry.Name()
-		lower := strings.ToLower(name)
-		if !hasAnySuffix(lower, exts) {
-			continue
-		}
-		files = append(files, entityFile{Path: filepath.Join(dir, name), IsCustom: isCustom})
-	}
-	sort.Slice(files, func(i, j int) bool { return files[i].Path < files[j].Path })
-	return files, nil
-}
-
 // hasAnySuffix reports whether name ends in any of the supplied
 // suffixes. Lifted out of listFilesIn so the call stays readable
 // when a future loader needs three or four candidate extensions.

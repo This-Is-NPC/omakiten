@@ -5,10 +5,24 @@ import (
 	"testing"
 )
 
-func TestDefaultScreensZeroGaps(t *testing.T) {
-	screens := DefaultScreens()
+const (
+	routeTasksBoard      Route = "tasks.board"
+	routeTasksTable      Route = "tasks.table"
+	routeSettingsGeneral Route = "settings.general"
+)
+
+func testScreens() []ScreenDescriptor {
+	return []ScreenDescriptor{
+		{Code: "11", Route: routeTasksBoard, TitleKey: "tasks_board"},
+		{Code: "12", Route: routeTasksTable, TitleKey: "tasks_table"},
+		{Code: "31", Route: routeSettingsGeneral, TitleKey: "settings_general"},
+	}
+}
+
+func TestRegistryDefaultsResolveWithoutGaps(t *testing.T) {
+	screens := testScreens()
 	if len(screens) == 0 {
-		t.Fatalf("DefaultScreens is empty")
+		t.Fatalf("testScreens is empty")
 	}
 	codeRE := regexp.MustCompile(`^[1-9][1-9]$`)
 	seen := map[string]struct{}{}
@@ -20,19 +34,16 @@ func TestDefaultScreensZeroGaps(t *testing.T) {
 			t.Errorf("duplicate code %q", s.Code)
 		}
 		seen[s.Code] = struct{}{}
-		if _, ok := validRoutes[s.Route]; !ok {
-			t.Errorf("screen at code %q references unknown route %q", s.Code, s.Route)
-		}
 		if s.TitleKey == "" {
 			t.Errorf("screen at code %q has empty TitleKey", s.Code)
 		}
 	}
 	reg, warnings, err := New(screens, nil)
 	if err != nil {
-		t.Fatalf("New(DefaultScreens) error = %v", err)
+		t.Fatalf("New(testScreens) error = %v", err)
 	}
 	if len(warnings) != 0 {
-		t.Fatalf("New(DefaultScreens) warnings = %v, want none", warnings)
+		t.Fatalf("New(testScreens) warnings = %v, want none", warnings)
 	}
 	for _, s := range screens {
 		got, ok := reg.Resolve(s.Code)
@@ -47,8 +58,8 @@ func TestDefaultScreensZeroGaps(t *testing.T) {
 }
 
 func TestRegistryOverrideBeatsPositional(t *testing.T) {
-	reg, warnings, err := New(DefaultScreens(), map[string]Route{
-		"11": RouteSettingsGeneral,
+	reg, warnings, err := New(testScreens(), map[string]Route{
+		"11": routeSettingsGeneral,
 	})
 	if err != nil {
 		t.Fatalf("New error = %v", err)
@@ -60,15 +71,15 @@ func TestRegistryOverrideBeatsPositional(t *testing.T) {
 	if !ok {
 		t.Fatalf("Resolve(11) miss after override")
 	}
-	if got != RouteSettingsGeneral {
-		t.Fatalf("Resolve(11) = %q, want %q (override should beat positional)", got, RouteSettingsGeneral)
+	if got != routeSettingsGeneral {
+		t.Fatalf("Resolve(11) = %q, want %q (override should beat positional)", got, routeSettingsGeneral)
 	}
 }
 
 func TestRegistryCollisionWarning(t *testing.T) {
 	defaults := []ScreenDescriptor{
-		{Code: "11", Route: RouteTasksBoard, TitleKey: "k1"},
-		{Code: "11", Route: RouteTasksTable, TitleKey: "k2"},
+		{Code: "11", Route: routeTasksBoard, TitleKey: "k1"},
+		{Code: "11", Route: routeTasksTable, TitleKey: "k2"},
 	}
 	reg, warnings, err := New(defaults, nil)
 	if err != nil {
@@ -81,13 +92,13 @@ func TestRegistryCollisionWarning(t *testing.T) {
 		t.Fatalf("warning code = %q, want 11", warnings[0].Code)
 	}
 	got, _ := reg.Resolve("11")
-	if got != RouteTasksBoard {
-		t.Fatalf("Resolve(11) = %q, want first-wins %q", got, RouteTasksBoard)
+	if got != routeTasksBoard {
+		t.Fatalf("Resolve(11) = %q, want first-wins %q", got, routeTasksBoard)
 	}
 }
 
 func TestRegistryUnknownCodeMisses(t *testing.T) {
-	reg, _, err := New(DefaultScreens(), nil)
+	reg, _, err := New(testScreens(), nil)
 	if err != nil {
 		t.Fatalf("New error = %v", err)
 	}
@@ -104,7 +115,7 @@ func TestRegistryUnknownCodeMisses(t *testing.T) {
 
 func TestNewRejectsMalformedDefaultCode(t *testing.T) {
 	defaults := []ScreenDescriptor{
-		{Code: "0a", Route: RouteTasksBoard, TitleKey: "k"},
+		{Code: "0a", Route: routeTasksBoard, TitleKey: "k"},
 	}
 	_, _, err := New(defaults, nil)
 	if err == nil {
@@ -112,19 +123,19 @@ func TestNewRejectsMalformedDefaultCode(t *testing.T) {
 	}
 }
 
-func TestNewRejectsUnknownDefaultRoute(t *testing.T) {
+func TestNewRejectsEmptyDefaultRoute(t *testing.T) {
 	defaults := []ScreenDescriptor{
-		{Code: "11", Route: Route("not.a.route"), TitleKey: "k"},
+		{Code: "11", Route: "", TitleKey: "k"},
 	}
 	_, _, err := New(defaults, nil)
 	if err == nil {
-		t.Fatalf("New(unknown default route) err = nil, want error")
+		t.Fatalf("New(empty default route) err = nil, want error")
 	}
 }
 
 func TestNewOverrideMalformedCodeWarns(t *testing.T) {
-	_, warnings, err := New(DefaultScreens(), map[string]Route{
-		"0a": RouteTasksBoard,
+	_, warnings, err := New(testScreens(), map[string]Route{
+		"0a": routeTasksBoard,
 	})
 	if err != nil {
 		t.Fatalf("New error = %v", err)
@@ -135,7 +146,7 @@ func TestNewOverrideMalformedCodeWarns(t *testing.T) {
 }
 
 func TestNewOverrideUnknownRouteWarns(t *testing.T) {
-	_, warnings, err := New(DefaultScreens(), map[string]Route{
+	_, warnings, err := New(testScreens(), map[string]Route{
 		"99": Route("bogus.route"),
 	})
 	if err != nil {
@@ -147,8 +158,8 @@ func TestNewOverrideUnknownRouteWarns(t *testing.T) {
 }
 
 func TestRegistryCodesSortedAscending(t *testing.T) {
-	reg, _, err := New(DefaultScreens(), map[string]Route{
-		"99": RouteSettingsGeneral,
+	reg, _, err := New(testScreens(), map[string]Route{
+		"99": routeSettingsGeneral,
 	})
 	if err != nil {
 		t.Fatalf("New error = %v", err)

@@ -1,0 +1,189 @@
+package operation
+
+import (
+	"context"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	"omakiten/internal/config"
+	"omakiten/internal/domain"
+	"omakiten/internal/testfixtures"
+	"omakiten/internal/testfixtures/snapstore"
+)
+
+// TestCreateTaskIntentRejectsOverCapBeforeSimilarity pins audit #65782: an
+// over-cap title/description submitted to tasks.create_intent must be rejected
+// with ErrValidation BEFORE the similarity scan runs — not after loading the
+// whole task list and tokenizing the oversized text. The fixture seeds
+// "Add MCP agent integration" (taskA1), so a matching title on the similarity
+// path would otherwise return a RequiresConfirmation response; getting
+// ErrValidation instead proves the cap short-circuits ahead of that work.
+func TestCreateTaskIntentRejectsOverCapBeforeSimilarity(t *testing.T) {
+	t.Run("over-cap description rejected ahead of similarity", func(t *testing.T) {
+		f := newAgentFixture(t)
+		resp, err := f.service.CreateTaskIntent(f.ctx, CreateTaskInput{
+			Title:       "Add MCP agent integration", // matches taskA1 → would trigger similarity
+			Description: strings.Repeat("d", domain.MaxTaskDescriptionBytes+1),
+		})
+		assertCodedError(t, err, domain.ErrValidation)
+		if resp.Confirmation.RequiresConfirmation {
+			t.Fatal("over-cap intent returned a similarity confirmation; cap must reject before the scan")
+		}
+		if len(resp.SimilarTasks) != 0 {
+			t.Fatalf("over-cap intent surfaced %d similar tasks; similarity ran before the cap", len(resp.SimilarTasks))
+		}
+	})
+
+	t.Run("over-cap title rejected ahead of similarity", func(t *testing.T) {
+		f := newAgentFixture(t)
+		_, err := f.service.CreateTaskIntent(f.ctx, CreateTaskInput{
+			Title: strings.Repeat("t", domain.MaxTaskTitleRunes+1),
+		})
+		assertCodedError(t, err, domain.ErrValidation)
+	})
+}
+
+func TestEditTaskHappyPath(t *testing.T) {
+	f := newAgentFixture(t)
+
+	newTitle := "Updated title"
+	newDesc := "Updated description"
+	out, err := f.service.EditTask(f.ctx, EditTaskInput{
+		TaskID:      f.taskA1.ID,
+		Title:       &newTitle,
+		Description: &newDesc,
+	})
+	if err != nil {
+		t.Fatalf("EditTask() error = %v", err)
+	}
+	if out.Task.Title != newTitle {
+		t.Fatalf("EditTask().Task.Title = %q, want %q", out.Task.Title, newTitle)
+	}
+	if out.Task.Description != newDesc {
+		t.Fatalf("EditTask().Task.Description = %q, want %q", out.Task.Description, newDesc)
+	}
+	if out.Project.ID != f.projectA.ID {
+		t.Fatalf("EditTask().Project.ID = %d, want %d", out.Project.ID, f.projectA.ID)
+	}
+}
+
+func TestEditTaskRequiresAtLeastOneField(t *testing.T) {
+	f := newAgentFixture(t)
+	_, err := f.service.EditTask(f.ctx, EditTaskInput{TaskID: f.taskA1.ID})
+	assertCodedError(t, err, domain.ErrValidation)
+}
+
+func TestEditTaskRejectsArchived(t *testing.T) {
+	f := newAgentFixture(t)
+	if _, err := f.service.ArchiveTask(f.ctx, ArchiveTaskInput{TaskID: f.taskA1.ID}); err != nil {
+		t.Fatalf("ArchiveTask() error = %v", err)
+	}
+	title := "Will not stick"
+	_, err := f.service.EditTask(f.ctx, EditTaskInput{TaskID: f.taskA1.ID, Title: &title})
+	assertCodedError(t, err, domain.ErrValidation)
+	failure := FailureFromError(err)
+	if !strings.Contains(failure.Message, "archived") {
+		t.Fatalf("EditTask(archived).Message = %q, want hint about archived state", failure.Message)
+	}
+}
+
+func TestEditTaskRejectsUnknownPriorityLabel(t *testing.T) {
+	f := newAgentFixture(t)
+	bogus := "definitely-not-registered"
+	_, err := f.service.EditTask(f.ctx, EditTaskInput{TaskID: f.taskA1.ID, Priority: &bogus})
+	assertCodedError(t, err, domain.ErrValidation)
+}
+
+// TestEditTaskInLockedBucketReturnsGuardViolation builds a strict-policy
+// bundle (workflow.defaults deny edit; backlog overrides allow), moves a
+// task to dev, and confirms the agent surface propagates the
+// ErrGuardViolation that TaskService.Edit raises when the resolver says
+// no. The test exists to pin the contract that the MCP wrapper carries
+// no policy of its own — it just relays whatever the service decides.
+func TestEditTaskInLockedBucketReturnsGuardViolation(t *testing.T) {
+	f := newAgentFixtureEditLockedToBacklog(t)
+
+	// Move backlog → dev (the bundle keeps the standard backlog→dev transition).
+	if _, err := f.service.MoveTask(f.ctx, MoveTaskInput{TaskID: f.taskID, BucketKey: "dev"}); err != nil {
+		t.Fatalf("MoveTask(dev) error = %v", err)
+	}
+
+	title := "Should be denied"
+	_, err := f.service.EditTask(f.ctx, EditTaskInput{TaskID: f.taskID, Title: &title})
+	assertCodedError(t, err, domain.ErrGuardViolation)
+	failure := FailureFromError(err)
+	if failure.Message == "" {
+		t.Fatalf("EditTask(locked bucket).Message empty; want resolver hint")
+	}
+}
+
+// editLockedFixture is the trimmed fixture used by the policy-violation
+// test. It seeds a single project + task in backlog with a strict-policy
+// bundle so we don't carry the full agentFixture surface for one assertion.
+type editLockedFixture struct {
+	ctx     context.Context
+	service *Service
+	taskID  int64
+}
+
+func newAgentFixtureEditLockedToBacklog(t *testing.T) editLockedFixture {
+	t.Helper()
+	ctx := context.Background()
+
+	bundle, _ := testfixtures.LoadBundle(t, "default.yaml")
+	bundle.Skills = []config.Skill{{Slug: "go", Name: "Go"}}
+	bundle.Personas = []config.Persona{{Slug: "agent", Name: "Agent", SkillRepertoire: []string{"go"}}}
+	bundle.Laws = []config.Law{{Slug: "scope", Severity: "error", Body: "Stay scoped.", Scope: "global"}}
+
+	// Strict policy: deny task edit/delete at the workflow defaults
+	// layer; backlog opts back in via a bucket override so the seed
+	// task starts in an editable bucket.
+	falseB := false
+	trueB := true
+	deny := &config.CommentOpPolicy{Allow: &falseB}
+	allow := &config.CommentOpPolicy{Allow: &trueB}
+	bundle.Workflows[0].Defaults = &config.WorkflowDefaults{
+		Task:    &config.EntityPermission{Edit: deny, Delete: deny},
+		Comment: &config.EntityPermission{Edit: deny, Delete: deny},
+	}
+	for i := range bundle.Workflows[0].Buckets {
+		if bundle.Workflows[0].Buckets[i].Key == "backlog" {
+			bundle.Workflows[0].Buckets[i].Permissions = &config.BucketPermissions{
+				Task: &config.EntityPermission{Edit: allow, Delete: allow},
+			}
+			break
+		}
+	}
+
+	store := snapstore.Open(t, filepath.Join(t.TempDir(), "omakiten.db"))
+	if err := store.ImportBundle(ctx, bundle, "test.yaml", "hash"); err != nil {
+		t.Fatalf("ImportBundle() error = %v", err)
+	}
+
+	root := filepath.Join(t.TempDir(), "project")
+	if err := os.MkdirAll(root, 0o755); err != nil {
+		t.Fatalf("MkdirAll(root) error = %v", err)
+	}
+	project, err := store.UpsertProject(ctx, "Locked", "locked", root)
+	if err != nil {
+		t.Fatalf("UpsertProject() error = %v", err)
+	}
+	task, err := store.CreateTask(ctx, project.ID, "Seed", "Seed task", domain.Priority(2), "backlog", nil, store.Snapshot())
+	if err != nil {
+		t.Fatalf("CreateTask() error = %v", err)
+	}
+
+	svc := NewService(store, ProjectSelector{CWD: root})
+	svc.SetSnapshot(store.Snapshot())
+	svc.SetSettings(ServiceSettings{
+		RecentCommentLimit: 5,
+		IncludeWorkflow:    true,
+		CachePrompts:       true,
+		NextWorkLimit:      5,
+		SimilarTaskLimit:   5,
+	})
+
+	return editLockedFixture{ctx: ctx, service: svc, taskID: task.ID}
+}

@@ -2,20 +2,25 @@ package app
 
 import (
 	"context"
+	"errors"
 	"fmt"
-	"os"
+	"io/fs"
 	"path/filepath"
+	"sort"
+	"sync"
 
 	"omakiten/internal/config"
+	"omakiten/internal/domain"
 )
 
-// FileOp describes a single per-entity file mutation that participates in a
-// transactional Apply call. The path must be absolute. For OpWrite, Bytes is
-// the new file contents. For OpDelete, Bytes is ignored.
+// FileOp describes one entity-file mutation applied alongside a bundle edit.
+// Path is relative to the current bundle root. Each operation is checked
+// against the target's content version immediately before publication/removal.
 type FileOp struct {
-	Op    FileOpKind
-	Path  string
-	Bytes []byte
+	Op           FileOpKind
+	Path         string
+	Bytes        []byte
+	ExpectedHash string
 }
 
 type FileOpKind int
@@ -25,14 +30,9 @@ const (
 	OpDelete
 )
 
-// BundleEditor coordinates atomic mutations across the omakiten.yaml wiring
-// file and per-entity .md files. Apply returns the freshly re-loaded
-// bundle; downstream rotation (BundleCache.Reload) is driven separately
-// by mtime changes the editor's writes cause.
-//
-// The editor depends on a BundleStore port (load/save/hash/atomic-write).
-// It deliberately does not import file I/O helpers from `internal/config`
-// directly so the hexagonal direction stays inward.
+// BundleEditor coordinates current-path bundle and entity-file mutations.
+// Every individual write is atomic; operations are published independently
+// after an ordinary content-version precondition check.
 type BundleEditor struct {
 	bundle BundleStore
 	path   string
@@ -42,179 +42,221 @@ func NewBundleEditor(bundle BundleStore, path string) *BundleEditor {
 	return &BundleEditor{bundle: bundle, path: path}
 }
 
-func (e *BundleEditor) Path() string {
-	return e.path
-}
+// Bundle edits are rare, and one process-wide lock avoids incomplete alias and
+// shared-root coordination across profiles, runtime recreation, and platforms.
+var bundleEditMu sync.Mutex
 
-// SetPath repoints the editor at a different omakiten.yaml. Used by the TUI
-// when the user swaps the active workflow preset and the Model must keep
-// editing through the same editor instance instead of being rebuilt. The
-// caller is responsible for having already re-imported the bundle at the
-// new path; SetPath itself touches no files.
-func (e *BundleEditor) SetPath(path string) {
-	e.path = path
-}
+func (e *BundleEditor) Path() string { return e.path }
 
-func (e *BundleEditor) ConfigDir() string {
-	return filepath.Dir(e.path)
-}
+// SetPath repoints the editor at a different omakiten.yaml. The caller is
+// responsible for importing the bundle at the new path first.
+func (e *BundleEditor) SetPath(path string) { e.path = path }
 
-// RootDir is the layout root that holds both the config/ yaml directory and
-// the entity folders (skills/, laws/, personas/, templates/, themes/) as
-// siblings. New entity files (created via Add flows) land under
-// <root>/<kind>/custom/.
+func (e *BundleEditor) ConfigDir() string { return filepath.Dir(e.path) }
+
+// RootDir is the layout root that holds the config directory and entity
+// folders. New entity files land under the relevant custom directory.
 func (e *BundleEditor) RootDir() string {
 	return e.bundle.ConfigRootFromYAMLPath(e.path)
 }
 
-// Load returns the current bundle as written on disk.
+// RelativePath converts a known entity path into the relative FileOp form.
+// FileOps deliberately accept only paths below the current bundle root.
+func (e *BundleEditor) RelativePath(path string) string {
+	if !filepath.IsAbs(path) {
+		return path
+	}
+	rel, err := filepath.Rel(e.RootDir(), path)
+	if err != nil {
+		return path
+	}
+	return rel
+}
+
 func (e *BundleEditor) Load() (config.Bundle, error) {
-	bundle, err := e.bundle.LoadBundle(e.path)
-	if err != nil {
-		return config.Bundle{}, configError(e.path, err)
-	}
-	return bundle, nil
+	bundle, _, _, err := e.LoadPlan()
+	return bundle, err
 }
 
-// Apply is the wiring-only signature for callers that mutate the bundle
-// in place without producing entity files. It delegates to ApplyWithFiles
-// with a nil FileOp slice.
-func (e *BundleEditor) Apply(ctx context.Context, mutate func(*config.Bundle) error) (config.Bundle, error) {
-	return e.ApplyWithFiles(ctx, mutate, nil)
+// LoadPlan reads the current bundle and captures hashes for every source byte
+// used during planning. Apply must receive these values back; it never
+// establishes a baseline by loading again.
+func (e *BundleEditor) LoadPlan() (config.Bundle, string, map[string]string, error) {
+	bundle, hashes, err := e.bundle.LoadBundlePlan(e.path)
+	if err != nil {
+		return config.Bundle{}, "", nil, configError(e.path, err)
+	}
+	return bundle, hashes[e.path], hashes, nil
 }
 
-// ApplyWithFiles snapshots every file the FileOps will touch, runs the wiring
-// mutator on the in-memory bundle, executes the file operations, then re-loads
-// + re-imports the result. The order matters: any new entity file referenced
-// by the mutator must exist on disk before LoadBundle re-validates, and any
-// removed file must have its refs already dropped from the wiring.
-//
-// On any failure all renames are rolled back from the journal so the on-disk
-// state matches the pre-call snapshot.
-func (e *BundleEditor) ApplyWithFiles(ctx context.Context, mutate func(*config.Bundle) error, fileOps []FileOp) (config.Bundle, error) {
-	journal, err := snapshotFiles(e.bundle, e.wiringSnapshotPaths(fileOps))
-	if err != nil {
-		return config.Bundle{}, configError(e.path, err)
-	}
+// LoadPlanWithFiles is the explicit file-edit spelling of LoadPlan. Both use
+// the same coherent captured-byte plan; neither performs a second read.
+func (e *BundleEditor) LoadPlanWithFiles() (config.Bundle, string, map[string]string, error) {
+	return e.LoadPlan()
+}
 
-	bundle, err := e.bundle.LoadBundle(e.path)
-	if err != nil {
-		_ = journal.restore()
-		return config.Bundle{}, configError(e.path, err)
-	}
+func (e *BundleEditor) Hash() (string, error) { return e.bundle.HashFile(e.path) }
 
+func (e *BundleEditor) FileHash(path string) (string, error) { return e.bundle.HashFile(path) }
+
+func (e *BundleEditor) Apply(ctx context.Context, bundle config.Bundle, sourceHashes map[string]string, mutate func(*config.Bundle) error) (config.Bundle, error) {
+	return e.ApplyWithFiles(ctx, bundle, sourceHashes, mutate, nil)
+}
+
+// ApplyWithFiles mutates the current bundle, publishes the wiring file, then
+// applies entity operations and reloads the validated result. Validation and
+// publication are serialized per current bundle path; reload runs after that
+// critical section. Operations remain intentionally independent: atomic
+// publication prevents partial bytes in an individual file, while failures
+// identify any state already published.
+func (e *BundleEditor) ApplyWithFiles(_ context.Context, bundle config.Bundle, sourceHashes map[string]string, mutate func(*config.Bundle) error, fileOps []FileOp) (config.Bundle, error) {
 	if mutate != nil {
 		if err := mutate(&bundle); err != nil {
-			_ = journal.restore()
 			return config.Bundle{}, err
 		}
 	}
-
-	// Stage the new wiring before touching the entity files: this way removed
-	// slugs are dropped from `omakiten.yaml` before the corresponding `.md` is
-	// deleted, and newly-referenced slugs see their file land before the next
-	// LoadBundle validates the wiring.
-	if err := e.bundle.SaveBundle(e.path, bundle); err != nil {
-		_ = journal.restore()
-		return config.Bundle{}, configError(e.path, err)
+	for _, op := range fileOps {
+		if err := e.validateFileOp(op); err != nil {
+			return config.Bundle{}, editorError(op.Path, err)
+		}
 	}
-
-	if err := executeFileOps(e.bundle, fileOps); err != nil {
-		_ = journal.restore()
-		return config.Bundle{}, configError(e.path, err)
-	}
-
-	// Re-load from disk so the freshly written wiring + entity files round
-	// trip through the validator before the caller observes them. Phase
-	// 2-bis dropped the Store-side re-import: downstream rotation is
-	// driven by BundleCache.Reload on mtime change, so the editor's job
-	// ends at validated bytes on disk.
-	resolved, err := e.bundle.LoadBundle(e.path)
+	published, err := e.publishWithLock(bundle, sourceHashes, fileOps)
 	if err != nil {
-		_ = journal.restore()
-		return config.Bundle{}, configError(e.path, err)
+		return config.Bundle{}, err
 	}
-	_ = ctx
-	return resolved, nil
-}
-
-// wiringSnapshotPaths returns the set of paths that need a journal entry to
-// support rollback. Always includes omakiten.yaml plus every FileOp target.
-func (e *BundleEditor) wiringSnapshotPaths(ops []FileOp) []string {
-	paths := []string{e.path}
-	seen := map[string]struct{}{e.path: {}}
-	for _, op := range ops {
-		if _, dup := seen[op.Path]; dup {
-			continue
-		}
-		seen[op.Path] = struct{}{}
-		paths = append(paths, op.Path)
+	resolved, err := e.Load()
+	if err != nil {
+		return config.Bundle{}, editorError(e.path, reloadFailure(published, err))
 	}
-	return paths
+	return resolved, err
 }
 
-type fileSnapshot struct {
-	path    string
-	data    []byte
-	existed bool
+func (e *BundleEditor) publishWithLock(bundle config.Bundle, sourceHashes map[string]string, fileOps []FileOp) ([]string, error) {
+	bundleEditMu.Lock()
+	defer bundleEditMu.Unlock()
+	return e.publish(bundle, sourceHashes, fileOps)
 }
 
-type fileJournal struct {
-	bundle  BundleStore
-	entries []fileSnapshot
-}
-
-func snapshotFiles(store BundleStore, paths []string) (*fileJournal, error) {
-	journal := &fileJournal{bundle: store}
-	for _, path := range paths {
-		data, err := os.ReadFile(path)
-		if err != nil {
-			if os.IsNotExist(err) {
-				journal.entries = append(journal.entries, fileSnapshot{path: path, existed: false})
-				continue
-			}
-			return nil, fmt.Errorf("snapshot %s: %w", path, err)
-		}
-		journal.entries = append(journal.entries, fileSnapshot{path: path, data: data, existed: true})
+func (e *BundleEditor) publish(bundle config.Bundle, sourceHashes map[string]string, fileOps []FileOp) ([]string, error) {
+	if path, err := e.requireCurrentSources(sourceHashes); err != nil {
+		return nil, editorError(path, err)
 	}
-	return journal, nil
-}
-
-func (j *fileJournal) restore() error {
-	var firstErr error
-	for i := len(j.entries) - 1; i >= 0; i-- {
-		entry := j.entries[i]
-		if !entry.existed {
-			if err := os.Remove(entry.path); err != nil && !os.IsNotExist(err) {
-				if firstErr == nil {
-					firstErr = err
-				}
-			}
-			continue
+	if err := e.bundle.SaveBundle(e.path, bundle); err != nil {
+		if config.IsAmbiguousPublication(err) {
+			return nil, editorError(e.path, ambiguousFailure([]string{e.path}, e.path, err))
 		}
-		if err := j.bundle.WriteAtomic(entry.path, entry.data); err != nil {
-			if firstErr == nil {
-				firstErr = err
-			}
-		}
+		return nil, editorError(e.path, fmt.Errorf("publish wiring file may have partially succeeded; reload to inspect it, then retry or repair: %w", err))
 	}
-	return firstErr
+	published := []string{e.path}
+	for _, op := range fileOps {
+		if err := e.applyFileOp(op); err != nil {
+			return nil, editorError(op.Path, e.fileOpFailure(op, published, err))
+		}
+		published = append(published, filepath.Join(e.RootDir(), op.Path))
+	}
+	return published, nil
 }
 
-func executeFileOps(store BundleStore, ops []FileOp) error {
-	for _, op := range ops {
-		switch op.Op {
-		case OpWrite:
-			if err := store.WriteAtomic(op.Path, op.Bytes); err != nil {
-				return fmt.Errorf("write %s: %w", op.Path, err)
-			}
-		case OpDelete:
-			if err := os.Remove(op.Path); err != nil && !os.IsNotExist(err) {
-				return fmt.Errorf("delete %s: %w", op.Path, err)
-			}
-		default:
-			return fmt.Errorf("unknown file op kind %d", op.Op)
-		}
+func (e *BundleEditor) fileOpFailure(op FileOp, published []string, err error) error {
+	if !config.IsAmbiguousPublication(err) {
+		return partialFailure(published, op.Path, err)
+	}
+	affected := filepath.Join(e.RootDir(), op.Path)
+	withAffected := append(append([]string(nil), published...), affected)
+	return ambiguousFailure(withAffected, affected, err)
+}
+
+func editorError(path string, err error) error {
+	return domain.NewError(domain.ErrConfigInvalid, err.Error(), map[string]any{"path": path, "error": err.Error()})
+}
+
+func (e *BundleEditor) captureVersion(path string) (string, error) {
+	hash, err := e.bundle.HashFile(path)
+	if err == nil {
+		return hash, nil
+	}
+	if errors.Is(err, fs.ErrNotExist) {
+		return "", nil
+	}
+	return "", fmt.Errorf("capture content version for %s: %w", path, err)
+}
+
+func (e *BundleEditor) requireCurrent(path, expected string) error {
+	current, err := e.captureVersion(path)
+	if err != nil {
+		return err
+	}
+	if current != expected {
+		return fmt.Errorf("file %q changed since it was loaded; reload and retry", path)
 	}
 	return nil
+}
+
+func (e *BundleEditor) requireCurrentSources(sourceHashes map[string]string) (string, error) {
+	if _, ok := sourceHashes[e.path]; !ok {
+		return e.path, fmt.Errorf("planning hashes missing wiring path %q; reload and retry", e.path)
+	}
+	paths := make([]string, 0, len(sourceHashes))
+	for path := range sourceHashes {
+		paths = append(paths, path)
+	}
+	sort.Strings(paths)
+	for _, path := range paths {
+		if err := e.requireCurrent(path, sourceHashes[path]); err != nil {
+			return path, err
+		}
+	}
+	return "", nil
+}
+
+func (e *BundleEditor) applyFileOp(op FileOp) error {
+	if err := e.validateFileOp(op); err != nil {
+		return err
+	}
+	path := filepath.Join(e.RootDir(), op.Path)
+	if err := e.requireCurrent(path, op.ExpectedHash); err != nil {
+		return err
+	}
+	switch op.Op {
+	case OpWrite:
+		if err := e.bundle.WriteAtomic(path, op.Bytes); err != nil {
+			return fmt.Errorf("write %s: %w", path, err)
+		}
+	case OpDelete:
+		if err := e.bundle.RemoveFile(path); err != nil {
+			return fmt.Errorf("delete %s: %w", path, err)
+		}
+	default:
+		return fmt.Errorf("unknown file op kind %d", op.Op)
+	}
+	return nil
+}
+
+func (e *BundleEditor) validateFileOp(op FileOp) error {
+	if err := e.bundle.ValidatePath(e.RootDir(), op.Path); err != nil {
+		return fmt.Errorf("file %q is outside the bundle root: %w", op.Path, err)
+	}
+	if op.Op != OpWrite && op.Op != OpDelete {
+		return fmt.Errorf("unknown file op kind %d", op.Op)
+	}
+	return nil
+}
+
+func partialFailure(published []string, failedPath string, err error) error {
+	return fmt.Errorf("partial bundle update: published %s; %s was not safely completed: %w; reload to inspect the published state, then retry or repair %s", joinPaths(published), failedPath, err, failedPath)
+}
+
+func ambiguousFailure(published []string, affectedPath string, err error) error {
+	return fmt.Errorf("ambiguous bundle update: published %s; %s may have been published before completion: %w; reload to inspect the current state, then retry or repair %s", joinPaths(published), affectedPath, err, affectedPath)
+}
+
+func reloadFailure(published []string, err error) error {
+	return fmt.Errorf("bundle update published %s, but final reload was not verified: %w; reload to inspect the published state, then retry or repair", joinPaths(published), err)
+}
+
+func joinPaths(paths []string) string {
+	if len(paths) == 0 {
+		return "no files"
+	}
+	return fmt.Sprintf("files %q", paths)
 }

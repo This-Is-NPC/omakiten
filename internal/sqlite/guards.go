@@ -10,7 +10,7 @@ import (
 // task that taskID depends on. Used by the blockers_in workflow guard at the
 // app layer to decide which blockers still sit in disallowed buckets.
 func (s *Store) ListTaskBlockerBuckets(ctx context.Context, projectID, taskID int64, buckets domain.BucketResolver) ([]domain.TaskBlocker, error) {
-	// `workflow_buckets` was dropped in migration 020; the previous JOIN
+	// `workflow_buckets` is not part of the current schema; the previous JOIN
 	// resolved bucket key per blocker. We now scan blocker rows with
 	// bucket_id and resolve key via the in-memory provider after the
 	// SQL completes.

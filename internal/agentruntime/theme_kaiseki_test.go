@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"omakiten/internal/agent"
+	"omakiten/internal/operation"
 )
 
 // openKaiseki boots a runtime against the embedded kaiseki (LOTR) default kit
@@ -28,9 +28,9 @@ func openKaiseki(t *testing.T) *Runtime {
 	return rt
 }
 
-func resolveKaiseki(t *testing.T, rt *Runtime, name string) agent.ResolveCommandResponse {
+func resolveKaiseki(t *testing.T, rt *Runtime, name string) operation.ResolveCommandResponse {
 	t.Helper()
-	resp, err := rt.Service().ResolveCommand(context.Background(), agent.ResolveCommandInput{Name: name})
+	resp, err := rt.Service().ResolveCommand(context.Background(), operation.ResolveCommandInput{Name: name})
 	if err != nil {
 		t.Fatalf("ResolveCommand(%s) error = %v", name, err)
 	}
@@ -64,33 +64,7 @@ func TestKaisekiAragornBuilderIdentity(t *testing.T) {
 
 	// Skills — bullet-with-body for the declared subset (and the entity-sourced
 	// playbook renders here too; there is no hardcoded Action section).
-	if len(resp.Skills) == 0 {
-		t.Fatalf("okt-task-implement resolved with no skills — the command-level subset is not wired")
-	}
-	if !strings.Contains(resp.Markdown, "## Skills\n") {
-		t.Fatalf("okt-task-implement markdown missing the Skills section:\n%s", resp.Markdown)
-	}
-	for _, sk := range resp.Skills {
-		label := sk.Name
-		if label == "" {
-			label = sk.Slug
-		}
-		body := strings.TrimSpace(sk.Body)
-		if body == "" {
-			body = strings.TrimSpace(sk.Description)
-		}
-		if body == "" {
-			t.Fatalf("okt-task-implement skill %q renders as a bare name bullet", label)
-		}
-		head := body
-		if idx := strings.IndexByte(head, '\n'); idx >= 0 {
-			head = head[:idx]
-		}
-		wantBullet := "- **" + label + "** — " + head
-		if !strings.Contains(resp.Markdown, wantBullet) {
-			t.Fatalf("okt-task-implement skill %q did not render bullet-with-body (expected %q):\n%s", label, wantBullet, resp.Markdown)
-		}
-	}
+	assertBulletWithBody(t, "okt-task-implement", resp)
 
 	// Themed law — "Map before the road" must reach the implement loop and
 	// render its neutral SE body.
@@ -196,7 +170,7 @@ func TestKaisekiReviewerCouncilLaw(t *testing.T) {
 	}
 }
 
-func skillPresent(skills []agent.SkillInfo, slug string) bool {
+func skillPresent(skills []operation.SkillInfo, slug string) bool {
 	for _, s := range skills {
 		if s.Slug == slug {
 			return true

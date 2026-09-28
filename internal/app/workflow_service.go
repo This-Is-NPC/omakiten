@@ -398,45 +398,9 @@ func (s *WorkflowService) MoveTask(ctx context.Context, project domain.ProjectCo
 		return
 	}
 
-	taskForResolution, err := s.tasks.GetTaskByID(ctx, project.ID, taskID, s.snap)
+	_, taskSnap, currentBucketID, target, err := s.resolveMove(ctx, project, taskID, targetBucketKey)
 	if err != nil {
 		return
-	}
-	taskSnap := s.snap.For(taskForResolution)
-
-	state, err := s.repo.TaskState(ctx, project.ID, taskID)
-	if err != nil {
-		return
-	}
-	if state == domain.TaskStateArchived {
-		err = domain.NewError(domain.ErrValidation, "task is archived; unarchive before moving", map[string]any{"task_id": taskID, "hint": "call tasks.unarchive(task_id) first"})
-		return
-	}
-
-	currentBucketID, _, err := s.repo.CurrentTaskBucket(ctx, project.ID, taskID, taskSnap)
-	if err != nil {
-		return
-	}
-
-	target, ok := taskSnap.BucketByKey(targetBucketKey)
-	if !ok {
-		err = domain.NewError(domain.ErrBucketNotFound, "bucket not found", map[string]any{"bucket": targetBucketKey})
-		return
-	}
-
-	if currentBucketID != target.ID {
-		allowed := taskSnap.TransitionAllowed(currentBucketID, target.ID)
-		if !allowed {
-			s.guards.EmitViolatedForTask(ctx, project.ID, taskForResolution, taskSnap,
-				GuardOperationTaskTransition, GuardRuleTransition,
-				"transition not allowed",
-				map[string]any{"task_id": taskID, "from_bucket_id": currentBucketID, "to_bucket_id": target.ID, "to_bucket": targetBucketKey})
-			err = domain.NewError(domain.ErrWorkflowInvalidTransition, "transition not allowed", map[string]any{"task_id": taskID, "from": currentBucketID, "to": target.ID})
-			return
-		}
-		if err = s.guards.EvaluateTransitionForTask(ctx, project.ID, taskForResolution, currentBucketID, target.ID, targetBucketKey, taskSnap); err != nil {
-			return
-		}
 	}
 
 	task, err = s.tasks.MoveTask(ctx, project.ID, taskID, targetBucketKey, taskSnap)
@@ -445,28 +409,61 @@ func (s *WorkflowService) MoveTask(ctx context.Context, project domain.ProjectCo
 	}
 
 	if currentBucketID != target.ID {
-		if taskSnap.IsFinalBucket(target.ID) {
-			payload, payloadErr := domain.NewTaskSubjectPayload(task, taskSnap.Kit().Key, map[string]any{"bucket": targetBucketKey})
-			if payloadErr != nil {
-				err = payloadErr
-				return
-			}
-			if _, err = s.events.RecordTaskEvent(ctx, project.ID, taskID, domain.EventTypeTaskCompleted, "", payload); err != nil {
-				return
-			}
-			// Plan auto-done: when the task that just landed in the
-			// terminal bucket was the last pending one in its plan,
-			// transition the plan to status='done' and emit
-			// plan.done. Non-plan tasks are a no-op; finaliser
-			// failures are swallowed because plan finalisation is
-			// recomputable on the next terminal move — losing the
-			// audit signal beats blocking a legitimate move.
-			if s.planFinalizer != nil {
-				_, _ = s.planFinalizer.MaybeFinalizePlanForTask(ctx, project.ID, taskID, taskSnap)
-			}
+		if err = s.recordCompletion(ctx, project, taskID, targetBucketKey, task, taskSnap, target.ID); err != nil {
+			return
 		}
 	}
 	return
+}
+
+func (s *WorkflowService) resolveMove(ctx context.Context, project domain.ProjectContext, taskID int64, targetBucketKey string) (domain.Task, *config.Snapshot, int64, domain.Bucket, error) {
+	task, err := s.tasks.GetTaskByID(ctx, project.ID, taskID, s.snap)
+	if err != nil {
+		return domain.Task{}, nil, 0, domain.Bucket{}, err
+	}
+	taskSnap := s.snap.For(task)
+	state, err := s.repo.TaskState(ctx, project.ID, taskID)
+	if err != nil {
+		return domain.Task{}, nil, 0, domain.Bucket{}, err
+	}
+	if state == domain.TaskStateArchived {
+		return domain.Task{}, nil, 0, domain.Bucket{}, domain.NewError(domain.ErrValidation, "task is archived; unarchive before moving", map[string]any{"task_id": taskID, "hint": "call tasks.unarchive(task_id) first"})
+	}
+	current, _, err := s.repo.CurrentTaskBucket(ctx, project.ID, taskID, taskSnap)
+	if err != nil {
+		return domain.Task{}, nil, 0, domain.Bucket{}, err
+	}
+	target, ok := taskSnap.BucketByKey(targetBucketKey)
+	if !ok {
+		return domain.Task{}, nil, 0, domain.Bucket{}, domain.NewError(domain.ErrBucketNotFound, "bucket not found", map[string]any{"bucket": targetBucketKey})
+	}
+	if current != target.ID {
+		if !taskSnap.TransitionAllowed(current, target.ID) {
+			s.guards.EmitViolatedForTask(ctx, project.ID, task, taskSnap, GuardOperationTaskTransition, GuardRuleTransition, "transition not allowed", map[string]any{"task_id": taskID, "from_bucket_id": current, "to_bucket_id": target.ID, "to_bucket": targetBucketKey})
+			return domain.Task{}, nil, 0, domain.Bucket{}, domain.NewError(domain.ErrWorkflowInvalidTransition, "transition not allowed", map[string]any{"task_id": taskID, "from": current, "to": target.ID})
+		}
+		if err := s.guards.EvaluateTransitionForTask(ctx, project.ID, task, current, target.ID, targetBucketKey, taskSnap); err != nil {
+			return domain.Task{}, nil, 0, domain.Bucket{}, err
+		}
+	}
+	return task, taskSnap, current, target, nil
+}
+
+func (s *WorkflowService) recordCompletion(ctx context.Context, project domain.ProjectContext, taskID int64, targetBucketKey string, task domain.Task, taskSnap *config.Snapshot, targetBucketID int64) error {
+	if !taskSnap.IsFinalBucket(targetBucketID) {
+		return nil
+	}
+	payload, err := domain.NewTaskSubjectPayload(task, taskSnap.Kit().Key, map[string]any{"bucket": targetBucketKey})
+	if err != nil {
+		return err
+	}
+	if _, err := s.events.RecordTaskEvent(ctx, project.ID, taskID, domain.EventTypeTaskCompleted, "", payload); err != nil {
+		return err
+	}
+	if s.planFinalizer != nil {
+		_, _ = s.planFinalizer.MaybeFinalizePlanForTask(ctx, project.ID, taskID, taskSnap)
+	}
+	return nil
 }
 
 // evaluatePermission resolves bucket policy without hitting the database.

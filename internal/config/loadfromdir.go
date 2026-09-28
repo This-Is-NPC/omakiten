@@ -43,9 +43,8 @@ const (
 type LoadOptions[T any] struct {
 	// Suffixes is the list of accepted file extensions (lowercased,
 	// dot-prefixed). Most loaders pin one (".md" for entities), but
-	// language packs and notifications historically accepted both
-	// ".yaml" and ".yml" — capture both so the migration is observably
-	// a no-op.
+	// language packs and notifications accept both ".yaml" and ".yml" —
+	// capture both so each loader keeps the same current behavior.
 	Suffixes     []string
 	MaxFileBytes int64
 	// Decode parses raw into the domain type. isCustom is stamped by the
@@ -83,80 +82,143 @@ func LoadFromDir[T any](dir string, opts LoadOptions[T]) ([]T, []SourceWarning, 
 	for _, s := range opts.Suffixes {
 		suffixes = append(suffixes, strings.ToLower(s))
 	}
-	files, err := listFilesIn(dir, suffixes, false)
+	files, err := listFilesIn(dir, suffixes, false, opts.MaxFileBytes)
 	if err != nil {
 		return nil, nil, err
 	}
-	customs, err := listFilesIn(filepath.Join(dir, "custom"), suffixes, true)
+	customs, err := listFilesIn(filepath.Join(dir, "custom"), suffixes, true, opts.MaxFileBytes)
 	if err != nil {
 		return nil, nil, err
 	}
 	files = append(files, customs...)
-
-	type entry struct {
-		item     T
-		source   string
-		isCustom bool
-	}
-	bySlug := map[string]entry{}
-	seenScope := map[string]bool{} // slug → scope of last winner
-	order := []string{}
-	var warnings []SourceWarning
-
-	for _, file := range files {
-		raw, readErr := readFileBounded(file.Path, opts.MaxFileBytes)
-		if readErr != nil {
-			return nil, nil, readErr
-		}
-		item, warning, decodeErr := opts.Decode(file.Path, raw, file.IsCustom)
-		if decodeErr != nil {
-			if opts.OnDecodeError != nil {
-				if recoveredWarning, recovered := opts.OnDecodeError(file.Path, file.IsCustom, decodeErr); recovered {
-					if recoveredWarning != nil {
-						warnings = append(warnings, *recoveredWarning)
-					}
-					continue
-				}
-			}
-			return nil, nil, decodeErr
-		}
-		if warning != nil {
-			warnings = append(warnings, *warning)
-		}
-		slug := opts.SlugOf(item)
-		if _, exists := bySlug[slug]; exists {
-			previousIsCustom := seenScope[slug]
-			sameScope := previousIsCustom == file.IsCustom
-			switch opts.Collision {
-			case CollideError:
-				return nil, nil, fmt.Errorf("%s: duplicate slug %q (also defined in %s)", file.Path, slug, bySlug[slug].source)
-			case CollideOverwrite:
-				if sameScope {
-					return nil, nil, fmt.Errorf("%s: duplicate slug %q (also defined in %s)", file.Path, slug, bySlug[slug].source)
-				}
-				// Cross-scope: defaults are walked first, customs second,
-				// so the second arrival is always the custom — let it win.
-			case CollideKeepFirst:
-				if sameScope {
-					return nil, nil, fmt.Errorf("%s: duplicate slug %q (also defined in %s)", file.Path, slug, bySlug[slug].source)
-				}
-				// Cross-scope: keep the first (default) winner — skip the custom.
-				continue
-			default:
-				return nil, nil, fmt.Errorf("%s: unknown CollisionPolicy %d", file.Path, opts.Collision)
-			}
-		} else {
-			order = append(order, slug)
-		}
-		bySlug[slug] = entry{item: item, source: file.Path, isCustom: file.IsCustom}
-		seenScope[slug] = file.IsCustom
-	}
-
-	sort.Strings(order)
-	out := make([]T, 0, len(order))
-	for _, slug := range order {
-		out = append(out, bySlug[slug].item)
-	}
-	return out, warnings, nil
+	return mergeDirFiles(files, opts)
 }
 
+func loadFromDirReader[T any](dir string, opts LoadOptions[T], reader bundleSourceReader) ([]T, []SourceWarning, error) {
+	suffixes := make([]string, 0, len(opts.Suffixes))
+	for _, s := range opts.Suffixes {
+		suffixes = append(suffixes, strings.ToLower(s))
+	}
+	files, err := reader.listFiles(dir, suffixes, false, opts.MaxFileBytes)
+	if err != nil {
+		return nil, nil, err
+	}
+	customs, err := reader.listFiles(filepath.Join(dir, "custom"), suffixes, true, opts.MaxFileBytes)
+	if err != nil {
+		return nil, nil, err
+	}
+	return mergeDirFiles(append(files, customs...), opts)
+}
+
+func mergeDirFiles[T any](files []entityFile, opts LoadOptions[T]) ([]T, []SourceWarning, error) {
+
+	merged := newDirMerge[T]()
+	for _, file := range files {
+		if err := merged.add(file, opts); err != nil {
+			return nil, nil, err
+		}
+	}
+
+	return merged.items(), merged.warnings, nil
+}
+
+type dirEntry[T any] struct {
+	item     T
+	source   string
+	isCustom bool
+}
+
+type dirMerge[T any] struct {
+	bySlug    map[string]dirEntry[T]
+	seenScope map[string]bool
+	order     []string
+	warnings  []SourceWarning
+}
+
+func newDirMerge[T any]() *dirMerge[T] {
+	return &dirMerge[T]{bySlug: map[string]dirEntry[T]{}, seenScope: map[string]bool{}}
+}
+
+func (m *dirMerge[T]) add(file entityFile, opts LoadOptions[T]) error {
+	item, warning, skipped, err := decodeDirEntry(file, opts)
+	if err != nil {
+		return err
+	}
+	if skipped {
+		if warning != nil {
+			m.warnings = append(m.warnings, *warning)
+		}
+		return nil
+	}
+	if warning != nil {
+		m.warnings = append(m.warnings, *warning)
+	}
+	slug := opts.SlugOf(item)
+	return m.store(file, slug, item, opts.Collision)
+}
+
+func decodeDirEntry[T any](file entityFile, opts LoadOptions[T]) (T, *SourceWarning, bool, error) {
+	item, warning, err := opts.Decode(file.Path, file.Raw, file.IsCustom)
+	if err == nil {
+		return item, warning, false, nil
+	}
+	if opts.OnDecodeError != nil {
+		if recoveredWarning, recovered := opts.OnDecodeError(file.Path, file.IsCustom, err); recovered {
+			var zero T
+			return zero, recoveredWarning, true, nil
+		}
+	}
+	var zero T
+	return zero, nil, false, err
+}
+
+func (m *dirMerge[T]) store(file entityFile, slug string, item T, policy CollisionPolicy) error {
+	previous, exists := m.bySlug[slug]
+	if exists {
+		keep, err := resolveCollision(file, slug, previous, m.seenScope[slug], policy)
+		if err != nil {
+			return err
+		}
+		if !keep {
+			return nil
+		}
+	} else {
+		m.order = append(m.order, slug)
+	}
+	m.bySlug[slug] = dirEntry[T]{item: item, source: file.Path, isCustom: file.IsCustom}
+	m.seenScope[slug] = file.IsCustom
+	return nil
+}
+
+func resolveCollision[T any](file entityFile, slug string, previous dirEntry[T], previousIsCustom bool, policy CollisionPolicy) (bool, error) {
+	sameScope := previousIsCustom == file.IsCustom
+	switch policy {
+	case CollideError:
+		return false, duplicateSlugError(file.Path, slug, previous.source)
+	case CollideOverwrite:
+		if sameScope {
+			return false, duplicateSlugError(file.Path, slug, previous.source)
+		}
+		return true, nil
+	case CollideKeepFirst:
+		if sameScope {
+			return false, duplicateSlugError(file.Path, slug, previous.source)
+		}
+		return false, nil
+	default:
+		return false, fmt.Errorf("%s: unknown CollisionPolicy %d", file.Path, policy)
+	}
+}
+
+func duplicateSlugError(path, slug, previous string) error {
+	return fmt.Errorf("%s: duplicate slug %q (also defined in %s)", path, slug, previous)
+}
+
+func (m *dirMerge[T]) items() []T {
+	sort.Strings(m.order)
+	out := make([]T, 0, len(m.order))
+	for _, slug := range m.order {
+		out = append(out, m.bySlug[slug].item)
+	}
+	return out
+}

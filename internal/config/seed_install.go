@@ -48,6 +48,9 @@ type SeedResult struct {
 // right rootDir per scope: ConfigRoot() for global, <repo>/.omakiten for
 // repo-local installs.
 func SeedInstall(rootDir, presetName string, force bool) (SeedResult, error) {
+	if err := validateNoSymlinkComponents(rootDir); err != nil {
+		return SeedResult{}, fmt.Errorf("refusing config install root %s: %w", rootDir, err)
+	}
 	preset, ok := PresetByName(presetName)
 	if !ok || presetName != filepath.Base(presetName) {
 		return SeedResult{}, fmt.Errorf("%w: %s", ErrPresetNotFound, presetName)
@@ -98,7 +101,7 @@ func pathExists(p string) (bool, error) {
 }
 
 func readActiveMarker(configDir string) (string, error) {
-	data, err := os.ReadFile(filepath.Join(configDir, paths.ActiveConfigStateFile))
+	data, err := readFileBounded(filepath.Join(configDir, paths.ActiveConfigStateFile), MaxWiringFileBytes)
 	if err != nil {
 		return "", err
 	}

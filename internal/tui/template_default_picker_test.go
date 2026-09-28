@@ -10,6 +10,8 @@ import (
 
 	"omakiten/internal/config"
 	"omakiten/internal/testfixtures/runtimecache"
+	"omakiten/internal/tui/screenhost"
+	"omakiten/internal/tui/screens/relationshippicker"
 )
 
 // runtimecacheRefresh mirrors production's BundleCache.Reload effect for
@@ -35,12 +37,12 @@ func writeCustomTemplate(t *testing.T, root, slug, body string) {
 	}
 }
 
-func TestTemplateDefaultPickerAssignsProjectScopedAndClearsPrior(t *testing.T) {
+func customTemplatePickerModel(t *testing.T) Model {
+	t.Helper()
 	model := newEntityModelWithTemplates(t)
-	root := model.repos.Editor.RootDir()
-	writeCustomTemplate(t, root, "task-mine",
+	writeCustomTemplate(t, model.repos.Editor.RootDir(), "task-mine",
 		"---\nname: My Task Template\nentity: task\n---\nbody\n")
-	if _, err := model.repos.Editor.Apply(model.ctx, nil); err != nil {
+	if _, err := applyBundleEditor(model.ctx, model.repos.Editor, nil); err != nil {
 		t.Fatalf("Apply() reload error = %v", err)
 	}
 	if err := runtimecacheRefresh(model); err != nil {
@@ -49,45 +51,51 @@ func TestTemplateDefaultPickerAssignsProjectScopedAndClearsPrior(t *testing.T) {
 	if err := model.refresh(); err != nil {
 		t.Fatalf("refresh() error = %v", err)
 	}
-
-	// Focus the custom template.
-	model.entityKind = entityKindTemplate
-	if model.entityCursors == nil {
-		model.entityCursors = map[entityKind]int{}
-	}
-	target := -1
-	for i, tpl := range model.templates {
-		if tpl.Slug == "task-mine" {
-			target = i
-			break
-		}
-	}
-	if target < 0 {
+	if !templatePresent(model, "task-mine") {
 		t.Fatal("custom template task-mine missing from refresh")
 	}
-	model.entityCursors[entityKindTemplate] = target
-
-	model.openTemplateDefaultPickerForSelected()
-	if model.entityForm.mode != entityScreenDefaultPicker {
-		t.Fatalf("picker should open on a custom template, mode = %v / status = %q", model.entityForm.mode, model.status)
+	model.openTemplateDefaultPicker("task-mine")
+	if len(model.screenStack) == 0 || model.screenStack[len(model.screenStack)-1] != screenhost.TemplateDefault {
+		t.Fatalf("picker should open on a custom template, stack = %v / status = %q", model.screenStack, model.status)
 	}
+	return model
+}
 
-	// Pick the "task" kind (always first option in the canonical list).
-	options := buildTemplateDefaultOptions(model.repos.Editor)
+func templatePresent(model Model, slug string) bool {
+	for _, tpl := range model.templates {
+		if tpl.Slug == slug {
+			return true
+		}
+	}
+	return false
+}
+
+func selectTemplateDefault(t *testing.T, model *Model, value string) {
+	t.Helper()
+	options := model.templateDefaultScreen.Options()
 	idx := -1
 	for i, opt := range options {
-		if opt.Kind == "task" {
+		if opt.Value == value {
 			idx = i
 			break
 		}
 	}
 	if idx < 0 {
-		t.Fatal("test setup: no task option in picker")
+		t.Fatalf("test setup: no %s option in picker", value)
 	}
-	model.entityPicker.Cursor = idx
+	for model.templateDefaultScreen.Cursor() < idx {
+		model.templateDefaultScreen = model.templateDefaultScreen.Update(model.screenFrame(), tea.KeyMsg{Type: tea.KeyDown}).Screen.(relationshippicker.Screen)
+	}
+	for model.templateDefaultScreen.Cursor() > idx {
+		model.templateDefaultScreen = model.templateDefaultScreen.Update(model.screenFrame(), tea.KeyMsg{Type: tea.KeyUp}).Screen.(relationshippicker.Screen)
+	}
+	model.applyScreenOutcome(model.templateDefaultScreen.Update(model.screenFrame(), tea.KeyMsg{Type: tea.KeyEnter}))
+}
 
-	got, _ := model.updateTemplateDefaultPicker(tea.KeyMsg{Type: tea.KeyEnter})
-	updated := got.(Model)
+func TestTemplateDefaultPickerAssignsProjectScopedAndClearsPrior(t *testing.T) {
+	model := customTemplatePickerModel(t)
+	selectTemplateDefault(t, &model, "task")
+	updated := model
 
 	// task-mine should own the project-scoped default for the active project.
 	bundle, err := updated.repos.Editor.Load()
@@ -117,20 +125,9 @@ func TestTemplateDefaultPickerOpensOnAnyTemplate(t *testing.T) {
 	// just the user expressing "I want this template as my project's
 	// default for kind K".
 	model := newEntityModelWithTemplates(t)
-	model.entityKind = entityKindTemplate
-	if model.entityCursors == nil {
-		model.entityCursors = map[entityKind]int{}
-	}
-	for i, tpl := range model.templates {
-		if tpl.Slug == "task-default" { // root (global) template
-			model.entityCursors[entityKindTemplate] = i
-			break
-		}
-	}
-
-	model.openTemplateDefaultPickerForSelected()
-	if model.entityForm.mode != entityScreenDefaultPicker {
-		t.Fatalf("picker should open on any template; mode = %v / status = %q", model.entityForm.mode, model.status)
+	model.openTemplateDefaultPicker("task-default")
+	if len(model.screenStack) == 0 || model.screenStack[len(model.screenStack)-1] != screenhost.TemplateDefault {
+		t.Fatalf("picker should open on any template; stack = %v / status = %q", model.screenStack, model.status)
 	}
 }
 
@@ -140,7 +137,7 @@ func TestTemplateDefaultPickerNoneClearsProjectBinding(t *testing.T) {
 	// Custom template starts already bound to (task, current-project).
 	writeCustomTemplate(t, root, "task-mine",
 		fmt.Sprintf("---\nname: My Task\nentity: task\ndefault: task\nproject: %s\n---\nbody\n", model.project.Slug))
-	if _, err := model.repos.Editor.Apply(model.ctx, nil); err != nil {
+	if _, err := applyBundleEditor(model.ctx, model.repos.Editor, nil); err != nil {
 		t.Fatalf("Apply() error = %v", err)
 	}
 	if err := runtimecacheRefresh(model); err != nil {
@@ -150,23 +147,13 @@ func TestTemplateDefaultPickerNoneClearsProjectBinding(t *testing.T) {
 		t.Fatalf("refresh() error = %v", err)
 	}
 
-	model.entityKind = entityKindTemplate
-	if model.entityCursors == nil {
-		model.entityCursors = map[entityKind]int{}
+	model.openTemplateDefaultPicker("task-mine")
+	options := model.templateDefaultScreen.Options()
+	for model.templateDefaultScreen.Cursor() < len(options)-1 {
+		model.templateDefaultScreen = model.templateDefaultScreen.Update(model.screenFrame(), tea.KeyMsg{Type: tea.KeyDown}).Screen.(relationshippicker.Screen)
 	}
-	for i, tpl := range model.templates {
-		if tpl.Slug == "task-mine" {
-			model.entityCursors[entityKindTemplate] = i
-			break
-		}
-	}
-
-	model.openTemplateDefaultPickerForSelected()
-	options := buildTemplateDefaultOptions(model.repos.Editor)
-	model.entityPicker.Cursor = len(options) - 1 // (none)
-
-	got, _ := model.updateTemplateDefaultPicker(tea.KeyMsg{Type: tea.KeyEnter})
-	updated := got.(Model)
+	model.applyScreenOutcome(model.templateDefaultScreen.Update(model.screenFrame(), tea.KeyMsg{Type: tea.KeyEnter}))
+	updated := model
 
 	bundle, err := updated.repos.Editor.Load()
 	if err != nil {
@@ -179,17 +166,17 @@ func TestTemplateDefaultPickerNoneClearsProjectBinding(t *testing.T) {
 
 func TestTemplateDefaultPickerOptionsAreKindOnly(t *testing.T) {
 	model := newEntityModelWithTemplates(t)
-	options := buildTemplateDefaultOptions(model.repos.Editor)
+	options := buildTemplateDefaultOptions(model.repos.Editor, "", "", model.project.Slug)
 	if len(options) == 0 {
 		t.Fatal("expected at least the (none) option")
 	}
-	if last := options[len(options)-1]; last.Kind != "" {
+	if last := options[len(options)-1]; !last.None {
 		t.Fatalf("last option should be (none), got %+v", last)
 	}
 	// Verify each kind appears exactly once (no per-project duplicates).
 	seen := map[string]int{}
 	for _, opt := range options {
-		seen[opt.Kind]++
+		seen[opt.Value]++
 	}
 	for kind, count := range seen {
 		if count > 1 {
@@ -202,15 +189,15 @@ func TestTemplateDefaultPickerOptionsAreKindOnly(t *testing.T) {
 // template_defaults from the loaded bundle, not a hardcoded list.
 func TestTemplateDefaultPickerHonorsConfigTemplateDefaults(t *testing.T) {
 	model := newEntityModelWithTemplates(t)
-	if _, err := model.repos.Editor.Apply(model.ctx, func(bundle *config.Bundle) error {
+	if _, err := applyBundleEditor(model.ctx, model.repos.Editor, func(bundle *config.Bundle) error {
 		bundle.Config.TemplateDefaults = []string{"task"}
 		return nil
 	}); err != nil {
 		t.Fatalf("Apply() error = %v", err)
 	}
-	options := buildTemplateDefaultOptions(model.repos.Editor)
+	options := buildTemplateDefaultOptions(model.repos.Editor, "", "", model.project.Slug)
 	for _, opt := range options {
-		if opt.Kind == "pr" {
+		if opt.Value == "pr" {
 			t.Fatalf("config.template_defaults restricted to [task] but pr appeared: %+v", options)
 		}
 	}

@@ -5,48 +5,229 @@ on:
     types: [closed]
     branches: [master]
 
-permissions:
-  contents: write
-  pull-requests: write
+permissions: {}
 
 jobs:
   release-please:
     if: github.event.pull_request.merged == true
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
     outputs:
       release_created: ${{ steps.release.outputs.release_created }}
       tag_name: ${{ steps.release.outputs.tag_name }}
     steps:
       - name: Run release-please
         id: release
-        uses: googleapis/release-please-action@v4
+        uses: googleapis/release-please-action@8b8fd2cc23b2e18957157a9d923d75aa0c6f6ad5 # v4
         with:
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
           target-branch: master
 
-  goreleaser:
+  build:
     needs: release-please
     if: needs.release-please.outputs.release_created == 'true'
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      commit: ${{ steps.source.outputs.commit }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           fetch-depth: 0
           ref: ${{ needs.release-please.outputs.tag_name }}
 
       - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
-          go-version: "1.25"
-          check-latest: true
+          go-version: "1.25.13"
 
-      - name: Run GoReleaser
-        uses: goreleaser/goreleaser-action@v6
+      - name: Record build source commit
+        id: source
+        shell: bash
+        run: printf 'commit=%s\n' "$(git rev-parse HEAD)" >>"$GITHUB_OUTPUT"
+
+      - name: Build release archives without publishing
+        uses: goreleaser/goreleaser-action@e435ccd777264be153ace6237001ef4d979d3a7a # v6
         with:
           distribution: goreleaser
-          version: "~> v2"
-          args: release --clean
+          version: "v2.17.0"
+          args: release --clean --skip=publish
+
+      - name: Stage unsigned release files
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: unsigned-release-${{ needs.release-please.outputs.tag_name }}
+          if-no-files-found: error
+          retention-days: 1
+          path: |
+            dist/okt_Darwin_arm64.tar.gz
+            dist/okt_Darwin_x86_64.tar.gz
+            dist/okt_Linux_arm64.tar.gz
+            dist/okt_Linux_x86_64.tar.gz
+            dist/okt_Windows_arm64.zip
+            dist/okt_Windows_x86_64.zip
+            dist/checksums.txt
+
+  sign-and-attest:
+    needs: [release-please, build]
+    if: needs.release-please.outputs.release_created == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      COSIGN_CERTIFICATE_IDENTITY: https://github.com/This-Is-NPC/omakiten/.github/workflows/release.yml@refs/heads/master
+      COSIGN_OIDC_ISSUER: https://token.actions.githubusercontent.com
+      TAG: ${{ needs.release-please.outputs.tag_name }}
+    steps:
+      - name: Checkout tagged source
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          fetch-depth: 0
+          ref: ${{ needs.release-please.outputs.tag_name }}
+
+      - name: Set up Go
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version: "1.25.13"
+
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+        with:
+          cosign-release: "v3.1.1"
+
+      - name: Download release files
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: unsigned-release-${{ needs.release-please.outputs.tag_name }}
+          path: dist
+
+      - name: Bind metadata to the tag and source commit
+        id: metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          commit="$(git rev-parse HEAD)"
+          test "$(git rev-list -n 1 "$TAG")" = "$commit"
+          test "${{ needs.build.outputs.commit }}" = "$commit"
+          manifest="dist/release-manifest-${TAG}.json"
+          provenance="dist/release-provenance-${TAG}.intoto.json"
+          go run ./cmd/okt-release-metadata create \
+            --dist dist \
+            --repository "$GITHUB_REPOSITORY" \
+            --tag "$TAG" \
+            --commit "$commit" \
+            --invocation-id "https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/attempts/${GITHUB_RUN_ATTEMPT}" \
+            --manifest "$manifest" \
+            --provenance "$provenance"
+          printf 'commit=%s\nmanifest=%s\nprovenance=%s\n' "$commit" "$manifest" "$provenance" >>"$GITHUB_OUTPUT"
+
+      - name: Sign manifest, checksums, and provenance keylessly
+        id: signing
+        shell: bash
+        run: |
+          set -euo pipefail
+          manifest_bundle="dist/release-manifest-${TAG}.sigstore.json"
+          checksums_bundle="dist/checksums-${TAG}.sigstore.json"
+          provenance_bundle="dist/release-provenance-${TAG}.sigstore.json"
+          cosign sign-blob --bundle "$manifest_bundle" --yes "${{ steps.metadata.outputs.manifest }}"
+          cosign sign-blob --bundle "$checksums_bundle" --yes dist/checksums.txt
+          cosign attest-blob --statement "${{ steps.metadata.outputs.provenance }}" --bundle "$provenance_bundle" --yes
+          printf 'manifest_bundle=%s\nchecksums_bundle=%s\nprovenance_bundle=%s\n' \
+            "$manifest_bundle" "$checksums_bundle" "$provenance_bundle" >>"$GITHUB_OUTPUT"
+
+      - name: Verify certificate policy and all signed bytes
+        shell: bash
+        run: |
+          set -euo pipefail
+          cosign verify-blob \
+            --bundle "${{ steps.signing.outputs.manifest_bundle }}" \
+            --certificate-identity "$COSIGN_CERTIFICATE_IDENTITY" \
+            --certificate-oidc-issuer "$COSIGN_OIDC_ISSUER" \
+            "${{ steps.metadata.outputs.manifest }}"
+          cosign verify-blob \
+            --bundle "${{ steps.signing.outputs.checksums_bundle }}" \
+            --certificate-identity "$COSIGN_CERTIFICATE_IDENTITY" \
+            --certificate-oidc-issuer "$COSIGN_OIDC_ISSUER" \
+            dist/checksums.txt
+          for archive in dist/*.tar.gz dist/*.zip; do
+            cosign verify-blob-attestation \
+              --bundle "${{ steps.signing.outputs.provenance_bundle }}" \
+              --certificate-identity "$COSIGN_CERTIFICATE_IDENTITY" \
+              --certificate-oidc-issuer "$COSIGN_OIDC_ISSUER" \
+              --type slsaprovenance1 \
+              "$archive"
+          done
+          go run ./cmd/okt-release-metadata verify \
+            --dist dist \
+            --repository "$GITHUB_REPOSITORY" \
+            --tag "$TAG" \
+            --commit "${{ steps.metadata.outputs.commit }}" \
+            --manifest "${{ steps.metadata.outputs.manifest }}" \
+            --provenance-bundle "${{ steps.signing.outputs.provenance_bundle }}"
+
+      - name: Verify real keyless release through both production installers
+        shell: bash
+        run: scripts/release-installer-gate.sh "$TAG" dist
+
+      - name: Stage verified release files
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: signed-release-${{ needs.release-please.outputs.tag_name }}
+          if-no-files-found: error
+          retention-days: 1
+          path: |
+            dist/okt_Darwin_arm64.tar.gz
+            dist/okt_Darwin_x86_64.tar.gz
+            dist/okt_Linux_arm64.tar.gz
+            dist/okt_Linux_x86_64.tar.gz
+            dist/okt_Windows_arm64.zip
+            dist/okt_Windows_x86_64.zip
+            dist/checksums.txt
+            dist/release-manifest-${{ needs.release-please.outputs.tag_name }}.json
+            dist/release-manifest-${{ needs.release-please.outputs.tag_name }}.sigstore.json
+            dist/checksums-${{ needs.release-please.outputs.tag_name }}.sigstore.json
+            dist/release-provenance-${{ needs.release-please.outputs.tag_name }}.sigstore.json
+
+  publish:
+    needs: [release-please, sign-and-attest]
+    if: needs.release-please.outputs.release_created == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download verified release files
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: signed-release-${{ needs.release-please.outputs.tag_name }}
+          path: dist
+
+      - name: Upload assets and publish the draft
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.release-please.outputs.tag_name }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          assets=(
+            dist/okt_Darwin_arm64.tar.gz
+            dist/okt_Darwin_x86_64.tar.gz
+            dist/okt_Linux_arm64.tar.gz
+            dist/okt_Linux_x86_64.tar.gz
+            dist/okt_Windows_arm64.zip
+            dist/okt_Windows_x86_64.zip
+            dist/checksums.txt
+            "dist/release-manifest-${TAG}.json"
+            "dist/release-manifest-${TAG}.sigstore.json"
+            "dist/checksums-${TAG}.sigstore.json"
+            "dist/release-provenance-${TAG}.sigstore.json"
+          )
+          test "$(find dist -maxdepth 1 -type f | wc -l)" -eq "${#assets[@]}"
+          for asset in "${assets[@]}"; do test -f "$asset"; done
+          gh release upload "$TAG" "${assets[@]}" --repo "$GITHUB_REPOSITORY"
+          gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --draft=false --latest

@@ -15,7 +15,6 @@ import (
 	"omakiten/internal/testfixtures/snapstore"
 )
 
-
 type entitiesFixture struct {
 	store      *snapstore.Store
 	editor     *app.BundleEditor
@@ -40,7 +39,11 @@ func newEntitiesFixture(t *testing.T) entitiesFixture {
 
 	files := configstore.New()
 	editor := app.NewBundleEditor(files, configPath)
-	resolved, err := editor.Apply(ctx, nil)
+	bundle, _, sourceHashes, err := editor.LoadPlan()
+	if err != nil {
+		t.Fatalf("editor.LoadPlan(seed) error = %v", err)
+	}
+	resolved, err := editor.Apply(ctx, bundle, sourceHashes, nil)
 	if err != nil {
 		t.Fatalf("editor.Apply(seed) error = %v", err)
 	}
@@ -74,7 +77,7 @@ func fixtureBundle(t *testing.T) config.Bundle {
 		{Slug: "sqlite", Name: "SQLite", Description: "SQLite stack."},
 	}
 	bundle.Personas = []config.Persona{
-		{Slug: "backend-agent", Name: "Backend Agent", Description: "Backend persona", Skills: []string{"go", "sqlite"}},
+		{Slug: "backend-agent", Name: "Backend Agent", Description: "Backend persona", SkillRepertoire: []string{"go", "sqlite"}},
 	}
 	bundle.Laws = []config.Law{
 		{Slug: "scope", Severity: "error", Body: "Stay in scope.", Scope: "global"},
@@ -100,43 +103,44 @@ func TestLawServiceLifecycle(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			fixture := newEntitiesFixture(t)
-service := app.NewLawService(fixture.entityServiceRepos(), fixture.store.Snapshot(), testfixtures.CanonicalRegistry())
-
-			law, err := service.Add(ctx, tt.input)
-			if tt.wantErr != "" {
-				assertCoded(t, err, tt.wantErr)
-				return
-			}
-			if err != nil {
-				t.Fatalf("Add() error = %v", err)
-			}
-			if law.Key != tt.input.Key {
-				t.Fatalf("Add().Key = %q, want %q", law.Key, tt.input.Key)
-			}
-
-			updatedBody := "Edited body."
-			updated, err := service.Edit(ctx, law.Key, domain.LawUpdate{Body: &updatedBody})
-			if err != nil {
-				t.Fatalf("Edit() error = %v", err)
-			}
-			if updated.Body != updatedBody {
-				t.Fatalf("Edit() = %#v, want body=%q", updated, updatedBody)
-			}
-
-			if err := service.Remove(ctx, updated.Key); err != nil {
-				t.Fatalf("Remove() error = %v", err)
-			}
-			laws, err := service.List(ctx)
-			if err != nil {
-				t.Fatalf("List() error = %v", err)
-			}
-			for _, remaining := range laws {
-				if remaining.Key == updated.Key {
-					t.Fatalf("Remove did not delete law %#v", remaining)
-				}
-			}
+			runLawLifecycleCase(t, ctx, tt.input, tt.wantErr)
 		})
+	}
+}
+
+func runLawLifecycleCase(t *testing.T, ctx context.Context, input domain.LawInput, wantErr domain.ErrorCode) {
+	fixture := newEntitiesFixture(t)
+	service := app.NewLawService(fixture.entityServiceRepos(), fixture.store.Snapshot(), testfixtures.CanonicalRegistry())
+	law, err := service.Add(ctx, input)
+	if wantErr != "" {
+		assertCoded(t, err, wantErr)
+		return
+	}
+	if err != nil {
+		t.Fatalf("Add() error = %v", err)
+	}
+	if law.Key != input.Key {
+		t.Fatalf("Add().Key = %q, want %q", law.Key, input.Key)
+	}
+	updatedBody := "Edited body."
+	updated, err := service.Edit(ctx, law.Key, domain.LawUpdate{Body: &updatedBody})
+	if err != nil {
+		t.Fatalf("Edit() error = %v", err)
+	}
+	if updated.Body != updatedBody {
+		t.Fatalf("Edit() = %#v, want body=%q", updated, updatedBody)
+	}
+	if err := service.Remove(ctx, updated.Key); err != nil {
+		t.Fatalf("Remove() error = %v", err)
+	}
+	laws, err := service.List(ctx)
+	if err != nil {
+		t.Fatalf("List() error = %v", err)
+	}
+	for _, remaining := range laws {
+		if remaining.Key == updated.Key {
+			t.Fatalf("Remove did not delete law %#v", remaining)
+		}
 	}
 }
 
@@ -163,30 +167,32 @@ func TestSkillServiceLifecycle(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			fixture := newEntitiesFixture(t)
-			service := app.NewSkillService(fixture.entityServiceRepos(), fixture.store.Snapshot())
-			skill, err := service.Add(ctx, tt.input)
-			if tt.wantErr != "" {
-				assertCoded(t, err, tt.wantErr)
-				return
-			}
-			if err != nil {
-				t.Fatalf("Add() error = %v", err)
-			}
-
-			rename := skill.Name + " 2"
-			updated, err := service.Edit(ctx, skill.Key, domain.SkillUpdate{Name: &rename})
-			if err != nil {
-				t.Fatalf("Edit() error = %v", err)
-			}
-			if updated.Name != rename {
-				t.Fatalf("Edit().Name = %q, want %q", updated.Name, rename)
-			}
-
-			if err := service.Remove(ctx, updated.Key); err != nil {
-				t.Fatalf("Remove() error = %v", err)
-			}
+			runSkillLifecycleCase(t, ctx, tt.input, tt.wantErr)
 		})
+	}
+}
+
+func runSkillLifecycleCase(t *testing.T, ctx context.Context, input domain.SkillInput, wantErr domain.ErrorCode) {
+	fixture := newEntitiesFixture(t)
+	service := app.NewSkillService(fixture.entityServiceRepos(), fixture.store.Snapshot())
+	skill, err := service.Add(ctx, input)
+	if wantErr != "" {
+		assertCoded(t, err, wantErr)
+		return
+	}
+	if err != nil {
+		t.Fatalf("Add() error = %v", err)
+	}
+	rename := skill.Name + " 2"
+	updated, err := service.Edit(ctx, skill.Key, domain.SkillUpdate{Name: &rename})
+	if err != nil {
+		t.Fatalf("Edit() error = %v", err)
+	}
+	if updated.Name != rename {
+		t.Fatalf("Edit().Name = %q, want %q", updated.Name, rename)
+	}
+	if err := service.Remove(ctx, updated.Key); err != nil {
+		t.Fatalf("Remove() error = %v", err)
 	}
 }
 
@@ -204,7 +210,7 @@ func TestSkillServiceRemovePrunesPersonaReferences(t *testing.T) {
 		t.Fatalf("Load() error = %v", err)
 	}
 	for _, persona := range bundle.Personas {
-		for _, skill := range persona.Skills {
+		for _, skill := range persona.SkillRepertoire {
 			if skill == "go" {
 				t.Fatalf("persona %s still references removed skill go", persona.Slug)
 			}
@@ -268,46 +274,6 @@ func TestBundleEditorRoundTripsValidation(t *testing.T) {
 	}
 	if len(bundle.Skills) != 3 {
 		t.Fatalf("Skills len = %d, want 3", len(bundle.Skills))
-	}
-}
-
-func TestBundleEditorApplyRollsBackOnFailure(t *testing.T) {
-	ctx := context.Background()
-	fixture := newEntitiesFixture(t)
-
-	skillPath := config.EntityFilePath(filepath.Dir(fixture.configDir), config.EntityKindSkill, "go")
-	originalSkill, err := os.ReadFile(skillPath)
-	if err != nil {
-		t.Fatalf("ReadFile(go.md) error = %v", err)
-	}
-	originalWiring, err := os.ReadFile(fixture.configPath)
-	if err != nil {
-		t.Fatalf("ReadFile(omakiten.yaml) error = %v", err)
-	}
-
-	// Inject an invalid wiring mutation that will fail validation. The file op
-	// rewrites go.md; rollback must restore both files.
-	updatedBytes := []byte("---\nname: Modified\n---\nbody\n")
-	if _, err := fixture.editor.ApplyWithFiles(ctx, func(bundle *config.Bundle) error {
-		bundle.Personas[0].Skills = []string{"missing-slug"}
-		return nil
-	}, []app.FileOp{{Op: app.OpWrite, Path: skillPath, Bytes: updatedBytes}}); err == nil {
-		t.Fatalf("ApplyWithFiles() error = nil, want validation failure")
-	}
-
-	currentSkill, err := os.ReadFile(skillPath)
-	if err != nil {
-		t.Fatalf("ReadFile(go.md after) error = %v", err)
-	}
-	if string(currentSkill) != string(originalSkill) {
-		t.Fatalf("go.md was not restored after rollback\n  before: %q\n  after:  %q", originalSkill, currentSkill)
-	}
-	currentWiring, err := os.ReadFile(fixture.configPath)
-	if err != nil {
-		t.Fatalf("ReadFile(omakiten.yaml after) error = %v", err)
-	}
-	if string(currentWiring) != string(originalWiring) {
-		t.Fatalf("omakiten.yaml was not restored after rollback")
 	}
 }
 
@@ -377,7 +343,7 @@ func TestBundleEditorSetPathRepointsForSubsequentLoads(t *testing.T) {
 	if err := os.MkdirAll(altDir, 0o755); err != nil {
 		t.Fatalf("MkdirAll(alt) error = %v", err)
 	}
-	altPath := filepath.Join(altDir, "omakiten.yaml")
+	altPath := filepath.Join(altDir, "config", "omakiten.yaml")
 	altBundle := fixtureBundle(t)
 	altBundle.Skills = append(altBundle.Skills, config.Skill{Slug: "alt-only", Name: "Alt"})
 	if err := config.SaveFullBundle(altPath, altBundle); err != nil {
@@ -413,7 +379,11 @@ func TestBundleEditorNilMutator(t *testing.T) {
 	ctx := context.Background()
 	fixture := newEntitiesFixture(t)
 
-	_, err := fixture.editor.ApplyWithFiles(ctx, nil, nil)
+	bundle, _, sourceHashes, err := fixture.editor.LoadPlan()
+	if err != nil {
+		t.Fatalf("LoadPlan() error = %v", err)
+	}
+	_, err = fixture.editor.ApplyWithFiles(ctx, bundle, sourceHashes, nil, nil)
 	if err != nil {
 		t.Fatalf("ApplyWithFiles(nil mutator) error = %v", err)
 	}

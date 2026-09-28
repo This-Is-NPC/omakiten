@@ -57,26 +57,31 @@ func TestSplitFrontmatter(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			fm, body, err := SplitFrontmatter([]byte(tt.input))
-			if tt.wantErrSubs != "" {
-				if err == nil {
-					t.Fatalf("SplitFrontmatter() error = nil, want substring %q", tt.wantErrSubs)
-				}
-				if !strings.Contains(err.Error(), tt.wantErrSubs) {
-					t.Fatalf("SplitFrontmatter() error = %v, want substring %q", err, tt.wantErrSubs)
-				}
-				return
-			}
-			if err != nil {
-				t.Fatalf("SplitFrontmatter() error = %v", err)
-			}
-			if string(fm) != tt.wantFM {
-				t.Fatalf("frontmatter = %q, want %q", string(fm), tt.wantFM)
-			}
-			if string(body) != tt.wantBody {
-				t.Fatalf("body = %q, want %q", string(body), tt.wantBody)
-			}
+			assertSplitFrontmatter(t, tt.input, tt.wantFM, tt.wantBody, tt.wantErrSubs)
 		})
+	}
+}
+
+func assertSplitFrontmatter(t *testing.T, input, wantFM, wantBody, wantErrSubs string) {
+	t.Helper()
+	fm, body, err := SplitFrontmatter([]byte(input))
+	if wantErrSubs != "" {
+		if err == nil {
+			t.Fatalf("SplitFrontmatter() error = nil, want substring %q", wantErrSubs)
+		}
+		if !strings.Contains(err.Error(), wantErrSubs) {
+			t.Fatalf("SplitFrontmatter() error = %v, want substring %q", err, wantErrSubs)
+		}
+		return
+	}
+	if err != nil {
+		t.Fatalf("SplitFrontmatter() error = %v", err)
+	}
+	if string(fm) != wantFM {
+		t.Fatalf("frontmatter = %q, want %q", string(fm), wantFM)
+	}
+	if string(body) != wantBody {
+		t.Fatalf("body = %q, want %q", string(body), wantBody)
 	}
 }
 

@@ -85,104 +85,95 @@ func pickLaws(loaded []Law, global []string, personas []PersonaWiring, projects 
 	}
 
 	if len(global) == 0 {
-		referenced := map[string]struct{}{}
-		for _, persona := range personas {
-			for _, slug := range persona.Laws {
-				referenced[slug] = struct{}{}
-			}
-		}
-		for _, project := range projects {
-			for _, slug := range project.Laws {
-				referenced[slug] = struct{}{}
-			}
-		}
-		for _, law := range loaded {
-			if _, scoped := referenced[law.Slug]; scoped {
-				continue
-			}
-			global = append(global, law.Slug)
-		}
+		global = inferGlobalLawSlugs(loaded, personas, projects)
 	}
 
-	type scoped struct {
-		scope, owner string
+	scope := collectLawScopes(global, personas, projects)
+	out := make([]Law, 0, len(scope))
+	emitted := map[string]struct{}{}
+	emitLaws(&out, emitted, bySlug, global, "global", "")
+	for _, persona := range personas {
+		emitLaws(&out, emitted, bySlug, persona.Laws, "persona", persona.Slug)
 	}
-	scope := map[string]scoped{}
-	for _, slug := range global {
-		if _, present := scope[slug]; !present {
-			scope[slug] = scoped{scope: "global"}
-		}
+	for _, project := range projects {
+		emitLaws(&out, emitted, bySlug, project.Laws, "project", project.Slug)
 	}
+	return out
+}
+
+type lawScope struct {
+	scope, owner string
+}
+
+func inferGlobalLawSlugs(loaded []Law, personas []PersonaWiring, projects []ProjectWiring) []string {
+	referenced := map[string]struct{}{}
 	for _, persona := range personas {
 		for _, slug := range persona.Laws {
-			if _, present := scope[slug]; !present {
-				scope[slug] = scoped{scope: "persona", owner: persona.Slug}
-			}
+			referenced[slug] = struct{}{}
 		}
 	}
 	for _, project := range projects {
 		for _, slug := range project.Laws {
-			if _, present := scope[slug]; !present {
-				scope[slug] = scoped{scope: "project", owner: project.Slug}
-			}
+			referenced[slug] = struct{}{}
 		}
 	}
+	global := make([]string, 0, len(loaded))
+	for _, law := range loaded {
+		if _, scoped := referenced[law.Slug]; !scoped {
+			global = append(global, law.Slug)
+		}
+	}
+	return global
+}
 
-	out := make([]Law, 0, len(scope))
-	emit := func(slug, scopeName, owner string) {
-		if l, ok := bySlug[slug]; ok {
-			l.Scope = scopeName
-			switch scopeName {
-			case "project":
-				l.ProjectSlug = owner
-			case "persona":
-				l.PersonaSlug = owner
+func collectLawScopes(global []string, personas []PersonaWiring, projects []ProjectWiring) map[string]lawScope {
+	scope := map[string]lawScope{}
+	add := func(slugs []string, scopeName, owner string) {
+		for _, slug := range slugs {
+			if _, present := scope[slug]; !present {
+				scope[slug] = lawScope{scope: scopeName, owner: owner}
 			}
-			out = append(out, l)
 		}
 	}
-	emitted := map[string]struct{}{}
-	for _, slug := range global {
+	add(global, "global", "")
+	for _, persona := range personas {
+		add(persona.Laws, "persona", persona.Slug)
+	}
+	for _, project := range projects {
+		add(project.Laws, "project", project.Slug)
+	}
+	return scope
+}
+
+func emitLaws(out *[]Law, emitted map[string]struct{}, bySlug map[string]Law, slugs []string, scopeName, owner string) {
+	for _, slug := range slugs {
 		if _, dup := emitted[slug]; dup {
 			continue
 		}
 		emitted[slug] = struct{}{}
-		emit(slug, "global", "")
-	}
-	for _, persona := range personas {
-		for _, slug := range persona.Laws {
-			if _, dup := emitted[slug]; dup {
-				continue
-			}
-			emitted[slug] = struct{}{}
-			emit(slug, "persona", persona.Slug)
+		law, ok := bySlug[slug]
+		if !ok {
+			continue
 		}
-	}
-	for _, project := range projects {
-		for _, slug := range project.Laws {
-			if _, dup := emitted[slug]; dup {
-				continue
-			}
-			emitted[slug] = struct{}{}
-			emit(slug, "project", project.Slug)
+		law.Scope = scopeName
+		switch scopeName {
+		case "project":
+			law.ProjectSlug = owner
+		case "persona":
+			law.PersonaSlug = owner
 		}
+		*out = append(*out, law)
 	}
-	return out
 }
 
 // pickPersonas filters loaded personas and stamps each with declared skill/law
 // wiring. Laws from the persona's frontmatter are preserved and merged (union,
 // dedup, frontmatter first) with any laws declared in the wiring entry, so the
-// authoring file and the wiring file can both contribute bindings. Skills only
-// flow through wiring — personas/<slug>.md does not carry a skills list.
+// authoring file and the wiring file can both contribute bindings. The wiring
+// entry is the source of truth for the persona skill repertoire.
 func pickPersonas(loaded []Persona, refs []PersonaWiring) []Persona {
 	if len(refs) == 0 {
-		out := make([]Persona, 0, len(loaded))
-		for _, p := range loaded {
-			p.Skills = nil
-			out = append(out, p)
-		}
-		return out
+		return append([]Persona(nil), loaded...)
 	}
 	bySlug := map[string]Persona{}
 	for _, p := range loaded {
@@ -191,14 +182,13 @@ func pickPersonas(loaded []Persona, refs []PersonaWiring) []Persona {
 	out := make([]Persona, 0, len(refs))
 	for _, ref := range refs {
 		if p, ok := bySlug[ref.Slug]; ok {
-			p.Skills = append([]string(nil), ref.Skills...)
 			// schema_version + skill_repertoire on the wiring entry win
 			// over the frontmatter-declared values so omakiten.yaml stays
 			// the single source of truth for persona ⇄ skill wiring.
 			if ref.SchemaVersion != 0 {
 				p.SchemaVersion = ref.SchemaVersion
 			}
-			if len(ref.SkillRepertoire) > 0 {
+			if ref.SkillRepertoire != nil {
 				p.SkillRepertoire = append([]string(nil), ref.SkillRepertoire...)
 			}
 			p.Laws = mergeLawSlugs(p.Laws, ref.Laws)

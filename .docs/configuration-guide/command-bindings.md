@@ -92,7 +92,7 @@ personas:
 
 Command `skills:` must be a subset of the bound persona's `skill_repertoire`. This keeps prompts small and prevents a command from pulling a capability the persona does not declare.
 
-Legacy persona `skills:` is migrated to `skill_repertoire` by the schema-v2 migrator. New config should use `schema_version: 2` and `skill_repertoire` directly.
+Persona wiring requires `schema_version: 2` and uses `skill_repertoire` directly. Legacy persona `skills:` input is rejected.
 
 ## Template-bound laws
 

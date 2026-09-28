@@ -1,20 +1,53 @@
 [tools]
-go = "1.25.12"
+go = "1.25.13"
 golangci-lint = "latest"
 "go:golang.org/x/vuln/cmd/govulncheck" = "latest"
+goreleaser = "2.17.0"
+cosign = "3.1.1"
+# PowerShell 7 is a test dependency, not a runtime one: internal/installscript
+# runs install.ps1 for real (`pwsh -File install.ps1`) against hermetic release
+# fixtures. Without it those strict-mode cases skip, and install.ps1's
+# verify-before-extract gate would be covered by source parity alone.
+powershell = "7.6.3"
 
 [tasks.fmt]
 description = "Format Go sources"
 run = "gofmt -w ."
 
+[tasks."fmt:check"]
+description = "Fail if any Go source under internal/ or cmd/ is not gofmt-clean (CI gate)"
+# Paired with TestGofmtBoundary in internal/arch. Both are wired into `check`
+# on purpose: this step runs the real gofmt binary and fails in seconds, before
+# the multi-minute test suite; the Go test rides `go test ./...` so it still
+# fires for a contributor who never invokes mise, and it survives the case
+# where a compile error takes the arch package down — which is exactly when
+# formatting drift would otherwise slip in unnoticed.
+run = '''
+unformatted="$(gofmt -l internal cmd)"
+if [ -n "$unformatted" ]; then
+  printf '\n\033[31mFAIL:\033[0m these files are not gofmt-clean:\n' >&2
+  printf '%s\n' "$unformatted" | while IFS= read -r file; do
+    printf '  - %s\n' "$file" >&2
+  done
+  printf '\nRun `mise run fmt` to fix them.\n\n' >&2
+  exit 1
+fi
+'''
+
 [tasks.test]
-description = "Run Go tests"
+description = "Run Go tests once and enforce aggregate coverage"
 # OKT_ENFORCE_SCROLL_BOUNDARY activates the W11-D arch gate: rejects
 # direct `*Scroll =` mutations in internal/tui/render_*.go so new
 # viewport surfaces stay routed through cardlist / linelist
 # components instead of re-inventing scroll-sync inline.
 env = { OKT_ENFORCE_SCROLL_BOUNDARY = "1" }
-run = "go test ./..."
+run = '''
+set -euo pipefail
+scripts/check-coverage_test.sh
+go test -coverprofile=coverage.out ./...
+go tool cover -func=coverage.out > /tmp/okt-coverage.func
+scripts/check-coverage.sh coverage.out /tmp/okt-coverage.func .
+'''
 
 [tasks.build]
 description = "Build okt into bin/ with the current git version"
@@ -23,6 +56,10 @@ mkdir -p bin
 version="$(git describe --tags --always --dirty 2>/dev/null || printf dev)"
 go build -ldflags "-X main.version=${version}" -o bin/okt ./cmd/okt
 '''
+
+[tasks."release:dry-run"]
+description = "Build and verify the complete release metadata fixture without publishing"
+run = "scripts/release-dry-run.sh"
 
 [tasks.install]
 description = "Build and install okt locally, then run `okt setup` for production-like user state"
@@ -92,10 +129,17 @@ mkdir -p dev_env
 '''
 
 [tasks."dev:install"]
-description = "Simulate a fresh omakiten install into dev_env/ — sync defaults, then pin .active to a stock preset so the resolver never falls back to a stale custom/<name>.yaml"
+description = "Simulate a fresh omakiten install into dev_env/ — sync defaults, reset dev-only custom overlays, then pin .active to a stock preset"
 env = { OMAKITEN_HOME = "dev_env", OKT_PRESET = "omakase", OKT_CLI_LANG = "en", OKT_TUI_LANG = "en", OKT_AGENT_LANG = "en", OKT_HARNESSES = "0" }
 depends = ["dev:sync", "build"]
-run = '"$PWD/bin/okt" setup --skip-wrapper --skip-harnesses'
+run = '''
+# `tui:bare` is the preservation path. The regular dev install represents a
+# fresh install, so legacy custom entities must not leak across schema changes.
+for sub in config skills laws personas templates themes notifications languages; do
+  rm -rf "$PWD/dev_env/$sub/custom"
+done
+"$PWD/bin/okt" setup --update --skip-wrapper --skip-harnesses
+'''
 
 [tasks."install:mcp:claude"]
 description = "Install Omakiten MCP server into Claude Code config"
@@ -173,15 +217,42 @@ env = { OMAKITEN_HOME = "dev_env" }
 raw = true
 run = '''
 mise run dev:install
-go run ./cmd/okt init --name Omakiten --slug omakiten >/dev/null
-go run ./cmd/okt --project omakiten tui
+go run ./cmd/okt --config "$PWD/dev_env/config/omakase.yaml" init --name Omakiten --slug omakiten --root "$PWD" >/dev/null
+go run ./cmd/okt --config "$PWD/dev_env/config/omakase.yaml" --project omakiten tui
 '''
 
 [tasks."tui:bare"]
 description = "Open the TUI against existing dev_env/ state — skips dev:install so a previously-set preset / pre-seeded data survives. Use after seeding fixtures (e.g. the plans showcase script)."
 env = { OMAKITEN_HOME = "dev_env" }
 raw = true
-run = "go run ./cmd/okt --project omakiten tui"
+run = '''
+active="$(tr -d '\r\n' < "$PWD/dev_env/config/.active")"
+case "$active" in
+  ""|"."|".."|*/*|*\\*)
+    printf 'dev_env/config/.active is invalid: %s\n' "$active" >&2
+    exit 1
+    ;;
+esac
+config="$PWD/dev_env/config/$active"
+if [ -f "$PWD/dev_env/config/custom/$active" ] && [ ! -L "$PWD/dev_env/config/custom/$active" ]; then
+  config="$PWD/dev_env/config/custom/$active"
+elif [ ! -f "$config" ] || [ -L "$config" ]; then
+  printf 'active dev config is missing or unsafe: %s\n' "$config" >&2
+  exit 1
+fi
+go run ./cmd/okt --config "$config" --project omakiten tui
+'''
+
+[tasks.gallery]
+description = "Browse the shared TUI components one at a time (dev-only, not shipped in the okt binary)"
+# raw = true for the same reason `tui` needs it: the gallery is a Bubble Tea
+# program and needs the real /dev/tty.
+raw = true
+run = "go run ./cmd/okt-gallery"
+
+[tasks."gallery:dump"]
+description = "Render every TUI component variant to stdout — no TTY, so it pipes to a file and diffs across a refactor"
+run = "go run ./cmd/okt-gallery -dump"
 
 [tasks."mcp:prompts"]
 description = "Render every okt-* MCP prompt's resolved markdown to stdout against the dev defaults"
@@ -208,6 +279,10 @@ run = "go run ./cmd/okt-docs-refresh --root ."
 description = "Fail if legacy docs-refresh artifacts are present (CI gate)"
 run = "go run ./cmd/okt-docs-refresh --root . --check"
 
+[tasks."claim-benchmark:freshness"]
+description = "Check whether the manual ClaimNext benchmark reference still matches its source and runtime inputs"
+run = "OKT_CHECK_CLAIM_BENCH_FRESHNESS=1 go test ./internal/mcp -run '^TestClaimNextCeilingReferenceFreshness$' -count=1"
+
 [tasks.check]
 description = "Run the full verification suite"
-depends = ["test", "lint", "vuln", "docs:check"]
+depends = ["fmt:check", "test", "lint", "vuln", "docs:check"]

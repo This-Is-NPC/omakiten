@@ -22,14 +22,14 @@ func TestNormalizeTagName(t *testing.T) {
 		{"go", "go"},
 		{"Go", "go"},
 		{"GO", "go"},
-		{"golang", "go"},    // synonym
-		{"Golang", "go"},    // synonym, case-insensitive
-		{"GOLANG", "go"},    // synonym, all caps
-		{"javascript", "js"}, // synonym
-		{"postgres", "postgresql"}, // synonym
-		{"node-js", "node"}, // synonym
-		{"node js", "node"}, // synonym via normalization + synonym map
-		{"node_js", "node"}, // underscore
+		{"golang", "go"},             // synonym
+		{"Golang", "go"},             // synonym, case-insensitive
+		{"GOLANG", "go"},             // synonym, all caps
+		{"javascript", "js"},         // synonym
+		{"postgres", "postgresql"},   // synonym
+		{"node-js", "node"},          // synonym
+		{"node js", "node"},          // synonym via normalization + synonym map
+		{"node_js", "node"},          // underscore
 		{"postgresql", "postgresql"}, // already canonical
 		{"my-tag", "my-tag"},
 		{"My Tag", "my-tag"},
@@ -37,7 +37,7 @@ func TestNormalizeTagName(t *testing.T) {
 		{"hello--world", "hello-world"}, // collapse hyphens
 		{"-leading", "leading"},
 		{"trailing-", "trailing"},
-		{"sp3c!@#$%l", "sp3cl"},         // strip special chars
+		{"sp3c!@#$%l", "sp3cl"}, // strip special chars
 		{"", ""},
 		{"---", ""},
 	}

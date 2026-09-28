@@ -6,7 +6,7 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 
-	"omakiten/internal/tui/layout"
+	"omakiten/internal/tui/components/panel"
 )
 
 // TestKanbanColumnSizedTotalRowsMatchBudget pins the contract the
@@ -14,7 +14,7 @@ import (
 // N total rows, lipgloss must produce exactly N rows on screen
 // (borders included). lipgloss `Style.Height(n)` treats n as the
 // INNER content rows — borders stack outside — so the caller has
-// to subtract layout.PanelBorders before handing the budget off.
+// to subtract panel.Borders before handing the budget off.
 //
 // The +2 drift this test guards against is the bug that took down
 // W13: callers passed total rows directly to `.Height(n)` and every
@@ -23,7 +23,7 @@ import (
 func TestKanbanColumnSizedTotalRowsMatchBudget(t *testing.T) {
 	cases := []int{8, 12, 20, 35}
 	for _, totalRows := range cases {
-		inner := totalRows - layout.PanelBorders
+		inner := totalRows - panel.Borders
 		style := lipgloss.NewStyle().
 			Border(lipgloss.NormalBorder()).
 			Width(30).
@@ -54,7 +54,7 @@ func TestRenderFixedBoxTotalRowsMatchInput(t *testing.T) {
 		border := lipgloss.NewStyle()
 		rendered := renderFixedBox(lines, 30, border)
 		got := strings.Count(rendered, "\n") + 1
-		want := bodyLines + 2
+		want := panel.FixedBoxHeight(bodyLines)
 		if got != want {
 			t.Fatalf("renderFixedBox(%d body lines) total rows = %d, want %d", bodyLines, got, want)
 		}

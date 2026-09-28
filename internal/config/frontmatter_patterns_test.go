@@ -14,10 +14,10 @@ func TestSplitFrontmatter_MapBased(t *testing.T) {
 	t.Parallel()
 
 	cases := map[string]struct {
-		input        string
-		wantFM       string
-		wantBody     string
-		wantErrSubs  string
+		input       string
+		wantFM      string
+		wantBody    string
+		wantErrSubs string
 	}{
 		"valid frontmatter and body": {
 			input:    "---\nname: Foo\n---\nhello\n",
@@ -42,23 +42,28 @@ func TestSplitFrontmatter_MapBased(t *testing.T) {
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
-			fm, body, err := SplitFrontmatter([]byte(tc.input))
-			if tc.wantErrSubs != "" {
-				if err == nil || !strings.Contains(err.Error(), tc.wantErrSubs) {
-					t.Fatalf("SplitFrontmatter() err = %v, want substring %q", err, tc.wantErrSubs)
-				}
-				return
-			}
-			if err != nil {
-				t.Fatalf("SplitFrontmatter() err = %v", err)
-			}
-			if string(fm) != tc.wantFM {
-				t.Fatalf("frontmatter = %q, want %q", string(fm), tc.wantFM)
-			}
-			if string(body) != tc.wantBody {
-				t.Fatalf("body = %q, want %q", string(body), tc.wantBody)
-			}
+			assertSplitFrontmatterCase(t, tc.input, tc.wantFM, tc.wantBody, tc.wantErrSubs)
 		})
+	}
+}
+
+func assertSplitFrontmatterCase(t *testing.T, input, wantFM, wantBody, wantErrSubs string) {
+	t.Helper()
+	fm, body, err := SplitFrontmatter([]byte(input))
+	if wantErrSubs != "" {
+		if err == nil || !strings.Contains(err.Error(), wantErrSubs) {
+			t.Fatalf("SplitFrontmatter() err = %v, want substring %q", err, wantErrSubs)
+		}
+		return
+	}
+	if err != nil {
+		t.Fatalf("SplitFrontmatter() err = %v", err)
+	}
+	if string(fm) != wantFM {
+		t.Fatalf("frontmatter = %q, want %q", string(fm), wantFM)
+	}
+	if string(body) != wantBody {
+		t.Fatalf("body = %q, want %q", string(body), wantBody)
 	}
 }
 

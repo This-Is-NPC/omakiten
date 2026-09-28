@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"omakiten/internal/agent"
+	"omakiten/internal/operation"
 )
 
 // openIzakayaRuntime materialises a runtime seeded from the embedded default
@@ -35,7 +35,7 @@ func TestIzakayaBuilderIdentityRenders(t *testing.T) {
 	rt := openIzakayaRuntime(t)
 	ctx := context.Background()
 
-	resp, err := rt.Service().ResolveCommand(ctx, agent.ResolveCommandInput{Name: "okt-task-implement"})
+	resp, err := rt.Service().ResolveCommand(ctx, operation.ResolveCommandInput{Name: "okt-task-implement"})
 	if err != nil {
 		t.Fatalf("ResolveCommand(okt-task-implement) error = %v", err)
 	}
@@ -101,27 +101,36 @@ func TestIzakayaRepresentativeCommandsRender(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.command, func(t *testing.T) {
-			resp, err := rt.Service().ResolveCommand(ctx, agent.ResolveCommandInput{Name: tc.command})
-			if err != nil {
-				t.Fatalf("ResolveCommand(%s) error = %v", tc.command, err)
-			}
-			if resp.Persona == nil || resp.Persona.Slug != tc.persona {
-				t.Fatalf("%s persona = %+v, want slug %q", tc.command, resp.Persona, tc.persona)
-			}
-			if !strings.Contains(resp.Markdown, "## Persona — ") {
-				t.Fatalf("%s missing Persona section:\n%s", tc.command, resp.Markdown)
-			}
-			if !strings.Contains(resp.Markdown, "## Skills\n") {
-				t.Fatalf("%s missing the Skills section carrying the entity-sourced playbook:\n%s", tc.command, resp.Markdown)
-			}
-			if !strings.Contains(resp.Markdown, "## Laws\n") || len(resp.Laws) == 0 {
-				t.Fatalf("%s missing Laws floor:\n%s", tc.command, resp.Markdown)
-			}
-			assertBulletWithBody(t, tc.command, resp)
-			if tc.law != "" && !lawPresent(resp.Laws, tc.law) {
-				t.Fatalf("%s missing expected law %q; laws = %v", tc.command, tc.law, lawSlugs(resp.Laws))
-			}
+			assertIzakayaRepresentative(t, ctx, rt, tc)
 		})
+	}
+}
+
+func assertIzakayaRepresentative(t *testing.T, ctx context.Context, rt *Runtime, tc struct {
+	command string
+	persona string
+	law     string
+}) {
+	t.Helper()
+	resp, err := rt.Service().ResolveCommand(ctx, operation.ResolveCommandInput{Name: tc.command})
+	if err != nil {
+		t.Fatalf("ResolveCommand(%s) error = %v", tc.command, err)
+	}
+	if resp.Persona == nil || resp.Persona.Slug != tc.persona {
+		t.Fatalf("%s persona = %+v, want slug %q", tc.command, resp.Persona, tc.persona)
+	}
+	if !strings.Contains(resp.Markdown, "## Persona — ") {
+		t.Fatalf("%s missing Persona section:\n%s", tc.command, resp.Markdown)
+	}
+	if !strings.Contains(resp.Markdown, "## Skills\n") {
+		t.Fatalf("%s missing the Skills section carrying the entity-sourced playbook:\n%s", tc.command, resp.Markdown)
+	}
+	if !strings.Contains(resp.Markdown, "## Laws\n") || len(resp.Laws) == 0 {
+		t.Fatalf("%s missing Laws floor:\n%s", tc.command, resp.Markdown)
+	}
+	assertBulletWithBody(t, tc.command, resp)
+	if tc.law != "" && !lawPresent(resp.Laws, tc.law) {
+		t.Fatalf("%s missing expected law %q; laws = %v", tc.command, tc.law, lawSlugs(resp.Laws))
 	}
 }
 
@@ -135,37 +144,44 @@ func TestIzakayaNotesSlotsCarryScribeRepertoire(t *testing.T) {
 	noteSlots := []string{"okt-pause", "okt-note-free", "okt-note-recap", "okt-note-list", "okt-note-show"}
 	for _, name := range noteSlots {
 		t.Run(name, func(t *testing.T) {
-			resp, err := rt.Service().ResolveCommand(ctx, agent.ResolveCommandInput{Name: name})
-			if err != nil {
-				t.Fatalf("ResolveCommand(%s) error = %v", name, err)
-			}
-			if resp.Persona == nil || resp.Persona.Slug != "sophie-hatter" {
-				t.Fatalf("%s persona = %+v, want the resolved Scribe sophie-hatter", name, resp.Persona)
-			}
-			if len(resp.Skills) == 0 {
-				t.Fatalf("%s resolved no skills — the #359 note subset is not wired", name)
-			}
-			noteSkills := map[string]struct{}{
-				"handoff-synthesis": {}, "note-capture": {}, "standup-digest": {}, "recap-timeline": {},
-			}
-			found := false
-			for _, sk := range resp.Skills {
-				if _, ok := noteSkills[sk.Slug]; ok {
-					found = true
-					break
-				}
-			}
-			if !found {
-				t.Fatalf("%s resolved no #359 note skill; skills = %v", name, skillSlugs(resp.Skills))
-			}
-			assertBulletWithBody(t, name, resp)
+			assertIzakayaNoteSlot(t, ctx, rt, name)
 		})
 	}
 }
 
+func assertIzakayaNoteSlot(t *testing.T, ctx context.Context, rt *Runtime, name string) {
+	t.Helper()
+	resp, err := rt.Service().ResolveCommand(ctx, operation.ResolveCommandInput{Name: name})
+	if err != nil {
+		t.Fatalf("ResolveCommand(%s) error = %v", name, err)
+	}
+	if resp.Persona == nil || resp.Persona.Slug != "sophie-hatter" {
+		t.Fatalf("%s persona = %+v, want the resolved Scribe sophie-hatter", name, resp.Persona)
+	}
+	if len(resp.Skills) == 0 {
+		t.Fatalf("%s resolved no skills — the #359 note subset is not wired", name)
+	}
+	noteSkills := map[string]struct{}{
+		"handoff-synthesis": {}, "note-capture": {}, "standup-digest": {}, "recap-timeline": {},
+	}
+	if !hasSkill(resp.Skills, noteSkills) {
+		t.Fatalf("%s resolved no #359 note skill; skills = %v", name, skillSlugs(resp.Skills))
+	}
+	assertBulletWithBody(t, name, resp)
+}
+
+func hasSkill(skills []operation.SkillInfo, want map[string]struct{}) bool {
+	for _, skill := range skills {
+		if _, ok := want[skill.Slug]; ok {
+			return true
+		}
+	}
+	return false
+}
+
 // --- helpers ---
 
-func assertBulletWithBody(t *testing.T, name string, resp agent.ResolveCommandResponse) {
+func assertBulletWithBody(t *testing.T, name string, resp operation.ResolveCommandResponse) {
 	t.Helper()
 	if len(resp.Skills) == 0 {
 		t.Fatalf("%s resolved with no skills — command-level subset not wired", name)

@@ -64,6 +64,18 @@ func TestExecTimesOut(t *testing.T) {
 	}
 }
 
+func TestExecHonorsEngineCancellation(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	err := Exec{}.Execute(ctx, domain.Event{}, map[string]any{
+		"argv":       []any{"sleep", "5"},
+		"timeout_ms": 5000,
+	})
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("Execute error = %v, want context canceled", err)
+	}
+}
+
 // TestResolveExecBinary pins the security guard from task #219: bare
 // names must round-trip through exec.LookPath into an absolute path so
 // the engine no longer resolves against the inherited PATH at fork
@@ -88,24 +100,32 @@ func TestResolveExecBinary(t *testing.T) {
 		{name: "missing binary on PATH errors", input: "definitely-not-a-real-cmd-xyz-omakiten", wantErr: true},
 	}
 	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			got, err := resolveExecBinary(tc.input)
-			if tc.wantErr {
-				if err == nil {
-					t.Fatalf("expected error, got %q", got)
-				}
-				return
-			}
-			if err != nil {
-				t.Fatalf("unexpected error: %v", err)
-			}
-			if !filepath.IsAbs(got) {
-				t.Fatalf("resolveExecBinary returned non-absolute path %q", got)
-			}
-			if tc.wantExact != "" && got != tc.wantExact {
-				t.Fatalf("resolveExecBinary(%q) = %q, want %q", tc.input, got, tc.wantExact)
-			}
-		})
+		t.Run(tc.name, func(t *testing.T) { assertExecBinary(t, tc) })
+	}
+}
+
+func assertExecBinary(t *testing.T, tc struct {
+	name      string
+	input     string
+	wantErr   bool
+	wantExact string
+}) {
+	t.Helper()
+	got, err := resolveExecBinary(tc.input)
+	if tc.wantErr {
+		if err == nil {
+			t.Fatalf("expected error, got %q", got)
+		}
+		return
+	}
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !filepath.IsAbs(got) {
+		t.Fatalf("resolveExecBinary returned non-absolute path %q", got)
+	}
+	if tc.wantExact != "" && got != tc.wantExact {
+		t.Fatalf("resolveExecBinary(%q) = %q, want %q", tc.input, got, tc.wantExact)
 	}
 }
 

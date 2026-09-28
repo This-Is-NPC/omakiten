@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"omakiten/internal/agent"
+	"omakiten/internal/operation"
 )
 
 var currentToolNames = []string{
@@ -290,7 +290,7 @@ func TestCustomToolHandlersPreserveInputBehavior(t *testing.T) {
 }
 
 func TestNewToolRegistryRejectsInvalidRegistrations(t *testing.T) {
-	noopHandler := func(*Adapter, context.Context, *agent.Service, map[string]any) (ToolResult, error) {
+	noopHandler := func(*Adapter, context.Context, *operation.Service, map[string]any) (ToolResult, error) {
 		return ToolResult{}, nil
 	}
 	complete := toolRegistration{

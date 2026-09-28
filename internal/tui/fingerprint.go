@@ -8,8 +8,7 @@ import (
 )
 
 // fingerprint wraps the fnv64a + binary.LittleEndian pattern five
-// render-cache keys repeat (activityRowsForRenderKey,
-// planNetworkRowsCacheKey, taskDetailsBoxHeightKey, fnv64aString for
+// render-cache keys repeat (planNetworkRowsCacheKey, fnv64aString for
 // the token cache, and tag-id slice hashing). Each writer encodes its
 // value with a stable wire shape — LittleEndian for fixed-width ints,
 // null-terminated bytes for strings — so the resulting uint64 stays

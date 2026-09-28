@@ -74,15 +74,19 @@ func TestRunUpdate_EmitsHealthCheckPassedAndSwapCompletedOnSuccess(t *testing.T)
 
 	validator := &stubValidator{result: updateValidatorResult{OK: true}}
 	events := &stubEventStore{}
+	cleanupCalls := 0
 	c := updateClient{
-		Fetcher:    stubFetcher{Tag: "0.20.0"},
+		Fetcher:    stubFetcher{Tag: "0.32.0"},
 		Downloader: stubDownloader{Assets: map[string][]byte{asset: archive}},
-		Current:    "0.19.0",
+		Current:    "0.31.0",
 		BinaryPath: bin,
 		ConfigPath: filepath.Join(dir, "omakase.yaml"),
 		Validator:  validator.fn(),
 		Backup:     &stubBackupRunner{path: "/tmp/backup.db"},
-		EventStore: events,
+		EventStoreFactory: func(context.Context) (healthCheckEventStore, func()) {
+			return events, func() { cleanupCalls++ }
+		},
+		ReleaseVerifier: acceptingReleaseVerifier(),
 	}
 	if _, err := runUpdate(context.Background(), c, updateInputs{Yes: true}); err != nil {
 		t.Fatalf("runUpdate: %v", err)
@@ -100,10 +104,13 @@ func TestRunUpdate_EmitsHealthCheckPassedAndSwapCompletedOnSuccess(t *testing.T)
 	if got := events.countByType(domain.EventTypeUpdateSwapAborted); got != 0 {
 		t.Errorf("update.swap.aborted emissions = %d want 0 on success path", got)
 	}
+	if cleanupCalls != 1 {
+		t.Errorf("event store cleanup calls = %d want 1", cleanupCalls)
+	}
 
 	passed, _ := events.firstByType(domain.EventTypeUpdateHealthCheckPassed)
-	if passed.payload["from_version"] != "0.19.0" || passed.payload["to_version"] != "0.20.0" {
-		t.Errorf("passed payload from/to = %v/%v want 0.19.0/0.20.0", passed.payload["from_version"], passed.payload["to_version"])
+	if passed.payload["from_version"] != "0.31.0" || passed.payload["to_version"] != "0.32.0" {
+		t.Errorf("passed payload from/to = %v/%v want 0.31.0/0.32.0", passed.payload["from_version"], passed.payload["to_version"])
 	}
 	completed, _ := events.firstByType(domain.EventTypeUpdateSwapCompleted)
 	if completed.payload["binary_path"] != bin {
@@ -137,14 +144,15 @@ func TestRunUpdate_EmitsHealthCheckFailedAndSwapAbortedOnValidatorFail(t *testin
 	}}
 	events := &stubEventStore{}
 	c := updateClient{
-		Fetcher:    stubFetcher{Tag: "0.20.0"},
-		Downloader: stubDownloader{Assets: map[string][]byte{asset: archive}},
-		Current:    "0.19.0",
-		BinaryPath: bin,
-		ConfigPath: filepath.Join(dir, "omakase.yaml"),
-		Validator:  validator.fn(),
-		Backup:     &stubBackupRunner{},
-		EventStore: events,
+		Fetcher:         stubFetcher{Tag: "0.32.0"},
+		Downloader:      stubDownloader{Assets: map[string][]byte{asset: archive}},
+		Current:         "0.31.0",
+		BinaryPath:      bin,
+		ConfigPath:      filepath.Join(dir, "omakase.yaml"),
+		Validator:       validator.fn(),
+		Backup:          &stubBackupRunner{},
+		EventStore:      events,
+		ReleaseVerifier: acceptingReleaseVerifier(),
 	}
 	if _, err := runUpdate(context.Background(), c, updateInputs{Yes: true}); err == nil {
 		t.Fatalf("expected validator non-zero to abort update")
@@ -195,14 +203,15 @@ func TestRunUpdate_ActivityWriteFailureDoesNotAbort(t *testing.T) {
 	validator := &stubValidator{result: updateValidatorResult{OK: true}}
 	events := &stubEventStore{err: errors.New("activity store disk full")}
 	c := updateClient{
-		Fetcher:    stubFetcher{Tag: "0.20.0"},
-		Downloader: stubDownloader{Assets: map[string][]byte{asset: archive}},
-		Current:    "0.19.0",
-		BinaryPath: bin,
-		ConfigPath: filepath.Join(dir, "omakase.yaml"),
-		Validator:  validator.fn(),
-		Backup:     &stubBackupRunner{},
-		EventStore: events,
+		Fetcher:         stubFetcher{Tag: "0.32.0"},
+		Downloader:      stubDownloader{Assets: map[string][]byte{asset: archive}},
+		Current:         "0.31.0",
+		BinaryPath:      bin,
+		ConfigPath:      filepath.Join(dir, "omakase.yaml"),
+		Validator:       validator.fn(),
+		Backup:          &stubBackupRunner{},
+		EventStore:      events,
+		ReleaseVerifier: acceptingReleaseVerifier(),
 	}
 	res, err := runUpdate(context.Background(), c, updateInputs{Yes: true})
 	if err != nil {

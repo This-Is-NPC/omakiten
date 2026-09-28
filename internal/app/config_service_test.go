@@ -18,7 +18,10 @@ func TestConfigServiceImport(t *testing.T) {
 	service := NewConfigService(configstore.New())
 
 	tmp := t.TempDir()
-	validPath := filepath.Join(tmp, "omakiten.yaml")
+	validPath := filepath.Join(tmp, "config", "omakiten.yaml")
+	if err := os.MkdirAll(filepath.Dir(validPath), 0o755); err != nil {
+		t.Fatalf("MkdirAll() error = %v", err)
+	}
 	data, _ := yaml.Marshal(appTestBundle(t))
 	if err := os.WriteFile(validPath, data, 0644); err != nil {
 		t.Fatalf("WriteFile() error = %v", err)
@@ -65,7 +68,10 @@ func TestConfigServiceImportReturnsParsedBundleAndRegistry(t *testing.T) {
 	service := NewConfigService(configstore.New())
 
 	tmp := t.TempDir()
-	cfgPath := filepath.Join(tmp, "omakiten.yaml")
+	cfgPath := filepath.Join(tmp, "config", "omakiten.yaml")
+	if err := os.MkdirAll(filepath.Dir(cfgPath), 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
 	data, _ := yaml.Marshal(appTestBundle(t))
 	if err := os.WriteFile(cfgPath, data, 0644); err != nil {
 		t.Fatalf("WriteFile: %v", err)

@@ -69,17 +69,16 @@ config:
         order: asc
       limit: 25
       window_days: 14
-      filter:
-        source: [cli, mcp]  # legacy key — silently dropped after #330 cleanup; kept here as a backwards-compat regression smoke test
     task_activity:
       sort:
         order: desc
   sqlite: { busy_timeout_ms: 5000, cache_size_kb: 1024, mmap_size_bytes: 0 }
-  activity_log: { max_rows: 500, max_age_days: 7 }
   solutions: { default_top_limit: 10, max_top_limit: 100 }
   events: { default_recent_limit: 50, defaults: { log: true, broadcast: true, hook: true } }
   search: { stopwords: [and, are, for, from, into, the, this, that, with] }
   tag_synonyms: { golang: go, javascript: js, typescript: ts, nodejs: node, node-js: node, postgres: postgresql, psql: postgresql, mongo: mongodb, k8s: kubernetes, tf: terraform, py: python }
+surfaces:
+  from: ./modules/surfaces.yaml
 workflows:
   - id: 1
     key: default
@@ -111,8 +110,6 @@ workflows:
 	if views.Logs.WindowDays != 14 {
 		t.Errorf("Logs.WindowDays = %d, want 14", views.Logs.WindowDays)
 	}
-	// Legacy `views.logs.filter.source` key (dropped by #330) must not
-	// reject the load — yaml unmarshal silently ignores unknown keys.
 	if views.TaskActivity.Sort.Order != "desc" {
 		t.Errorf("TaskActivity.Sort.Order = %q, want desc", views.TaskActivity.Sort.Order)
 	}

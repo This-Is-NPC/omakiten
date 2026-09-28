@@ -25,24 +25,30 @@ func TestLogsListToolRegistered(t *testing.T) {
 		t.Fatal("Tools() missing logs.list")
 	}
 
+	props := assertLogsListProperties(t, tool)
+	assertLogsListCategories(t, props)
+	assertLogsListRequired(t, tool)
+}
+
+func assertLogsListProperties(t *testing.T, tool *ToolDefinition) map[string]any {
+	t.Helper()
 	props, ok := tool.InputSchema["properties"].(map[string]any)
 	if !ok {
 		t.Fatalf("logs.list InputSchema.properties wrong shape: %#v", tool.InputSchema["properties"])
 	}
-
-	wantParams := []string{"categories", "since", "limit", "order"}
-	for _, name := range wantParams {
+	for _, name := range []string{"categories", "since", "limit", "order"} {
 		if _, found := props[name]; !found {
 			t.Fatalf("logs.list missing param %q", name)
 		}
 	}
+	return props
+}
 
+func assertLogsListCategories(t *testing.T, props map[string]any) {
+	t.Helper()
 	categories, ok := props["categories"].(map[string]any)
-	if !ok {
+	if !ok || categories["type"] != "array" {
 		t.Fatalf("categories schema wrong shape: %#v", props["categories"])
-	}
-	if categories["type"] != "array" {
-		t.Fatalf("categories.type = %v, want array", categories["type"])
 	}
 	items, ok := categories["items"].(map[string]any)
 	if !ok {
@@ -52,30 +58,28 @@ func TestLogsListToolRegistered(t *testing.T) {
 	if !ok {
 		t.Fatalf("categories.items.enum wrong shape: %#v", items["enum"])
 	}
-	// Every domain.KnownEventCategories value must appear so the
-	// schema and the canonical enum stay in lockstep.
-	wantCategories := map[string]bool{}
-	for _, c := range domain.KnownEventCategories {
-		wantCategories[string(c)] = false
+	want := make(map[string]bool, len(domain.KnownEventCategories))
+	for _, category := range domain.KnownEventCategories {
+		want[string(category)] = false
 	}
-	for _, e := range enum {
-		if _, ok := wantCategories[e]; ok {
-			wantCategories[e] = true
+	for _, entry := range enum {
+		if _, found := want[entry]; found {
+			want[entry] = true
 		}
 	}
-	for name, seen := range wantCategories {
+	for name, seen := range want {
 		if !seen {
-			t.Fatalf("categories enum missing %q (declared in domain.KnownEventCategories)", name)
+			t.Fatalf("categories enum missing %q", name)
 		}
 	}
+}
 
-	// logs.list has no required params — the no-arg call is the
-	// documented default. _agent_model is the only required field
-	// (injected by withAgentAttribution).
+func assertLogsListRequired(t *testing.T, tool *ToolDefinition) {
+	t.Helper()
 	required, _ := tool.InputSchema["required"].([]string)
-	for _, r := range required {
-		if r != "_agent_model" {
-			t.Fatalf("logs.list required = %v, want only [_agent_model] (no-arg call must succeed)", required)
+	for _, name := range required {
+		if name != "_agent_model" {
+			t.Fatalf("logs.list required = %v, want only [_agent_model]", required)
 		}
 	}
 }

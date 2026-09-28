@@ -7,7 +7,7 @@ import (
 	"omakiten/internal/domain"
 )
 
-// TestSetTaskParentRejectsCrossProjectAtDBLayer pins migration 027's
+// TestSetTaskParentRejectsCrossProjectAtDBLayer pins the current schema's
 // trigger guard: even if the app-layer guard in tasks_parent.go is
 // bypassed (direct SQL, restored backup, future code path), the DB
 // must reject a parent_id pointing at a task in a different project.

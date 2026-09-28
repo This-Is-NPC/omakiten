@@ -1,33 +1,40 @@
-// Package runtimecache provides a minimal *agentruntime.BundleCache for
-// TUI / CLI tests that drive code through the cache accessor without
-// going through the full BundleCache.Resolve build path.
-//
-// Spec note: Phase 2-bis dropped the Repositories.Snapshot test-only
-// escape hatch the TUI used to plug a per-project *config.Snapshot
-// without a real cache. Every TUI test now wires a real BundleCache via
-// Install so the runtime-side accessor (r.Cache.Get(r.ProjectID)) is
-// the single source of truth in production AND in tests.
 package runtimecache
 
 import (
 	"omakiten/internal/agentruntime"
 	"omakiten/internal/app"
 	"omakiten/internal/config"
+	"omakiten/internal/operation"
 )
+
+type snapshotRepo interface {
+	operation.Repository
+	Snapshot() *config.Snapshot
+}
 
 // Install returns a wired *agentruntime.BundleCache with one pre-built
 // entry whose Snapshot is snap. projectID must match the
 // Repositories.ProjectID the test sets — TUI tests that leave
 // ProjectID at its zero value should pass 0 here so the cache lookup
 // hits the installed entry.
-//
-// The cache is constructed with nil store/bus/cs because callers that
-// only exercise Snapshot reads never trigger rebuild. Tests that
-// additionally exercise the reload path must construct a real
-// BundleCache directly (see agentruntime tests for the pattern).
 func Install(projectID int64, snap *config.Snapshot) *agentruntime.BundleCache {
 	cache := agentruntime.NewBundleCache(nil, nil, nil)
 	cache.Install(projectID, &agentruntime.ProjectRuntime{Snapshot: snap})
+	return cache
+}
+
+// InstallWithStore wires Snapshot + operation.Service so TUI tests that
+// route mutations through the facade have a Service on the cache entry.
+func InstallWithStore(projectID int64, store snapshotRepo) *agentruntime.BundleCache {
+	return InstallWithStoreSnap(projectID, store, store.Snapshot())
+}
+
+// InstallWithStoreSnap is InstallWithStore with an explicit snapshot.
+func InstallWithStoreSnap(projectID int64, store operation.Repository, snap *config.Snapshot) *agentruntime.BundleCache {
+	svc := operation.NewService(store, operation.ProjectSelector{})
+	svc.SetSnapshot(snap)
+	cache := agentruntime.NewBundleCache(nil, nil, nil)
+	cache.Install(projectID, &agentruntime.ProjectRuntime{Snapshot: snap, Service: svc})
 	return cache
 }
 
@@ -40,15 +47,41 @@ func InstallWithPrevious(projectID int64, current, previous *config.Snapshot) *a
 	return cache
 }
 
+// bundleLoader is the Load surface RefreshFromEditor needs. *app.BundleEditor
+// and the TUI BundleEditor port both satisfy it.
+type bundleLoader interface {
+	Load() (config.Bundle, error)
+}
+
 // RefreshFromEditor re-installs the cache entry with a snapshot rebuilt
 // from the editor's current view. Tests that mutate config via app
 // services without going through the TUI edit→rotateSnapshotAfterEdit
 // loop call this to mirror production's BundleCache.Reload effect.
-func RefreshFromEditor(cache *agentruntime.BundleCache, projectID int64, editor *app.BundleEditor) error {
+// The existing operation.Service (if any) is preserved and rotated onto
+// the new snapshot so facade-backed TUI tests keep working.
+func RefreshFromEditor(cache *agentruntime.BundleCache, projectID int64, editor bundleLoader) error {
 	bundle, err := editor.Load()
 	if err != nil {
 		return err
 	}
-	cache.Install(projectID, &agentruntime.ProjectRuntime{Snapshot: config.BuildSnapshot(bundle)})
-	return nil
+	snap := config.BuildSnapshot(bundle)
+	runtime := &agentruntime.ProjectRuntime{Snapshot: snap}
+	if existing := cache.Get(projectID); existing != nil {
+		runtime.Service = existing.Service
+		runtime.Editor = existing.Editor
+		runtime.PreviousSnapshot = existing.PreviousSnapshot
+		if runtime.Service != nil {
+			runtime.Service.SetSnapshot(snap)
+		}
+	}
+	return cache.Install(projectID, runtime)
+}
+
+// SetEntityRepos wires authoring ports onto the facade so TUI tests can
+// call AddSkill/AddLaw/AddPersona without naming app types (D1 / 3.2).
+func SetEntityRepos(svc *operation.Service, editor *app.BundleEditor, files app.EntityFileWriter, slugger app.Slugifier) {
+	if svc == nil {
+		return
+	}
+	svc.SetEntityRepos(editor, files, slugger)
 }

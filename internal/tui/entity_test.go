@@ -2,7 +2,6 @@ package tui
 
 import (
 	"context"
-	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -11,17 +10,18 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
 
-	"omakiten/internal/app"
 	"omakiten/internal/config"
 	"omakiten/internal/configstore"
 	"omakiten/internal/domain"
-	"omakiten/internal/testfixtures"
+	"omakiten/internal/testfixtures/bundleeditor"
 	"omakiten/internal/testfixtures/runtimecache"
 	"omakiten/internal/testfixtures/snapstore"
 	"omakiten/internal/token"
+	"omakiten/internal/tui/screenhost"
+	"omakiten/internal/tui/screens/entitylist"
 )
 
-func newEntityModel(t *testing.T) (Model, *snapstore.Store, *app.BundleEditor) {
+func newEntityModel(t *testing.T) (Model, *snapstore.Store, BundleEditor) {
 	t.Helper()
 	tmp := t.TempDir()
 	configPath := filepath.Join(tmp, "config", "omakase.yaml")
@@ -35,8 +35,8 @@ func newEntityModel(t *testing.T) (Model, *snapstore.Store, *app.BundleEditor) {
 	store := snapstore.Open(t, dbPath)
 
 	files := configstore.New()
-	editor := app.NewBundleEditor(files, configPath)
-	resolved, err := editor.Apply(ctx, nil)
+	editor := bundleeditor.New(files, configPath)
+	resolved, err := applyBundleEditor(ctx, editor, nil)
 	if err != nil {
 		t.Fatalf("editor.Apply() error = %v", err)
 	}
@@ -48,10 +48,16 @@ func newEntityModel(t *testing.T) (Model, *snapstore.Store, *app.BundleEditor) {
 		t.Fatalf("UpsertProject() error = %v", err)
 	}
 
+	cache := runtimecache.InstallWithStore(0, store)
+	if rt := cache.Get(0); rt != nil {
+		runtimecache.SetEntityRepos(rt.Service, editor, files, files)
+		rt.Editor = editor
+	}
+
 	model, err := NewModel(ctx, project.Context(), Repositories{
 		Tasks: store,
-		Cache: runtimecache.Install(0, store.Snapshot()), Workflow: app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot()), Comments: store, Dependencies: store, Editor: editor,
-		BundleStore: files, EntityFiles: files, Slugger: files, Catalog: newTestCatalog(t),
+		Cache: cache, Comments: store, Dependencies: store, Editor: editor,
+		BundleStore: files, Catalog: newTestCatalog(t),
 	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
 	if err != nil {
 		t.Fatalf("NewModel() error = %v", err)
@@ -88,7 +94,7 @@ func TestRefreshEnrichesEntitiesWithBundleData(t *testing.T) {
 func TestEntityViewRendersFrontmatterAndBody(t *testing.T) {
 	model, _, _ := newEntityModel(t)
 
-	got := pressRune(t, model, '3')
+	got := pressRune(t, model, '4')
 	if got.top != topSettings || got.sub != subSettingsGeneral {
 		t.Fatalf("(top, sub) = (%d, %d), want (topSettings, subSettingsGeneral)", got.top, got.sub)
 	}
@@ -100,12 +106,12 @@ func TestEntityViewRendersFrontmatterAndBody(t *testing.T) {
 	}
 
 	got = pressKey(t, got, tea.KeyEnter)
-	if got.entityScreen != entityScreenView {
-		t.Fatalf("entityScreen = %v, want view", got.entityScreen)
+	if len(got.screenStack) != 1 || got.screenStack[0] != screenhost.EntityDetail {
+		t.Fatalf("entity detail route stack = %v", got.screenStack)
 	}
 	view := got.View()
 	plain := stripANSI(view)
-	for _, want := range []string{"// LAW · ", "// SLUG", "// SEVERITY", "// BODY", "Stay in scope"} {
+	for _, want := range []string{"LAW · ", "SLUG", "SEVERITY", "BODY", "Stay in scope"} {
 		if !strings.Contains(plain, want) {
 			t.Fatalf("View() missing %q\n%s", want, view)
 		}
@@ -115,14 +121,15 @@ func TestEntityViewRendersFrontmatterAndBody(t *testing.T) {
 func TestEntityDeleteRemovesEntity(t *testing.T) {
 	model, _, _ := newEntityModel(t)
 
-	got := pressRune(t, model, '3')
+	got := pressRune(t, model, '4')
 	got = pressStringKey(t, got, "/") // Settings › General → Settings › Laws
 	got = pressRune(t, got, 'd')
 	if len(got.laws) != 1 {
 		t.Fatalf("laws len after first delete key = %d, want 1 before confirmation", len(got.laws))
 	}
-	if !got.deletePending || !strings.Contains(got.status, "Confirm delete") {
-		t.Fatalf("delete confirmation not pending: pending=%v status=%q", got.deletePending, got.status)
+	list := got.entityListScreens[screenhost.SettingsLaws]
+	if got.deletePending || len(list.Footer(got.screenFrame())) != 2 || !strings.Contains(got.status, "Confirm delete") {
+		t.Fatalf("screen delete confirmation not pending: root=%v footer=%v status=%q", got.deletePending, list.Footer(got.screenFrame()), got.status)
 	}
 	got = pressRune(t, got, 'd')
 	if len(got.laws) != 0 {
@@ -133,7 +140,7 @@ func TestEntityDeleteRemovesEntity(t *testing.T) {
 func TestEntityDeleteCanBeCancelled(t *testing.T) {
 	model, _, _ := newEntityModel(t)
 
-	got := pressRune(t, model, '3')
+	got := pressRune(t, model, '4')
 	got = pressStringKey(t, got, "/")
 	got = pressRune(t, got, 'd')
 	got = pressKey(t, got, tea.KeyEsc)
@@ -147,13 +154,13 @@ func TestEntityDeleteCanBeCancelled(t *testing.T) {
 }
 
 func TestEntityRefreshAfterEditorMessage(t *testing.T) {
-	model, _, editor := newEntityModel(t)
+	model, _, _ := newEntityModel(t)
 	ctx := context.Background()
 
 	// Simulate the editor flow: directly add a skill and dispatch the
 	// editorFinishedMsg the way runExternalEditor would after $EDITOR returns.
-	skillService := app.NewSkillService(app.EntityServiceRepos{Editor: editor, Files: model.repos.EntityFiles, Slugger: model.repos.Slugger}, model.repos.activeSnapshot())
-	if _, err := skillService.Add(ctx, domain.SkillInput{Key: "tui", Name: "TUI"}); err != nil {
+	skillServiceAdd := model.ops().AddSkill
+	if _, err := skillServiceAdd(ctx, domain.SkillInput{Key: "tui", Name: "TUI"}); err != nil {
 		t.Fatalf("SkillService.Add() error = %v", err)
 	}
 
@@ -208,8 +215,8 @@ func newEntityModelWithTemplates(t *testing.T) Model {
 	store := snapstore.Open(t, dbPath)
 
 	files := configstore.New()
-	editor := app.NewBundleEditor(files, configPath)
-	resolved, err := editor.Apply(ctx, nil)
+	editor := bundleeditor.New(files, configPath)
+	resolved, err := applyBundleEditor(ctx, editor, nil)
 	if err != nil {
 		t.Fatalf("editor.Apply() error = %v", err)
 	}
@@ -221,10 +228,16 @@ func newEntityModelWithTemplates(t *testing.T) Model {
 		t.Fatalf("UpsertProject() error = %v", err)
 	}
 
+	cache := runtimecache.InstallWithStore(0, store)
+	if rt := cache.Get(0); rt != nil {
+		runtimecache.SetEntityRepos(rt.Service, editor, files, files)
+		rt.Editor = editor
+	}
+
 	model, err := NewModel(ctx, project.Context(), Repositories{
 		Tasks: store,
-		Cache: runtimecache.Install(0, store.Snapshot()), Workflow: app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot()), Comments: store, Dependencies: store, Editor: editor,
-		BundleStore: files, EntityFiles: files, Slugger: files, Catalog: newTestCatalog(t),
+		Cache: cache, Comments: store, Dependencies: store, Editor: editor,
+		BundleStore: files, Catalog: newTestCatalog(t),
 	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
 	if err != nil {
 		t.Fatalf("NewModel() error = %v", err)
@@ -254,10 +267,8 @@ func TestRefreshLoadsTemplatesFromBundle(t *testing.T) {
 
 func TestEntityCellRendersTemplatesWithActiveBadge(t *testing.T) {
 	model := newEntityModelWithTemplates(t)
-	model.entityKind = entityKindTemplate
-
-	cell := model.renderEntityCell(entityKindTemplate)
-	for _, want := range []string{"// TEMPLATES · 2", "task-default", "task-bug", "DEFAULT:TASK"} {
+	cell := model.boundEntityListScreen(entitylist.New(entitylist.Templates())).View(model.screenFrame())
+	for _, want := range []string{"TEMPLATES · 2", "task-default", "task-bug", "DEFAULT:TASK"} {
 		if !strings.Contains(cell, want) {
 			t.Fatalf("renderEntityCell missing %q\n%s", want, cell)
 		}
@@ -273,10 +284,10 @@ func TestCustomBadgeAppearsOnUserOverride(t *testing.T) {
 	if err := os.MkdirAll(filepath.Dir(customPath), 0o755); err != nil {
 		t.Fatalf("MkdirAll() error = %v", err)
 	}
-	if err := os.WriteFile(customPath, []byte("---\nname: Go (custom)\n---\noverride\n"), 0o644); err != nil {
+	if err := os.WriteFile(customPath, []byte("---\nname: Go (custom)\nschema_version: 2\n---\noverride\n"), 0o644); err != nil {
 		t.Fatalf("WriteFile() error = %v", err)
 	}
-	if _, err := model.repos.Editor.Apply(model.ctx, nil); err != nil {
+	if _, err := applyBundleEditor(model.ctx, model.repos.Editor, nil); err != nil {
 		t.Fatalf("editor.Apply() error = %v", err)
 	}
 	if err := runtimecache.RefreshFromEditor(model.repos.Cache, model.repos.ProjectID, model.repos.Editor); err != nil {
@@ -286,7 +297,7 @@ func TestCustomBadgeAppearsOnUserOverride(t *testing.T) {
 		t.Fatalf("refresh() error = %v", err)
 	}
 
-	cell := model.renderEntityCell(entityKindSkill)
+	cell := model.boundEntityListScreen(entitylist.New(entitylist.Skills())).View(model.screenFrame())
 	if !strings.Contains(cell, "CUSTOM") {
 		t.Fatalf("renderEntityCell missing CUSTOM badge for overridden go skill\n%s", cell)
 	}
@@ -299,40 +310,6 @@ func TestCustomBadgeAppearsOnUserOverride(t *testing.T) {
 // `TestSubCycleBindings`; the per-sub render is covered by
 // `TestSettingsSubsRenderIsolatedColumns`.
 
-func TestEntityCellShowsScrollHintsWhenColumnExceedsViewport(t *testing.T) {
-	model, _, _ := newEntityModel(t)
-	// Build many synthetic skills so the column is taller than any viewport.
-	model.skills = nil
-	for i := 0; i < 12; i++ {
-		model.skills = append(model.skills, domain.Skill{Key: fmt.Sprintf("skill-%02d", i), Name: fmt.Sprintf("Skill %d", i)})
-	}
-	model.entityKind = entityKindSkill
-	// Force a single-column wrap (width below the next card-cell threshold)
-	// so all 12 cards stack vertically and the viewport must scroll.
-	model.width = 36
-	model.height = 25
-	if model.entityCursors == nil {
-		model.entityCursors = map[entityKind]int{}
-	}
-	model.entityCursors[entityKindSkill] = 8
-	model.syncFocusedEntityScroll()
-
-	cell := model.renderEntityCell(entityKindSkill)
-	if !strings.Contains(cell, "▲") {
-		t.Fatalf("expected '▲ N above' hint when cursor is past the top:\n%s", cell)
-	}
-	if !strings.Contains(cell, "▼") {
-		t.Fatalf("expected '▼ N below' hint when more cards exist below:\n%s", cell)
-	}
-	// Only the cards near the cursor should be present, not all 12.
-	if strings.Count(cell, "skill-00") > 0 {
-		t.Fatalf("first card should be scrolled out of view:\n%s", cell)
-	}
-	if !strings.Contains(cell, "skill-08") {
-		t.Fatalf("focused card skill-08 missing from column:\n%s", cell)
-	}
-}
-
 func TestSettingsGeneralRendersRuntimeCard(t *testing.T) {
 	model, _, _ := newEntityModel(t)
 	model.repos.Version = "0.9.0-test"
@@ -344,7 +321,7 @@ func TestSettingsGeneralRendersRuntimeCard(t *testing.T) {
 	model.sub = subSettingsGeneral
 
 	view := ansi.Strip(model.View())
-	for _, want := range []string{"// RUNTIME", "// PROJECT", "// OKT VERSION", "0.9.0-test", "// SCOPE", "global", "/tmp/omakiten.yaml", "/tmp/omakiten.db", "// THEME", "// WORKFLOW"} {
+	for _, want := range []string{"RUNTIME", "PROJECT", "OKT VERSION", "0.9.0-test", "SCOPE", "global", "/tmp/omakiten.yaml", "/tmp/omakiten.db", "THEME", "WORKFLOW"} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("Settings › General missing %q\n%s", want, view)
 		}
@@ -363,7 +340,7 @@ func TestSettingsGeneralScopeBadgeNamesRepoLocalDir(t *testing.T) {
 	model.sub = subSettingsGeneral
 
 	view := ansi.Strip(model.View())
-	for _, want := range []string{"// SCOPE", "local (/tmp/myrepo/.omakiten)"} {
+	for _, want := range []string{"SCOPE", "local (/tmp/myrepo/.omakiten)"} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("Settings › General missing %q\n%s", want, view)
 		}
@@ -378,13 +355,11 @@ func TestSettingsTemplatesSubRendersColumn(t *testing.T) {
 	// Templates should land on a single templates column.
 	model.top = topSettings
 	model.sub = subSettingsTemplates
-	model.entityKind = entityKindTemplate
-
-	out := model.renderSettingsEntity(entityKindTemplate)
-	if !strings.Contains(out, "// TEMPLATES") {
+	out := model.renderCurrentView()
+	if !strings.Contains(out, "TEMPLATES") {
 		t.Fatalf("Settings › Templates missing column header\n%s", out)
 	}
-	for _, leaked := range []string{"// LAWS", "// PERSONAS", "// SKILLS", "// TAGS"} {
+	for _, leaked := range []string{"LAWS", "PERSONAS", "SKILLS", "TAGS"} {
 		if strings.Contains(out, leaked) {
 			t.Fatalf("Settings › Templates leaked sibling kind %q (T2 split should isolate columns):\n%s", leaked, out)
 		}
@@ -393,22 +368,9 @@ func TestSettingsTemplatesSubRendersColumn(t *testing.T) {
 
 func TestEntityViewRendersTemplateBody(t *testing.T) {
 	model := newEntityModelWithTemplates(t)
-	model.entityKind = entityKindTemplate
-	// Cursor at 0 points to the alphabetically-first template (task-bug);
-	// move to task-default explicitly so the assertion is not order-coupled.
-	if model.entityCursors == nil {
-		model.entityCursors = map[entityKind]int{}
-	}
-	for i, tpl := range model.templates {
-		if tpl.Slug == "task-default" {
-			model.entityCursors[entityKindTemplate] = i
-			break
-		}
-	}
-	model.openSelectedEntityView()
-
-	view := model.renderEntityView()
-	for _, want := range []string{"// TEMPLATE", "// SLUG", "// NAME", "// BODY", "User Story"} {
+	model.openEntityDetail(entityKindTemplate, "task-default")
+	view := model.renderCurrentView()
+	for _, want := range []string{"TEMPLATE", "SLUG", "NAME", "BODY", "User Story"} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("renderEntityView missing %q\n%s", want, view)
 		}
@@ -419,8 +381,11 @@ func TestTemplateCreateAndDeleteAreNoOps(t *testing.T) {
 	model := newEntityModelWithTemplates(t)
 	// Drive into Settings › Templates so 'n'/'d' route to handleConfigKey
 	// rather than the table view's create-task / delete-task handlers.
-	model = pressRune(t, model, '3')
-	for model.sub != subSettingsTemplates {
+	model = pressRune(t, model, '4')
+	for i := 0; model.sub != subSettingsTemplates; i++ {
+		if i >= len(subsByTop[topSettings]) {
+			t.Fatalf("cycled %d times without reaching subSettingsTemplates (stuck on top=%d sub=%d)", i, model.top, model.sub)
+		}
 		model = pressStringKey(t, model, "/")
 	}
 	beforeLen := len(model.templates)
@@ -447,7 +412,7 @@ func TestPersonaPickerToggleAndSave(t *testing.T) {
 	ctx := context.Background()
 
 	// Add a second skill so the picker has two rows to toggle between.
-	if _, err := app.NewSkillService(model.repos.entityServiceRepos(), model.repos.activeSnapshot()).Add(ctx, domain.SkillInput{Key: "sqlite", Name: "SQLite"}); err != nil {
+	if _, err := model.ops().AddSkill(ctx, domain.SkillInput{Key: "sqlite", Name: "SQLite"}); err != nil {
 		t.Fatalf("Add(skill) error = %v", err)
 	}
 	if err := runtimecache.RefreshFromEditor(model.repos.Cache, model.repos.ProjectID, model.repos.Editor); err != nil {
@@ -457,27 +422,27 @@ func TestPersonaPickerToggleAndSave(t *testing.T) {
 		t.Fatalf("refresh() error = %v", err)
 	}
 
-	got := pressRune(t, model, '3')
-	for got.sub != subSettingsPersonas {
+	got := pressRune(t, model, '4')
+	for i := 0; got.sub != subSettingsPersonas; i++ {
+		if i >= len(subsByTop[topSettings]) {
+			t.Fatalf("cycled %d times without reaching subSettingsPersonas (stuck on top=%d sub=%d)", i, got.top, got.sub)
+		}
 		got = pressStringKey(t, got, "/")
 	}
-	if got.entityKind != entityKindPersona {
-		t.Fatalf("entityKind = %v, want persona (sub-cycle should sync)", got.entityKind)
-	}
 	got = pressRune(t, got, 'p')
-	if got.entityForm.mode != entityScreenSkillPicker {
-		t.Fatalf("picker mode = %v, want skill picker", got.entityForm.mode)
+	if len(got.screenStack) == 0 || got.screenStack[len(got.screenStack)-1] != screenhost.PersonaSkills {
+		t.Fatalf("picker route = %v, want persona skills", got.screenStack)
 	}
 
 	// The default persona starts with `go` checked. Toggle the focused row off.
 	got = pressKey(t, got, tea.KeySpace)
-	if got.entityForm.pickerChecks["go"] {
+	if selected := got.personaSkillsScreen.SelectedValues(); len(selected) != 0 {
 		t.Fatalf("toggle did not uncheck go")
 	}
 	// Move down and toggle sqlite on.
 	got = pressStringKey(t, got, "down")
 	got = pressKey(t, got, tea.KeySpace)
-	if !got.entityForm.pickerChecks["sqlite"] {
+	if selected := got.personaSkillsScreen.SelectedValues(); len(selected) != 1 || selected[0] != "sqlite" {
 		t.Fatalf("toggle did not check sqlite")
 	}
 

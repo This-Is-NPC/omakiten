@@ -25,9 +25,9 @@ type EventRetentionDefaults struct {
 // EventsRetentionBlock groups the three-level retention policy for rows
 // in the unified events table.
 type EventsRetentionBlock struct {
-	Defaults   EventRetentionDefaults              `yaml:"defaults" json:"defaults"`
-	ByCategory map[string]EventRetentionSettings   `yaml:"by_category,omitempty" json:"by_category,omitempty"`
-	Overrides  map[string]EventRetentionSettings   `yaml:"overrides,omitempty" json:"overrides,omitempty"`
+	Defaults   EventRetentionDefaults            `yaml:"defaults" json:"defaults"`
+	ByCategory map[string]EventRetentionSettings `yaml:"by_category,omitempty" json:"by_category,omitempty"`
+	Overrides  map[string]EventRetentionSettings `yaml:"overrides,omitempty" json:"overrides,omitempty"`
 }
 
 // RetentionGroup is a precomputed prune scope: every event_type that
@@ -44,10 +44,9 @@ type ResolvedRetention struct {
 	MaxRows    int
 }
 
-// NormalizeEventsRetention merges legacy config.activity_log into
-// events.retention.by_category.tool_call when the category policy is
-// absent, then ensures retention.defaults is populated from the kit
-// canonical when callers left it zeroed (test fixtures).
+// NormalizeEventsRetention applies the current events.retention inheritance
+// from the active kit, then ensures retention.defaults is populated from the
+// kit canonical when callers left it zeroed (test fixtures).
 func NormalizeEventsRetention(cfg *Settings, kit Settings) {
 	if cfg.Events.Retention.ByCategory == nil {
 		cfg.Events.Retention.ByCategory = map[string]EventRetentionSettings{}
@@ -65,16 +64,6 @@ func NormalizeEventsRetention(cfg *Settings, kit Settings) {
 		}
 	}
 
-	toolCall, hasToolCall := cfg.Events.Retention.ByCategory["tool_call"]
-	toolCallUnset := !hasToolCall || (toolCall.MaxAgeDays == nil && toolCall.MaxRows == nil)
-	if toolCallUnset && cfg.ActivityLog.MaxRows > 0 && cfg.ActivityLog.MaxAgeDays > 0 {
-		rows := cfg.ActivityLog.MaxRows
-		days := cfg.ActivityLog.MaxAgeDays
-		cfg.Events.Retention.ByCategory["tool_call"] = EventRetentionSettings{
-			MaxAgeDays: &days,
-			MaxRows:    &rows,
-		}
-	}
 }
 
 // ResolveRetention returns the storage retention for eventType using

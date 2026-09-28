@@ -213,25 +213,8 @@ func DirSize(root string) (int64, error) {
 		return 0, nil
 	}
 	var total int64
-	err := filepath.WalkDir(root, func(_ string, d fs.DirEntry, err error) error {
-		if err != nil {
-			if errors.Is(err, fs.ErrNotExist) {
-				return nil
-			}
-			return err
-		}
-		if d.IsDir() {
-			return nil
-		}
-		info, err := d.Info()
-		if err != nil {
-			if errors.Is(err, fs.ErrNotExist) {
-				return nil
-			}
-			return err
-		}
-		total += info.Size()
-		return nil
+	err := filepath.WalkDir(root, func(_ string, d fs.DirEntry, walkErr error) error {
+		return addDirEntrySize(&total, d, walkErr)
 	})
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
@@ -240,6 +223,27 @@ func DirSize(root string) (int64, error) {
 		return total, err
 	}
 	return total, nil
+}
+
+func addDirEntrySize(total *int64, d fs.DirEntry, walkErr error) error {
+	if walkErr != nil {
+		if errors.Is(walkErr, fs.ErrNotExist) {
+			return nil
+		}
+		return walkErr
+	}
+	if d.IsDir() {
+		return nil
+	}
+	info, err := d.Info()
+	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return nil
+		}
+		return err
+	}
+	*total += info.Size()
+	return nil
 }
 
 // FormatBytes renders n as a human-readable size string suitable for

@@ -1,12 +1,8 @@
 package tui
 
 import (
-	"fmt"
 	"strings"
 	"testing"
-
-	"omakiten/internal/config"
-	"omakiten/internal/domain"
 )
 
 // TestPanelViewportRowsLeavesRoomForChrome verifies that the shared
@@ -67,37 +63,3 @@ func TestPanelViewportRowsLeavesRoomForChrome(t *testing.T) {
 // the renderer with a worst-case fixture (>1 grid row, scrolled
 // mid-list and at last-row) and asserts the rendered grid never
 // exceeds the viewport.
-func TestEntityCellViewportNeverExceedsBudget(t *testing.T) {
-	const viewport = 12
-
-	// 30 tags = 10 rows of 3 cards each; each card renders 3 lines.
-	tags := make([]domain.Tag, 30)
-	for i := range tags {
-		tags[i] = domain.Tag{ID: int64(i + 1), Name: fmt.Sprintf("tag-%02d", i), Label: fmt.Sprintf("tag-%02d", i), UsageCount: 1}
-	}
-	for _, scroll := range []int{0, 6, 18, 24, 27} {
-		t.Run(fmt.Sprintf("scroll=%d", scroll), func(t *testing.T) {
-			m := Model{
-				styles:        newStyles(config.Theme{}),
-				width:         200,
-				height:        80,
-				tags:          tags,
-				entityKind:    entityKindTag,
-				entityCursors: map[entityKind]int{entityKindTag: scroll},
-			}
-			// Drive the cardlist-owned scroll state via the same sync
-			// routine production calls; the per-kind list lands with
-			// a row-index scroll aligned to the supplied cursor.
-			m.syncFocusedEntityScroll()
-			rendered := m.renderEntityCellWithViewport(entityKindTag, viewport, 200)
-			lines := strings.Count(rendered, "\n") + 1
-			// kicker + separator add 2 lines on top of the viewport budget.
-			const kickerSeparator = 2
-			maxLines := viewport + kickerSeparator
-			if lines > maxLines {
-				t.Fatalf("entity cell rendered %d lines; viewport=%d max=%d (scroll=%d)\noutput:\n%s",
-					lines, viewport, maxLines, scroll, rendered)
-			}
-		})
-	}
-}

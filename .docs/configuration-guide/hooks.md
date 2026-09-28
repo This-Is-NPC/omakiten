@@ -35,10 +35,17 @@ Each `ProjectRuntime` in the `BundleCache` owns its own `hooks.Engine`,
 `ActionRegistry`, and `NotificationShowAction`. Engines filter their
 dispatch by `engine.projectID == event.ProjectID`:
 
-- engine `projectID == 0` (bootstrap window before a project resolves, or tests) catches all events.
-- event `ProjectID == 0` (system events like `bundle.swapped`,
-  `hook.executed` written against the system entity) reaches every engine.
+- engine `projectID == 0` is the explicit `GlobalProjectID` scope used only by
+  the projectless bootstrap path and tests; it catches all events.
+- event `ProjectID == 0` is an intentionally global system event and reaches
+  every engine. `bundle.imported` is not global merely because its entity type
+  is `system`: `BundleCache` records the importing runtime's project id.
 - otherwise the engine reacts only to events scoped to its project.
+
+Project-scoped runtimes must never use zero as a fallback project id. If a
+caller intentionally builds a global runtime, its zero scope is explicit and
+its hooks are expected to observe all project events. A normal reload/import
+for project B therefore cannot activate project A's hooks.
 
 The consequence: a `mcp.tool_call` hook declared in project A's bundle
 will not fire on tool calls dispatched against project B's service,
@@ -61,15 +68,29 @@ side decides which project a tool call belongs to.
 ### Dispatch lifecycle
 
 1. The bus delivers the event synchronously to the engine.
-2. The engine evaluates `on:` + `when:`, then for each matched hook
-   spawns a goroutine. The publisher returns immediately.
-3. Inside the goroutine the engine drops any inherited deadline so the
-   action's own timeout applies, then calls `Action.Execute(ctx, ev, args)`.
+2. The engine evaluates `on:` + `when:`. For each match, one mutex-protected
+   admission point checks that the engine is running and registers the action
+   before spawning its goroutine. The publisher returns immediately.
+3. Inside the goroutine the engine links the publisher context to an
+   Engine-owned cancellation context, then calls
+   `Action.Execute(ctx, ev, args)`. Blocking actions also apply their own
+   timeout (`exec` defaults to 30 seconds).
 4. After the action returns (or panics — recovered), the engine emits
    `hook.executed` via the events store. If the engine never reached
    step 3 (action missing, gate closed, no match) **no event is
    emitted** — `hook.executed` records what happened, not what was
    tried.
+
+On shutdown or bundle reload, the engine closes admission at the same
+linearization point, unsubscribes, cancels admitted actions, and waits through a
+bounded context-aware drain. Reload first prepares an inactive candidate and
+lets its consumer accept a staged view; only after acceptance succeeds does it
+commit Store settings, drain the old engine, start the candidate, and publish
+the replacement. A rejected candidate is never subscribed and can be retried
+without restoring or rewriting event rows. If an action ignores cancellation,
+reload returns the drain timeout and leaves the replacement unpublished; the
+old engine remains closed to new actions and can finish draining when the
+action eventually returns.
 
 ### Channel gates
 
@@ -129,9 +150,10 @@ The hook fails (and emits `success=false` plus the captured stderr in
 
 ### `noop`
 
-Always returns nil. Used by tests and as a smoke option in user yamls
-when you want to confirm the engine sees an event without side-effects.
-Takes no args.
+Returns immediately with no side effects, unless engine cancellation was
+already requested, in which case it returns `context.Canceled`. Used by tests
+and as a smoke option in user yamls when you want to confirm the engine sees an
+event without side effects. Takes no args.
 
 ### Notification hooks (`notification: <slug>`)
 

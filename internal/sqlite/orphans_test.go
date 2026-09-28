@@ -119,25 +119,28 @@ func TestRebindOrphanedTasks_UpdatesBucketAndEmitsEvent(t *testing.T) {
 		t.Fatalf("task after rebind = %+v, want bucket backlog", tasks)
 	}
 
-	events, err := store.ListTaskActivity(ctx, project.ID, task.ID, "asc")
+	assertOrphanMigrationEvent(t, ctx, store, project.ID, task.ID)
+}
+
+func assertOrphanMigrationEvent(t *testing.T, ctx context.Context, store *storeFixture, projectID, taskID int64) {
+	t.Helper()
+	events, err := store.ListTaskActivity(ctx, projectID, taskID, "asc")
 	if err != nil {
 		t.Fatalf("ListTaskActivity: %v", err)
 	}
-	found := false
-	for _, ev := range events {
-		if ev.EventType == domain.EventTypeTaskMigrated {
-			if !strings.Contains(ev.Payload, `"from":"docs"`) || !strings.Contains(ev.Payload, `"to":"backlog"`) {
-				t.Fatalf("payload missing from/to: %q", ev.Payload)
-			}
-			if !strings.Contains(ev.Payload, `"reason":"workflow_swap"`) {
-				t.Fatalf("payload missing reason: %q", ev.Payload)
-			}
-			found = true
+	for _, event := range events {
+		if event.EventType != domain.EventTypeTaskMigrated {
+			continue
 		}
+		if !strings.Contains(event.Payload, `"from":"docs"`) || !strings.Contains(event.Payload, `"to":"backlog"`) {
+			t.Fatalf("payload missing from/to: %q", event.Payload)
+		}
+		if !strings.Contains(event.Payload, `"reason":"workflow_swap"`) {
+			t.Fatalf("payload missing reason: %q", event.Payload)
+		}
+		return
 	}
-	if !found {
-		t.Fatalf("task.migrated event not emitted; events=%+v", events)
-	}
+	t.Fatalf("task.migrated event not emitted; events=%+v", events)
 }
 
 func TestRebindOrphanedTasks_NoOpWhenEmpty(t *testing.T) {

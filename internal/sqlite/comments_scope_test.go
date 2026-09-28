@@ -40,9 +40,7 @@ func TestAddScopedCommentScopes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("AddScopedComment(task): %v", err)
 	}
-	if taskC.Scope != domain.CommentScopeTask || taskC.TaskID != task.ID || taskC.ProjectID != project.ID {
-		t.Fatalf("task comment scope/ids = %+v", taskC)
-	}
+	assertCommentScope(t, taskC, domain.CommentScopeTask, project.ID, task.ID)
 	if taskC.Title != "T" || taskC.Kind != "handoff" || !taskC.Pinned {
 		t.Fatalf("task comment note fields = %+v", taskC)
 	}
@@ -54,9 +52,7 @@ func TestAddScopedCommentScopes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("AddScopedComment(project): %v", err)
 	}
-	if projC.Scope != domain.CommentScopeProject || projC.ProjectID != project.ID || projC.TaskID != 0 {
-		t.Fatalf("project comment scope/ids = %+v", projC)
-	}
+	assertCommentScope(t, projC, domain.CommentScopeProject, project.ID, 0)
 
 	uniC, err := store.AddScopedComment(ctx, domain.CommentWrite{
 		Scope: domain.CommentScopeUniversal,
@@ -65,20 +61,10 @@ func TestAddScopedCommentScopes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("AddScopedComment(universal): %v", err)
 	}
-	if uniC.Scope != domain.CommentScopeUniversal || uniC.ProjectID != 0 || uniC.TaskID != 0 {
-		t.Fatalf("universal comment scope/ids = %+v", uniC)
-	}
+	assertCommentScope(t, uniC, domain.CommentScopeUniversal, 0, 0)
 
 	// Round-trip each scope through CommentByID.
-	for _, want := range []domain.Comment{taskC, projC, uniC} {
-		got, err := store.CommentByID(ctx, project.ID, want.ID)
-		if err != nil {
-			t.Fatalf("CommentByID(%d): %v", want.ID, err)
-		}
-		if got.Scope != want.Scope || got.Body != want.Body {
-			t.Fatalf("CommentByID(%d) = %+v, want scope %q body %q", want.ID, got, want.Scope, want.Body)
-		}
-	}
+	assertCommentRoundTrips(t, ctx, store, project.ID, taskC, projC, uniC)
 
 	// Project comment without a project id is rejected.
 	if _, err := store.AddScopedComment(ctx, domain.CommentWrite{Scope: domain.CommentScopeProject, Body: "x"}); err == nil {
@@ -87,6 +73,26 @@ func TestAddScopedCommentScopes(t *testing.T) {
 	// Unknown scope is rejected.
 	if _, err := store.AddScopedComment(ctx, domain.CommentWrite{Scope: "bogus", Body: "x"}); err == nil {
 		t.Fatal("AddScopedComment(bogus) = nil error, want validation")
+	}
+}
+
+func assertCommentScope(t *testing.T, got domain.Comment, scope string, projectID, taskID int64) {
+	t.Helper()
+	if got.Scope != scope || got.ProjectID != projectID || got.TaskID != taskID {
+		t.Fatalf("comment scope/ids = %+v, want scope=%q project=%d task=%d", got, scope, projectID, taskID)
+	}
+}
+
+func assertCommentRoundTrips(t *testing.T, ctx context.Context, store *storeFixture, projectID int64, comments ...domain.Comment) {
+	t.Helper()
+	for _, want := range comments {
+		got, err := store.CommentByID(ctx, projectID, want.ID)
+		if err != nil {
+			t.Fatalf("CommentByID(%d): %v", want.ID, err)
+		}
+		if got.Scope != want.Scope || got.Body != want.Body {
+			t.Fatalf("CommentByID(%d) = %+v, want scope %q body %q", want.ID, got, want.Scope, want.Body)
+		}
 	}
 }
 
@@ -177,8 +183,12 @@ func TestEditCommentPayloadCarriesFieldDeltas(t *testing.T) {
 		t.Fatalf("AddScopedComment: %v", err)
 	}
 
+	assertCommentPayloadDeltas(t, ctx, store, project.ID, c.ID)
+}
+
+func assertCommentPayloadDeltas(t *testing.T, ctx context.Context, store *storeFixture, projectID, commentID int64) {
+	t.Helper()
 	decode := func(payload string) map[string]any {
-		t.Helper()
 		var m map[string]any
 		if err := json.Unmarshal([]byte(payload), &m); err != nil {
 			t.Fatalf("decode payload %q: %v", payload, err)
@@ -186,19 +196,14 @@ func TestEditCommentPayloadCarriesFieldDeltas(t *testing.T) {
 		return m
 	}
 	delta := func(m map[string]any, key string) (string, string) {
-		t.Helper()
 		sub, ok := m[key].(map[string]any)
 		if !ok {
 			t.Fatalf("payload missing %q delta: %v", key, m)
 		}
 		return fmt.Sprintf("%v", sub["from"]), fmt.Sprintf("%v", sub["to"])
 	}
-
-	// Pin/title/kind-only edit (no body change): payload names each changed field.
 	title, kind, pinned := "New", "recap", true
-	_, event, err := store.EditComment(ctx, project.ID, c.ID, domain.CommentEdit{
-		Title: &title, Kind: &kind, Pinned: &pinned,
-	})
+	_, event, err := store.EditComment(ctx, projectID, commentID, domain.CommentEdit{Title: &title, Kind: &kind, Pinned: &pinned})
 	if err != nil {
 		t.Fatalf("EditComment(meta): %v", err)
 	}
@@ -206,29 +211,28 @@ func TestEditCommentPayloadCarriesFieldDeltas(t *testing.T) {
 	if _, ok := m["body"]; ok {
 		t.Fatalf("payload carries a body delta for an unchanged body: %v", m)
 	}
-	if from, to := delta(m, "title"); from != "Old" || to != "New" {
-		t.Fatalf("title delta = %q→%q, want Old→New", from, to)
-	}
-	if from, to := delta(m, "kind"); from != "draft" || to != "recap" {
-		t.Fatalf("kind delta = %q→%q, want draft→recap", from, to)
-	}
-	if from, to := delta(m, "pinned"); from != "false" || to != "true" {
-		t.Fatalf("pinned delta = %q→%q, want false→true", from, to)
-	}
+	assertDelta(t, delta, m, "title", "Old", "New")
+	assertDelta(t, delta, m, "kind", "draft", "recap")
+	assertDelta(t, delta, m, "pinned", "false", "true")
 
-	// Body-only edit carries only the body delta (no spurious field deltas).
-	_, event2, err := store.EditComment(ctx, project.ID, c.ID, domain.CommentEdit{Body: strPtr("after")})
+	_, event, err = store.EditComment(ctx, projectID, commentID, domain.CommentEdit{Body: strPtr("after")})
 	if err != nil {
 		t.Fatalf("EditComment(body): %v", err)
 	}
-	m2 := decode(event2.Payload)
-	if from, to := delta(m2, "body"); from != "before" || to != "after" {
-		t.Fatalf("body delta = %q→%q, want before→after", from, to)
-	}
-	for _, k := range []string{"title", "kind", "pinned"} {
-		if _, ok := m2[k]; ok {
-			t.Fatalf("body-only edit carries spurious %q delta: %v", k, m2)
+	m = decode(event.Payload)
+	assertDelta(t, delta, m, "body", "before", "after")
+	for _, key := range []string{"title", "kind", "pinned"} {
+		if _, ok := m[key]; ok {
+			t.Fatalf("body-only edit carries spurious %q delta: %v", key, m)
 		}
+	}
+}
+
+func assertDelta(t *testing.T, delta func(map[string]any, string) (string, string), payload map[string]any, key, wantFrom, wantTo string) {
+	t.Helper()
+	from, to := delta(payload, key)
+	if from != wantFrom || to != wantTo {
+		t.Fatalf("%s delta = %q to %q, want %s to %s", key, from, to, wantFrom, wantTo)
 	}
 }
 

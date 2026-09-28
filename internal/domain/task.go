@@ -61,7 +61,7 @@ type Task struct {
 	ParentID *int64 `json:"parent_id,omitempty"`
 	// Depth is the materialised distance from the nearest root ancestor.
 	// 0 for root rows, 1 for direct children, 2 for grandchildren, and so
-	// on. Persisted via the `tasks.depth` column (migration 028) so event
+	// on. Persisted via the `tasks.depth` column so event
 	// payloads can carry the real value without paying for a recursive
 	// parent-walk on every emission — see #297 review finding §B.5 and
 	// the implementation in #299.

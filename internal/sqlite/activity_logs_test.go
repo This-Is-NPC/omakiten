@@ -6,7 +6,6 @@ import (
 	"testing"
 
 	"omakiten/internal/domain"
-	"omakiten/migrations"
 )
 
 func TestActivityLogCRUD(t *testing.T) {
@@ -140,30 +139,7 @@ func TestActivityLogStatsAggregatesFullScope(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ActivityLogStats() error = %v", err)
 	}
-	if stats.Total != 11 {
-		t.Fatalf("Total = %d, want 11", stats.Total)
-	}
-	if stats.Ok != 9 {
-		t.Fatalf("Ok = %d, want 9", stats.Ok)
-	}
-	if stats.Error != 1 {
-		t.Fatalf("Error = %d, want 1", stats.Error)
-	}
-	if stats.Running != 1 {
-		t.Fatalf("Running = %d, want 1", stats.Running)
-	}
-	if stats.CLI != 3 {
-		t.Fatalf("CLI = %d, want 3", stats.CLI)
-	}
-	if stats.MCP != 3 {
-		t.Fatalf("MCP = %d, want 3", stats.MCP)
-	}
-	if stats.TUI != 5 {
-		t.Fatalf("TUI = %d, want 5", stats.TUI)
-	}
-	if stats.OldestAt == "" || stats.NewestAt == "" {
-		t.Fatalf("expected non-empty Oldest/NewestAt timestamps, got %q / %q", stats.OldestAt, stats.NewestAt)
-	}
+	assertFullActivityStats(t, stats)
 
 	// Empty scope: a project without logs returns a zeroed stats with
 	// empty timestamp markers.
@@ -171,8 +147,27 @@ func TestActivityLogStatsAggregatesFullScope(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ActivityLogStats(empty scope) error = %v", err)
 	}
-	if empty.Total != 0 || empty.OldestAt != "" || empty.NewestAt != "" {
-		t.Fatalf("empty scope = %+v, want zero values", empty)
+	assertEmptyActivityStats(t, empty)
+}
+
+func assertFullActivityStats(t *testing.T, stats domain.ActivityLogStats) {
+	t.Helper()
+	want := map[string]int{"Total": 11, "Ok": 9, "Error": 1, "Running": 1, "CLI": 3, "MCP": 3, "TUI": 5}
+	got := map[string]int{"Total": stats.Total, "Ok": stats.Ok, "Error": stats.Error, "Running": stats.Running, "CLI": stats.CLI, "MCP": stats.MCP, "TUI": stats.TUI}
+	for key, wantValue := range want {
+		if got[key] != wantValue {
+			t.Errorf("%s = %d, want %d", key, got[key], wantValue)
+		}
+	}
+	if stats.OldestAt == "" || stats.NewestAt == "" {
+		t.Errorf("expected non-empty Oldest/NewestAt timestamps, got %q / %q", stats.OldestAt, stats.NewestAt)
+	}
+}
+
+func assertEmptyActivityStats(t *testing.T, stats domain.ActivityLogStats) {
+	t.Helper()
+	if stats.Total != 0 || stats.OldestAt != "" || stats.NewestAt != "" {
+		t.Errorf("empty scope = %+v, want zero values", stats)
 	}
 }
 
@@ -241,33 +236,7 @@ func TestBeginActivityLogWritesCanonicalEventType(t *testing.T) {
 	if err := store.db.QueryRowContext(ctx, "SELECT event_type, payload FROM events WHERE id = ?", id).Scan(&eventType, &payload); err != nil {
 		t.Fatalf("read row error = %v", err)
 	}
-	if eventType != domain.EventTypeMCPToolCall {
-		t.Fatalf("event_type = %q, want %q", eventType, domain.EventTypeMCPToolCall)
-	}
-
-	var decoded map[string]any
-	if err := json.Unmarshal([]byte(payload), &decoded); err != nil {
-		t.Fatalf("payload not JSON: %v (raw=%q)", err, payload)
-	}
-	if decoded["tool_name"] != "tasks.create" {
-		t.Fatalf("payload.tool_name = %v, want tasks.create", decoded["tool_name"])
-	}
-	if decoded["source"] != "mcp" {
-		t.Fatalf("payload.source = %v, want mcp", decoded["source"])
-	}
-	if decoded["entrypoint"] != "tools/call" {
-		t.Fatalf("payload.entrypoint = %v, want tools/call", decoded["entrypoint"])
-	}
-	if decoded["status"] != "running" {
-		t.Fatalf("payload.status = %v, want running", decoded["status"])
-	}
-	args, ok := decoded["args"].(map[string]any)
-	if !ok {
-		t.Fatalf("payload.args not object: %T", decoded["args"])
-	}
-	if args["title"] != "Hello" {
-		t.Fatalf("payload.args.title = %v, want Hello", args["title"])
-	}
+	assertToolCallStart(t, eventType, payload)
 
 	// Finish: payload mirror keys must update alongside the columns so
 	// hooks subscribed to mcp.tool_call can match `when: { status: ok }`.
@@ -277,24 +246,41 @@ func TestBeginActivityLogWritesCanonicalEventType(t *testing.T) {
 	if err := store.db.QueryRowContext(ctx, "SELECT payload FROM events WHERE id = ?", id).Scan(&payload); err != nil {
 		t.Fatalf("read row after finish error = %v", err)
 	}
+	assertToolCallFinish(t, payload)
+}
+
+func assertToolCallStart(t *testing.T, eventType, payload string) {
+	t.Helper()
+	if eventType != domain.EventTypeMCPToolCall {
+		t.Fatalf("event_type = %q, want %q", eventType, domain.EventTypeMCPToolCall)
+	}
+	var decoded map[string]any
 	if err := json.Unmarshal([]byte(payload), &decoded); err != nil {
-		t.Fatalf("payload not JSON after finish: %v", err)
+		t.Fatalf("payload not JSON: %v (raw=%q)", err, payload)
 	}
-	if decoded["status"] != "ok" {
-		t.Fatalf("payload.status after finish = %v, want ok", decoded["status"])
+	for key, want := range map[string]any{"tool_name": "tasks.create", "source": "mcp", "entrypoint": "tools/call", "status": "running"} {
+		if decoded[key] != want {
+			t.Errorf("payload.%s = %v, want %v", key, decoded[key], want)
+		}
 	}
-	if int(decoded["duration_ms"].(float64)) != 123 {
-		t.Fatalf("payload.duration_ms after finish = %v, want 123", decoded["duration_ms"])
+	args, ok := decoded["args"].(map[string]any)
+	if !ok || args["title"] != "Hello" {
+		t.Errorf("payload.args.title = %v, want Hello", decoded["args"])
 	}
 }
 
-// TestMigration019RenamesLegacyOperationRows confirms the migration
-// backfill renames pre-#109 operation rows to the source-discriminated
-// `<source>.tool_call` vocabulary and enriches the payload with mirror
-// keys so hook `when:` filters can match without reading SQL columns.
-// Simulated by inserting legacy-shape rows AFTER the migration has run
-// and re-executing the migration SQL — the UPDATEs are idempotent.
-func TestMigration019RenamesLegacyOperationRows(t *testing.T) {
+func assertToolCallFinish(t *testing.T, payload string) {
+	t.Helper()
+	var decoded map[string]any
+	if err := json.Unmarshal([]byte(payload), &decoded); err != nil {
+		t.Fatalf("payload not JSON after finish: %v", err)
+	}
+	if decoded["status"] != "ok" || int(decoded["duration_ms"].(float64)) != 123 {
+		t.Errorf("finished payload = %v, want status=ok duration_ms=123", decoded)
+	}
+}
+
+func TestCurrentSchemaContainsEventsLog(t *testing.T) {
 	ctx := context.Background()
 	store, err := Open(ctx, t.TempDir()+"/omakiten.db")
 	if err != nil {
@@ -302,98 +288,13 @@ func TestMigration019RenamesLegacyOperationRows(t *testing.T) {
 	}
 	defer func() { _ = store.Close() }()
 
-	// Seed three legacy rows directly — one per source — using the
-	// pre-019 event_type and raw arguments payload.
-	for _, seed := range []struct {
-		source, op, args string
-	}{
-		{"cli", "okt.task.list", `{"limit":10}`},
-		{"mcp", "tasks.create", `{"title":"Hi"}`},
-		{"tui", "tui.refresh", ``},
-	} {
-		if _, err := store.db.ExecContext(ctx, `
-INSERT INTO events(entity_type, project_id, event_type, payload, source, entrypoint, operation, status, duration_ms, error_message)
-VALUES ('system', 1, 'operation', ?, ?, '', ?, 'ok', 5, '')
-`, seed.args, seed.source, seed.op); err != nil {
-			t.Fatalf("seed insert error = %v", err)
-		}
-	}
-
-	data, err := migrations.FS.ReadFile("019_unify_tool_call_events.sql")
-	if err != nil {
-		t.Fatalf("read migration error = %v", err)
-	}
-	if _, err := store.db.ExecContext(ctx, string(data)); err != nil {
-		t.Fatalf("rerun migration 019 error = %v", err)
-	}
-
-	rows, err := store.db.QueryContext(ctx, "SELECT source, event_type, payload FROM events WHERE entity_type = 'system' AND event_type LIKE '%.tool_call' ORDER BY id ASC")
-	if err != nil {
-		t.Fatalf("read migrated rows = %v", err)
-	}
-	defer func() { _ = rows.Close() }()
-
-	want := map[string]struct {
-		eventType string
-		toolName  string
-	}{
-		"cli": {domain.EventTypeCLIToolCall, "okt.task.list"},
-		"mcp": {domain.EventTypeMCPToolCall, "tasks.create"},
-		"tui": {domain.EventTypeTUIToolCall, "tui.refresh"},
-	}
-	seen := 0
-	for rows.Next() {
-		var source, eventType, payload string
-		if err := rows.Scan(&source, &eventType, &payload); err != nil {
-			t.Fatalf("scan = %v", err)
-		}
-		expect, ok := want[source]
-		if !ok {
-			t.Fatalf("unexpected source %q", source)
-		}
-		if eventType != expect.eventType {
-			t.Fatalf("source %q event_type = %q, want %q", source, eventType, expect.eventType)
-		}
-		var decoded map[string]any
-		if err := json.Unmarshal([]byte(payload), &decoded); err != nil {
-			t.Fatalf("source %q payload not JSON: %v (raw=%q)", source, err, payload)
-		}
-		if decoded["tool_name"] != expect.toolName {
-			t.Fatalf("source %q payload.tool_name = %v, want %q", source, decoded["tool_name"], expect.toolName)
-		}
-		if decoded["source"] != source {
-			t.Fatalf("source %q payload.source = %v, want %q", source, decoded["source"], source)
-		}
-		seen++
-	}
-	if seen != 3 {
-		t.Fatalf("migrated rows = %d, want 3", seen)
-	}
-}
-
-func TestActivityLogMigrationIdempotent(t *testing.T) {
-	ctx := context.Background()
-	store, err := Open(ctx, t.TempDir()+"/omakiten.db")
-	if err != nil {
-		t.Fatalf("Open() #1 error = %v", err)
-	}
-	if err := store.Close(); err != nil {
-		t.Fatalf("Close() #1 error = %v", err)
-	}
-
-	store2, err := Open(ctx, t.TempDir()+"/omakiten2.db")
-	if err != nil {
-		t.Fatalf("Open() #2 error = %v", err)
-	}
-	defer func() { _ = store2.Close() }()
-
 	// Sanity: events table must exist (activity_logs was folded into events
-	// in migration 009 — the legacy table is gone).
+	// in the current schema — the legacy table is gone).
 	var count int
-	if err := store2.db.QueryRowContext(ctx, "SELECT COUNT(1) FROM sqlite_master WHERE type='table' AND name='events'").Scan(&count); err != nil {
+	if err := store.db.QueryRowContext(ctx, "SELECT COUNT(1) FROM sqlite_master WHERE type='table' AND name='events'").Scan(&count); err != nil {
 		t.Fatalf("table check error = %v", err)
 	}
 	if count != 1 {
-		t.Fatalf("events table missing after migration")
+		t.Fatalf("events table missing from current schema")
 	}
 }

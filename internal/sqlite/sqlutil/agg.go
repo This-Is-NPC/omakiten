@@ -7,15 +7,15 @@ package sqlutil
 // model-attribution query must exclude them with exactly this clause.
 //
 // This is the single source of truth for the filter: `metrics.go` and
-// `insights.go` both reference it instead of hand-writing `agent_model
-// != ”` (or the equivalent `<> ”`), so the two query families can
+// `insights.go` both reference it instead of hand-writing the
+// agent_model empty-string comparison, so the two query families can
 // never drift onto divergent attribution rules. When the events table
 // lives behind an alias, wrap it with AgentAttributedFilterFor.
 const AgentAttributedFilter = "agent_model != ''"
 
 // AgentAttributedFilterFor returns the attribution filter qualified by
 // a table alias, e.g. AgentAttributedFilterFor("r") yields
-// `r.agent_model != ”`. An empty alias returns the bare
+// the same predicate qualified as r.agent_model. An empty alias returns the bare
 // AgentAttributedFilter unchanged. Use this in queries that join
 // `events` to itself (or to other tables) and therefore must prefix the
 // column to disambiguate it.

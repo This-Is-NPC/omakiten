@@ -113,36 +113,52 @@ func diffLeaves(user, kit *yaml.Node, prefix string, out map[string]string) {
 	case yaml.ScalarNode:
 		out[prefix] = classifyLeaf(user, kit)
 	case yaml.MappingNode:
-		if len(user.Content) == 0 {
-			out[prefix] = classifyLeaf(user, kit)
-			return
-		}
-		for i := 0; i+1 < len(user.Content); i += 2 {
-			k := user.Content[i]
-			v := user.Content[i+1]
-			if k.Kind != yaml.ScalarNode {
-				continue
-			}
-			kitChild := mappingValueByKey(kit, k.Value)
-			diffLeaves(v, kitChild, joinPath(prefix, k.Value), out)
-		}
+		diffMappingLeaves(user, kit, prefix, out)
 	case yaml.SequenceNode:
-		if len(user.Content) == 0 {
-			out[prefix] = classifyLeaf(user, kit)
-			return
-		}
-		for i, c := range user.Content {
-			kitItem := sequenceItem(kit, i)
-			diffLeaves(c, kitItem, joinPath(prefix, fmt.Sprintf("[%d]", i)), out)
-		}
+		diffSequenceLeaves(user, kit, prefix, out)
 	case yaml.AliasNode:
-		if user.Alias != nil {
-			diffLeaves(user.Alias, kit, prefix, out)
-		}
+		diffAliasLeaves(user, kit, prefix, out)
 	case yaml.DocumentNode:
-		if len(user.Content) == 1 {
-			diffLeaves(user.Content[0], kit, prefix, out)
+		diffDocumentLeaves(user, kit, prefix, out)
+	}
+}
+
+func diffMappingLeaves(user, kit *yaml.Node, prefix string, out map[string]string) {
+	if len(user.Content) == 0 {
+		out[prefix] = classifyLeaf(user, kit)
+		return
+	}
+	for i := 0; i+1 < len(user.Content); i += 2 {
+		k := user.Content[i]
+		v := user.Content[i+1]
+		if k.Kind != yaml.ScalarNode {
+			continue
 		}
+		kitChild := mappingValueByKey(kit, k.Value)
+		diffLeaves(v, kitChild, joinPath(prefix, k.Value), out)
+	}
+}
+
+func diffSequenceLeaves(user, kit *yaml.Node, prefix string, out map[string]string) {
+	if len(user.Content) == 0 {
+		out[prefix] = classifyLeaf(user, kit)
+		return
+	}
+	for i, c := range user.Content {
+		kitItem := sequenceItem(kit, i)
+		diffLeaves(c, kitItem, joinPath(prefix, fmt.Sprintf("[%d]", i)), out)
+	}
+}
+
+func diffAliasLeaves(user, kit *yaml.Node, prefix string, out map[string]string) {
+	if user.Alias != nil {
+		diffLeaves(user.Alias, kit, prefix, out)
+	}
+}
+
+func diffDocumentLeaves(user, kit *yaml.Node, prefix string, out map[string]string) {
+	if len(user.Content) == 1 {
+		diffLeaves(user.Content[0], kit, prefix, out)
 	}
 }
 

@@ -193,29 +193,11 @@ func (s *Store) checkSearchIndexSnapshotWithHooks(ctx context.Context, hooks sea
 	defer release()
 	transaction := transactionControl{invalidate: connection.invalidate, rollbackLabel: "rollback search transaction"}
 	for attempt := 1; attempt <= searchCheckGenerationAttempts; attempt++ {
-		beforeVersion, err := readDataVersion(ctx, conn, "read search data_version")
-		if err != nil {
-			return domain.SearchIndexIntegrityReport{}, err
-		}
-		var afterCanonical func()
-		if hooks.AfterCanonical != nil {
-			afterCanonical = func() { hooks.AfterCanonical(attempt) }
-		}
-		report, err := checkSearchIndexLogicalSnapshot(ctx, conn, afterCanonical, transaction)
+		report, stable, err := checkSearchIndexAttempt(ctx, conn, hooks, transaction, attempt)
 		if err != nil {
 			return report, err
 		}
-		if hooks.BeforeFTS != nil {
-			hooks.BeforeFTS(attempt)
-		}
-		if err := attachSearchIndexFTSIntegrity(ctx, conn, &report); err != nil {
-			return report, err
-		}
-		afterVersion, err := readDataVersion(ctx, conn, "read search data_version")
-		if err != nil {
-			return report, err
-		}
-		if afterVersion != beforeVersion {
+		if !stable {
 			continue
 		}
 		if connection.validateIdentity != nil {
@@ -226,6 +208,32 @@ func (s *Store) checkSearchIndexSnapshotWithHooks(ctx context.Context, hooks sea
 		return report, nil
 	}
 	return domain.SearchIndexIntegrityReport{}, errors.New("search index changed during every integrity check attempt")
+}
+
+func checkSearchIndexAttempt(ctx context.Context, conn *sql.Conn, hooks searchCheckHooks, transaction transactionControl, attempt int) (domain.SearchIndexIntegrityReport, bool, error) {
+	beforeVersion, err := readDataVersion(ctx, conn, "read search data_version")
+	if err != nil {
+		return domain.SearchIndexIntegrityReport{}, false, err
+	}
+	var afterCanonical func()
+	if hooks.AfterCanonical != nil {
+		afterCanonical = func() { hooks.AfterCanonical(attempt) }
+	}
+	report, err := checkSearchIndexLogicalSnapshot(ctx, conn, afterCanonical, transaction)
+	if err != nil {
+		return report, false, err
+	}
+	if hooks.BeforeFTS != nil {
+		hooks.BeforeFTS(attempt)
+	}
+	if err := attachSearchIndexFTSIntegrity(ctx, conn, &report); err != nil {
+		return report, false, err
+	}
+	afterVersion, err := readDataVersion(ctx, conn, "read search data_version")
+	if err != nil {
+		return report, false, err
+	}
+	return report, afterVersion == beforeVersion, nil
 }
 
 func checkSearchIndexLogicalSnapshot(ctx context.Context, conn searchIndexDB, afterCanonical func(), control transactionControl) (report domain.SearchIndexIntegrityReport, returnErr error) {
@@ -263,7 +271,7 @@ func (s *Store) reindexSearchWithPolicy(ctx context.Context, check searchIndexCh
 		return domain.SearchIndexReindexReport{}, err
 	}
 	defer release()
-	busyTimeoutMs := s.busyTimeoutMs
+	busyTimeoutMs := s.busyTimeout()
 	if busyTimeoutMs <= 0 {
 		busyTimeoutMs = kitBusyTimeoutMs()
 	}
@@ -299,35 +307,8 @@ func reindexSearchOnConn(ctx context.Context, conn searchIndexDB, check searchIn
 			"report":                before,
 		})
 	}
-	triggerNames, err := searchTriggerNames(ctx, conn)
-	if err != nil {
+	if err := rebuildSearchIndex(ctx, conn); err != nil {
 		return result, err
-	}
-	for _, name := range triggerNames {
-		if _, err := conn.ExecContext(ctx, `DROP TRIGGER `+quoteSQLiteIdentifier(name)); err != nil {
-			return result, errors.New("drop search-index trigger failed")
-		}
-	}
-	if _, err := conn.ExecContext(ctx, `DELETE FROM search_index`); err != nil {
-		return result, fmt.Errorf("clear search index: %w", err)
-	}
-	if _, err := conn.ExecContext(ctx, `INSERT INTO search_index(search_index) VALUES('rebuild')`); err != nil {
-		return result, fmt.Errorf("reset search index internals: %w", err)
-	}
-	if _, err := conn.ExecContext(ctx, canonicalSearchSourceCTE+`
-INSERT INTO search_index(content, entity_type, entity_id, project_id)
-SELECT content, entity_type, entity_id, project_id FROM canonical`); err != nil {
-		return result, fmt.Errorf("rebuild search index: %w", err)
-	}
-	canonicalNames := make([]string, 0, len(canonicalSearchTriggers))
-	for name := range canonicalSearchTriggers {
-		canonicalNames = append(canonicalNames, name)
-	}
-	sort.Strings(canonicalNames)
-	for _, name := range canonicalNames {
-		if _, err := conn.ExecContext(ctx, canonicalSearchTriggers[name]); err != nil {
-			return result, fmt.Errorf("create search trigger %s: %w", name, err)
-		}
 	}
 	after, err := check(ctx, conn)
 	result.After = after
@@ -352,6 +333,40 @@ SELECT content, entity_type, entity_id, project_id FROM canonical`); err != nil 
 	return result, nil
 }
 
+func rebuildSearchIndex(ctx context.Context, conn searchIndexDB) error {
+	triggerNames, err := searchTriggerNames(ctx, conn)
+	if err != nil {
+		return err
+	}
+	for _, name := range triggerNames {
+		if _, err := conn.ExecContext(ctx, `DROP TRIGGER `+quoteSQLiteIdentifier(name)); err != nil {
+			return errors.New("drop search-index trigger failed")
+		}
+	}
+	if _, err := conn.ExecContext(ctx, `DELETE FROM search_index`); err != nil {
+		return fmt.Errorf("clear search index: %w", err)
+	}
+	if _, err := conn.ExecContext(ctx, `INSERT INTO search_index(search_index) VALUES('rebuild')`); err != nil {
+		return fmt.Errorf("reset search index internals: %w", err)
+	}
+	if _, err := conn.ExecContext(ctx, canonicalSearchSourceCTE+`
+INSERT INTO search_index(content, entity_type, entity_id, project_id)
+SELECT content, entity_type, entity_id, project_id FROM canonical`); err != nil {
+		return fmt.Errorf("rebuild search index: %w", err)
+	}
+	canonicalNames := make([]string, 0, len(canonicalSearchTriggers))
+	for name := range canonicalSearchTriggers {
+		canonicalNames = append(canonicalNames, name)
+	}
+	sort.Strings(canonicalNames)
+	for _, name := range canonicalNames {
+		if _, err := conn.ExecContext(ctx, canonicalSearchTriggers[name]); err != nil {
+			return fmt.Errorf("create search trigger %s: %w", name, err)
+		}
+	}
+	return nil
+}
+
 // ReindexSearchConfirmedWithBackup retries until the retained backup and the
 // BEGIN IMMEDIATE transaction refer to one externally stable data_version.
 // Lease validation pins both the lock and every generated recovery pathname.
@@ -373,45 +388,13 @@ func (s *Store) reindexSearchConfirmedWithBackup(
 ) (domain.SearchIndexReindexReport, string, error) {
 	s.maintenanceMu.Lock()
 	defer s.maintenanceMu.Unlock()
-	if s.maintenanceConn == nil {
-		return domain.SearchIndexReindexReport{}, "", errors.New("confirmed backup reindex requires OpenSearchMaintenance")
-	}
-	if createBackup == nil || discardBackup == nil || validateLease == nil {
-		return domain.SearchIndexReindexReport{}, "", errors.New("confirmed backup reindex requires backup create, discard, and lease validation callbacks")
-	}
-	if err := s.validateMaintenanceIdentity(); err != nil {
-		return domain.SearchIndexReindexReport{}, "", err
-	}
-	if err := validateLease(); err != nil {
-		return domain.SearchIndexReindexReport{}, "", err
-	}
-	conn := s.maintenanceConn
-	connection := s.maintenanceSearchConnectionControl(conn)
-	transaction := transactionControl{
-		invalidate:    connection.invalidate,
-		rollbackLabel: "rollback search transaction",
-	}
-	busyTimeoutMs := s.busyTimeoutMs
-	if busyTimeoutMs <= 0 {
-		busyTimeoutMs = kitBusyTimeoutMs()
-	}
-	if _, err := conn.ExecContext(ctx, fmt.Sprintf("PRAGMA busy_timeout = %d", busyTimeoutMs)); err != nil {
-		return domain.SearchIndexReindexReport{}, "", fmt.Errorf("apply busy_timeout: %w", err)
-	}
-	if _, err := conn.ExecContext(ctx, "BEGIN IMMEDIATE"); err != nil {
-		return domain.SearchIndexReindexReport{}, "", fmt.Errorf("begin reconstructive policy check: %w", err)
-	}
-	policyReport, err := checkSearchIndex(ctx, conn)
+	state, err := s.prepareConfirmedSearchReindex(ctx, createBackup, discardBackup, validateLease)
 	if err != nil {
-		primaryErr := fmt.Errorf("reconstructive policy check: %w", err)
-		return domain.SearchIndexReindexReport{}, "", errors.Join(primaryErr, rollbackTransactionControlled(ctx, conn, transaction))
+		return domain.SearchIndexReindexReport{}, "", err
 	}
-	if !policyReport.RequiresBackupBeforeRepair() {
-		result, err := reindexSearchOnConn(ctx, conn, checkSearchIndex, true, transaction, connection.validateIdentity)
+	if !state.requiresBackup {
+		result, err := reindexSearchOnConn(ctx, state.conn, checkSearchIndex, true, state.transaction, state.connection.validateIdentity)
 		return result, "", err
-	}
-	if err := rollbackTransactionControlled(ctx, conn, transaction); err != nil {
-		return domain.SearchIndexReindexReport{}, "", fmt.Errorf("end destructive policy check: %w", err)
 	}
 
 	validateLeaseAndIdentity := func() error {
@@ -420,16 +403,16 @@ func (s *Store) reindexSearchConfirmedWithBackup(
 		}
 		return s.validateMaintenanceIdentity()
 	}
-	backupPath, attempt, err := prepareExactGeneration(ctx, conn, searchReindexExactGenerationPolicy, exactGenerationConfig{
+	backupPath, attempt, err := prepareExactGeneration(ctx, state.conn, searchReindexExactGenerationPolicy, exactGenerationConfig{
 		create:  createBackup,
 		discard: discardBackup,
 		snapshot: func(snapshotCtx context.Context, destinationPath string) error {
-			return snapshotWithExecutor(snapshotCtx, conn, destinationPath, false, snapshotHooks{})
+			return snapshotWithExecutor(snapshotCtx, state.conn, destinationPath, false, snapshotHooks{})
 		},
 		beforeSnapshot: s.validateMaintenanceIdentity,
 		afterSnapshot:  validateLeaseAndIdentity,
 		hooks:          hooks.Generation,
-		transaction:    transaction,
+		transaction:    state.transaction,
 	})
 	if err != nil {
 		return domain.SearchIndexReindexReport{}, backupPath, err
@@ -444,7 +427,7 @@ func (s *Store) reindexSearchConfirmedWithBackup(
 		leaseOrIdentityInvalid = err != nil
 		return err
 	}
-	result, err := reindexSearchOnConn(ctx, conn, checkSearchIndex, true, transaction, beforeCommit)
+	result, err := reindexSearchOnConn(ctx, state.conn, checkSearchIndex, true, state.transaction, beforeCommit)
 	if leaseOrIdentityInvalid && !errors.Is(err, errRollbackUnproven) {
 		if discardErr := discardBackup(backupPath); discardErr != nil {
 			return result, backupPath, errors.Join(err, fmt.Errorf("discard stale reindex backup: %w", discardErr))
@@ -452,6 +435,56 @@ func (s *Store) reindexSearchConfirmedWithBackup(
 		return result, "", err
 	}
 	return result, backupPath, err
+}
+
+type confirmedSearchReindexState struct {
+	conn           *sql.Conn
+	connection     searchConnectionControl
+	transaction    transactionControl
+	requiresBackup bool
+}
+
+func (s *Store) prepareConfirmedSearchReindex(ctx context.Context, createBackup MaintenanceBackupCreator, discardBackup func(string) error, validateLease func() error) (confirmedSearchReindexState, error) {
+	if s.maintenanceConn == nil {
+		return confirmedSearchReindexState{}, errors.New("confirmed backup reindex requires OpenSearchMaintenance")
+	}
+	if createBackup == nil || discardBackup == nil || validateLease == nil {
+		return confirmedSearchReindexState{}, errors.New("confirmed backup reindex requires backup create, discard, and lease validation callbacks")
+	}
+	if err := s.validateMaintenanceIdentity(); err != nil {
+		return confirmedSearchReindexState{}, err
+	}
+	if err := validateLease(); err != nil {
+		return confirmedSearchReindexState{}, err
+	}
+	conn := s.maintenanceConn
+	connection := s.maintenanceSearchConnectionControl(conn)
+	transaction := transactionControl{
+		invalidate:    connection.invalidate,
+		rollbackLabel: "rollback search transaction",
+	}
+	busyTimeoutMs := s.busyTimeout()
+	if busyTimeoutMs <= 0 {
+		busyTimeoutMs = kitBusyTimeoutMs()
+	}
+	if _, err := conn.ExecContext(ctx, fmt.Sprintf("PRAGMA busy_timeout = %d", busyTimeoutMs)); err != nil {
+		return confirmedSearchReindexState{}, fmt.Errorf("apply busy_timeout: %w", err)
+	}
+	if _, err := conn.ExecContext(ctx, "BEGIN IMMEDIATE"); err != nil {
+		return confirmedSearchReindexState{}, fmt.Errorf("begin reconstructive policy check: %w", err)
+	}
+	policyReport, err := checkSearchIndex(ctx, conn)
+	if err != nil {
+		primaryErr := fmt.Errorf("reconstructive policy check: %w", err)
+		return confirmedSearchReindexState{}, errors.Join(primaryErr, rollbackTransactionControlled(ctx, conn, transaction))
+	}
+	if !policyReport.RequiresBackupBeforeRepair() {
+		return confirmedSearchReindexState{conn: conn, connection: connection, transaction: transaction}, nil
+	}
+	if err := rollbackTransactionControlled(ctx, conn, transaction); err != nil {
+		return confirmedSearchReindexState{}, fmt.Errorf("end destructive policy check: %w", err)
+	}
+	return confirmedSearchReindexState{conn: conn, connection: connection, transaction: transaction, requiresBackup: true}, nil
 }
 
 func (s *Store) acquireSearchMaintenanceConn(ctx context.Context) (*sql.Conn, func(), error) {
@@ -527,69 +560,11 @@ func checkSearchIndexLogical(ctx context.Context, db searchIndexDB, afterCanonic
 		defer cancel()
 		_ = cleanupSearchCheckTables(cleanupCtx, db)
 	}()
-	types := make(map[string]*domain.SearchIndexTypeReport)
-	for _, entityType := range domain.AllSearchEntityTypes() {
-		name := string(entityType)
-		typeReport := newSearchIndexTypeReport(name)
-		types[name] = &typeReport
-	}
-	getType := func(name string) *domain.SearchIndexTypeReport {
-		if typeReport, ok := types[name]; ok {
-			return typeReport
-		}
-		typeReport := newSearchIndexTypeReport(name)
-		types[name] = &typeReport
-		return &typeReport
-	}
-	rows, err := db.QueryContext(ctx, `
-SELECT 'source', entity_type, COUNT(*) FROM search_check_canonical GROUP BY entity_type
-UNION ALL
-SELECT 'index', entity_type, COUNT(*) FROM search_check_index GROUP BY entity_type`)
-	if err != nil {
-		return report, fmt.Errorf("search index totals: %w", err)
-	}
-	for rows.Next() {
-		var side, entityType string
-		var count int64
-		if err := rows.Scan(&side, &entityType, &count); err != nil {
-			_ = rows.Close()
-			return report, err
-		}
-		if side == "source" {
-			getType(entityType).SourceTotal = count
-			report.SourceTotal += count
-		} else {
-			getType(entityType).IndexTotal = count
-			report.IndexTotal += count
-		}
-	}
-	if err := rows.Close(); err != nil {
+	types := newSearchIndexTypeReports()
+	if err := appendSearchIndexTotals(ctx, db, types, &report); err != nil {
 		return report, err
 	}
-	detailRows, err := db.QueryContext(ctx, `WITH issues AS (`+searchIndexIssueRowsSQL+`), ranked AS (
-SELECT issues.*, ROW_NUMBER() OVER (
-  PARTITION BY kind, entity_type ORDER BY entity_id, project_id, indexed_project_id
-) AS sample_rank, COUNT(*) OVER (PARTITION BY kind, entity_type) AS issue_count FROM issues
-)
-SELECT kind, entity_type, entity_id, project_id, indexed_project_id,
-       entity_type_storage, entity_id_storage, project_id_storage, issue_count
-  FROM ranked WHERE sample_rank <= ?
- ORDER BY kind, entity_type, sample_rank`, searchIndexDetailLimit)
-	if err != nil {
-		return report, fmt.Errorf("search index issue details: %w", err)
-	}
-	for detailRows.Next() {
-		var kind, entityType, entityTypeStorage, entityIDStorage, projectIDStorage string
-		var entityID, projectID, indexedProjectID, count int64
-		if err := detailRows.Scan(&kind, &entityType, &entityID, &projectID, &indexedProjectID, &entityTypeStorage, &entityIDStorage, &projectIDStorage, &count); err != nil {
-			_ = detailRows.Close()
-			return report, err
-		}
-		typeReport := getType(entityType)
-		setSearchIssueCount(typeReport, kind, count)
-		appendSearchIssueDetail(typeReport, kind, entityID, projectID, indexedProjectID, entityTypeStorage, entityIDStorage, projectIDStorage)
-	}
-	if err := detailRows.Close(); err != nil {
+	if err := appendSearchIndexIssueDetails(ctx, db, types); err != nil {
 		return report, err
 	}
 	triggerReport, err := checkSearchTriggers(ctx, db)
@@ -614,6 +589,78 @@ SELECT kind, entity_type, entity_id, project_id, indexed_project_id,
 		report.Types = append(report.Types, *typeReport)
 	}
 	return report, nil
+}
+
+func newSearchIndexTypeReports() map[string]*domain.SearchIndexTypeReport {
+	types := make(map[string]*domain.SearchIndexTypeReport)
+	for _, entityType := range domain.AllSearchEntityTypes() {
+		name := string(entityType)
+		typeReport := newSearchIndexTypeReport(name)
+		types[name] = &typeReport
+	}
+	return types
+}
+
+func searchIndexTypeReport(types map[string]*domain.SearchIndexTypeReport, name string) *domain.SearchIndexTypeReport {
+	if typeReport, ok := types[name]; ok {
+		return typeReport
+	}
+	typeReport := newSearchIndexTypeReport(name)
+	types[name] = &typeReport
+	return &typeReport
+}
+
+func appendSearchIndexTotals(ctx context.Context, db searchIndexDB, types map[string]*domain.SearchIndexTypeReport, report *domain.SearchIndexIntegrityReport) error {
+	rows, err := db.QueryContext(ctx, `
+SELECT 'source', entity_type, COUNT(*) FROM search_check_canonical GROUP BY entity_type
+UNION ALL
+SELECT 'index', entity_type, COUNT(*) FROM search_check_index GROUP BY entity_type`)
+	if err != nil {
+		return fmt.Errorf("search index totals: %w", err)
+	}
+	for rows.Next() {
+		var side, entityType string
+		var count int64
+		if err := rows.Scan(&side, &entityType, &count); err != nil {
+			_ = rows.Close()
+			return err
+		}
+		if side == "source" {
+			searchIndexTypeReport(types, entityType).SourceTotal = count
+			report.SourceTotal += count
+		} else {
+			searchIndexTypeReport(types, entityType).IndexTotal = count
+			report.IndexTotal += count
+		}
+	}
+	return rows.Close()
+}
+
+func appendSearchIndexIssueDetails(ctx context.Context, db searchIndexDB, types map[string]*domain.SearchIndexTypeReport) error {
+	detailRows, err := db.QueryContext(ctx, `WITH issues AS (`+searchIndexIssueRowsSQL+`), ranked AS (
+SELECT issues.*, ROW_NUMBER() OVER (
+  PARTITION BY kind, entity_type ORDER BY entity_id, project_id, indexed_project_id
+) AS sample_rank, COUNT(*) OVER (PARTITION BY kind, entity_type) AS issue_count FROM issues
+)
+SELECT kind, entity_type, entity_id, project_id, indexed_project_id,
+       entity_type_storage, entity_id_storage, project_id_storage, issue_count
+  FROM ranked WHERE sample_rank <= ?
+ ORDER BY kind, entity_type, sample_rank`, searchIndexDetailLimit)
+	if err != nil {
+		return fmt.Errorf("search index issue details: %w", err)
+	}
+	for detailRows.Next() {
+		var kind, entityType, entityTypeStorage, entityIDStorage, projectIDStorage string
+		var entityID, projectID, indexedProjectID, count int64
+		if err := detailRows.Scan(&kind, &entityType, &entityID, &projectID, &indexedProjectID, &entityTypeStorage, &entityIDStorage, &projectIDStorage, &count); err != nil {
+			_ = detailRows.Close()
+			return err
+		}
+		typeReport := searchIndexTypeReport(types, entityType)
+		setSearchIssueCount(typeReport, kind, count)
+		appendSearchIssueDetail(typeReport, kind, entityID, projectID, indexedProjectID, entityTypeStorage, entityIDStorage, projectIDStorage)
+	}
+	return detailRows.Close()
 }
 
 func attachSearchIndexFTSIntegrity(ctx context.Context, db searchIndexDB, report *domain.SearchIndexIntegrityReport) error {
@@ -828,98 +875,134 @@ func triggerSQLTargetsSearchIndex(definition string) bool {
 		}
 	}
 	for index := start; index < len(tokens); index++ {
-		var target int
-		switch tokens[index] {
-		case "insert", "replace":
-			target = index + 1
-			if target < len(tokens) && tokens[target] == "or" {
-				target += 2
-			}
-			if target >= len(tokens) || tokens[target] != "into" {
-				continue
-			}
-			target++
-		case "delete":
-			target = index + 1
-			if target >= len(tokens) || tokens[target] != "from" {
-				continue
-			}
-			target++
-		case "update":
-			target = index + 1
-			if target < len(tokens) && tokens[target] == "or" {
-				target += 2
-			}
-		default:
-			continue
-		}
-		if target < len(tokens) && (tokens[target] == "search_index" || strings.HasPrefix(tokens[target], "search_index_")) {
+		if triggerSQLTargetIsSearchIndex(tokens, index) {
 			return true
 		}
 	}
 	return false
 }
 
+func triggerSQLTargetIsSearchIndex(tokens []string, index int) bool {
+	target, ok := triggerSQLTarget(tokens, index)
+	return ok && target < len(tokens) && (tokens[target] == "search_index" || strings.HasPrefix(tokens[target], "search_index_"))
+}
+
+func triggerSQLTarget(tokens []string, index int) (int, bool) {
+	target := index + 1
+	switch tokens[index] {
+	case "insert", "replace":
+		if target < len(tokens) && tokens[target] == "or" {
+			target += 2
+		}
+		if target >= len(tokens) || tokens[target] != "into" {
+			return 0, false
+		}
+		return target + 1, true
+	case "delete":
+		if target >= len(tokens) || tokens[target] != "from" {
+			return 0, false
+		}
+		return target + 1, true
+	case "update":
+		if target < len(tokens) && tokens[target] == "or" {
+			target += 2
+		}
+		return target, true
+	default:
+		return 0, false
+	}
+}
+
 func sqliteSQLIdentifiers(statement string) []string {
 	runes := []rune(statement)
 	identifiers := make([]string, 0, len(runes)/8)
 	for index := 0; index < len(runes); {
-		switch {
-		case runes[index] == '-' && index+1 < len(runes) && runes[index+1] == '-':
-			index += 2
-			for index < len(runes) && runes[index] != '\n' {
-				index++
-			}
-		case runes[index] == '/' && index+1 < len(runes) && runes[index+1] == '*':
-			index += 2
-			for index+1 < len(runes) && (runes[index] != '*' || runes[index+1] != '/') {
-				index++
-			}
-			if index+1 < len(runes) {
-				index += 2
-			}
-		case runes[index] == '\'':
-			index++
-			for index < len(runes) {
-				if runes[index] != '\'' {
-					index++
-					continue
-				}
-				index++
-				if index < len(runes) && runes[index] == '\'' {
-					index++
-					continue
-				}
-				break
-			}
-		case runes[index] == '"' || runes[index] == '`' || runes[index] == '[':
-			opening := runes[index]
-			closing := opening
-			if opening == '[' {
-				closing = ']'
-			}
-			index++
-			start := index
-			for index < len(runes) && runes[index] != closing {
-				index++
-			}
-			if index > start {
-				identifiers = append(identifiers, strings.ToLower(string(runes[start:index])))
-			}
-			if index < len(runes) {
-				index++
-			}
-		case isSQLiteIdentifierRune(runes[index]):
-			start := index
-			for index < len(runes) && isSQLiteIdentifierRune(runes[index]) {
-				index++
-			}
-			identifiers = append(identifiers, strings.ToLower(string(runes[start:index])))
-		default:
-			index++
+		identifier, next := scanSQLiteIdentifier(runes, index)
+		if identifier != "" {
+			identifiers = append(identifiers, identifier)
 		}
+		index = next
 	}
 	return identifiers
+}
+
+func scanSQLiteIdentifier(runes []rune, index int) (string, int) {
+	switch {
+	case runes[index] == '-' && index+1 < len(runes) && runes[index+1] == '-':
+		return "", skipSQLiteLineComment(runes, index+2)
+	case runes[index] == '/' && index+1 < len(runes) && runes[index+1] == '*':
+		return "", skipSQLiteBlockComment(runes, index+2)
+	case runes[index] == '\'':
+		return "", skipSQLiteString(runes, index+1)
+	case runes[index] == '"' || runes[index] == '`' || runes[index] == '[':
+		return scanSQLiteQuotedIdentifier(runes, index)
+	case isSQLiteIdentifierRune(runes[index]):
+		return scanSQLiteBareIdentifier(runes, index)
+	default:
+		return "", index + 1
+	}
+}
+
+func skipSQLiteLineComment(runes []rune, index int) int {
+	for index < len(runes) && runes[index] != '\n' {
+		index++
+	}
+	return index
+}
+
+func skipSQLiteBlockComment(runes []rune, index int) int {
+	for index+1 < len(runes) && (runes[index] != '*' || runes[index+1] != '/') {
+		index++
+	}
+	if index+1 < len(runes) {
+		index += 2
+	}
+	return index
+}
+
+func skipSQLiteString(runes []rune, index int) int {
+	for index < len(runes) {
+		if runes[index] != '\'' {
+			index++
+			continue
+		}
+		index++
+		if index < len(runes) && runes[index] == '\'' {
+			index++
+			continue
+		}
+		break
+	}
+	return index
+}
+
+func scanSQLiteQuotedIdentifier(runes []rune, index int) (string, int) {
+	opening := runes[index]
+	closing := opening
+	if opening == '[' {
+		closing = ']'
+	}
+	index++
+	start := index
+	for index < len(runes) && runes[index] != closing {
+		index++
+	}
+	identifier := ""
+	if index > start {
+		identifier = strings.ToLower(string(runes[start:index]))
+	}
+	if index < len(runes) {
+		index++
+	}
+	return identifier, index
+}
+
+func scanSQLiteBareIdentifier(runes []rune, index int) (string, int) {
+	start := index
+	for index < len(runes) && isSQLiteIdentifierRune(runes[index]) {
+		index++
+	}
+	return strings.ToLower(string(runes[start:index])), index
 }
 
 func isSQLiteIdentifierRune(value rune) bool {

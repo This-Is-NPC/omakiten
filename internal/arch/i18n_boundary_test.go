@@ -33,32 +33,36 @@ func TestI18nBoundary(t *testing.T) {
 	}
 	var violations []string
 	for _, dir := range dirs {
-		err := filepath.WalkDir(dir, func(path string, d os.DirEntry, walkErr error) error {
-			if walkErr != nil {
-				return walkErr
-			}
-			if d.IsDir() {
-				return nil
-			}
-			if !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
-				return nil
-			}
-			data, err := os.ReadFile(path)
-			if err != nil {
-				return err
-			}
-			if loc := catalogReferencePattern.FindIndex(data); loc != nil {
-				match := string(data[loc[0]:loc[1]])
-				rel, _ := filepath.Rel(root, path)
-				violations = append(violations, rel+": names "+match)
-			}
-			return nil
-		})
+		dirViolations, err := findI18nBoundaryViolations(root, dir)
 		if err != nil {
 			t.Fatalf("walk %s: %v", dir, err)
 		}
+		violations = append(violations, dirViolations...)
 	}
 	if len(violations) > 0 {
 		t.Fatalf("i18n boundary violations (inner layers must not name catalog types directly):\n  - %s", strings.Join(violations, "\n  - "))
 	}
+}
+
+func findI18nBoundaryViolations(root, dir string) ([]string, error) {
+	var violations []string
+	err := filepath.WalkDir(dir, func(path string, d os.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if d.IsDir() || !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
+			return nil
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		if loc := catalogReferencePattern.FindIndex(data); loc != nil {
+			match := string(data[loc[0]:loc[1]])
+			rel, _ := filepath.Rel(root, path)
+			violations = append(violations, rel+": names "+match)
+		}
+		return nil
+	})
+	return violations, err
 }

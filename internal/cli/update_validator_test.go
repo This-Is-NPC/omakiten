@@ -62,13 +62,14 @@ func TestRunUpdate_ValidatorOKAllowsSwap(t *testing.T) {
 	validator := &stubValidator{result: updateValidatorResult{OK: true}}
 	backup := &stubBackupRunner{path: "/tmp/backup.db"}
 	c := updateClient{
-		Fetcher:    stubFetcher{Tag: "0.20.0"},
-		Downloader: stubDownloader{Assets: map[string][]byte{asset: archive}},
-		Current:    "0.19.0",
-		BinaryPath: bin,
-		ConfigPath: filepath.Join(dir, "omakase.yaml"),
-		Validator:  validator.fn(),
-		Backup:     backup,
+		Fetcher:         stubFetcher{Tag: "0.32.0"},
+		Downloader:      stubDownloader{Assets: map[string][]byte{asset: archive}},
+		Current:         "0.31.0",
+		BinaryPath:      bin,
+		ConfigPath:      filepath.Join(dir, "omakase.yaml"),
+		Validator:       validator.fn(),
+		Backup:          backup,
+		ReleaseVerifier: acceptingReleaseVerifier(),
 	}
 	res, err := runUpdate(context.Background(), c, updateInputs{Yes: true})
 	if err != nil {
@@ -99,6 +100,13 @@ func TestRunUpdate_ValidatorFailAbortsSwapAndBackup(t *testing.T) {
 	if goruntime.GOOS == "windows" {
 		t.Skip("posix archive shape")
 	}
+	c, validator, backup, bin := validatorFailureFixture(t)
+	_, err := runUpdate(context.Background(), c, updateInputs{Yes: true})
+	assertValidatorFailure(t, err, validator, backup, bin)
+}
+
+func validatorFailureFixture(t *testing.T) (updateClient, *stubValidator, *stubBackupRunner, string) {
+	t.Helper()
 	dir := t.TempDir()
 	bin := filepath.Join(dir, "okt")
 	if err := os.WriteFile(bin, []byte("OLD"), 0o755); err != nil {
@@ -123,16 +131,20 @@ func TestRunUpdate_ValidatorFailAbortsSwapAndBackup(t *testing.T) {
 		RawOutput: []byte(`{"ok":false}`),
 	}}
 	backup := &stubBackupRunner{path: "/tmp/backup.db"}
-	c := updateClient{
-		Fetcher:    stubFetcher{Tag: "0.20.0"},
-		Downloader: stubDownloader{Assets: map[string][]byte{asset: archive}},
-		Current:    "0.19.0",
-		BinaryPath: bin,
-		ConfigPath: filepath.Join(dir, "omakase.yaml"),
-		Validator:  validator.fn(),
-		Backup:     backup,
-	}
-	_, err = runUpdate(context.Background(), c, updateInputs{Yes: true})
+	return updateClient{
+		Fetcher:         stubFetcher{Tag: "0.32.0"},
+		Downloader:      stubDownloader{Assets: map[string][]byte{asset: archive}},
+		Current:         "0.31.0",
+		BinaryPath:      bin,
+		ConfigPath:      filepath.Join(dir, "omakase.yaml"),
+		Validator:       validator.fn(),
+		Backup:          backup,
+		ReleaseVerifier: acceptingReleaseVerifier(),
+	}, validator, backup, bin
+}
+
+func assertValidatorFailure(t *testing.T, err error, validator *stubValidator, backup *stubBackupRunner, bin string) {
+	t.Helper()
 	if err == nil {
 		t.Fatalf("expected validator non-zero to abort the update")
 	}
@@ -169,7 +181,6 @@ func TestRunUpdate_ValidatorFailAbortsSwapAndBackup(t *testing.T) {
 	if coded.Details["staged_path"] == "" {
 		t.Fatalf("details.staged_path missing — caller needs to surface it for cleanup tracing")
 	}
-	// Staged file must have been cleaned up by the defer guard.
 	staged, _ := coded.Details["staged_path"].(string)
 	if staged != "" {
 		if _, statErr := os.Stat(staged); statErr == nil {
@@ -202,13 +213,14 @@ func TestRunUpdate_ValidatorExecErrorAbortsSwap(t *testing.T) {
 	validator := &stubValidator{err: errors.New("fork/exec: permission denied")}
 	backup := &stubBackupRunner{path: "/tmp/backup.db"}
 	c := updateClient{
-		Fetcher:    stubFetcher{Tag: "0.20.0"},
-		Downloader: stubDownloader{Assets: map[string][]byte{asset: archive}},
-		Current:    "0.19.0",
-		BinaryPath: bin,
-		ConfigPath: filepath.Join(dir, "omakase.yaml"),
-		Validator:  validator.fn(),
-		Backup:     backup,
+		Fetcher:         stubFetcher{Tag: "0.32.0"},
+		Downloader:      stubDownloader{Assets: map[string][]byte{asset: archive}},
+		Current:         "0.31.0",
+		BinaryPath:      bin,
+		ConfigPath:      filepath.Join(dir, "omakase.yaml"),
+		Validator:       validator.fn(),
+		Backup:          backup,
+		ReleaseVerifier: acceptingReleaseVerifier(),
 	}
 	_, err = runUpdate(context.Background(), c, updateInputs{Yes: true})
 	if err == nil {
@@ -229,14 +241,9 @@ func TestRunUpdate_ValidatorExecErrorAbortsSwap(t *testing.T) {
 	}
 }
 
-// TestRunUpdate_EmptyConfigPathSkipsValidator pins the back-compat
-// branch: a client without a ConfigPath (e.g. tests that exercise the
-// swap directly without an associated config) must not invoke the
-// validator and must complete the swap as before. Production wiring
-// always sets ConfigPath, so this only guards the existing
-// `TestRunUpdate_YesSwapsBinary`-style tests against an accidental
-// Validator panic from a stub that never fires.
-func TestRunUpdate_EmptyConfigPathSkipsValidator(t *testing.T) {
+// TestRunUpdate_EmptyConfigPathFailsClosed prevents a missing config path
+// from bypassing the staged validation gate and reaching backup or swap.
+func TestRunUpdate_EmptyConfigPathFailsClosed(t *testing.T) {
 	if goruntime.GOOS == "windows" {
 		t.Skip("posix archive shape")
 	}
@@ -251,19 +258,23 @@ func TestRunUpdate_EmptyConfigPathSkipsValidator(t *testing.T) {
 		t.Fatalf("assetName: %v", err)
 	}
 
-	validator := &stubValidator{err: errors.New("should never be called")}
+	validator := &stubValidator{result: updateValidatorResult{OK: true}}
 	c := updateClient{
-		Fetcher:    stubFetcher{Tag: "0.20.0"},
-		Downloader: stubDownloader{Assets: map[string][]byte{asset: archive}},
-		Current:    "0.19.0",
-		BinaryPath: bin,
-		ConfigPath: "",
-		Validator:  validator.fn(),
+		Fetcher:         stubFetcher{Tag: "0.32.0"},
+		Downloader:      stubDownloader{Assets: map[string][]byte{asset: archive}},
+		Current:         "0.31.0",
+		BinaryPath:      bin,
+		ConfigPath:      "",
+		Validator:       validator.fn(),
+		ReleaseVerifier: acceptingReleaseVerifier(),
 	}
-	if _, err := runUpdate(context.Background(), c, updateInputs{Yes: true}); err != nil {
-		t.Fatalf("runUpdate: %v", err)
+	if _, err := runUpdate(context.Background(), c, updateInputs{Yes: true}); err == nil {
+		t.Fatal("runUpdate succeeded without a staged config path")
 	}
 	if validator.calls != 0 {
-		t.Fatalf("validator calls = %d want 0 (empty ConfigPath must skip the gate)", validator.calls)
+		t.Fatalf("validator calls = %d want 0 (empty ConfigPath must fail before invocation)", validator.calls)
+	}
+	if got, _ := os.ReadFile(bin); string(got) != "OLD" {
+		t.Fatalf("bin = %q want OLD (missing config path must leave the live binary untouched)", string(got))
 	}
 }

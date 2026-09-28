@@ -5,7 +5,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"omakiten/internal/app"
+	"omakiten/internal/operation"
 )
 
 func newDependCommand(opts *runtimeOptions) *cobra.Command {
@@ -32,22 +32,16 @@ func newDependAddCommand(opts *runtimeOptions) *cobra.Command {
 				if err != nil {
 					return nil, err
 				}
-			rt, err := opts.open(ctx, true)
-			if err != nil {
-				return nil, err
-			}
-			defer rt.close()
-			ctx = rt.WithActivityRepo(ctx)
-
-			project, err := opts.resolveProject(ctx, rt.store)
-			if err != nil {
-				return nil, err
-			}
-			dependency, err := app.NewDependencyServiceWithEvents(rt.store, rt.store).Add(ctx, project, taskID, on)
+				rt, err := opts.open(ctx, true)
 				if err != nil {
 					return nil, err
 				}
-				return map[string]any{"project": project, "dependency": dependency}, nil
+				defer rt.close()
+				return rt.operationService().AddDependency(ctx, operation.AddDependencyInput{
+					ProjectSelector: opts.projectSelector(),
+					TaskID:          taskID,
+					DependsOnTaskID: on,
+				})
 			})
 		},
 	}
@@ -58,6 +52,7 @@ func newDependAddCommand(opts *runtimeOptions) *cobra.Command {
 
 func newDependRemoveCommand(opts *runtimeOptions) *cobra.Command {
 	var on int64
+	var confirm bool
 	cmd := &cobra.Command{
 		Use:   "remove TASK_ID --on DEPENDS_ON_TASK_ID",
 		Short: opts.t("cli.depend.remove.short"),
@@ -68,25 +63,22 @@ func newDependRemoveCommand(opts *runtimeOptions) *cobra.Command {
 				if err != nil {
 					return nil, err
 				}
-			rt, err := opts.open(ctx, true)
-			if err != nil {
-				return nil, err
-			}
-			defer rt.close()
-			ctx = rt.WithActivityRepo(ctx)
-
-			project, err := opts.resolveProject(ctx, rt.store)
-			if err != nil {
-				return nil, err
-			}
-			if err := app.NewDependencyServiceWithEvents(rt.store, rt.store).Remove(ctx, project, taskID, on); err != nil {
+				rt, err := opts.open(ctx, true)
+				if err != nil {
 					return nil, err
 				}
-				return map[string]any{"project": project, "removed": true}, nil
+				defer rt.close()
+				return rt.operationService().RemoveDependency(ctx, operation.RemoveDependencyInput{
+					ProjectSelector: opts.projectSelector(),
+					TaskID:          taskID,
+					DependsOnTaskID: on,
+					Confirmed:       confirm,
+				})
 			})
 		},
 	}
 	cmd.Flags().Int64VarP(&on, "on", "i", 0, opts.t("cli.depend.flag.on"))
+	cmd.Flags().BoolVar(&confirm, "confirm", false, opts.t("cli.depend.remove.flag.confirm"))
 	_ = cmd.MarkFlagRequired("on")
 	return cmd
 }
@@ -107,17 +99,10 @@ func newDependListCommand(opts *runtimeOptions) *cobra.Command {
 					return nil, err
 				}
 				defer rt.close()
-				ctx = rt.WithActivityRepo(ctx)
-
-				project, err := opts.resolveProject(ctx, rt.store)
-				if err != nil {
-					return nil, err
-				}
-				dependencies, err := app.NewDependencyService(rt.store).List(ctx, project, taskID)
-				if err != nil {
-					return nil, err
-				}
-				return map[string]any{"project": project, "dependencies": dependencies}, nil
+				return rt.operationService().ListDependencies(ctx, operation.ListDependenciesInput{
+					ProjectSelector: opts.projectSelector(),
+					TaskID:          taskID,
+				})
 			})
 		},
 	}

@@ -32,7 +32,7 @@ config:
       sort:   { order: desc }
       limit:  50
       window_days: 30
-      filter: { source: [] }
+      window_days: 30
     task_activity:
       sort:   { order: asc }
 ```
@@ -54,7 +54,9 @@ Every view block and required sort field/order is validator-required. Empty filt
 | `board.filter.priority`, `table.filter.priority` | subset of `config.priorities[].value` |
 | `table.filter.bucket` | subset of bucket keys in the active workflow |
 
-`logs.filter.source` is retained only as a legacy parse sink. The unified Logs inspector filters by event category at query time, not by this config value.
+`logs.filter.source` and the removed `config.activity_log` key are rejected by
+strict decoding. The unified Logs inspector filters by event category at query
+time; use `config.views.logs.window_days` only for its default time horizon.
 
 ## Logs window
 

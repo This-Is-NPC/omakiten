@@ -51,136 +51,88 @@ type Warning struct {
 // that a future grammar revision might want).
 var codePattern = regexp.MustCompile(`^[1-9][1-9]$`)
 
-// validRoutes is the closed set every ScreenDescriptor + override
-// slug must match. Adding a screen means appending to this slice
-// AND wiring the new (top, sub) into routeBindings in route.go.
-var validRoutes = map[Route]struct{}{
-	RouteTasksBoard:        {},
-	RouteTasksTable:        {},
-	RouteTasksGraph:        {},
-	RouteTasksPlans:        {},
-	RouteStatsGeneral:      {},
-	RouteStatsLogs:         {},
-	RouteSettingsGeneral:   {},
-	RouteSettingsLaws:      {},
-	RouteSettingsPersonas:  {},
-	RouteSettingsSkills:    {},
-	RouteSettingsTemplates: {},
-	RouteSettingsTags:      {},
-	RouteSettingsGuards:    {},
-}
-
-// Canonical route slugs. Mirror the (topID, subID) pairs declared
-// in internal/tui/state.go (topTasks/subBoard, etc.). The TUI
-// glues the slug back to the nav pair via routeBindings.
-const (
-	RouteTasksBoard        Route = "tasks.board"
-	RouteTasksTable        Route = "tasks.table"
-	RouteTasksGraph        Route = "tasks.graph"
-	RouteTasksPlans        Route = "tasks.plans"
-	RouteStatsGeneral      Route = "stats.general"
-	RouteStatsLogs         Route = "stats.logs"
-	RouteSettingsGeneral   Route = "settings.general"
-	RouteSettingsLaws      Route = "settings.laws"
-	RouteSettingsPersonas  Route = "settings.personas"
-	RouteSettingsSkills    Route = "settings.skills"
-	RouteSettingsTemplates Route = "settings.templates"
-	RouteSettingsTags      Route = "settings.tags"
-	RouteSettingsGuards    Route = "settings.guards"
-)
-
-// DefaultScreens returns the canonical positional layout the
-// indexer ships with: 1x = Tasks subs, 2x = Stats subs, 3x =
-// Settings subs. The 2-digit cap (`[1-9][1-9]`) leaves 81 slots
-// for a current load of 12, so adding a sub means appending a new
-// descriptor with the next unused code under its parent top — no
-// renumbering. The order matches the cycle order declared by
-// subsByTop in state.go so the positional codes track the visible
-// menu cycle without a second source of truth.
-func DefaultScreens() []ScreenDescriptor {
-	return []ScreenDescriptor{
-		{Code: "11", Route: RouteTasksBoard, TitleKey: "tui.palette.route.tasks_board"},
-		{Code: "12", Route: RouteTasksTable, TitleKey: "tui.palette.route.tasks_table"},
-		{Code: "13", Route: RouteTasksGraph, TitleKey: "tui.palette.route.tasks_graph"},
-		{Code: "14", Route: RouteTasksPlans, TitleKey: "tui.palette.route.tasks_plans"},
-		{Code: "21", Route: RouteStatsGeneral, TitleKey: "tui.palette.route.stats_general"},
-		{Code: "22", Route: RouteStatsLogs, TitleKey: "tui.palette.route.stats_logs"},
-		{Code: "31", Route: RouteSettingsGeneral, TitleKey: "tui.palette.route.settings_general"},
-		{Code: "32", Route: RouteSettingsLaws, TitleKey: "tui.palette.route.settings_laws"},
-		{Code: "33", Route: RouteSettingsPersonas, TitleKey: "tui.palette.route.settings_personas"},
-		{Code: "34", Route: RouteSettingsSkills, TitleKey: "tui.palette.route.settings_skills"},
-		{Code: "35", Route: RouteSettingsTemplates, TitleKey: "tui.palette.route.settings_templates"},
-		{Code: "36", Route: RouteSettingsTags, TitleKey: "tui.palette.route.settings_tags"},
-		{Code: "37", Route: RouteSettingsGuards, TitleKey: "tui.palette.route.settings_guards"},
-	}
-}
-
 // Registry owns the code→route lookup table the `nav:` handler
 // queries. Overrides take precedence over positional defaults so a
 // user can rebind the codes their muscle memory expects without
 // editing the indexer.
 type Registry struct {
 	resolved map[string]Route
-	screens  []ScreenDescriptor
 }
 
 // New builds a Registry from defaults + per-code overrides. The
-// registry rejects only structural errors at construction (empty
-// default code, malformed default code, unknown default route);
+// registry rejects only structural errors at construction (empty or malformed
+// default code, empty route, or empty title key);
 // override mistakes downgrade to Warning so the palette stays
 // usable while the user fixes their config. Overrides win every
 // time they apply.
 //
-// Warnings cover: malformed override code, unknown override route,
-// positional collision inside DefaultScreens (defensive — the
-// shipped slice is gap-free, but any future drift surfaces here
-// instead of silently shadowing the prior entry).
+// Warnings cover malformed override codes, unknown override routes, and
+// positional collisions inside the caller-supplied descriptor projection.
+// The palette deliberately owns no default screen list; the TUI host projects
+// it from the authoritative screen registry.
 func New(defaults []ScreenDescriptor, overrides map[string]Route) (*Registry, []Warning, error) {
 	if len(defaults) == 0 {
 		return nil, nil, errors.New("palette: registry requires at least one default screen")
 	}
 	resolved := make(map[string]Route, len(defaults)+len(overrides))
+	validRoutes := make(map[Route]struct{}, len(defaults))
 	var warnings []Warning
 	for _, d := range defaults {
-		if d.Code == "" {
-			return nil, nil, fmt.Errorf("palette: default screen %q has empty code", d.Route)
+		warning, err := registerDefault(d, resolved, validRoutes)
+		if err != nil {
+			return nil, nil, err
 		}
-		if !codePattern.MatchString(d.Code) {
-			return nil, nil, fmt.Errorf("palette: default screen %q has malformed code %q (want 2 digits in 1-9)", d.Route, d.Code)
+		if warning.Code != "" {
+			warnings = append(warnings, warning)
 		}
-		if _, ok := validRoutes[d.Route]; !ok {
-			return nil, nil, fmt.Errorf("palette: default screen at code %q references unknown route %q", d.Code, d.Route)
-		}
-		if existing, dup := resolved[d.Code]; dup {
-			warnings = append(warnings, Warning{
-				Code:    d.Code,
-				Message: fmt.Sprintf("default code %q collides between routes %q and %q; keeping the first", d.Code, existing, d.Route),
-			})
-			continue
-		}
-		resolved[d.Code] = d.Route
 	}
 	for code, route := range overrides {
-		if !codePattern.MatchString(code) {
-			warnings = append(warnings, Warning{
-				Code:    code,
-				Message: fmt.Sprintf("override code %q is malformed (want 2 digits in 1-9); skipping", code),
-			})
-			continue
+		if warning, ok := registerOverride(code, route, resolved, validRoutes); ok {
+			warnings = append(warnings, warning)
 		}
-		if _, ok := validRoutes[route]; !ok {
-			warnings = append(warnings, Warning{
-				Code:    code,
-				Message: fmt.Sprintf("override at code %q references unknown route %q; skipping", code, route),
-			})
-			continue
-		}
-		resolved[code] = route
 	}
-	return &Registry{
-		resolved: resolved,
-		screens:  defaults,
-	}, warnings, nil
+	return &Registry{resolved: resolved}, warnings, nil
+}
+
+func registerDefault(d ScreenDescriptor, resolved map[string]Route, validRoutes map[Route]struct{}) (Warning, error) {
+	if d.Code == "" {
+		return Warning{}, fmt.Errorf("palette: default screen %q has empty code", d.Route)
+	}
+	if !codePattern.MatchString(d.Code) {
+		return Warning{}, fmt.Errorf("palette: default screen %q has malformed code %q (want 2 digits in 1-9)", d.Route, d.Code)
+	}
+	if d.Route == "" {
+		return Warning{}, fmt.Errorf("palette: default screen at code %q has empty route", d.Code)
+	}
+	if d.TitleKey == "" {
+		return Warning{}, fmt.Errorf("palette: default screen %q has empty title key", d.Route)
+	}
+	validRoutes[d.Route] = struct{}{}
+	if existing, dup := resolved[d.Code]; dup {
+		return Warning{
+			Code:    d.Code,
+			Message: fmt.Sprintf("default code %q collides between routes %q and %q; keeping the first", d.Code, existing, d.Route),
+		}, nil
+	}
+	resolved[d.Code] = d.Route
+	return Warning{}, nil
+}
+
+func registerOverride(code string, route Route, resolved map[string]Route, validRoutes map[Route]struct{}) (Warning, bool) {
+	if !codePattern.MatchString(code) {
+		return Warning{
+			Code:    code,
+			Message: fmt.Sprintf("override code %q is malformed (want 2 digits in 1-9); skipping", code),
+		}, true
+	}
+	if _, ok := validRoutes[route]; !ok {
+		return Warning{
+			Code:    code,
+			Message: fmt.Sprintf("override at code %q references unknown route %q; skipping", code, route),
+		}, true
+	}
+	resolved[code] = route
+	return Warning{}, false
 }
 
 // Resolve maps a 2-digit code to a Route. The miss signal is the

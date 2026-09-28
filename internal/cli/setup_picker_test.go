@@ -46,10 +46,14 @@ func TestSetupPicker_HappyPath(t *testing.T) {
 	if m.step != stepLang {
 		t.Fatalf("step: got %v want stepLang", m.step)
 	}
+	m = setupPickerSelectLanguage(t, m)
+	m = setupPickerEnterAgent(t, m)
+	m = setupPickerSelectPreset(t, m)
+	setupPickerSelectHarnesses(t, m)
+}
 
-	// Lang — bundled order is alphabetical by code; find pt-br
-	// dynamically so adding a new bundled language pack does not break
-	// the test by shifting cursor indices.
+func setupPickerSelectLanguage(t *testing.T, m setupPickerModel) setupPickerModel {
+	t.Helper()
 	ptBRIdx := -1
 	for i, l := range m.langs {
 		if l.Code == "pt-br" {
@@ -73,8 +77,11 @@ func TestSetupPicker_HappyPath(t *testing.T) {
 	if m.cliCatalog == nil || m.cliCatalog.Code != "pt-br" {
 		t.Fatalf("cliCatalog not loaded for pt-br: %+v", m.cliCatalog)
 	}
+	return m
+}
 
-	// Agent lang — type "Portugues" and enter.
+func setupPickerEnterAgent(t *testing.T, m setupPickerModel) setupPickerModel {
+	t.Helper()
 	m = stepThrough(t, m,
 		keyMsg('P'), keyMsg('o'), keyMsg('r'), keyMsg('t'), keyMsg('u'), keyMsg('g'), keyMsg('u'), keyMsg('e'), keyMsg('s'),
 		enterMsg(),
@@ -91,8 +98,11 @@ func TestSetupPicker_HappyPath(t *testing.T) {
 	if len(m.presets) == 0 {
 		t.Fatalf("presets should be populated by transition into stepPreset")
 	}
+	return m
+}
 
-	// Preset — move cursor to omakase then enter.
+func setupPickerSelectPreset(t *testing.T, m setupPickerModel) setupPickerModel {
+	t.Helper()
 	presetIdx := -1
 	for i, p := range m.presets {
 		if p.Name == "omakase" {
@@ -113,26 +123,21 @@ func TestSetupPicker_HappyPath(t *testing.T) {
 	if m.inputs.Preset != "omakase" {
 		t.Fatalf("Preset: got %q want omakase", m.inputs.Preset)
 	}
+	return m
+}
 
-	// Harness — toggle claude-code and opencode with enter, then submit
-	// with tab. enter toggles a row in/out of the selection; tab
-	// finalises and quits the program.
+func setupPickerSelectHarnesses(t *testing.T, m setupPickerModel) {
+	t.Helper()
 	supported := installer.SupportedHarnesses()
 	want := []string{}
 	for _, name := range []string{"claude-code", "opencode"} {
-		for i, h := range supported {
-			if h == name {
-				for m.harnessCursor < i {
-					m = stepThrough(t, m, downMsg())
-				}
-				for m.harnessCursor > i {
-					m = stepThrough(t, m, tea.KeyMsg{Type: tea.KeyUp})
-				}
-				m = stepThrough(t, m, enterMsg())
-				want = append(want, name)
-				break
-			}
+		index := harnessIndex(supported, name)
+		if index < 0 {
+			continue
 		}
+		m = moveHarnessCursor(t, m, index)
+		m = stepThrough(t, m, enterMsg())
+		want = append(want, name)
 	}
 	m = stepThrough(t, m, tabMsg())
 	if !m.done {
@@ -144,6 +149,26 @@ func TestSetupPicker_HappyPath(t *testing.T) {
 	if strings.Join(m.inputs.Harnesses, ",") != strings.Join(want, ",") {
 		t.Fatalf("Harnesses: got %v want %v", m.inputs.Harnesses, want)
 	}
+}
+
+func harnessIndex(supported []string, want string) int {
+	for i, name := range supported {
+		if name == want {
+			return i
+		}
+	}
+	return -1
+}
+
+func moveHarnessCursor(t *testing.T, m setupPickerModel, index int) setupPickerModel {
+	t.Helper()
+	for m.harnessCursor < index {
+		m = stepThrough(t, m, downMsg())
+	}
+	for m.harnessCursor > index {
+		m = stepThrough(t, m, tea.KeyMsg{Type: tea.KeyUp})
+	}
+	return m
 }
 
 func TestSetupPicker_CancelMidFlow(t *testing.T) {
@@ -369,80 +394,69 @@ func TestSetupPicker_ValuesPreservedAcrossPrev(t *testing.T) {
 	if err != nil {
 		t.Fatalf("newSetupPickerModel: %v", err)
 	}
-	// Move lang cursor off zero, confirm.
 	m = stepThrough(t, m, downMsg(), enterMsg())
 	wantLangCursor := m.langCursor
 	if wantLangCursor == 0 {
 		t.Fatalf("test setup: bundled langs need at least 2 entries")
 	}
-	// Type agent name, confirm to land on preset.
+	m, wantPresetCursor := setupPickerPreservePreset(t, m)
+	m = setupPickerPreserveBacktrack(t, m, wantLangCursor)
+	m = setupPickerPreserveForward(t, m, wantPresetCursor)
+	setupPickerPreserveHarness(t, m)
+}
+
+func setupPickerPreservePreset(t *testing.T, m setupPickerModel) (setupPickerModel, int) {
+	t.Helper()
 	m = stepThrough(t, m, keyMsg('P'), keyMsg('t'), enterMsg())
 	if m.step != stepPreset {
 		t.Fatalf("want stepPreset got %v", m.step)
 	}
-	// Move preset cursor.
 	if len(m.presets) > 1 {
 		m = stepThrough(t, m, downMsg())
 	}
-	wantPresetCursor := m.presetCursor
+	return m, m.presetCursor
+}
 
-	// esc all the way back to lang, then walk forward.
+func setupPickerPreserveBacktrack(t *testing.T, m setupPickerModel, wantLangCursor int) setupPickerModel {
+	t.Helper()
 	m = stepThrough(t, m, escMsg())
-	if m.step != stepAgentLang {
-		t.Fatalf("want stepAgentLang got %v", m.step)
-	}
-	if m.agentInput.Value() != "Pt" {
-		t.Fatalf("agentInput value lost: %q", m.agentInput.Value())
-	}
-	if !m.agentInput.Focused() {
-		t.Fatalf("agentInput must re-focus on prev landing")
+	if m.step != stepAgentLang || m.agentInput.Value() != "Pt" || !m.agentInput.Focused() {
+		t.Fatalf("agent step did not preserve input or focus: step=%v value=%q", m.step, m.agentInput.Value())
 	}
 	m = stepThrough(t, m, escMsg())
-	if m.step != stepLang {
-		t.Fatalf("want stepLang got %v", m.step)
+	if m.step != stepLang || m.langCursor != wantLangCursor {
+		t.Fatalf("language step did not preserve cursor: step=%v cursor=%d want %d", m.step, m.langCursor, wantLangCursor)
 	}
-	if m.langCursor != wantLangCursor {
-		t.Fatalf("langCursor lost: got %d want %d", m.langCursor, wantLangCursor)
-	}
+	return m
+}
 
-	// Forward through the chain — agent text and preset cursor must
-	// survive the round-trip.
+func setupPickerPreserveForward(t *testing.T, m setupPickerModel, wantPresetCursor int) setupPickerModel {
+	t.Helper()
 	m = stepThrough(t, m, enterMsg())
 	if m.agentInput.Value() != "Pt" {
 		t.Fatalf("agentInput value lost on re-entry: %q", m.agentInput.Value())
 	}
 	m = stepThrough(t, m, enterMsg())
-	if m.step != stepPreset {
-		t.Fatalf("want stepPreset got %v", m.step)
+	if m.step != stepPreset || m.presetCursor != wantPresetCursor {
+		t.Fatalf("preset state lost: step=%v cursor=%d want %d", m.step, m.presetCursor, wantPresetCursor)
 	}
-	if m.presetCursor != wantPresetCursor {
-		t.Fatalf("presetCursor lost: got %d want %d", m.presetCursor, wantPresetCursor)
-	}
+	return m
+}
 
-	// Move forward to harness, toggle one, esc back, return, confirm
-	// harnessChosen survived.
+func setupPickerPreserveHarness(t *testing.T, m setupPickerModel) {
+	t.Helper()
 	m = stepThrough(t, m, enterMsg())
 	if m.step != stepHarness {
 		t.Fatalf("want stepHarness got %v", m.step)
 	}
-	m = stepThrough(t, m, enterMsg()) // toggle row 0
+	m = stepThrough(t, m, enterMsg())
 	if !m.harnessChosen[0] {
 		t.Fatalf("harnessChosen[0] should be true after enter")
 	}
 	wantCursor := m.harnessCursor
-	m = stepThrough(t, m, escMsg())
-	if m.step != stepPreset {
-		t.Fatalf("esc from harness: want stepPreset got %v", m.step)
-	}
-	m = stepThrough(t, m, enterMsg())
-	if m.step != stepHarness {
-		t.Fatalf("re-entry: want stepHarness got %v", m.step)
-	}
-	if !m.harnessChosen[0] {
-		t.Fatalf("harnessChosen lost on round trip")
-	}
-	if m.harnessCursor != wantCursor {
-		t.Fatalf("harnessCursor lost: got %d want %d", m.harnessCursor, wantCursor)
+	m = stepThrough(t, m, escMsg(), enterMsg())
+	if m.step != stepHarness || !m.harnessChosen[0] || m.harnessCursor != wantCursor {
+		t.Fatalf("harness state lost on round trip: step=%v chosen=%v cursor=%d want %d", m.step, m.harnessChosen[0], m.harnessCursor, wantCursor)
 	}
 }
 

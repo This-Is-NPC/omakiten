@@ -21,6 +21,7 @@ This guide is for people working **on** Omakiten — building, testing, and rele
 ### Prerequisites
 
 - [mise-en-place](https://mise.jdx.dev/) — pins the Go toolchain, `golangci-lint`, and `govulncheck` at the exact versions the merge gate uses. `mise install` reads `.mise.toml` and provisions everything.
+- GoReleaser and Cosign are also pinned in `.mise.toml`; `mise install` provisions the exact release-dry-run versions.
 - [GitHub CLI (`gh`)](https://cli.github.com/) — `scripts/local-check.sh` calls `gh api` to post the merge-gate commit status; `gh auth login` once is enough.
 
 ### Clone and verify
@@ -28,7 +29,7 @@ This guide is for people working **on** Omakiten — building, testing, and rele
 ```bash
 git clone https://github.com/This-Is-NPC/omakiten
 cd omakiten
-mise install              # provisions Go 1.25.x, golangci-lint, govulncheck
+mise install              # provisions Go 1.25.13 (selected toolchain), golangci-lint, govulncheck
 git config core.hooksPath scripts/hooks   # wire pre-push merge gate
 mise run check            # full verification: tests + lint + vuln + docs:check
 ```
@@ -63,7 +64,8 @@ Every task is defined in `.mise.toml` at the repo root. Run with `mise run <name
 |---|---|
 | `fmt` | `gofmt -w .` over the whole tree. |
 | `build` | Builds `bin/okt` with the current `git describe` version baked in via `-ldflags`. |
-| `test` | `go test ./...`. |
+| `release:dry-run` | Builds all six GoReleaser archives in a temporary directory, generates the manifest and SLSA v1 statement, signs them with an ephemeral local fixture key, and verifies every digest. It never publishes or contacts the keyless production signing path. |
+| `test` | Runs one full all-package test pass with aggregate coverage, then enforces the unrounded 78.0% statement floor through the fail-closed checker. |
 | `lint` | `golangci-lint run` against `.golangci.yml`. |
 | `vuln` | `govulncheck ./...`. |
 | `check` | **PR gate.** Depends on `test`, `lint`, `vuln`, `docs:check`. |
@@ -81,8 +83,10 @@ Every task is defined in `.mise.toml` at the repo root. Run with `mise run <name
 | `uninstall` | Removes `~/.local/bin/okt` and the shell wrapper. **Does not** touch config or data. |
 | `purge` | Wipes `~/.config/omakiten` and `~/.local/share/omakiten`. Use after `uninstall` for a fresh-machine simulation. |
 | `dev:sync` | Mirrors `defaults/` into `dev_env/` (overwrites root, leaves `dev_env/custom/`). |
-| `dev:install` | `dev:sync` + builds `bin/okt` and runs `okt setup --skip-wrapper --skip-harnesses` against the dev-env so the binary works against `OMAKITEN_HOME=dev_env` without touching real state. |
-| `tui` | Runs the TUI against an isolated `dev_env/` (`OMAKITEN_HOME=dev_env`) — useful for trying changes without touching your real Omakiten state. Depends on `dev:install`. |
+| `dev:install` | `dev:sync` + builds `bin/okt`, resets dev-only `custom/` overlays, and runs `okt setup --update --skip-wrapper --skip-harnesses` so repeated fresh-install runs cannot load stale config/entity schemas. Use `tui:bare` when custom overlays or seeded fixtures must survive. |
+| `tui` | Runs `dev:install` inside its raw-terminal task, then opens the TUI against the synchronized `dev_env/config/omakase.yaml`; `tui:bare` skips installation and opens the preset named by `dev_env/config/.active` so seeded fixtures survive without repo-local config discovery. |
+| `gallery` | Opens the dev-only TUI component gallery (`cmd/okt-gallery`) — one shared component at a time, against the shipped theme. Not part of `build`; nothing in the `okt` binary imports it. |
+| `gallery:dump` | Renders every component variant to stdout with no TTY, so it pipes to a file and diffs across a refactor. |
 | `mcp:prompts` | Resolves every `okt-*` MCP prompt against the dev-env bundle and prints the composed markdown — handy for previewing what an agent receives without an MCP client. Depends on `dev:sync`. |
 
 ### Selecting MCP harnesses non-interactively
@@ -128,7 +132,6 @@ defaults/                ships into ~/.config/omakiten on first run
   config/                official presets (omakase / izakaya / kaiseki / shokunin)
   languages/             21 bundled CLI/TUI language packs (en / pt-br / jp / …)
   themes/, notifications/, skills/, laws/, personas/, templates/
-migrations/              SQLite schema migrations (001 … 032; 032 makes events the scoped comment log)
 scripts/                 install / uninstall / wrapper helpers + tests
 ```
 
@@ -136,14 +139,9 @@ Architecture rules are enforced in two places — see [architecture.md](architec
 
 ### Composition roots and the BundleCache
 
-Both `internal/cli/root.go` and `internal/agentruntime/runtime.go` reach the same shape: parse the bundle once to seed the events bus, then call `agentruntime.NewBundleCache(...).SetProjectSelector(...)` + `cache.Resolve(ctx, projectID, configPath)`. `BundleCache` builds and caches one `*ProjectRuntime` per project id; the `BuildProjectRuntime` helper inside `internal/agentruntime/cache.go` is the single inflation path so boot, MCP per-project routing, CLI subcommands, and the TUI hot-reload all produce identical runtimes — divergence between code paths was the regression Phase 3a was designed to prevent.
+Both `internal/cli/root.go` and `internal/agentruntime/runtime.go` reach the same shape: parse the bundle once to seed the events bus, then call `agentruntime.NewBundleCache(...).SetProjectSelector(...)` + `cache.Resolve(ctx, projectID, configPath)`. `BundleCache` builds and caches one `*ProjectRuntime` per project id; the `BuildProjectRuntime` helper inside `internal/agentruntime/cache.go` is the single inflation path so boot, MCP per-project routing, CLI subcommands, and the TUI hot-reload all produce identical runtimes. Rebuilds validate an inactive candidate before commit; only then are Store settings, hooks, and consumer state published. A rejected candidate leaves the cache, Store, model, and event rows untouched, so it can be retried. A drain timeout is returned and the inactive replacement is not published.
 
-`ConfigService.Import` no longer writes SQL config tables (migration 020 dropped them) and no longer touches the SQL adapter at all (Phase 2-bis). The method reduces to LoadBundle + HashFile, returning `(bundle, hash, *domain.EnumRegistry)`; the composition root then calls `config.BuildSnapshot(bundle)` to materialise the per-project Snapshot and emits `bundle.imported` via `Store.RecordEntityEvent`. Anything that needs to react to a bundle change subscribes to `bundle.imported` on the in-process bus. See [configuration-guide/README.md § How config reads work at runtime](../configuration-guide/project-overrides.md) for the full data flow.
-
-### Migration 020 / 021 — `tasks.bucket_id` rebind
-
-Migration 020 dropped every SQL config table; before the drops it now rewrites `tasks.bucket_id` from the SQL-era `workflow_buckets.id` (autoincrement PK) to `workflow_buckets.local_id` (the YAML-declared id the post-migration `Snapshot` indexes by). Without that rewrite, tasks point at integers `Snapshot.BucketByID` cannot resolve and every view renders empty. Migration `021_rebind_orphan_buckets.sql` is the pure-SQL recovery for databases that applied the pre-rebind shape of 020: it walks the `events` table for each task's latest `task.moved` / `task.created` payload, extracts the bucket key, and maps onto the canonical preset id via a `CASE` covering every shipped preset key. Tasks with no recoverable event land in bucket id 1; users reorganise via TUI / CLI. Idempotent on fresh installs whose `bucket_id` is already in the canonical YAML range.
-
+`ConfigService.Import` loads and hashes the YAML bundle without writing SQL configuration rows. It returns `(bundle, hash, *domain.EnumRegistry)`; the composition root then calls `config.BuildSnapshot(bundle)` to materialise the per-project Snapshot and emits `bundle.imported` via `Store.RecordEntityEvent`. Anything that needs to react to a bundle change subscribes to `bundle.imported` on the in-process bus. See [configuration-guide/README.md § How config reads work at runtime](../configuration-guide/project-overrides.md) for the full data flow.
 
 ## Local Workflows
 
@@ -154,6 +152,12 @@ Migration 020 dropped every SQL config table; before the drops it now rewrites `
 mise run test                                # fast feedback
 go test -race -count=1 ./internal/agentsetup/...  # narrow when iterating
 mise run check                               # before committing
+
+# compile filesystem safety tests for every release target plus Plan 9
+for target in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64 windows/arm64 plan9/amd64; do
+  GOOS="${target%/*}" GOARCH="${target#*/}" go test -c ./internal/config
+  GOOS="${target%/*}" GOARCH="${target#*/}" go test -c ./internal/paths
+done
 ```
 
 ### Test the full installer flow locally
@@ -172,7 +176,66 @@ This is the closest you get to reproducing what a curl|bash user experiences wit
 mise run tui                           # uses OMAKITEN_HOME=dev_env
 ```
 
-`dev:sync` is a `depends` of `tui`, so changes under `defaults/` are picked up automatically.
+`tui` invokes `dev:install` before opening the raw-terminal UI; that nested task runs `dev:sync`, so changes under `defaults/` are picked up automatically without detaching the TUI from the controlling terminal.
+
+### Look at one shared component in isolation
+
+```bash
+mise run gallery                          # browse and open components
+mise run gallery:dump > /tmp/before.txt   # every component and state, no TTY
+```
+
+In the Components column, `j/k` moves and the frame previews whatever is selected
+— seeing a component costs no keystroke. `enter` hands it the keys; `esc` gives
+them back without clearing the preview.
+
+Once the component has the keys, every key belongs to it — `j/k`, `pgup/pgdn`, and
+in the multiline form literally every character, because there the keystroke is the
+content. That is why nothing is a chord: `tab` walks the columns instead.
+
+The columns read left to right — Components, Scenario, the frame, Properties —
+and `tab` walks them in that order: Scenario → frame → each property → Scenario.
+`enter` on a component lands on Scenario, because picking one is how an
+inspection starts. The frame sits inside a fixed-width container, so shrinking it
+never drags the Properties column left to chase it, and the columns beside it
+stand as tall as the screen rather than as tall as the simulated frame. A **scenario** is a preset:
+one pick puts the frame AND the component into a whole situation at once ("narrow,
+stacks", "empty lane", "translated labels"). It SEEDS and does not lock — every
+value it wrote stays editable underneath.
+
+**Properties** carries the frame's own inputs — height, width, padding, alignment —
+and then, under a rule, **Component Properties**: the component's real arguments.
+`WithViewport`'s row budget, `gridtable`'s column widths, `lane`'s Header
+text, `keyfooter`'s MaxPrimaries, every `Spec` field the arranger reads. Type over
+a number or a string, `←/→` picks a choice. A geometry left on `auto` follows the
+frame; pin it to watch what a wrong number does.
+
+The gallery's own chrome is built from bubbles and lipgloss only — never from the
+components it exhibits. A tool whose index is a `cardlist` stops running the moment
+`cardlist` breaks, which is exactly when it is needed. `TestTheChromeDoesNotImportWhatItInspects` pins it.
+
+A screen golden only ever captures components already composed into a screen. The
+gallery renders each `internal/tui/components/...` package on its own, live: the
+component holds real state, so navigating it exercises the same mutators a screen
+would call. Dump before and after a refactor to diff what moved.
+
+The first entries are the layout packages — `screenlayout`, `screenkit`, `layout`,
+`scrollwindow`, `cursorwindow`. They have no look of their own, so what they render
+is the numbers they resolved for the frame: the breakpoint the arranger chose, the
+row budget each section got, the chrome it measured, the window it sliced. Narrowing
+the frame on the `screenlayout` entry is the only place a breakpoint is visible
+without running a whole screen.
+
+The size boxes are an honest simulation rather than a drawing. These components take
+their geometry as an argument — `WithViewport(rows)`, `View(lines, viewport, hint)`,
+`Render(rows, widths, border)` — so handing them smaller numbers is exactly what a
+smaller terminal does. Sizes clamp to what the pane can actually draw, and content
+that overflows the frame is clipped and counted rather than allowed to push the
+frame open.
+
+Components with no `View` of their own (`scrollwindow`, `cursorwindow`, `screenlayout`,
+`screenkit`, `layout`) are not in the gallery yet; they are state and arithmetic, and
+showing them means rendering their resolved numbers rather than their output.
 
 ### Run a specific MCP harness's setup repeatedly
 
@@ -195,6 +258,7 @@ mise run build
 | `install.sh` shell-wrapper idempotency | `bash scripts/wrapper_idempotency_test.sh` |
 | `install.sh` harness selection | `bash scripts/installer_select_test.sh` |
 | `install.ps1` harness selection | `pwsh -NoProfile -File scripts/installer_select_test.ps1` |
+| Release archive/metadata fixture | `mise run release:dry-run` |
 
 The shell tests do **not** depend on Go; they extract helper functions from `install.sh` / `install.ps1` via awk / PowerShell AST and exercise them in-process. Run them whenever you touch the installers.
 
@@ -225,11 +289,53 @@ func TestSomething(t *testing.T) {
 
 **Limitation:** `config.Bundle.{Skills,Personas,Laws}` carry `yaml:"-"` because production loads them from per-entity folders next to the YAML, not from the YAML itself. Tests that need those entities wire them in Go after `LoadBundle` returns — see `internal/app/context_service_test.go` for the canonical pattern.
 
-Coverage target: don't drop below the current baseline.
+### Golden fixtures
+
+Rendered output (TUI views, footers, help strips, pretty-printed reports) is snapshotted to `testdata/<name>.golden` and asserted through the single harness in `internal/testutil/golden.go`:
+
+```go
+import "omakiten/internal/testutil"
+
+func TestScreenGolden(t *testing.T) {
+    testutil.Golden(t, "project.view.golden", ansi.Strip(screen.View(frame)))
+}
+```
+
+`Golden(tb, name, got)` resolves `name` against the calling package's `testdata/` directory, compares byte-exact, and reports a mismatch with `Errorf` so a loop over a screen's fixtures surfaces every drift in one run. `GoldenNewlineTerminated` is the same assertion for a fixture that predates the harness and was saved with a final newline its subject does not emit. It has exactly one consumer left — `internal/sqlite/search_integrity_test.go`, for `search_integrity_mixed.golden`. The other two (`home`, `plannetwork`) were re-recorded at three geometries and moved to the strict `Golden`; the helper's own doc comment names what it would take to retire the last one.
+
+**Regenerating a fixture — the one supported way:**
 
 ```bash
-go test -coverprofile=/tmp/coverage.out ./...
-go tool cover -func=/tmp/coverage.out | tail -1
+go test ./internal/tui/screens/project -update    # rewrites that package's fixtures
+```
+
+Refresh one package at a time. `go test ./... -update` fails on purpose: the flag is registered by the harness, so packages that hold no fixtures reject it and the run aborts before writing anything. A plain `go test ./...` leaves every fixture byte-identical — that property is what lets a refactor's golden diff be read as evidence that rendering did not change.
+
+There is deliberately no second switch. The tree used to carry an `UPDATE_GOLDEN=1` environment variable alongside the flag; it was removed, not deprecated. An exported variable is inherited by every child process of the shell that set it, so a single stale `export` turns later runs into silent mass-regeneration — and a regenerated fixture is a green test, so nothing reports it. `internal/arch/golden_refresh_boundary_test.go` enforces the rule: any golden-bearing file under `internal/` that writes a file, reads an environment variable or registers a refresh flag fails the build unless it carries a recorded reason in that gate's allowlist.
+
+#### Screen baselines
+
+Every package under `internal/tui/screens/` records its characterization baseline through `screentest.Record` in a `goldens_test.go`, rather than looping over `testutil.Golden` by hand. A `screentest.Recording` names the fixture stem, builds the screen fresh, replays the keys that move it off its entry state, and declares an `Assert` on the state it protects; `Record` drives it through the real host cycle (`Build` + `LifecycleEnter`, then `Update` per key with the host deps re-bound between messages, then one paint) and captures it at 80x24, 120x40 and 200x50 as `<name>.<geometry>.view.golden`.
+
+```go
+func TestBoardGoldens(t *testing.T) { screentest.Record(t, boardRecordings()) }
+```
+
+The recorder is not a second harness — `testutil.Golden` remains the only writer, and refresh is still `go test ./internal/tui/screens/board -update`. What it centralises is the three properties that make a fixture evidence:
+
+- **the `Assert` gates the write.** It runs on refresh runs too, and a failure withholds the bytes. Without that, a `-update` after a contract broke would rewrite the fixture from the broken state and the next plain run would pass.
+- **every recording is painted twice** over two independent materialisations of its fixture, and the two must agree byte for byte. This is the host-independence proof: a path, a clock reading, an address or a map iteration order that reaches a view fails here rather than surfacing as a mystery diff in a later migration.
+- **a recording with no `Assert` is rejected.** A fixture that states nothing about the state it holds can be refreshed into an empty screen without anything noticing.
+
+Assert on state the screen exposes — a non-zero `Scroll()`, a cursor off its default cell, an open mode, a dirty candidate — not on rendered text, which is what the fixture already records. And record state worth keeping: a body long enough to scroll, content wide enough to wrap at 80 columns, a cursor off its default. An empty screen proves nothing about a migration.
+
+Coverage is enforced as one aggregate all-package run. The checker compares the unrounded profile statement ratio against a 78.0% floor and fails closed for missing, empty, malformed, stale, missing-total, or below-floor evidence; it does not define per-package floors or exemptions. Focused checker fixtures cover canonical grammar, extra fields and garbage ranges, portable nanosecond staleness, multi-file roots, ratio boundaries, and every failure case. The named-file checker fixture task does not add a package or coverage denominator.
+
+```bash
+go test -coverprofile=coverage.out ./...
+go tool cover -func=coverage.out > /tmp/okt-coverage.func
+scripts/check-coverage.sh coverage.out /tmp/okt-coverage.func .
+scripts/check-coverage_test.sh
 ```
 
 ## Conventions
@@ -314,7 +420,18 @@ Releases are automated by [release-please](https://github.com/googleapis/release
 - `feat!:` or `BREAKING CHANGE:` in the body → major bump.
 - `chore:`, `refactor:`, `test:`, `docs:`, `ci:`, `build:`, `perf:` → no version bump (still appear in the changelog when relevant).
 
-Do **not** tag releases manually; merge the release PR and let the workflow attach the GitHub release with the prebuilt binaries.
+Do **not** tag releases manually; merge the release PR and let the workflow create a draft. GoReleaser v2.17.0 builds without publishing and exports its checkout SHA; the signing checkout must resolve the tag to that exact SHA before metadata is created. The only job with `id-token: write` signs the version-bound manifest and exact `checksums.txt` bytes with Cosign v3.1.1, creates multi-subject SLSA v1/in-toto provenance, and verifies the Fulcio issuer plus exact repository/workflow identity. A separate non-OIDC job accepts and publishes an exact 11-file allowlist only after rejecting missing or extra files, so a signing, provenance, or artifact-set failure has no unsigned publication path. All actions are commit-pinned; version comments beside their SHAs record the inspected upstream major/release.
+
+Hermetic tests exercise genuine Sigstore cryptography through `sigstore-go`'s virtual CA and genuine offline Cosign blob plus DSSE-attestation signing/verification with an ephemeral local key, including a forged-payload rejection. `.github/workflows/assurance.yml` makes Cosign mandatory and runs the release/install assurance packages on Linux and macOS; Windows runs the native PowerShell parser/SemVer checks and genuine Cosign path. The production release workflow closes the keyless positive-path gap without committing a captured fixture: immediately after keyless signing, `scripts/release-installer-gate.sh` serves the fresh release files over loopback and executes both installers' production strict-verification functions against the real Fulcio/Rekor bundles. Either failure prevents staging and publication. Local tests still never fabricate keyless material or write to Fulcio/Rekor.
+
+Before changing the certificate policy, run `mise run release:dry-run`, inspect the first live release certificate, and preserve these exact constants unless a reviewed workflow identity migration requires new values:
+
+```text
+issuer:   https://token.actions.githubusercontent.com
+identity: https://github.com/This-Is-NPC/omakiten/.github/workflows/release.yml@refs/heads/master
+```
+
+The first signed release is the first release after `v0.30.0`. Treat `v0.30.0` and older as checksum-only; never claim that a later signature is original build provenance for a historical artifact.
 
 ## Troubleshooting
 
@@ -349,5 +466,5 @@ The repo enforces hexagonal boundaries via `depguard` rules in `.golangci.yml` m
 ## See also
 
 - [architecture.md](architecture.md) — codebase shape.
-- [data-model.md](data-model.md) — schema and migrations.
+- [data-model.md](data-model.md) — current SQLite schema and operational data.
 - [../mcp.md](../mcp.md) — agent surface contract.

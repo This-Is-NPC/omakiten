@@ -16,6 +16,26 @@ type loadBundleOptions struct {
 	subtask bool
 }
 
+type bundleSourceReader interface {
+	readFile(path string, max int64) ([]byte, error)
+	listFiles(dir string, suffixes []string, isCustom bool, max int64) ([]entityFile, error)
+}
+
+type bundleEntities struct {
+	skills           []Skill
+	laws             []Law
+	personItems      []Persona
+	templateItems    []TaskTemplate
+	notifications    map[string]Notification
+	languages        []Language
+	skillWarn        []SourceWarning
+	lawWarn          []SourceWarning
+	personaWarn      []SourceWarning
+	templateWarn     []SourceWarning
+	notificationWarn []SourceWarning
+	languageWarn     []SourceWarning
+}
+
 // LoadBundle reads the active yaml profile plus the per-entity folders
 // rooted at the parent directory of the yaml's parent (i.e. the config
 // root that holds both `config/<active>.yaml` and the entity folders as
@@ -27,10 +47,84 @@ func LoadBundle(path string) (Bundle, error) {
 	return loadBundle(path, loadBundleOptions{})
 }
 
+// LoadBundlePlan reads every source through one caching reader, parses the
+// captured bytes, and returns their hashes. A caller can therefore pair a
+// planned value with the exact bytes that produced it without a second read.
+func LoadBundlePlan(path string) (Bundle, map[string]string, error) {
+	raw, err := readFileBounded(path, MaxWiringFileBytes)
+	if err != nil {
+		return Bundle{}, nil, err
+	}
+	reader := newPlanSourceReader()
+	reader.capture(path, raw)
+	bundle, err := loadBundleFromRawReader(path, raw, loadBundleOptions{}, reader)
+	if err != nil {
+		return Bundle{}, nil, err
+	}
+	return bundle, reader.hashes, nil
+}
+
+type planSourceReader struct {
+	raw    map[string][]byte
+	hashes map[string]string
+}
+
+func newPlanSourceReader() *planSourceReader {
+	return &planSourceReader{raw: make(map[string][]byte), hashes: make(map[string]string)}
+}
+
+func (r *planSourceReader) capture(path string, raw []byte) {
+	if _, ok := r.raw[path]; ok {
+		return
+	}
+	rawCopy := append([]byte(nil), raw...)
+	r.raw[path] = rawCopy
+	r.hashes[path] = hashBytes(rawCopy)
+}
+
+func (r *planSourceReader) readFile(path string, max int64) ([]byte, error) {
+	if raw, ok := r.raw[path]; ok {
+		return append([]byte(nil), raw...), nil
+	}
+	raw, err := readFileBounded(path, max)
+	if err != nil {
+		return nil, err
+	}
+	r.capture(path, raw)
+	return append([]byte(nil), raw...), nil
+}
+
+func (r *planSourceReader) listFiles(dir string, suffixes []string, isCustom bool, max int64) ([]entityFile, error) {
+	files, err := listFilesIn(dir, suffixes, isCustom, max)
+	if err != nil {
+		return nil, err
+	}
+	for i := range files {
+		r.capture(files[i].Path, files[i].Raw)
+		files[i].Raw = append([]byte(nil), r.raw[files[i].Path]...)
+	}
+	return files, nil
+}
+
 func loadBundle(path string, opts loadBundleOptions) (Bundle, error) {
+	raw, err := readFileBounded(path, MaxWiringFileBytes)
+	if err != nil {
+		return Bundle{}, err
+	}
+	return loadBundleFromRaw(path, raw, opts)
+}
+
+func loadBundleFromRaw(path string, raw []byte, opts loadBundleOptions) (Bundle, error) {
+	return loadBundleFromRawReader(path, raw, opts, nil)
+}
+
+func loadBundleFromRawReader(path string, raw []byte, opts loadBundleOptions, reader bundleSourceReader) (Bundle, error) {
+	if err := validateCurrentConfigLayout(path); err != nil {
+		return Bundle{}, err
+	}
 	rootDir := ConfigRootFromYAMLPath(path)
 
-	wired, fields, importSources, err := readWiringDetailed(path)
+	wired, fields, importSources, err := readWiringDetailedRawReader(path, raw, reader)
 	if err != nil {
 		return Bundle{}, err
 	}
@@ -40,32 +134,16 @@ func loadBundle(path string, opts loadBundleOptions) (Bundle, error) {
 		}
 	}
 
-	skills, skillWarn, err := LoadSkills(filepath.Join(rootDir, EntityKindSkill.Folder()))
-	if err != nil {
-		return Bundle{}, err
-	}
-	laws, lawWarn, err := LoadLaws(filepath.Join(rootDir, EntityKindLaw.Folder()))
-	if err != nil {
-		return Bundle{}, err
-	}
-	personas, personaWarn, err := LoadPersonas(filepath.Join(rootDir, EntityKindPersona.Folder()))
-	if err != nil {
-		return Bundle{}, err
-	}
-	templates, templateWarn, err := LoadTemplates(filepath.Join(rootDir, EntityKindTemplate.Folder()))
-	if err != nil {
-		return Bundle{}, err
-	}
-	notifications, notificationWarn, err := LoadNotifications(filepath.Join(rootDir, "notifications"))
-	if err != nil {
-		return Bundle{}, err
-	}
-	languages, languageWarn, err := LoadLanguages(filepath.Join(rootDir, "languages"))
+	return finishBundleLoad(path, rootDir, wired, importSources, opts, reader)
+}
+
+func finishBundleLoad(path, rootDir string, wired wiring, importSources []string, opts loadBundleOptions, reader bundleSourceReader) (Bundle, error) {
+	entities, err := loadBundleEntities(rootDir, reader)
 	if err != nil {
 		return Bundle{}, err
 	}
 
-	theme, themePath, themeErr := resolveActiveTheme(rootDir, wired.Config.Theme.Active)
+	theme, themePath, themeErr := resolveActiveThemeReader(rootDir, wired.Config.Theme.Active, reader)
 
 	bundle := Bundle{
 		Version:        wired.Version,
@@ -73,8 +151,9 @@ func loadBundle(path string, opts loadBundleOptions) (Bundle, error) {
 		SubtaskKit:     strings.TrimSpace(wired.SubtaskKit),
 		Config:         wired.Config,
 		Workflows:      wired.Workflows,
-		Notifications:  notifications,
-		Languages:      languages,
+		Surfaces:       wired.Surfaces,
+		Notifications:  entities.notifications,
+		Languages:      entities.languages,
 		ActiveTheme:    theme,
 		ActiveThemeErr: themeErr,
 		// Root profile first, then every file it pulled in via a `from:`
@@ -92,63 +171,120 @@ func loadBundle(path string, opts loadBundleOptions) (Bundle, error) {
 		})
 	}
 
-	bundle.Warnings = append(bundle.Warnings, skillWarn...)
-	bundle.Warnings = append(bundle.Warnings, lawWarn...)
-	bundle.Warnings = append(bundle.Warnings, personaWarn...)
-	bundle.Warnings = append(bundle.Warnings, templateWarn...)
-	bundle.Warnings = append(bundle.Warnings, notificationWarn...)
-	bundle.Warnings = append(bundle.Warnings, languageWarn...)
+	prepareBundle(&bundle, path, wired, entities, opts.subtask)
 
-	bundle.Skills = pickSkills(skills, wired.Skills)
-	bundle.Laws = pickLaws(laws, wired.Laws, wired.Personas, wired.Projects)
-	bundle.Personas = pickPersonas(personas, wired.Personas)
-	bundle.Templates = pickTemplates(templates, wired.Templates)
+	if err := ValidateBundle(bundle, entities.skills, entities.laws, entities.personItems, entities.templateItems); err != nil {
+		return Bundle{}, err
+	}
+	return loadSubtaskBundle(path, bundle, opts, reader)
+}
 
-	// All* expose the full on-disk catalog with the active subset flagged,
-	// so the Settings view lists every preset's entities (not just the
-	// active wiring) while runtime resolution keeps using the picked slices.
-	bundle.AllSkills = catalogSkills(skills, bundle.Skills)
-	bundle.AllLaws = catalogLaws(laws, bundle.Laws)
-	bundle.AllPersonas = catalogPersonas(personas, bundle.Personas)
-	bundle.AllTemplates = catalogTemplates(templates, bundle.Templates)
-
+func prepareBundle(bundle *Bundle, path string, wired wiring, entities bundleEntities, subtask bool) {
+	appendBundleEntityWarnings(bundle, entities)
+	bundle.Skills = pickSkills(entities.skills, wired.Skills)
+	bundle.Laws = pickLaws(entities.laws, wired.Laws, wired.Personas, wired.Projects)
+	bundle.Personas = pickPersonas(entities.personItems, wired.Personas)
+	bundle.Templates = pickTemplates(entities.templateItems, wired.Templates)
+	populateBundleCatalogs(bundle, entities)
 	bundle.Projects = pickProjects(wired.Projects)
 	bundle.MCPCommands = wired.MCPCommands
-	if opts.subtask && len(bundle.MCPCommands) > 0 {
+	if subtask && len(bundle.MCPCommands) > 0 {
 		bundle.Warnings = append(bundle.Warnings, SourceWarning{Path: path, Message: subtaskKitMCPCommandsWarning})
 		bundle.MCPCommands = nil
 	}
-
-	bundle.Warnings = append(bundle.Warnings, warnDanglingRefs(wired, skills, laws, personas, templates)...)
-	bundle.Warnings = append(bundle.Warnings, warnMCPCommandRefs(
-		bundle,
-		slugSet(loadedPersonaSlugs(personas)),
-		slugSet(loadedLawSlugs(laws)),
-		slugSet(loadedTemplateSlugs(templates)),
-	)...)
+	bundle.Warnings = append(bundle.Warnings, warnDanglingRefs(wired, entities.skills, entities.laws, entities.personItems, entities.templateItems)...)
+	bundle.Warnings = append(bundle.Warnings, appendBundleReferenceWarnings(*bundle, entities)...)
 	if kit, kitErr := LoadKitConfigByKey(bundle.Kit.Key); kitErr == nil {
 		NormalizeEventsRetention(&bundle.Config, kit)
+		NormalizeEventsOrphanSweep(&bundle.Config, kit)
 	}
 	bundle.Warnings = append(bundle.Warnings, warnLogsWindowExceedsRetention(bundle.Config)...)
+}
 
-	if err := ValidateBundle(bundle, skills, laws, personas, templates); err != nil {
-		return Bundle{}, err
+func loadSubtaskBundle(path string, bundle Bundle, opts loadBundleOptions, reader bundleSourceReader) (Bundle, error) {
+	if opts.subtask || bundle.SubtaskKit == "" {
+		return bundle, nil
 	}
-
-	if !opts.subtask && bundle.SubtaskKit != "" {
-		subtaskPath, err := resolveSubtaskKitPath(path, bundle.SubtaskKit)
-		if err != nil {
-			return Bundle{}, err
-		}
-		subtaskBundle, err := loadBundle(subtaskPath, loadBundleOptions{subtask: true})
-		if err != nil {
-			return Bundle{}, fmt.Errorf("subtask_kit %q (%s): %w", bundle.SubtaskKit, subtaskPath, err)
-		}
-		bundle.SourcePaths = append(bundle.SourcePaths, subtaskBundle.SourcePaths...)
-		bundle.Warnings = append(bundle.Warnings, subtaskBundle.Warnings...)
-		bundle.SubtaskBundle = &subtaskBundle
+	subtaskPath, resolveErr := resolveSubtaskKitPath(path, bundle.SubtaskKit)
+	if resolveErr != nil {
+		return Bundle{}, resolveErr
 	}
+	var subtaskBundle Bundle
+	var err error
+	if reader == nil {
+		subtaskBundle, err = loadBundle(subtaskPath, loadBundleOptions{subtask: true})
+	} else {
+		var raw []byte
+		raw, err = reader.readFile(subtaskPath, MaxWiringFileBytes)
+		if err == nil {
+			subtaskBundle, err = loadBundleFromRawReader(subtaskPath, raw, loadBundleOptions{subtask: true}, reader)
+		}
+	}
+	if err != nil {
+		return Bundle{}, fmt.Errorf("subtask_kit %q (%s): %w", bundle.SubtaskKit, subtaskPath, err)
+	}
+	bundle.SourcePaths = append(bundle.SourcePaths, subtaskBundle.SourcePaths...)
+	bundle.Warnings = append(bundle.Warnings, subtaskBundle.Warnings...)
+	bundle.SubtaskBundle = &subtaskBundle
 	return bundle, nil
+}
+
+func loadBundleEntities(rootDir string, reader bundleSourceReader) (bundleEntities, error) {
+	var entities bundleEntities
+	var err error
+	entities.skills, entities.skillWarn, err = loadSkillsReader(filepath.Join(rootDir, EntityKindSkill.Folder()), reader)
+	if err != nil {
+		return bundleEntities{}, err
+	}
+	entities.laws, entities.lawWarn, err = loadLawsReader(filepath.Join(rootDir, EntityKindLaw.Folder()), reader)
+	if err != nil {
+		return bundleEntities{}, err
+	}
+	entities.personItems, entities.personaWarn, err = loadPersonasReader(filepath.Join(rootDir, EntityKindPersona.Folder()), reader)
+	if err != nil {
+		return bundleEntities{}, err
+	}
+	entities.templateItems, entities.templateWarn, err = loadTemplatesReader(filepath.Join(rootDir, EntityKindTemplate.Folder()), reader)
+	if err != nil {
+		return bundleEntities{}, err
+	}
+	entities.notifications, entities.notificationWarn, err = loadNotificationsReader(filepath.Join(rootDir, "notifications"), reader)
+	if err != nil {
+		return bundleEntities{}, err
+	}
+	entities.languages, entities.languageWarn, err = loadLanguagesReader(filepath.Join(rootDir, "languages"), reader)
+	if err != nil {
+		return bundleEntities{}, err
+	}
+	return entities, nil
+}
+
+func appendBundleEntityWarnings(bundle *Bundle, entities bundleEntities) {
+	bundle.Warnings = append(bundle.Warnings, entities.skillWarn...)
+	bundle.Warnings = append(bundle.Warnings, entities.lawWarn...)
+	bundle.Warnings = append(bundle.Warnings, entities.personaWarn...)
+	bundle.Warnings = append(bundle.Warnings, entities.templateWarn...)
+	bundle.Warnings = append(bundle.Warnings, entities.notificationWarn...)
+	bundle.Warnings = append(bundle.Warnings, entities.languageWarn...)
+}
+
+func populateBundleCatalogs(bundle *Bundle, entities bundleEntities) {
+	// All* expose the full on-disk catalog with the active subset flagged,
+	// while runtime resolution keeps using the picked slices.
+	bundle.AllSkills = catalogSkills(entities.skills, bundle.Skills)
+	bundle.AllLaws = catalogLaws(entities.laws, bundle.Laws)
+	bundle.AllPersonas = catalogPersonas(entities.personItems, bundle.Personas)
+	bundle.AllTemplates = catalogTemplates(entities.templateItems, bundle.Templates)
+}
+
+func appendBundleReferenceWarnings(bundle Bundle, entities bundleEntities) []SourceWarning {
+	warnings := warnMCPCommandRefs(
+		bundle,
+		slugSet(loadedPersonaSlugs(entities.personItems)),
+		slugSet(loadedLawSlugs(entities.laws)),
+		slugSet(loadedTemplateSlugs(entities.templateItems)),
+	)
+	return warnings
 }
 
 // buildSettingsSources computes the per-leaf-path origin map for the
@@ -176,16 +312,13 @@ func buildSettingsSources(user Settings, kitKey string) map[string]string {
 
 // ConfigRootFromYAMLPath strips the trailing `config/<file>.yaml` (or
 // `config/custom/<file>.yaml`) from path and returns the layout root that
-// holds both the yaml and the entity folders as siblings. Three shapes are
-// recognized:
+// holds both the yaml and the entity folders as siblings.
 //
 //   - <root>/config/<file>.yaml          → returns <root>
 //   - <root>/config/custom/<file>.yaml   → returns <root>
-//   - <root>/<file>.yaml (legacy flat)   → returns <root>
 //
 // The custom/ branch matters when `.active` resolves to a user-authored
-// profile (or a kit that was migrated into custom/ during a layout
-// migration) — without it, entity folders would be searched at
+// profile — without it, entity folders would be searched at
 // <root>/config/custom/<entity> instead of <root>/<entity>.
 func ConfigRootFromYAMLPath(path string) string {
 	configDir := filepath.Dir(path)
@@ -200,6 +333,39 @@ func ConfigRootFromYAMLPath(path string) string {
 		return filepath.Dir(configDir)
 	}
 	return configDir
+}
+
+const CurrentEntitySchemaVersion = 2
+
+func validateCurrentConfigLayout(path string) error {
+	configDir := filepath.Dir(path)
+	if filepath.Base(configDir) == "custom" {
+		if filepath.Base(filepath.Dir(configDir)) != "config" {
+			return fmt.Errorf("config path %q must be under a current config/ directory", path)
+		}
+	} else if filepath.Base(configDir) != "config" {
+		return fmt.Errorf("config path %q is outside the current config/ directory", path)
+	}
+
+	rootDir := ConfigRootFromYAMLPath(path)
+	for _, kind := range []string{"skills", "laws", "personas", "templates"} {
+		legacyDir := filepath.Join(rootDir, "config", kind)
+		if _, err := lstatNoFollow(legacyDir); err == nil {
+			return fmt.Errorf("legacy entity directory %q is not supported; use %s/%s", legacyDir, rootDir, kind)
+		} else if !os.IsNotExist(err) {
+			return err
+		}
+	}
+	return nil
+}
+
+func validateCurrentPersonaWiring(personas []PersonaWiring) error {
+	for _, persona := range personas {
+		if persona.SchemaVersion != CurrentEntitySchemaVersion {
+			return fmt.Errorf("personas.%s schema_version must be %d", persona.Slug, CurrentEntitySchemaVersion)
+		}
+	}
+	return nil
 }
 
 // readWiringDetailed reads, import-expands, and strictly decodes a profile YAML
@@ -219,7 +385,10 @@ func readWiringDetailed(path string) (wiring, map[string]struct{}, []string, err
 	if err != nil {
 		return wiring{}, nil, nil, err
 	}
+	return readWiringDetailedRawReader(path, raw, nil)
+}
 
+func readWiringDetailedRawReader(path string, raw []byte, reader bundleSourceReader) (wiring, map[string]struct{}, []string, error) {
 	// Parse once into a node tree, expand value-level `from:` directives, then
 	// re-encode so the existing strict-decode path runs unchanged over the
 	// resolved YAML.
@@ -227,7 +396,7 @@ func readWiringDetailed(path string) (wiring, map[string]struct{}, []string, err
 	if err := yaml.Unmarshal(raw, &probe); err != nil {
 		return wiring{}, nil, nil, err
 	}
-	resolved, sources, err := resolveImports(&probe, path)
+	resolved, sources, err := resolveImportsWithReader(&probe, path, reader)
 	if err != nil {
 		return wiring{}, nil, nil, err
 	}
@@ -249,6 +418,9 @@ func readWiringDetailed(path string) (wiring, map[string]struct{}, []string, err
 
 	var w wiring
 	if err := decoder.Decode(&w); err != nil {
+		return wiring{}, nil, nil, err
+	}
+	if err := validateCurrentPersonaWiring(w.Personas); err != nil {
 		return wiring{}, nil, nil, err
 	}
 	return w, fields, importSources, nil

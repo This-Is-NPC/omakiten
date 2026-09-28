@@ -10,15 +10,14 @@ import (
 	"github.com/spf13/cobra"
 
 	"omakiten/internal/activity"
-	"omakiten/internal/agent"
 	"omakiten/internal/agentruntime"
-	"omakiten/internal/app"
 	"omakiten/internal/config"
 	"omakiten/internal/configstore"
 	"omakiten/internal/domain"
 	"omakiten/internal/events"
 	"omakiten/internal/hooks"
 	"omakiten/internal/hooks/actions"
+	"omakiten/internal/operation"
 	"omakiten/internal/output"
 	"omakiten/internal/paths"
 	projectresolver "omakiten/internal/project"
@@ -88,44 +87,12 @@ func (r *runtime) close() {
 	_ = r.store.Close()
 }
 
-// bundleEditor builds the editor the way every config-touching service expects
-// it. Centralising this lets the call sites stay one line each.
-func (r *runtime) bundleEditor() *app.BundleEditor {
-	return app.NewBundleEditor(configstore.New(), r.configPath)
-}
-
-// entityServiceRepos aggregates the editor/file/slugger triple every
-// entity service shares so each constructor below stays one line. The
-// configstore satisfies both EntityFileWriter and Slugifier — keeping
-// the alias inside the helper means a swap of either port lands once.
-func (r *runtime) entityServiceRepos() app.EntityServiceRepos {
-	store := configstore.New()
-	return app.EntityServiceRepos{Editor: r.bundleEditor(), Files: store, Slugger: store}
-}
-
-func (r *runtime) skillService() *app.SkillService {
-	return app.NewSkillService(r.entityServiceRepos(), r.activeSnapshot())
-}
-
-func (r *runtime) lawService() *app.LawService {
-	return app.NewLawService(r.entityServiceRepos(), r.activeSnapshot(), r.activeRegistry())
-}
-
-func (r *runtime) personaService() *app.PersonaService {
-	return app.NewPersonaService(r.entityServiceRepos(), r.activeSnapshot())
-}
-
-// commentService wraps NewCommentService and captures the per-project
-// Snapshot so NormalizeTagName resolves the bundle's alias table
-// without any post-construction setter call.
-func (r *runtime) commentService() *app.CommentService {
-	return app.NewCommentService(r.store, r.activeSnapshot())
-}
-
-// commentServiceWithWorkflow mirrors commentService for the edit /
-// remove flows that need workflow policy enforcement.
-func (r *runtime) commentServiceWithWorkflow(workflow *app.WorkflowService) *app.CommentService {
-	return app.NewCommentServiceWithWorkflow(r.store, workflow, r.activeSnapshot())
+// operationService returns the boot-seeded operation.Service from the
+// active ProjectRuntime. Read-only catalog CLIs (template/law/skill/
+// persona list+show, workflow show/orphans) go through this facade
+// rather than constructing parallel app.*Service instances.
+func (r *runtime) operationService() *operation.Service {
+	return r.ProjectRuntime().Service.ForCLI()
 }
 
 // activeRegistry returns the EnumRegistry from the BundleCache's active
@@ -156,22 +123,6 @@ func (r *runtime) activeSnapshot() *config.Snapshot {
 	return pr.Snapshot
 }
 
-// activeWorkflow returns the per-project *app.WorkflowService captured
-// against the boot-seeded ProjectRuntime's Snapshot. Subcommands that
-// need a WorkflowService go through this helper so the cache-built
-// instance is reused — constructing a fresh one per call would bypass
-// the Phase 2-bis Invariant 3 (app services capture *config.Snapshot at
-// construction) and re-introduce per-call allocations. Falls back to a
-// fresh construction only when the cache is absent (rare bootstrap
-// window) so the helper degrades to the pre-cache shape rather than
-// returning nil.
-func (r *runtime) activeWorkflow() *app.WorkflowService {
-	if pr := r.ProjectRuntime(); pr != nil && pr.Workflow != nil {
-		return pr.Workflow
-	}
-	return app.NewWorkflowServiceFromStore(r.store, r.activeRegistry(), r.activeSnapshot())
-}
-
 func NewRootCommand(version string) *cobra.Command {
 	ensurePkgCatalog()
 	opts := &runtimeOptions{catalog: pkgCatalog}
@@ -183,12 +134,19 @@ func NewRootCommand(version string) *cobra.Command {
 		SilenceUsage:  true,
 		SilenceErrors: true,
 	}
+	configureRootFlags(cmd, opts)
+	addRootCommands(cmd, opts, version)
+	return cmd
+}
 
+func configureRootFlags(cmd *cobra.Command, opts *runtimeOptions) {
 	cmd.PersistentFlags().StringVar(&opts.dbPath, "db", "", opts.t("cli.root.flag.db"))
 	cmd.PersistentFlags().StringVar(&opts.configPath, "config", "", opts.t("cli.root.flag.config"))
 	cmd.PersistentFlags().StringVarP(&opts.project, "project", "p", "", opts.t("cli.root.flag.project"))
 	cmd.PersistentFlags().Int64Var(&opts.projectID, "project-id", 0, opts.t("cli.root.flag.project-id"))
+}
 
+func addRootCommands(cmd *cobra.Command, opts *runtimeOptions, version string) {
 	cmd.AddCommand(newInitCommand(opts))
 	cmd.AddCommand(newAddCommand(opts))
 	cmd.AddCommand(newListCommand(opts))
@@ -205,17 +163,25 @@ func NewRootCommand(version string) *cobra.Command {
 	cmd.AddCommand(newWorkflowCommand(opts))
 	cmd.AddCommand(newConfigCommand(opts))
 	cmd.AddCommand(newDBCommand(opts))
+	cmd.AddCommand(newInsightsCommand(opts))
+	cmd.AddCommand(newProgressCommand(opts))
+	cmd.AddCommand(newTaskCommand(opts))
+	cmd.AddCommand(newMetricsCommand(opts))
+	cmd.AddCommand(newErrorCommand(opts))
+	cmd.AddCommand(newSolutionCommand(opts))
+	cmd.AddCommand(newProjectCommand(opts))
 	cmd.AddCommand(newProjectsCommand(opts))
 	cmd.AddCommand(newLawCommand(opts))
 	cmd.AddCommand(newSkillCommand(opts))
 	cmd.AddCommand(newPersonaCommand(opts))
+	cmd.AddCommand(newTemplateCommand(opts))
+	cmd.AddCommand(newSearchCommand(opts))
+	cmd.AddCommand(newTagCommand(opts))
 	cmd.AddCommand(newTUICommand(opts, version))
 	cmd.AddCommand(newMCPCommand(opts))
 	cmd.AddCommand(newSetupCommand(opts))
 	cmd.AddCommand(newUninstallCommand(opts))
 	cmd.AddCommand(newUpdateCommand(opts))
-
-	return cmd
 }
 
 func (o *runtimeOptions) open(ctx context.Context, materializeConfig bool) (*runtime, error) {
@@ -229,41 +195,15 @@ func (o *runtimeOptions) open(ctx context.Context, materializeConfig bool) (*run
 		return nil, err
 	}
 
-	// Project-aware discovery: when --project / --project-id is supplied,
-	// walk-up starts at the project's root_path (looked up from the DB)
-	// instead of the CWD. This lets `okt --project B cmd` from CWD=A pick
-	// up B's .omakiten/ even if A also has one. Unresolvable project flags
-	// degrade to CWD-based discovery rather than aborting.
-	o.discoveryStart, err = o.resolveDiscoveryStart(ctx, store)
+	repoLocalDir, err := o.resolveRepoLocalDir(ctx, store)
 	if err != nil {
 		_ = store.Close()
 		return nil, err
-	}
-
-	repoLocalDir, err := o.discoverRepoLocalRoot()
-	if err != nil {
-		_ = store.Close()
-		return nil, err
-	}
-	if o.configPath != "" {
-		// --config overrides discovery — the TUI badge must reflect what
-		// the runtime is actually loading, not a discovered .omakiten/
-		// that the flag bypassed.
-		repoLocalDir = ""
 	}
 
 	cs := configstore.New()
 	if materializeConfig {
-		rootDir, err := o.resolvedConfigRoot()
-		if err != nil {
-			_ = store.Close()
-			return nil, err
-		}
-		if err := cs.MigrateLayout(rootDir); err != nil {
-			_ = store.Close()
-			return nil, err
-		}
-		if err := cs.EnsureDefaultFiles(rootDir); err != nil {
+		if err := o.prepareConfig(cs); err != nil {
 			_ = store.Close()
 			return nil, err
 		}
@@ -278,66 +218,72 @@ func (o *runtimeOptions) open(ctx context.Context, materializeConfig bool) (*run
 	rt := &runtime{store: store, configPath: configPath, dbPath: dbPath, repoLocalDir: repoLocalDir}
 
 	if materializeConfig {
-		// Single construction path: peek the bundle once for the events
-		// bus seed (the bus must outlive every cache rebuild), then
-		// delegate every other per-bundle wire (registry, hooks
-		// engine, notification snapshot, synonyms, stopwords) to the
-		// shared agentruntime.BuildProjectRuntime via cache.Resolve.
-		// Mirrors the MCP composition root so CLI and MCP cannot
-		// drift on what "boot" produces.
-		preview, err := config.LoadBundle(configPath)
-		if err != nil {
-			_ = store.Close()
-			// Wrap with the structured envelope #365 introduced for
-			// `okt config validate --migrate` so every surface that
-			// runs through open() (most prominently `okt tui`)
-			// emits the same {errors:[{kind, path, message,
-			// suggested_command}]} shape — the user gets a
-			// copy-pasteable repair command instead of a bare
-			// validator string.
-			firstKind := classifyValidationError(err)
-			return nil, domain.NewError(
-				domain.ErrConfigInvalid,
-				fmt.Sprintf(t("cli.tui.err.config_validation_failed_fmt"), 1, firstKind),
-				buildValidateFailureDetails(configPath, err, nil),
-			)
-		}
-		emitBundleWarnings(preview)
-
-		// Hydrate the domain event_type registry from the kit YAML
-		// before any service that consumes it (formatter resolution,
-		// log-visibility gating, metric routing) is constructed. The
-		// helper is a no-op when the events block has no definitions
-		// so fixture-driven tests stay unaffected.
-		if err := config.LoadDomainEventRegistry(preview.Config.Events); err != nil {
+		if err := rt.materialize(ctx, o, cs); err != nil {
 			_ = store.Close()
 			return nil, err
 		}
-
-		cwd, err := os.Getwd()
-		if err != nil {
-			_ = store.Close()
-			return nil, err
-		}
-		bus := events.NewInProcessBus(preview.Config.Events)
-		cache := agentruntime.NewBundleCache(store, bus, cs)
-		cache.SetProjectSelector(agent.ProjectSelector{ProjectID: o.projectID, Project: o.project, CWD: cwd})
-
-		pr, err := cache.Resolve(ctx, o.projectID, configPath)
-		if err != nil {
-			_ = store.Close()
-			return nil, err
-		}
-
-		rt.registry = pr.EnumRegistry
-		rt.bus = bus
-		rt.hooksEngine = pr.HooksEngine
-		rt.notificationAction = pr.NotificationAction
-		rt.cache = cache
-		rt.projectID = o.projectID
 	}
 
 	return rt, nil
+}
+
+func (o *runtimeOptions) resolveRepoLocalDir(ctx context.Context, store *sqlite.Store) (string, error) {
+	var err error
+	o.discoveryStart, err = o.resolveDiscoveryStart(ctx, store)
+	if err != nil {
+		return "", err
+	}
+	repoLocalDir, err := o.discoverRepoLocalRoot()
+	if err != nil {
+		return "", err
+	}
+	if o.configPath != "" {
+		// --config overrides discovery, including the runtime's local badge.
+		repoLocalDir = ""
+	}
+	return repoLocalDir, nil
+}
+
+func (o *runtimeOptions) prepareConfig(store *configstore.Adapter) error {
+	rootDir, err := o.resolvedConfigRoot()
+	if err != nil {
+		return err
+	}
+	return store.EnsureDefaultFiles(rootDir)
+}
+
+func (r *runtime) materialize(ctx context.Context, opts *runtimeOptions, cs *configstore.Adapter) error {
+	preview, err := config.LoadBundle(r.configPath)
+	if err != nil {
+		firstKind := classifyValidationError(err)
+		return domain.NewError(
+			domain.ErrConfigInvalid,
+			fmt.Sprintf(t("cli.tui.err.config_validation_failed_fmt"), 1, firstKind),
+			buildValidateFailureDetails(r.configPath, err, nil),
+		)
+	}
+	emitBundleWarnings(preview)
+	if err := config.LoadDomainEventRegistry(preview.Config.Events); err != nil {
+		return err
+	}
+	cwd, err := os.Getwd()
+	if err != nil {
+		return err
+	}
+	bus := events.NewInProcessBus(preview.Config.Events)
+	cache := agentruntime.NewBundleCache(r.store, bus, cs)
+	cache.SetProjectSelector(operation.ProjectSelector{ProjectID: opts.projectID, Project: opts.project, CWD: cwd})
+	pr, err := cache.Resolve(ctx, opts.projectID, r.configPath)
+	if err != nil {
+		return err
+	}
+	r.registry = pr.EnumRegistry
+	r.bus = bus
+	r.hooksEngine = pr.HooksEngine
+	r.notificationAction = pr.NotificationAction
+	r.cache = cache
+	r.projectID = opts.projectID
+	return nil
 }
 
 // ResolveProjectRuntime returns the ProjectRuntime for the supplied
@@ -393,8 +339,8 @@ func (o *runtimeOptions) resolvedConfigPath() (string, error) {
 	return paths.ConfigFile()
 }
 
-// resolvedConfigRoot returns the directory MigrateLayout / EnsureDefaultFiles
-// operate on. Resolution order:
+// resolvedConfigRoot returns the directory EnsureDefaultFiles operates on.
+// Resolution order:
 //  1. --config flag (root derived from the yaml path).
 //  2. Walk-up `.omakiten/` discovery (becomes the standalone install root —
 //     no merge with the user-global ConfigRoot).
@@ -449,7 +395,7 @@ func (o *runtimeOptions) discoverRepoLocalRoot() (string, error) {
 // the user-flag-but-no-project case still gets a working runtime, the
 // project resolution will surface the real error later when the command
 // actually needs the project context.
-func (o *runtimeOptions) resolveDiscoveryStart(ctx context.Context, store app.ProjectRepository) (string, error) {
+func (o *runtimeOptions) resolveDiscoveryStart(ctx context.Context, store *sqlite.Store) (string, error) {
 	if o.project == "" && o.projectID == 0 {
 		return os.Getwd()
 	}
@@ -477,7 +423,7 @@ func (o *runtimeOptions) resolvedDBPath() (string, error) {
 	return paths.DatabaseFile()
 }
 
-func (o *runtimeOptions) resolveProject(ctx context.Context, store app.ProjectRepository) (domain.ProjectContext, error) {
+func (o *runtimeOptions) resolveProject(ctx context.Context, store *sqlite.Store) (domain.ProjectContext, error) {
 	cwd, err := os.Getwd()
 	if err != nil {
 		return domain.ProjectContext{}, err
@@ -492,14 +438,38 @@ func writeSuccess(cmd *cobra.Command, data any) error {
 }
 
 func writeError(cmd *cobra.Command, err error) error {
+	code, message, details := "internal_error", err.Error(), map[string]any(nil)
 	var coded *domain.CodedError
 	if errors.As(err, &coded) {
-		_ = output.Write(cmd.OutOrStdout(), output.Failure(string(coded.Code), coded.Message, coded.Details))
-		return exitError{code: 1}
+		code, message, details = string(coded.Code), coded.Message, coded.Details
+	} else if coded = codedFromOperationDenied(err); coded != nil {
+		code, message, details = string(coded.Code), coded.Message, coded.Details
 	}
-
-	_ = output.Write(cmd.OutOrStdout(), output.Failure("internal_error", err.Error(), nil))
+	_ = output.Write(cmd.OutOrStdout(), output.Failure(code, message, details))
 	return exitError{code: 1}
+}
+
+// codedFromOperationDenied maps a surfaces deny onto the named
+// operation_denied envelope so every runJSON command that already
+// returns the facade error is covered without touching cobra files.
+func codedFromOperationDenied(err error) *domain.CodedError {
+	var denied operation.OperationDenied
+	if !errors.As(err, &denied) {
+		return nil
+	}
+	ensurePkgCatalog()
+	reason := pkgCatalog.Resolve(denied.Reason)
+	if reason == "" {
+		reason = t("cli.err.operation_denied")
+	}
+	details := map[string]any{
+		"op":      denied.Op,
+		"surface": string(denied.Surface),
+	}
+	if denied.Reason != "" {
+		details["reason"] = reason
+	}
+	return domain.NewError(domain.ErrOperationDenied, reason, details)
 }
 
 // emitBundleWarnings surfaces non-fatal config issues (skipped custom

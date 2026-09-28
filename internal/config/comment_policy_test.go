@@ -129,36 +129,38 @@ func TestValidatePermissionScopesRejectsEmptyTagName(t *testing.T) {
 func TestShippedKitsParseCommentPolicyBackCompat(t *testing.T) {
 	for _, preset := range []string{"omakase", "izakaya", "kaiseki", "shokunin"} {
 		t.Run(preset, func(t *testing.T) {
-			tmp := t.TempDir()
-			if err := EnsureDefaultFiles(tmp); err != nil {
-				t.Fatalf("EnsureDefaultFiles() = %v", err)
-			}
-			src := filepath.Join(tmp, "config", preset+".yaml")
-			bundle, err := LoadBundle(src)
-			if err != nil {
-				t.Fatalf("LoadBundle(%s) = %v", preset, err)
-			}
-			if err := ValidateBundle(bundle, bundle.Skills, bundle.Laws, bundle.Personas, bundle.Templates); err != nil {
-				t.Fatalf("ValidateBundle(%s) = %v", preset, err)
-			}
-			snap := BuildSnapshot(bundle)
-			if snap == nil {
-				t.Fatalf("BuildSnapshot(%s) = nil", preset)
-			}
-			// Every comment policy in the shipped kits is a bare bool: assert
-			// none accidentally parsed tag predicates, and that the resolved
-			// Allow matches the original verdict (back-compat invariant).
-			for _, wf := range bundle.Workflows {
-				assertBareBoolPolicies(t, wf.Defaults)
-				for _, b := range wf.Buckets {
-					if b.Permissions == nil {
-						continue
-					}
-					assertBareBoolEntity(t, b.Permissions.Task)
-					assertBareBoolEntity(t, b.Permissions.Comment)
-				}
-			}
+			assertShippedKitCommentPolicies(t, preset)
 		})
+	}
+}
+
+func assertShippedKitCommentPolicies(t *testing.T, preset string) {
+	t.Helper()
+	tmp := t.TempDir()
+	if err := EnsureDefaultFiles(tmp); err != nil {
+		t.Fatalf("EnsureDefaultFiles() = %v", err)
+	}
+	src := filepath.Join(tmp, "config", preset+".yaml")
+	bundle, err := LoadBundle(src)
+	if err != nil {
+		t.Fatalf("LoadBundle(%s) = %v", preset, err)
+	}
+	if err := ValidateBundle(bundle, bundle.Skills, bundle.Laws, bundle.Personas, bundle.Templates); err != nil {
+		t.Fatalf("ValidateBundle(%s) = %v", preset, err)
+	}
+	snap := BuildSnapshot(bundle)
+	if snap == nil {
+		t.Fatalf("BuildSnapshot(%s) = nil", preset)
+	}
+	for _, wf := range bundle.Workflows {
+		assertBareBoolPolicies(t, wf.Defaults)
+		for _, b := range wf.Buckets {
+			if b.Permissions == nil {
+				continue
+			}
+			assertBareBoolEntity(t, b.Permissions.Task)
+			assertBareBoolEntity(t, b.Permissions.Comment)
+		}
 	}
 }
 

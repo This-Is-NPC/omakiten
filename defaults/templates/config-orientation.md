@@ -7,7 +7,7 @@ laws:
 ---
 ## Path resolution
 
-Precedence (full contract in `.docs/reference/path-resolution.md`):
+Precedence (full contract in `.docs/configuration-guide/path-resolution.md`):
 
 1. `--config <path>` flag (CLI / TUI / MCP).
 2. `$OMAKITEN_HOME/config/<active>.yaml`.
@@ -18,7 +18,7 @@ Precedence (full contract in `.docs/reference/path-resolution.md`):
 
 ## Layout under `<root>`
 
-Full tree in `.docs/reference/layout.md`. Quick map:
+Full tree in `.docs/configuration-guide/path-resolution.md`. Quick map:
 
 | Folder | Purpose |
 | --- | --- |
@@ -238,7 +238,7 @@ config:
     logs:
       sort:   { order: desc }                      # direction only
       limit:  50
-      filter: { source: [] }                       # subset of [cli, tui, mcp]
+      window_days: 30                              # display horizon in days
     task_activity:
       sort:   { order: asc }                       # asc = chronological, desc = newest first
 ```
@@ -280,4 +280,4 @@ For deeper detail, fetch the matching guide:
 - `.docs/configuration-guide/guards.md` — guard kinds, evaluation order, and failure payloads.
 - `.docs/configuration-guide/command-bindings.md` — `mcp_commands` persona/law/template bindings.
 - `.docs/mcp.md` — MCP tool surface and prompt anatomy.
-- `.docs/internal/data-model.md` — SQLite schema, migrations, and the unified `events` log.
+- `.docs/internal/data-model.md` — current SQLite schema baseline and the unified `events` log.

@@ -8,14 +8,14 @@
 // # Hexagonal layering
 //
 //	+------------------------------------------------+
-//	| internal/cli, internal/tui, internal/mcp,      |   adapters (in)
-//	| internal/agentruntime  ← composition roots     |
+//	| internal/cli, internal/tui, internal/mcp       |   adapters (in)
+//	| internal/agentruntime  ← composition root      |
 //	+----+----------------+--------------------+-----+
 //	     |                |                    |
 //	     v                v                    v
 //	+------------------------------------------------+
-//	|              internal/app (this)               |   application
-//	|  Services + ports                              |
+//	|         internal/operation (fachada)           |   application facade
+//	|         internal/app (services + ports)        |
 //	+----+--------+--------+--------+------+---------+
 //	     |        |        |        |      |
 //	     v        v        v        v      v
@@ -29,8 +29,10 @@
 //	+------------------------------------------------+
 //
 // Adapters on the right (sqlite, configstore) implement the ports declared
-// here. Adapters on the left (cli, tui, mcp, agentruntime) construct app
-// services and inject the right-hand adapters as port-typed dependencies.
+// here. The composition root (internal/agentruntime) constructs app
+// services and injects the right-hand adapters as port-typed dependencies.
+// CLI, TUI, and MCP consume operation.Service — they do not mount app
+// services themselves (CLI: onda 3.1; TUI: onda 3.2).
 //
 // # Forbidden directions (enforced in internal/arch/arch_test.go)
 //
@@ -54,7 +56,8 @@
 //     ports require — the *Store / *Adapter type already satisfies the
 //     CompositeWorkflowStore / matching composite simply by virtue of
 //     receivers existing.
-//  4. Wire it up at the composition root (internal/cli/root.go,
-//     internal/cli/tui.go, internal/cli/mcp.go, internal/agentruntime).
+//  4. Wire it up at the composition root (internal/agentruntime) and
+//     expose it through operation.Service when it is a product/authoring
+//     capability. CLI/TUI/MCP must not call New*Service themselves.
 //  5. Run `go test ./internal/arch/...` to confirm boundaries are intact.
 package app

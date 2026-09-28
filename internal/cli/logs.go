@@ -159,28 +159,32 @@ func parseLogCategories(values []string) ([]domain.EventCategory, error) {
 	seen := map[domain.EventCategory]struct{}{}
 	out := []domain.EventCategory{}
 	for _, raw := range values {
-		for _, part := range strings.Split(raw, ",") {
-			token := strings.ToLower(strings.TrimSpace(part))
-			if token == "" {
-				continue
-			}
-			if token == "all" {
-				// `all` short-circuits the filter — no category
-				// predicate becomes "every category" in
-				// ListEvents which mirrors the chip behaviour.
-				return nil, nil
-			}
-			cat := domain.EventCategory(token)
-			if _, ok := known[cat]; !ok {
-				return nil, domain.NewError(
-					domain.ErrValidation,
-					t("cli.err.logs_invalid_category"),
-					map[string]any{
-						"category": token,
-						"allowed":  knownCategoryNames(),
-					},
-				)
-			}
+		var all bool
+		var err error
+		out, all, err = appendLogCategoryValue(out, seen, known, raw)
+		if err != nil {
+			return nil, err
+		}
+		if all {
+			return nil, nil
+		}
+	}
+	if len(out) == 0 {
+		return nil, nil
+	}
+	return out, nil
+}
+
+func appendLogCategoryValue(out []domain.EventCategory, seen, known map[domain.EventCategory]struct{}, raw string) ([]domain.EventCategory, bool, error) {
+	for _, part := range strings.Split(raw, ",") {
+		cat, include, all, err := parseLogCategoryPart(part, known)
+		if err != nil {
+			return nil, false, err
+		}
+		if all {
+			return out, true, nil
+		}
+		if include {
 			if _, dup := seen[cat]; dup {
 				continue
 			}
@@ -188,10 +192,26 @@ func parseLogCategories(values []string) ([]domain.EventCategory, error) {
 			out = append(out, cat)
 		}
 	}
-	if len(out) == 0 {
-		return nil, nil
+	return out, false, nil
+}
+
+func parseLogCategoryPart(part string, known map[domain.EventCategory]struct{}) (domain.EventCategory, bool, bool, error) {
+	token := strings.ToLower(strings.TrimSpace(part))
+	if token == "" {
+		return "", false, false, nil
 	}
-	return out, nil
+	if token == "all" {
+		return "", false, true, nil
+	}
+	cat := domain.EventCategory(token)
+	if _, ok := known[cat]; !ok {
+		return "", false, false, domain.NewError(
+			domain.ErrValidation,
+			t("cli.err.logs_invalid_category"),
+			map[string]any{"category": token, "allowed": knownCategoryNames()},
+		)
+	}
+	return cat, true, false, nil
 }
 
 // knownCategorySet returns the lookup set used by parseLogCategories

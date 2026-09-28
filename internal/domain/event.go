@@ -78,7 +78,7 @@ const (
 	// EventTypeProjectUpdated fires when a project's mutable metadata is
 	// rewritten through the canonical service layer — today only the
 	// description column (its write path was restored after living
-	// schema-only since migration 002). EntityType=project (entity_id is
+	// schema-only). EntityType=project (entity_id is
 	// the project id), Payload={description:{from,to}}.
 	EventTypeProjectUpdated = "project.updated"
 
@@ -201,10 +201,15 @@ const (
 	EventTypeSubtaskKitNoticeEmitted = "subtask_kit.notice_emitted"
 
 	// EventTypeBundleSwapped fires when the active config bundle is
-	// replaced through the TUI hot-reload path (Settings → Config picker).
-	// EntityType=system, Payload={from_workflow, to_workflow,
-	// orphan_count, groups}. The hooks engine uses it to surface
-	// migration prompts when orphan_count > 0.
+	// replaced through the TUI hot-reload path (Settings → Config picker,
+	// or a Studio apply). EntityType=system, Payload={from_workflow,
+	// to_workflow, orphan_count, groups, studio_diff}. The hooks engine
+	// uses it to surface migration prompts when orphan_count > 0.
+	// studio_diff is omitted for non-Studio swaps; when present it carries
+	// the DiffStudioBundles() summary of exactly what the applied Studio
+	// candidate changed (bucket/transition/guard/command-binding edits),
+	// so a Studio-triggered config mutation leaves an inspectable record
+	// instead of only the generic from/to workflow pair.
 	EventTypeBundleSwapped = "bundle.swapped"
 
 	// EventTypeBundleImported fires after ConfigService.Import (or the

@@ -5,8 +5,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"omakiten/internal/domain"
 )
@@ -28,6 +31,91 @@ func TestServeInitialize(t *testing.T) {
 	if result["protocolVersion"] == nil {
 		t.Fatal("initialize response missing protocolVersion")
 	}
+}
+
+func TestServeInitializeAdvertisesToolsListChanged(t *testing.T) {
+	input := strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"initialize"}` + "\n")
+	var output bytes.Buffer
+	if err := Serve(context.Background(), input, &output, NewAdapter(nil)); err != nil {
+		t.Fatalf("Serve() error = %v", err)
+	}
+	if !strings.Contains(output.String(), `"listChanged":true`) {
+		t.Fatalf("initialize capabilities missing tools.listChanged: %s", output.String())
+	}
+}
+
+func TestServeWritesToolsListChangedNotification(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	pr, pw := io.Pipe()
+	defer func() { _ = pr.Close() }()
+	defer func() { _ = pw.Close() }()
+
+	notify := make(chan struct{}, 1)
+	var output safeBuffer
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- ServeNotify(ctx, pr, &output, NewAdapter(nil), notify)
+	}()
+
+	if _, err := io.WriteString(pw, `{"jsonrpc":"2.0","id":1,"method":"initialize"}`+"\n"); err != nil {
+		t.Fatalf("write initialize: %v", err)
+	}
+
+	if !waitForOutput(&output, `"protocolVersion"`, 2*time.Second) {
+		t.Fatalf("initialize response missing: %s", output.String())
+	}
+
+	notify <- struct{}{}
+
+	if !waitForOutput(&output, `"method":"notifications/tools/list_changed"`, 2*time.Second) {
+		t.Fatalf("stdout missing tools/list_changed notification: %s", output.String())
+	}
+	for _, line := range strings.Split(output.String(), "\n") {
+		if !strings.Contains(line, "notifications/tools/list_changed") {
+			continue
+		}
+		if strings.Contains(line, `"id"`) || strings.Contains(line, `"params"`) {
+			t.Fatalf("list_changed notification must have no id and no params: %s", line)
+		}
+	}
+
+	cancel()
+	_ = pw.Close()
+	select {
+	case <-errCh:
+	case <-time.After(2 * time.Second):
+		t.Fatal("ServeNotify did not return after cancel")
+	}
+}
+
+type safeBuffer struct {
+	mu sync.Mutex
+	b  bytes.Buffer
+}
+
+func (s *safeBuffer) Write(p []byte) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.b.Write(p)
+}
+
+func (s *safeBuffer) String() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.b.String()
+}
+
+func waitForOutput(buf *safeBuffer, needle string, timeout time.Duration) bool {
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		if strings.Contains(buf.String(), needle) {
+			return true
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	return strings.Contains(buf.String(), needle)
 }
 
 func TestServePing(t *testing.T) {

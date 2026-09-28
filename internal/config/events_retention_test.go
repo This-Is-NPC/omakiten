@@ -20,10 +20,10 @@ func TestResolveRetentionInheritance(t *testing.T) {
 			},
 		},
 		Definitions: map[string]EventDefinitionSettings{
-			"cli.tool_call":   {Category: "tool_call"},
-			"guard.violated":  {Category: "guard"},
-			"hook.executed":   {Category: "hook"},
-			"task.created":    {Category: "task"},
+			"cli.tool_call":  {Category: "tool_call"},
+			"guard.violated": {Category: "guard"},
+			"hook.executed":  {Category: "hook"},
+			"task.created":   {Category: "task"},
 		},
 	}
 
@@ -45,12 +45,14 @@ func TestResolveRetentionInheritance(t *testing.T) {
 	}
 }
 
-func TestNormalizeEventsRetentionMergesLegacyActivityLog(t *testing.T) {
+func TestNormalizeEventsRetentionInheritsCurrentPolicies(t *testing.T) {
 	cfg := Settings{
-		ActivityLog: ActivityLogSettings{MaxRows: 250, MaxAgeDays: 14},
 		Events: EventsSettings{
 			Retention: EventsRetentionBlock{
 				Defaults: EventRetentionDefaults{MaxAgeDays: 0, MaxRows: 0},
+				ByCategory: map[string]EventRetentionSettings{
+					"tool_call": {MaxAgeDays: ptrInt(14), MaxRows: ptrInt(250)},
+				},
 			},
 		},
 	}

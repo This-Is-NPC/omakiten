@@ -134,28 +134,7 @@ func (s *DependencyService) SyncBlockers(ctx context.Context, project domain.Pro
 	if err != nil {
 		return
 	}
-	have := make(map[int64]struct{}, len(current))
-	for _, dep := range current {
-		have[dep.DependsOnTaskID] = struct{}{}
-	}
-	want := make(map[int64]struct{}, len(blockerIDs))
-	for _, id := range blockerIDs {
-		want[id] = struct{}{}
-	}
-
-	var added, removed []int64
-	for id := range want {
-		if _, ok := have[id]; !ok {
-			added = append(added, id)
-		}
-	}
-	for id := range have {
-		if _, ok := want[id]; !ok {
-			removed = append(removed, id)
-		}
-	}
-	sort.Slice(added, func(i, j int) bool { return added[i] < added[j] })
-	sort.Slice(removed, func(i, j int) bool { return removed[i] < removed[j] })
+	added, removed := dependencyDiff(current, blockerIDs)
 
 	for _, depID := range removed {
 		if err = s.Remove(ctx, project, taskID, depID); err != nil {
@@ -168,6 +147,30 @@ func (s *DependencyService) SyncBlockers(ctx context.Context, project domain.Pro
 		}
 	}
 	return
+}
+
+func dependencyDiff(current []domain.TaskDependency, blockerIDs []int64) (added, removed []int64) {
+	have := make(map[int64]struct{}, len(current))
+	for _, dep := range current {
+		have[dep.DependsOnTaskID] = struct{}{}
+	}
+	want := make(map[int64]struct{}, len(blockerIDs))
+	for _, id := range blockerIDs {
+		want[id] = struct{}{}
+	}
+	for id := range want {
+		if _, ok := have[id]; !ok {
+			added = append(added, id)
+		}
+	}
+	for id := range have {
+		if _, ok := want[id]; !ok {
+			removed = append(removed, id)
+		}
+	}
+	sort.Slice(added, func(i, j int) bool { return added[i] < added[j] })
+	sort.Slice(removed, func(i, j int) bool { return removed[i] < removed[j] })
+	return added, removed
 }
 
 func (s *DependencyService) List(ctx context.Context, project domain.ProjectContext, taskID int64) (dependencies []domain.TaskDependency, err error) {

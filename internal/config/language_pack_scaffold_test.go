@@ -18,6 +18,7 @@ import (
 //   - the destination decodes via the same strict loader the runtime uses,
 //   - the header swap landed (code, name, native),
 //   - every translated value carries a `# TODO(translate): <key>` comment.
+//
 // The pack is removed at end-of-test so the parity suite is unaffected.
 func TestNewLanguagePackScript(t *testing.T) {
 	if _, err := exec.LookPath("bash"); err != nil {

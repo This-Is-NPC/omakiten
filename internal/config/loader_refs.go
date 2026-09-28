@@ -19,45 +19,24 @@ func warnDanglingRefs(w wiring, skills []Skill, laws []Law, personas []Persona, 
 	templateSet := slugSet(loadedTemplateSlugs(templates))
 
 	var warns []SourceWarning
-	missingRef := func(scope, slug string) {
-		warns = append(warns, SourceWarning{Slug: slug, Message: fmt.Sprintf("%s: ref %q has no matching file", scope, slug)})
-	}
-
-	for _, slug := range w.Skills {
-		if _, ok := skillSet[slug]; !ok {
-			missingRef("skills", slug)
-		}
-	}
-	for _, slug := range w.Laws {
-		if _, ok := lawSet[slug]; !ok {
-			missingRef("laws", slug)
-		}
-	}
-	for _, slug := range w.Templates {
-		if _, ok := templateSet[slug]; !ok {
-			missingRef("templates", slug)
-		}
-	}
+	warns = appendMissingRefs(warns, "skills", w.Skills, skillSet)
+	warns = appendMissingRefs(warns, "laws", w.Laws, lawSet)
+	warns = appendMissingRefs(warns, "templates", w.Templates, templateSet)
 	for _, persona := range w.Personas {
-		if _, ok := personaSet[persona.Slug]; !ok {
-			missingRef("personas", persona.Slug)
-		}
-		for _, slug := range persona.Laws {
-			if _, ok := lawSet[slug]; !ok {
-				missingRef(fmt.Sprintf("personas.%s laws", persona.Slug), slug)
-			}
-		}
-		for _, slug := range persona.Skills {
-			if _, ok := skillSet[slug]; !ok {
-				missingRef(fmt.Sprintf("personas.%s skills", persona.Slug), slug)
-			}
-		}
+		warns = appendMissingRefs(warns, "personas", []string{persona.Slug}, personaSet)
+		warns = appendMissingRefs(warns, fmt.Sprintf("personas.%s laws", persona.Slug), persona.Laws, lawSet)
+		warns = appendMissingRefs(warns, fmt.Sprintf("personas.%s skill_repertoire", persona.Slug), persona.SkillRepertoire, skillSet)
 	}
 	for _, project := range w.Projects {
-		for _, slug := range project.Laws {
-			if _, ok := lawSet[slug]; !ok {
-				missingRef(fmt.Sprintf("projects.%s laws", project.Slug), slug)
-			}
+		warns = appendMissingRefs(warns, fmt.Sprintf("projects.%s laws", project.Slug), project.Laws, lawSet)
+	}
+	return warns
+}
+
+func appendMissingRefs(warns []SourceWarning, scope string, slugs []string, loaded map[string]struct{}) []SourceWarning {
+	for _, slug := range slugs {
+		if _, ok := loaded[slug]; !ok {
+			warns = append(warns, SourceWarning{Slug: slug, Message: fmt.Sprintf("%s: ref %q has no matching file", scope, slug)})
 		}
 	}
 	return warns

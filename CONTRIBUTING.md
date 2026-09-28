@@ -55,7 +55,7 @@ Before starting a new workflow cycle, check if the upstream repository has newer
 
 ### Toolchain
 
-- Go `1.25.x` (toolchain pinned by `.mise.toml` to `1.25.10`).
+- Go `1.25.x` (toolchain pinned by `.mise.toml` to `1.25.13`).
 - `golangci-lint` v2 (config in `.golangci.yml`, linters: `depguard`, `govet`, `ineffassign`, `staticcheck`, `unused`).
 - `govulncheck` for vulnerability scanning.
 - `gofmt` for formatting.
@@ -79,11 +79,24 @@ Rules in plain English:
 
 Run `go test ./internal/arch/...` after structural changes.
 
+### TUI screens
+
+Building a screen is declaring its archetype, its content and its keys. Geometry comes from
+`screenlayout.Canvas`, the measure from the `screenkit` vocabulary, memoisation from
+`screenlayout.BlockMemo` (whose key excludes `rows`), and style is declared per box. Composition
+happens ahead of the render, under the keystroke budget recorded by `screentest.Budgets`.
+
+The logic that used to live in screens was removed deliberately and does not return.
+[`.docs/internal/tui-screen-assembly.md`](.docs/internal/tui-screen-assembly.md) is normative: it
+states the five invariants, the nine patterns and the enforcement scoreboard naming which gate
+holds each line. Read it before adding or refactoring a screen.
+
+
 ### Testing
 
 - Standard library `testing` only.
 - Prefer table-driven tests; integration-style tests for CLI/MCP flows are welcome and live alongside the package.
-- Coverage target: don't drop below the current baseline (`go test -coverprofile=/tmp/coverage.out ./... && go tool cover -func=/tmp/coverage.out`).
+- Coverage is enforced by one full all-package run: `go test -coverprofile=coverage.out ./...`, followed by `go tool cover -func=coverage.out > /tmp/okt-coverage.func` and `scripts/check-coverage.sh coverage.out /tmp/okt-coverage.func .`. The checker compares the unrounded aggregate statement ratio against the fixed 78.0% floor and fails closed for missing, empty, malformed, stale, missing-total, or below-floor evidence. Focused checker fixtures run separately via the named-file `scripts/check-coverage_test.sh` and do not add a package or coverage denominator; there are no per-package floors or exemptions.
 
 #### Patterns for new test files
 
@@ -107,26 +120,46 @@ The classic `tests := []struct{ name string … }{}` + `for _, tt := range tests
 
 - **`t.Parallel()`** in slow packages (`internal/sqlite`, `internal/agent`, anything that touches the DB) and in pure-function tables. Add it as the first line of the test and inside each subtest. `go.mod` is `go 1.25`; the loop-variable capture rule is the post-1.22 semantic, so no manual `tc := tc` copy is needed.
 
-- **Golden files** for long render output (TUI views, pretty-printed payloads). Snapshot lives at `testdata/<name>.golden`; gate the writer behind a flag so CI never rewrites them:
+- **Golden files** for long render output (TUI views, pretty-printed payloads). The snapshot lives at `testdata/<name>.golden` and is always read and written through `testutil.Golden` — never with a hand-rolled `os.ReadFile` / `os.WriteFile` pair:
 
   ```go
-  var update = flag.Bool("update", false, "rewrite golden files")
+  import "omakiten/internal/testutil"
 
   func TestRenderFooter_Golden(t *testing.T) {
-      got := renderFooter(/* … */)
-      path := filepath.Join("testdata", "footer.golden")
-      if *update {
-          if err := os.WriteFile(path, []byte(got), 0o644); err != nil { t.Fatal(err) }
-      }
-      want, err := os.ReadFile(path)
-      if err != nil { t.Fatal(err) }
-      if got != string(want) {
-          t.Fatalf("golden mismatch — re-run with -update to refresh.\nwant:\n%s\ngot:\n%s", want, got)
-      }
+      testutil.Golden(t, "footer.golden", renderFooter(/* … */))
   }
   ```
 
+  The name is relative to the calling package's `testdata/` directory; the helper adds the prefix and creates nested directories on refresh. Comparison is byte-exact.
+
+  **There is exactly one way to regenerate a fixture**, and it is deliberate:
+
+  ```bash
+  go test ./internal/tui/screens/project -update       # rewrites that package's fixtures
+  go test ./...                                        # never rewrites anything
+  ```
+
+  Refresh one package at a time. `go test ./... -update` does not work by design: packages that hold no fixtures never link the helper, so they reject the unknown flag and the run fails before anything is written.
+
+  Do not add a second switch. An `UPDATE_GOLDEN=1`-style environment variable used to exist alongside the flag and was removed: an exported variable is inherited by every child process of the shell that set it, so one stale `export` silently regenerates fixtures across later runs — and a regenerated fixture is a *green* test, so nothing reports it. `internal/arch/golden_refresh_boundary_test.go` fails the build if a second writer, env switch or refresh flag reappears in a golden-bearing file.
+
   Reference renderers that already lend themselves to this pattern: `internal/tui/cursor_visibility_test.go`, `internal/tui/viewport_panel_test.go`.
+
+- **Screen baselines** go through `screentest.Record`, not a hand-rolled loop over `testutil.Golden`. Every package under `internal/tui/screens/` records its characterization baseline the same way, in a `goldens_test.go`:
+
+  ```go
+  func TestBoardGoldens(t *testing.T) { screentest.Record(t, boardRecordings()) }
+  ```
+
+  A `screentest.Recording` names the fixture stem, builds the screen fresh, replays the keys that move it off its entry state, and — required — declares an `Assert` on the state it protects. `Record` captures it at 80x24, 120x40 and 200x50, writing `<name>.<geometry>.view.golden`.
+
+  Three properties are enforced there rather than remembered per package:
+
+  - the `Assert` **gates the write**, on `-update` runs too, so a fixture cannot be refreshed into an empty screen once its contract breaks;
+  - every recording is painted twice over two independent materialisations and the two must agree byte for byte, which is what catches a path, a clock reading or a map iteration order leaking into a view;
+  - a recording with no `Assert` is rejected outright.
+
+  Assert on state the screen exposes — a non-zero `Scroll()`, a cursor off its default cell, an open mode — not on the rendered text, which is what the fixture already records. And record state worth protecting: a fixture of an empty screen proves nothing about a migration.
 
 - **Native fuzz (`testing.F`)** on parsers and decoders. One seed per representative case is enough — the fuzzer composes the rest. Targets: `internal/config/frontmatter_test.go`, `internal/paths/paths_test.go`, anything that ingests bytes from disk or the network.
 
@@ -139,7 +172,7 @@ The classic `tests := []struct{ name string … }{}` + `for _, tt := range tests
   }
   ```
 
-- **Property tests with random-sequence invariants** for stateful components (cursors, scrollers, anything with resync logic). Generate a small parameter space (viewport size, item count) and a random sequence of state-mutating ops; assert the invariant holds after EACH op, not just at the end. Reference: `internal/tui/components/cursorwindow/cursorwindow_test.go` — pins `cursor ∈ [0, max(0, itemCount-1)]` AND `cursor ∈ VisibleRange()` after every `MoveCursor` / `WithItemCount` / `WithViewport`. Use plain `math/rand` with a seed printed via `t.Logf` so a failing seed reproduces deterministically.
+- **Property tests with random-sequence invariants** for stateful components (cursors, scrollers, anything with resync logic). Generate a small parameter space (viewport size, item count) and a random sequence of state-mutating ops; assert the invariant holds after EACH op, not just at the end. Reference: `internal/tui/components/list/window_test.go` — pins `cursor ∈ [0, max(0, itemCount-1)]` AND `cursor ∈ VisibleRange()` after every `MoveCursor` / `WithItemCount` / `WithViewport`. Use plain `math/rand` with a seed printed via `t.Logf` so a failing seed reproduces deterministically.
 
 - **`testscript`** (`github.com/rogpeppe/go-internal/testscript`) is on the radar for end-to-end CLI / MCP flows but is **not adopted** — the rule above is "standard library `testing` only". Promotion would need an explicit amendment.
 

@@ -56,13 +56,21 @@ type languageFile struct {
 // what is on disk. The Snapshot picks the active language at build time
 // against the validated `languages.cli` / `languages.tui` config fields.
 func LoadLanguages(dir string) ([]Language, []SourceWarning, error) {
-	return LoadFromDir(dir, LoadOptions[Language]{
+	return loadLanguagesReader(dir, nil)
+}
+
+func loadLanguagesReader(dir string, reader bundleSourceReader) ([]Language, []SourceWarning, error) {
+	opts := LoadOptions[Language]{
 		Suffixes:     []string{".yaml", ".yml"},
 		MaxFileBytes: MaxLanguagePackBytes,
 		Decode:       decodeLanguagePack,
 		SlugOf:       func(l Language) string { return l.Code },
 		Collision:    CollideOverwrite,
-	})
+	}
+	if reader == nil {
+		return LoadFromDir(dir, opts)
+	}
+	return loadFromDirReader(dir, opts, reader)
 }
 
 // decodeLanguagePack parses a single language YAML file into a Language,

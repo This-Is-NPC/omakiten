@@ -148,21 +148,41 @@ func (s *ProjectService) Delete(ctx context.Context, projectID int64, counters d
 
 	if atomicRepo, ok := s.repo.(AtomicProjectDeleteRepository); ok {
 		if backupLeaser, ok := s.backup.(BackupLeaser); ok {
-			backupPath, err := s.deleteAtomic(ctx, atomicRepo, backupLeaser, projectID)
-			if err != nil {
-				return ProjectDeleteResult{}, err
-			}
-			if s.events != nil {
-				s.recordProjectRemoved(ctx, project, counters, backupPath)
-			}
-			return ProjectDeleteResult{
-				Project:    project,
-				Counters:   counters,
-				BackupPath: backupPath,
-				EventType:  domain.EventTypeProjectRemoved,
-			}, nil
+			return s.deleteAtomicProject(ctx, project, counters, projectID, atomicRepo, backupLeaser)
 		}
 	}
+	return s.deleteLegacyProject(ctx, project, counters, projectID)
+}
+
+func (s *ProjectService) deleteAtomicProject(
+	ctx context.Context,
+	project domain.Project,
+	counters domain.ProjectDeleteCounters,
+	projectID int64,
+	repo AtomicProjectDeleteRepository,
+	backup BackupLeaser,
+) (ProjectDeleteResult, error) {
+	backupPath, err := s.deleteAtomic(ctx, repo, backup, projectID)
+	if err != nil {
+		return ProjectDeleteResult{}, err
+	}
+	if s.events != nil {
+		s.recordProjectRemoved(ctx, project, counters, backupPath)
+	}
+	return ProjectDeleteResult{
+		Project:    project,
+		Counters:   counters,
+		BackupPath: backupPath,
+		EventType:  domain.EventTypeProjectRemoved,
+	}, nil
+}
+
+func (s *ProjectService) deleteLegacyProject(
+	ctx context.Context,
+	project domain.Project,
+	counters domain.ProjectDeleteCounters,
+	projectID int64,
+) (ProjectDeleteResult, error) {
 
 	// Retain the legacy checkpoint ordering for generic file-copy writers.
 	// SQLite-aware writers remain consistent when this best-effort checkpoint

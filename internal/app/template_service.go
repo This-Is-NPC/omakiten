@@ -15,8 +15,11 @@ import (
 // TemplateService is the application-layer entry point for template
 // default-binding mutations. The TUI used to inline the frontmatter rewrite
 // + sibling-clearing logic into its picker; centralizing it here keeps the
-// transactional sequence (snapshot → mutate → apply) close to the
-// BundleEditor and gives the behavior an isolated test surface. snap is
+// planning sequence (load -> mutate -> publish) close to the BundleEditor and
+// gives the behavior an isolated test surface. Each file is published as an
+// independent whole-file atomic write; a later failure can leave earlier
+// edits published, with reload/retry/repair guidance in the returned error.
+// snap is
 // the per-project Snapshot captured at construction so callers that need
 // to read template metadata (default binding by kind, lookup by slug)
 // without round-tripping through editor.Load can do so against the same
@@ -37,10 +40,12 @@ func NewTemplateService(snap *config.Snapshot, editor *BundleEditor, files Entit
 }
 
 // SetDefault writes `default: <kind>` (and `project: <projectSlug>` when
-// non-empty) into the focused template's frontmatter, and atomically
-// clears the same (kind, project) binding from any other template that
-// previously held it. A single ApplyWithFiles call wraps every file edit
-// + the wiring round-trip so a failure rolls everything back.
+// non-empty) into the focused template's frontmatter, and clears the same
+// (kind, project) binding from any other template that previously held it.
+// ApplyWithFiles plans every edit, then publishes each affected file
+// independently as a whole-file atomic write. A later failure can leave
+// earlier edits published; the returned error identifies the state to reload,
+// retry, or repair.
 //
 // Pass kind == "" to clear the binding (drops both the default and project
 // frontmatter keys from the focused template).
@@ -60,7 +65,7 @@ func (s *TemplateService) SetDefault(ctx context.Context, slug, kind, projectSlu
 		err = fmt.Errorf("template service: editor not available")
 		return
 	}
-	bundle, err := s.editor.Load()
+	bundle, _, fileHashes, err := s.editor.LoadPlanWithFiles()
 	if err != nil {
 		return
 	}
@@ -75,30 +80,39 @@ func (s *TemplateService) SetDefault(ctx context.Context, slug, kind, projectSlu
 		scopeProject = ""
 	}
 
-	updated, err := rewriteTemplateFrontmatter(target.SourcePath, kind, scopeProject)
+	ops, err := templateDefaultOps(bundle, target, slug, kind, projectSlug, scopeProject)
 	if err != nil {
 		return
 	}
-	ops := []FileOp{{Op: OpWrite, Path: target.SourcePath, Bytes: updated}}
 
-	if kind != "" {
-		for _, sibling := range bundle.Templates {
-			if sibling.Slug == slug {
-				continue
-			}
-			if sibling.Default == kind && sibling.ProjectSlug == projectSlug {
-				cleared, rerr := rewriteTemplateFrontmatter(sibling.SourcePath, "", "")
-				if rerr != nil {
-					err = rerr
-					return
-				}
-				ops = append(ops, FileOp{Op: OpWrite, Path: sibling.SourcePath, Bytes: cleared})
-			}
-		}
+	for i := range ops {
+		ops[i].ExpectedHash = fileHashes[ops[i].Path]
+		ops[i].Path = s.editor.RelativePath(ops[i].Path)
 	}
-
-	_, err = s.editor.ApplyWithFiles(ctx, nil, ops)
+	_, err = s.editor.ApplyWithFiles(ctx, bundle, fileHashes, nil, ops)
 	return
+}
+
+func templateDefaultOps(bundle config.Bundle, target config.TaskTemplate, slug, kind, projectSlug, scopeProject string) ([]FileOp, error) {
+	updated, err := rewriteTemplateFrontmatter(target.SourcePath, kind, scopeProject)
+	if err != nil {
+		return nil, err
+	}
+	ops := []FileOp{{Op: OpWrite, Path: target.SourcePath, Bytes: updated}}
+	if kind == "" {
+		return ops, nil
+	}
+	for _, sibling := range bundle.Templates {
+		if sibling.Slug == slug || sibling.Default != kind || sibling.ProjectSlug != projectSlug {
+			continue
+		}
+		cleared, err := rewriteTemplateFrontmatter(sibling.SourcePath, "", "")
+		if err != nil {
+			return nil, err
+		}
+		ops = append(ops, FileOp{Op: OpWrite, Path: sibling.SourcePath, Bytes: cleared})
+	}
+	return ops, nil
 }
 
 func findTemplateInBundle(bundle config.Bundle, slug string) (config.TaskTemplate, bool) {

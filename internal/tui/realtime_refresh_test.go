@@ -8,13 +8,15 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
 
-	"omakiten/internal/app"
 	"omakiten/internal/config"
 	"omakiten/internal/domain"
-	"omakiten/internal/testfixtures"
 	"omakiten/internal/testfixtures/runtimecache"
 	"omakiten/internal/testfixtures/snapstore"
 	"omakiten/internal/token"
+	"omakiten/internal/tui/screenhost"
+	"omakiten/internal/tui/screens/board"
+	"omakiten/internal/tui/screens/relationshippicker"
+	"omakiten/internal/tui/screens/taskdetail"
 )
 
 func updateRealtimeTick(t *testing.T, m Model) (Model, tea.Cmd) {
@@ -119,12 +121,12 @@ func findRealtimeReloadCmd(cmd tea.Cmd) tea.Cmd {
 }
 
 // TestShouldRealtimeRefreshGate pins which view states the per-second tick
-// is allowed to reload. The single-task read view (taskScreenView) is the
+// is allowed to reload. The hosted Task Detail screen is the
 // state newly permitted by this change; every edit/overlay/modal state must
 // still suppress the tick so a passive reload never lands on top of an input.
 func TestShouldRealtimeRefreshGate(t *testing.T) {
 	// Zero-value Model is a live board (top 0 != topHome, modeNormal,
-	// taskScreenClosed, no overlays) — the baseline that must refresh.
+	// no overlays) — the baseline that must refresh.
 	base := func() Model { return Model{} }
 
 	if !base().shouldRealtimeRefresh() {
@@ -136,21 +138,32 @@ func TestShouldRealtimeRefreshGate(t *testing.T) {
 		mut  func(*Model)
 		want bool
 	}{
-		{"task read view refreshes", func(m *Model) { m.taskScreen = taskScreenView }, true},
-		{"plan-network open refreshes", func(m *Model) { m.planNetworkOpen = true }, true},
+		{"task read view refreshes", func(m *Model) {
+			m.taskDetailScreen = taskdetail.New().Open(taskdetail.Payload{Task: domain.Task{ID: 1}}, m.screenFrame())
+			m.screenStack = []screenhost.ID{screenhost.TaskDetail}
+		}, true},
+		{"plan-network open refreshes", func(m *Model) { m.screenStack = []screenhost.ID{screenhost.PlanNetwork} }, true},
 		{"task drilled over plan-network refreshes", func(m *Model) {
-			m.planNetworkOpen = true
-			m.taskScreen = taskScreenView
+			m.taskDetailScreen = taskdetail.New().Open(taskdetail.Payload{Task: domain.Task{ID: 1}}, m.screenFrame())
+			m.screenStack = []screenhost.ID{screenhost.PlanNetwork, screenhost.TaskDetail}
 		}, true},
 		{"palette open blocks", func(m *Model) { m.paletteOpen = true }, false},
-		{"task edit view blocks", func(m *Model) { m.taskScreen = taskScreenEdit }, false},
-		{"comment overlay blocks", func(m *Model) { m.commentScreenOpen = true }, false},
-		{"description overlay blocks", func(m *Model) { m.descriptionScreenOpen = true }, false},
-		{"plan-goal overlay blocks", func(m *Model) { m.planGoalScreenOpen = true }, false},
-		{"project-form overlay blocks", func(m *Model) { m.projectFormScreenOpen = true }, false},
-		{"entity screen blocks", func(m *Model) { m.entityScreen = entityScreenView }, false},
+		{"task form blocks", func(m *Model) { m.openTaskCreate() }, false},
+		{"comment route blocks", func(m *Model) { m.screenStack = []screenhost.ID{screenhost.CommentDetail} }, false},
+		{"description route blocks", func(m *Model) { m.screenStack = []screenhost.ID{screenhost.TaskDescription} }, false},
+		{"plan-goal route blocks", func(m *Model) { m.screenStack = []screenhost.ID{screenhost.PlanGoal} }, false},
+		{"project-form route blocks", func(m *Model) { m.screenStack = []screenhost.ID{screenhost.ProjectForm} }, false},
+		{"relationship screen blocks", func(m *Model) {
+			m.personaSkillsScreen = m.personaSkillsScreen.Open(relationshippicker.Payload{Kind: relationshippicker.PersonaSkills})
+			m.screenStack = []screenhost.ID{screenhost.PersonaSkills}
+		}, false},
 		{"help open blocks", func(m *Model) { m.helpOpen = true }, false},
-		{"move mode blocks", func(m *Model) { m.moveMode = true }, false},
+		{"move mode blocks", func(m *Model) {
+			m.tasks = []domain.Task{{ID: 1, BucketKey: "backlog"}}
+			m.workflow = domain.Workflow{Buckets: []domain.Bucket{{Key: "backlog"}}}
+			m.boardScreen = m.boundBoardScreen()
+			m.boardScreen = m.boardScreen.Update(m.screenFrame(), tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'m'}}).Screen.(board.Screen)
+		}, false},
 		{"non-normal mode blocks", func(m *Model) { m.mode = modeComment }, false},
 		{"home blocks", func(m *Model) { m.top = topHome }, false},
 	}
@@ -170,44 +183,7 @@ func TestShouldRealtimeRefreshGate(t *testing.T) {
 // another writer after the view opened must appear without a keypress, and the
 // cursor must survive the reload.
 func TestRealtimeTickReloadsPlanNetwork(t *testing.T) {
-	ctx := context.Background()
-	store := snapstore.Open(t, t.TempDir()+"/omakiten.db")
-	if err := store.ImportBundle(ctx, tuiTestBundle(t), "test.yaml", "hash"); err != nil {
-		t.Fatalf("ImportBundle() error = %v", err)
-	}
-	project, err := store.UpsertProject(ctx, "Project", "project", "/work/project")
-	if err != nil {
-		t.Fatalf("UpsertProject() error = %v", err)
-	}
-	snap := store.Snapshot()
-
-	plan, err := store.CreatePlan(ctx, project.ID, "rollout", "Rollout", "")
-	if err != nil {
-		t.Fatalf("CreatePlan() error = %v", err)
-	}
-	w1, err := store.AddPlanWave(ctx, project.ID, plan.ID, "Foundation", 1)
-	if err != nil {
-		t.Fatalf("AddPlanWave() error = %v", err)
-	}
-	tOpen, err := store.CreateTask(ctx, project.ID, "foundation-task", "", domain.Priority(2), "backlog", nil, snap)
-	if err != nil {
-		t.Fatalf("CreateTask() error = %v", err)
-	}
-	if err := store.AssignTaskToPlan(ctx, project.ID, tOpen.ID, plan.ID, w1.ID); err != nil {
-		t.Fatalf("AssignTaskToPlan() error = %v", err)
-	}
-
-	model, err := NewModel(ctx, project.Context(), Repositories{
-		Tasks:        store,
-		Comments:     store,
-		Dependencies: store,
-		Plans:        store,
-		Cache:        runtimecache.Install(0, snap),
-		Workflow:     app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), snap),
-	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
-	if err != nil {
-		t.Fatalf("NewModel() error = %v", err)
-	}
+	ctx, store, project, planID, waveID, model := newRealtimePlanFixture(t)
 	model.height = 40
 	model.width = 160
 
@@ -215,13 +191,13 @@ func TestRealtimeTickReloadsPlanNetwork(t *testing.T) {
 	got = pressStringKey(t, got, "/")
 	got = pressStringKey(t, got, "/")
 	opened := pressKey(t, got, tea.KeyEnter)
-	if !opened.planNetworkOpen {
+	if !opened.inPlanNetwork() {
 		t.Fatalf("after enter: planNetworkOpen = false, want true")
 	}
-	if n := planWaveTaskCount(opened, w1.ID); n != 1 {
+	if n := planWaveTaskCount(opened, waveID); n != 1 {
 		t.Fatalf("wave task count before tick = %d, want 1", n)
 	}
-	cursorBefore := opened.planNetworkCursor.Cursor()
+	cursorBefore := opened.planNetworkScreen.Cursor()
 
 	// A second writer assigns another task to the same wave after the view
 	// is already open — invisible until the projection reloads.
@@ -229,24 +205,24 @@ func TestRealtimeTickReloadsPlanNetwork(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateTask(late) error = %v", err)
 	}
-	if err := store.AssignTaskToPlan(ctx, project.ID, tLate.ID, plan.ID, w1.ID); err != nil {
+	if err := store.AssignTaskToPlan(ctx, project.ID, tLate.ID, planID, waveID); err != nil {
 		t.Fatalf("AssignTaskToPlan(late) error = %v", err)
 	}
 
 	after, _ := driveRealtimeTick(t, opened)
-	if n := planWaveTaskCount(after, w1.ID); n != 2 {
+	if n := planWaveTaskCount(after, waveID); n != 2 {
 		t.Fatalf("wave task count after realtime tick = %d, want 2", n)
 	}
 	if !strings.Contains(ansi.Strip(after.View()), "late-task") {
 		t.Fatalf("plan view missing late-task after tick\n%s", ansi.Strip(after.View()))
 	}
-	if got := after.planNetworkCursor.Cursor(); got != cursorBefore {
+	if got := after.planNetworkScreen.Cursor(); got != cursorBefore {
 		t.Fatalf("plan cursor moved on tick: got %d, want %d (state must survive)", got, cursorBefore)
 	}
 }
 
 func planWaveTaskCount(m Model, waveID int64) int {
-	for _, w := range m.planNetworkShow.Waves {
+	for _, w := range m.planNetworkScreen.Show().Waves {
 		if w.Wave.ID == waveID {
 			return len(w.Tasks)
 		}
@@ -254,11 +230,8 @@ func planWaveTaskCount(m Model, waveID int64) int {
 	return -1
 }
 
-// TestRealtimeTickReloadsTaskActivity proves the tick reloads the open task's
-// activity feed. A comment written by another session after the task view
-// opened must appear without a keypress — previously the tick was suppressed
-// entirely while a task view was open.
-func TestRealtimeTickReloadsTaskActivity(t *testing.T) {
+func newRealtimePlanFixture(t *testing.T) (context.Context, *snapstore.Store, domain.ProjectContext, int64, int64, Model) {
+	t.Helper()
 	ctx := context.Background()
 	store := snapstore.Open(t, t.TempDir()+"/omakiten.db")
 	if err := store.ImportBundle(ctx, tuiTestBundle(t), "test.yaml", "hash"); err != nil {
@@ -269,66 +242,124 @@ func TestRealtimeTickReloadsTaskActivity(t *testing.T) {
 		t.Fatalf("UpsertProject() error = %v", err)
 	}
 	snap := store.Snapshot()
-	task, err := store.CreateTask(ctx, project.ID, "live-task", "", domain.Priority(2), "backlog", nil, snap)
+	plan, err := store.CreatePlan(ctx, project.ID, "rollout", "Rollout", "")
+	if err != nil {
+		t.Fatalf("CreatePlan() error = %v", err)
+	}
+	wave, err := store.AddPlanWave(ctx, project.ID, plan.ID, "Foundation", 1)
+	if err != nil {
+		t.Fatalf("AddPlanWave() error = %v", err)
+	}
+	task, err := store.CreateTask(ctx, project.ID, "foundation-task", "", domain.Priority(2), "backlog", nil, snap)
 	if err != nil {
 		t.Fatalf("CreateTask() error = %v", err)
 	}
-
-	model, err := NewModel(ctx, project.Context(), Repositories{
-		Tasks:        store,
-		Comments:     store,
-		Dependencies: store,
-		Events:       store,
-		Cache:        runtimecache.Install(0, store.Snapshot()),
-		Workflow:     app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot()),
-	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
+	if err := store.AssignTaskToPlan(ctx, project.ID, task.ID, plan.ID, wave.ID); err != nil {
+		t.Fatalf("AssignTaskToPlan() error = %v", err)
+	}
+	model, err := NewModel(ctx, project.Context(), Repositories{Tasks: store, Comments: store, Dependencies: store, Plans: store, Cache: runtimecache.InstallWithStoreSnap(0, store, snap)}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
 	if err != nil {
 		t.Fatalf("NewModel() error = %v", err)
 	}
+	return ctx, store, project.Context(), plan.ID, wave.ID, model
+}
+
+// TestRealtimeTickReloadsTaskActivity proves the tick reloads the open task's
+// activity feed. A comment written by another session after the task view
+// opened must appear without a keypress — previously the tick was suppressed
+// entirely while a task view was open.
+func TestRealtimeTickReloadsTaskActivity(t *testing.T) {
+	ctx, store, project, task, model := newRealtimeTaskFixture(t, "live-task")
 	model.height = 40
 	model.width = 160
 	if err := model.refresh(); err != nil {
 		t.Fatalf("refresh() error = %v", err)
 	}
 	model.openTaskView(task)
-	if model.taskScreen != taskScreenView {
-		t.Fatalf("openTaskView: taskScreen = %v, want taskScreenView", model.taskScreen)
+	if !model.inTaskDetail() {
+		t.Fatal("openTaskView did not open task detail")
 	}
 	// Focus the activity pane and land the cursor on the first card so the
 	// tick has live view state (cursor + scroll) to preserve, mirroring the
 	// plan-network test that asserts the cursor survives the reload.
-	model.applyTaskFocus(taskFocusActivity)
-	if model.activityCursor < 0 {
-		t.Fatalf("applyTaskFocus(activity): activityCursor = %d, want >= 0", model.activityCursor)
+	model.storeScreen(model.taskDetailScreen.WithFocus(taskdetail.FocusActivity))
+	if model.taskDetailScreen.State().ActivityCursor < 0 {
+		t.Fatalf("activity cursor = %d, want >= 0", model.taskDetailScreen.State().ActivityCursor)
 	}
-	before := len(model.activity)
-	cursorBefore := model.activityCursor
-	scrollBefore := model.activityLines.Scroll()
-	anchoredEventID := model.activity[model.activityCursor].ID
+	before := len(model.taskDetailScreen.Payload().Activity)
+	cursorBefore := model.taskDetailScreen.State().ActivityCursor
+	scrollBefore := model.taskDetailScreen.State().ActivityScroll
+	anchoredEventID := model.taskDetailScreen.FocusedActivityID()
 
 	if _, err := store.AddComment(ctx, project.ID, task.ID, "live comment from another session", "human", nil); err != nil {
 		t.Fatalf("AddComment() error = %v", err)
 	}
 
 	got, _ := driveRealtimeTick(t, model)
-	if len(got.activity) <= before {
-		t.Fatalf("activity len after tick = %d, want > %d", len(got.activity), before)
+	if len(got.taskDetailScreen.Payload().Activity) <= before {
+		t.Fatalf("activity len after tick = %d, want > %d", len(got.taskDetailScreen.Payload().Activity), before)
 	}
 	if !strings.Contains(ansi.Strip(got.View()), "live comment from another session") {
 		t.Fatalf("task view missing live comment after tick\n%s", ansi.Strip(got.View()))
 	}
 	// State preservation: the activity cursor and scroll offset must survive
 	// the tick (asc feed appends below the held cursor, so both are unchanged).
-	if got.activityCursor != cursorBefore {
-		t.Fatalf("activityCursor moved on tick: got %d, want %d (state must survive)", got.activityCursor, cursorBefore)
+	if got.taskDetailScreen.State().ActivityCursor != cursorBefore {
+		t.Fatalf("activity cursor moved on tick: got %d, want %d", got.taskDetailScreen.State().ActivityCursor, cursorBefore)
 	}
-	if got.activityLines.Scroll() != scrollBefore {
-		t.Fatalf("activity scroll moved on tick: got %d, want %d (state must survive)", got.activityLines.Scroll(), scrollBefore)
+	if got.taskDetailScreen.State().ActivityScroll != scrollBefore {
+		t.Fatalf("activity scroll moved on tick: got %d, want %d", got.taskDetailScreen.State().ActivityScroll, scrollBefore)
 	}
 	// The cursor must still name the same event it named before the reload.
-	if got.activity[got.activityCursor].ID != anchoredEventID {
-		t.Fatalf("activity cursor names a different event after tick: got id %d, want %d", got.activity[got.activityCursor].ID, anchoredEventID)
+	if got.taskDetailScreen.FocusedActivityID() != anchoredEventID {
+		t.Fatalf("activity cursor names a different event after tick: got id %d, want %d", got.taskDetailScreen.FocusedActivityID(), anchoredEventID)
 	}
+}
+
+func newRealtimeTaskFixture(t *testing.T, title string) (context.Context, *snapstore.Store, domain.ProjectContext, domain.Task, Model) {
+	t.Helper()
+	ctx := context.Background()
+	store := snapstore.Open(t, t.TempDir()+"/omakiten.db")
+	if err := store.ImportBundle(ctx, tuiTestBundle(t), "test.yaml", "hash"); err != nil {
+		t.Fatalf("ImportBundle() error = %v", err)
+	}
+	project, err := store.UpsertProject(ctx, "Project", "project", "/work/project")
+	if err != nil {
+		t.Fatalf("UpsertProject() error = %v", err)
+	}
+	task, err := store.CreateTask(ctx, project.ID, title, "", domain.Priority(2), "backlog", nil, store.Snapshot())
+	if err != nil {
+		t.Fatalf("CreateTask() error = %v", err)
+	}
+	model, err := NewModel(ctx, project.Context(), Repositories{Tasks: store, Comments: store, Dependencies: store, Events: store, Cache: runtimecache.InstallWithStore(0, store)}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
+	if err != nil {
+		t.Fatalf("NewModel() error = %v", err)
+	}
+	return ctx, store, project.Context(), task, model
+}
+
+func newRealtimeCountedTaskFixture(t *testing.T, title string) (context.Context, *snapstore.Store, domain.ProjectContext, domain.Task, *countingTaskRepo, *stubWatermark, Model) {
+	t.Helper()
+	ctx := context.Background()
+	store := snapstore.Open(t, t.TempDir()+"/omakiten.db")
+	if err := store.ImportBundle(ctx, tuiTestBundle(t), "test.yaml", "hash"); err != nil {
+		t.Fatalf("ImportBundle() error = %v", err)
+	}
+	project, err := store.UpsertProject(ctx, "Project", "project", "/work/project")
+	if err != nil {
+		t.Fatalf("UpsertProject() error = %v", err)
+	}
+	task, err := store.CreateTask(ctx, project.ID, title, "", domain.Priority(2), "backlog", nil, store.Snapshot())
+	if err != nil {
+		t.Fatalf("CreateTask() error = %v", err)
+	}
+	tasks := &countingTaskRepo{Store: store}
+	watermark := &stubWatermark{version: 1}
+	model, err := NewModel(ctx, project.Context(), Repositories{Tasks: tasks, Comments: store, Dependencies: store, Events: store, Watermark: watermark, Cache: runtimecache.InstallWithStore(0, tasks)}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
+	if err != nil {
+		t.Fatalf("NewModel() error = %v", err)
+	}
+	return ctx, store, project.Context(), task, tasks, watermark, model
 }
 
 // TestRealtimeTickActivityCursorSurvivesInsertAbove pins the id-anchoring fix:
@@ -369,8 +400,7 @@ func TestRealtimeTickActivityCursorSurvivesInsertAbove(t *testing.T) {
 		Comments:     store,
 		Dependencies: store,
 		Events:       store,
-		Cache:        runtimecache.Install(0, store.Snapshot()),
-		Workflow:     app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot()),
+		Cache:        runtimecache.InstallWithStore(0, store),
 	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
 	if err != nil {
 		t.Fatalf("NewModel() error = %v", err)
@@ -381,15 +411,15 @@ func TestRealtimeTickActivityCursorSurvivesInsertAbove(t *testing.T) {
 		t.Fatalf("refresh() error = %v", err)
 	}
 	model.openTaskView(task)
-	model.applyTaskFocus(taskFocusActivity)
+	model.taskDetailScreen = model.taskDetailScreen.WithFocus(taskdetail.FocusActivity)
 	if model.views.TaskActivity.Sort.Order != "desc" {
 		t.Fatalf("task activity order = %q, want desc (insert-above precondition)", model.views.TaskActivity.Sort.Order)
 	}
 
 	// Hold the cursor on the oldest event (last row in a desc feed).
-	model.activityCursor = len(model.activity) - 1
-	anchoredEventID := model.activity[model.activityCursor].ID
-	indexBefore := model.activityCursor
+	model.storeScreen(model.taskDetailScreen.WithActivityCursor(len(model.taskDetailScreen.Activity()) - 1))
+	anchoredEventID := model.taskDetailScreen.FocusedActivityID()
+	indexBefore := model.taskDetailScreen.State().ActivityCursor
 
 	// Another session adds a comment — newest-first, it lands at index 0 and
 	// shifts the held card down by one.
@@ -399,11 +429,12 @@ func TestRealtimeTickActivityCursorSurvivesInsertAbove(t *testing.T) {
 
 	got, _ := driveRealtimeTick(t, model)
 
-	if got.activityCursor == indexBefore {
-		t.Fatalf("cursor index did not shift after insert-above: still %d (anchor not exercised)", got.activityCursor)
+	state := got.taskDetailScreen.State()
+	if state.ActivityCursor == indexBefore {
+		t.Fatalf("cursor index did not shift after insert-above: still %d (anchor not exercised)", state.ActivityCursor)
 	}
-	if got.activity[got.activityCursor].ID != anchoredEventID {
-		t.Fatalf("cursor names wrong card after insert-above: got id %d, want %d", got.activity[got.activityCursor].ID, anchoredEventID)
+	if got.taskDetailScreen.FocusedActivityID() != anchoredEventID {
+		t.Fatalf("cursor names wrong card after insert-above: got id %d, want %d", got.taskDetailScreen.FocusedActivityID(), anchoredEventID)
 	}
 }
 
@@ -429,7 +460,7 @@ func TestRealtimeTickReturnsReloadCmdNotInlineMutation(t *testing.T) {
 		t.Fatalf("CreateTask() error = %v", err)
 	}
 
-	tasks := &countingTaskRepo{TaskRepository: store}
+	tasks := &countingTaskRepo{Store: store}
 	watermark := &stubWatermark{version: 1}
 	model, err := NewModel(ctx, project.Context(), Repositories{
 		Tasks:        tasks,
@@ -437,8 +468,7 @@ func TestRealtimeTickReturnsReloadCmdNotInlineMutation(t *testing.T) {
 		Dependencies: store,
 		Events:       store,
 		Watermark:    watermark,
-		Cache:        runtimecache.Install(0, store.Snapshot()),
-		Workflow:     app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot()),
+		Cache:        runtimecache.InstallWithStore(0, tasks),
 	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
 	if err != nil {
 		t.Fatalf("NewModel() error = %v", err)
@@ -473,48 +503,93 @@ func TestRealtimeTickReturnsReloadCmdNotInlineMutation(t *testing.T) {
 	}
 }
 
+func TestRealtimeReloadDropsResultAfterRuntimeRotation(t *testing.T) {
+	cases := map[string]struct {
+		err               error
+		projectID         int64
+		projectGeneration uint64
+	}{
+		"success/same project":   {projectID: 1, projectGeneration: 4},
+		"failure/same project":   {err: context.DeadlineExceeded, projectID: 1, projectGeneration: 4},
+		"success/project switch": {projectID: 2, projectGeneration: 5},
+		"failure/project switch": {err: context.DeadlineExceeded, projectID: 2, projectGeneration: 5},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			model := buildRefreshHotPathModel(t)
+			model.project = domain.ProjectContext{ID: 1}
+			model.projectGeneration = 4
+			model.studioRuntimeGeneration = 7
+			cmd := model.realtimeRefreshCmd(realtimeReloadBundle, 9, true)
+			if cmd == nil {
+				t.Fatal("realtimeRefreshCmd returned nil")
+			}
+			result := cmd().(realtimeReloadMsg)
+			if result.runtimeGeneration != 7 {
+				t.Fatalf("captured runtime generation = %d, want 7", result.runtimeGeneration)
+			}
+			if tc.err != nil {
+				result.err = tc.err
+				result.snapValid = false
+				result.plansValid = false
+			}
+
+			// A config hot-reload rotates the runtime while the worker is queued.
+			model.studioRuntimeGeneration = 8
+			model.project = domain.ProjectContext{ID: tc.projectID}
+			model.projectGeneration = tc.projectGeneration
+			setViewChangeState(&model, model.project.ID, "current runtime")
+			model.commitDataVersion(realtimeReloadBundle, 100)
+			before := viewChangeState{model: model}
+
+			model.applyRealtimeReload(result)
+			before.assertUnchanged(t, model)
+			if version, ok := model.dataVersionBaseline(realtimeReloadBundle); !ok || version != 100 {
+				t.Fatalf("stale runtime result changed baseline = %d (ok=%v), want 100", version, ok)
+			}
+		})
+	}
+}
+
+func TestRealtimeReloadDropsOldRuntimeAfterProjectRoundTrip(t *testing.T) {
+	model := buildRefreshHotPathModel(t)
+	model.project = domain.ProjectContext{ID: 1}
+	model.projectGeneration = 4
+	model.studioRuntimeGeneration = 7
+	cmd := model.realtimeRefreshCmd(realtimeReloadBundle, 9, true)
+	result := cmd().(realtimeReloadMsg)
+
+	model.project = domain.ProjectContext{ID: 2}
+	model.projectGeneration = 5
+	model.studioRuntimeGeneration = 8
+	model.project = domain.ProjectContext{ID: 1}
+	model.projectGeneration = 6
+	setViewChangeState(&model, 1, "new runtime project A")
+	model.commitDataVersion(realtimeReloadBundle, 100)
+	before := viewChangeState{model: model}
+
+	model.applyRealtimeReload(result)
+	before.assertUnchanged(t, model)
+	if version, ok := model.dataVersionBaseline(realtimeReloadBundle); !ok || version != 100 {
+		t.Fatalf("stale round-trip result changed baseline = %d (ok=%v), want 100", version, ok)
+	}
+}
+
 // TestRealtimeTickTaskViewSkipsBoardRebuild proves AC2: when the single-task
 // view is on screen the changed-tick reload loads ONLY the activity feed — the
 // board snapshot (ListTasks) is never rebuilt, because renderTaskScreen fully
 // occludes the board. An external board write made while the task view is open
 // must NOT trigger a board reload this tick.
 func TestRealtimeTickTaskViewSkipsBoardRebuild(t *testing.T) {
-	ctx := context.Background()
-	store := snapstore.Open(t, t.TempDir()+"/omakiten.db")
-	if err := store.ImportBundle(ctx, tuiTestBundle(t), "test.yaml", "hash"); err != nil {
-		t.Fatalf("ImportBundle() error = %v", err)
-	}
-	project, err := store.UpsertProject(ctx, "Project", "project", "/work/project")
-	if err != nil {
-		t.Fatalf("UpsertProject() error = %v", err)
-	}
-	snap := store.Snapshot()
-	task, err := store.CreateTask(ctx, project.ID, "open-task", "", domain.Priority(2), "backlog", nil, snap)
-	if err != nil {
-		t.Fatalf("CreateTask() error = %v", err)
-	}
-
-	tasks := &countingTaskRepo{TaskRepository: store}
-	watermark := &stubWatermark{version: 1}
-	model, err := NewModel(ctx, project.Context(), Repositories{
-		Tasks:        tasks,
-		Comments:     store,
-		Dependencies: store,
-		Events:       store,
-		Watermark:    watermark,
-		Cache:        runtimecache.Install(0, store.Snapshot()),
-		Workflow:     app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot()),
-	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
-	if err != nil {
-		t.Fatalf("NewModel() error = %v", err)
-	}
+	ctx, store, project, task, tasks, watermark, model := newRealtimeCountedTaskFixture(t, "open-task")
 	model.height, model.width = 40, 160
 	if err := model.refresh(); err != nil {
 		t.Fatalf("refresh() error = %v", err)
 	}
 	model.openTaskView(task)
-	if model.taskScreen != taskScreenView {
-		t.Fatalf("openTaskView: taskScreen = %v, want taskScreenView", model.taskScreen)
+	if !model.inTaskDetail() {
+		t.Fatal("openTaskView did not open task detail")
 	}
 
 	// External writes: a new board task AND a comment on the open task. Only the
@@ -546,7 +621,7 @@ func TestRealtimeTickTaskViewSkipsBoardRebuild(t *testing.T) {
 		t.Fatalf("board task slice changed under task-view tick: got %d, want %d", len(got.tasks), boardTasksBefore)
 	}
 	foundComment := false
-	for _, e := range got.activity {
+	for _, e := range got.taskDetailScreen.Payload().Activity {
 		if e.Body == "feed comment" {
 			foundComment = true
 		}
@@ -561,35 +636,7 @@ func TestRealtimeTickTaskViewSkipsBoardRebuild(t *testing.T) {
 // must not be consumed by the activity-only tick. Returning to the board must
 // still observe the same DB watermark movement and rebuild the board.
 func TestRealtimeTickBoardCatchesUpAfterTaskViewScopedReload(t *testing.T) {
-	ctx := context.Background()
-	store := snapstore.Open(t, t.TempDir()+"/omakiten.db")
-	if err := store.ImportBundle(ctx, tuiTestBundle(t), "test.yaml", "hash"); err != nil {
-		t.Fatalf("ImportBundle() error = %v", err)
-	}
-	project, err := store.UpsertProject(ctx, "Project", "project", "/work/project")
-	if err != nil {
-		t.Fatalf("UpsertProject() error = %v", err)
-	}
-	snap := store.Snapshot()
-	task, err := store.CreateTask(ctx, project.ID, "open-task", "", domain.Priority(2), "backlog", nil, snap)
-	if err != nil {
-		t.Fatalf("CreateTask() error = %v", err)
-	}
-
-	tasks := &countingTaskRepo{TaskRepository: store}
-	watermark := &stubWatermark{version: 1}
-	model, err := NewModel(ctx, project.Context(), Repositories{
-		Tasks:        tasks,
-		Comments:     store,
-		Dependencies: store,
-		Events:       store,
-		Watermark:    watermark,
-		Cache:        runtimecache.Install(0, store.Snapshot()),
-		Workflow:     app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot()),
-	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
-	if err != nil {
-		t.Fatalf("NewModel() error = %v", err)
-	}
+	ctx, store, project, task, tasks, watermark, model := newRealtimeCountedTaskFixture(t, "open-task")
 	model.height, model.width = 40, 160
 	if err := model.refresh(); err != nil {
 		t.Fatalf("refresh() error = %v", err)

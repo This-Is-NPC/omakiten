@@ -52,6 +52,14 @@ Quick decision matrix:
 
 When in doubt, pick **omakase**. It is the canonical kit and the default selection at install time.
 
+The direct `.active` writes in the fork examples below apply only to targets
+with the supported Unix-family no-follow marker backend. Windows fails closed
+when `.active` is read or written; use `--config <path>` for per-invocation
+profile selection without marker persistence. Plan 9 and other targets without
+the config safe-I/O backend fail closed for marker persistence and default
+materialization, so they need an explicit platform support policy before
+config installation is supported.
+
 ---
 
 ## PDCA mapping — the cycle behind every preset
@@ -493,6 +501,25 @@ Two concurrent calls land on the same write lock; the loser retries the SELECT a
 
 Agents claim first, then move with `tasks.move` after preset-defined guard preconditions are satisfied. Calling `tasks.move` without a prior claim bypasses the assignment write and leaves the activity log inconsistent with the plan's progress view.
 
+### How many agents can a wave sustain?
+
+**Manual result: 87 agents claiming simultaneously against one database.** Every claim through that level in the 2026-08-02 reference run was correct; the first failing level was 88, where excess agents got a `SQLITE_BUSY` error instead of a task. This was a full manual run, not a CI gate; the separate manual freshness check currently passes, but CI does not rerun or certify the ceiling.
+
+The number is environment-qualified — 12 logical CPUs, SQLite 3.53.0, `busy_timeout=5000`, file-backed WAL, source revision `a69613257999ca05b66ecc75a27842bb7635c104` — and comes from a reproducible harness, not a guess. The linked reference documents the invalidation triggers and fast freshness check. Protocol, full per-level table, and raw JSON live in [`internal/claim-next-agent-ceiling.md`](./internal/claim-next-agent-ceiling.md).
+
+What this means when you size a wave:
+
+| Wave size | What to expect |
+|---|---|
+| 2–8 | The intended range. Claim latency stays in single-digit-to-tens of milliseconds; contention is invisible. |
+| 16–64 | Still fully correct in the reference run. Passing-level throughput in this range was 66–104 claims/second, so extra agents primarily queue rather than go faster. |
+| 87 | The measured limit. Nothing is wrong, but there is no measured headroom left. |
+| >87 | The 88-agent boundary run and higher failing levels produced `begin immediate: database is locked (5) (SQLITE_BUSY)`. The agent must retry. |
+
+Two things the measurement did **not** find, at any concurrency up to 128: a duplicate claim, and a corrupted database. `BEGIN IMMEDIATE` holds. The ceiling is a saturation limit — the queue in front of the write lock outgrowing `config.sqlite.busy_timeout_ms` — not a failure of claim atomicity. Raising that timeout trades claim latency for a higher ceiling.
+
+In practice a wave is sized by how the work decomposes, not by this ceiling: real agents claim once and then work for minutes, while the benchmark has every agent re-claim in a synchronized burst. Treat 92 as the floor of a stress scenario you are unlikely to reach.
+
 ### Recovery from a crashed claim
 
 `tasks.assigned_to` stays set if the claiming agent crashes mid-task. Recovery is deliberately human-driven:
@@ -506,7 +533,7 @@ v1 does not auto-reclaim — silent reclaim would hide real-world agent failures
 
 - **MCP**: 13 tools under `plans.*` (`create`, `list`, `show`, `add_wave`, `assign_task`, `continue`, `claim_next`, `edit`, `delete`, `remove_wave`, `rename_wave`, `reorder_wave`, `unassign`). See [MCP Guide § Plans](./mcp.md#plans-wbs-style-multi-agent-orchestration).
 - **CLI**: `okt plan create|list|show|wave-add|assign|claim|edit|delete|wave-remove|wave-rename|wave-reorder|unassign` and the orthogonal `okt assign <task_id> [who]` for free-text assignment outside the plan flow. See [CLI Guide § Plans](./cli.md#plans).
-- **TUI**: a fourth sub-tab under `01 // TASKS` — list view first, then a column-per-wave network diagram per plan. See [TUI Guide § Tasks › Plans](./tui.md#tasks--plans).
+- **TUI**: a fourth sub-tab under `01 // TASKS` — list view first, then a screen-local collapsible wave/task network per plan with goal editing and assignment. See [TUI Guide § Tasks › Plans](./tui.md#tasks--plans).
 - **Search**: `plans.goal_body` is indexed in the unified FTS5 `search_index` so cross-project `search` finds plans by name or any phrase in the goal markdown.
 
 ---
@@ -547,13 +574,22 @@ Warnings (non-fatal) flag template slug-vs-name mismatches and other low-severit
 ### Activating your preset
 
 1. Drop the yaml in `<config-dir>/config/custom/<my-preset>.yaml` (preserves across `okt config defaults refresh`).
-2. Set `.active` to `<my-preset>.yaml`:
+2. Set `.active` to `<my-preset>.yaml` on a supported Unix-family target:
    ```bash
    echo my-preset.yaml > <config-dir>/config/.active
    ```
-3. The next CLI / TUI / MCP invocation resolves the new preset.
+3. The next CLI / TUI / MCP invocation resolves the new preset. On Windows,
+   pass `--config <path>` instead. On Plan 9 and other unsupported targets,
+   config installation and marker persistence remain unavailable until a
+   safe-I/O backend is provided.
 
-The TUI Settings › Config picker writes `.active` for you. The CLI accepts a per-invocation override via `--config <path>`.
+On supported Unix-family targets, the TUI Settings › Config picker writes
+`.active` through the descriptor-relative no-follow writer and atomically
+replaces the marker. On Windows and Plan 9, the picker and setup cannot persist
+or consume `.active` because those operations fail closed. The CLI accepts a
+per-invocation `--config <path>` override; this bypasses marker selection on
+Windows. Plan 9 and other unsupported targets still require safe-I/O support
+for config installation.
 
 ### When to author vs fork
 
@@ -575,6 +611,7 @@ The TUI Settings › Config picker writes `.active` for you. The CLI accepts a p
 - [`configuration-guide/guards.md`](./configuration-guide/guards.md) — guard types and their config.
 - [`presets.md`](./presets.md) — preset discipline and workflow comparison.
 - [`mcp.md`](./mcp.md) — MCP tool surface, prompt anatomy, tuning context cost.
-- [`internal/data-model.md`](./internal/data-model.md) — SQLite schema and migration history.
+- [`internal/data-model.md`](./internal/data-model.md) — current SQLite schema and operational data.
+- [`internal/claim-next-agent-ceiling.md`](./internal/claim-next-agent-ceiling.md) — measured `plans.claim_next` concurrency ceiling and its protocol.
 - `internal/domain/event.go::KnownEventTypes` — canonical list of `events` payloads.
 - [`why_omakiten.md`](./why_omakiten.md) — every cited work; per-preset "Methodology basis" anchors link here.

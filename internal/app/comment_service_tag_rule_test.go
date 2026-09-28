@@ -38,80 +38,72 @@ func TestCommentServiceTagRuleGuards(t *testing.T) {
 	service := NewCommentServiceWithWorkflow(store, workflow, store.Snapshot())
 	taskSvc := NewTaskServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot())
 
+	projectCtx := project.Context()
 	tag := func(name string) domain.Tag { return domain.Tag{Name: name, Label: name} }
+	testProjectTagCreate(t, ctx, service, projectCtx, tag)
+	testUniversalTagCreate(t, ctx, service, projectCtx, tag)
+	testTaskTagEdit(t, ctx, service, taskSvc, projectCtx, tag)
+	testDoneTagEdit(t, ctx, service, taskSvc, projectCtx, tag)
+}
 
-	// ---- Acceptance 1: require_tags on project create ----
-	if _, err := service.AddScoped(ctx, project.Context(), domain.CommentWrite{
-		Scope: domain.CommentScopeProject, Body: "missing x",
-	}); err == nil {
+func testProjectTagCreate(t *testing.T, ctx context.Context, service *CommentService, project domain.ProjectContext, tag func(string) domain.Tag) {
+	if _, err := service.AddScoped(ctx, project, domain.CommentWrite{Scope: domain.CommentScopeProject, Body: "missing x"}); err == nil {
 		t.Fatal("project create without tag x = nil error, want guard violation")
 	} else {
 		assertCodedError(t, err, domain.ErrGuardViolation)
 	}
-	if _, err := service.AddScoped(ctx, project.Context(), domain.CommentWrite{
-		Scope: domain.CommentScopeProject, Body: "has x", Tags: []domain.Tag{tag("x")},
-	}); err != nil {
+	if _, err := service.AddScoped(ctx, project, domain.CommentWrite{Scope: domain.CommentScopeProject, Body: "has x", Tags: []domain.Tag{tag("x")}}); err != nil {
 		t.Fatalf("project create with tag x: want allow, got %v", err)
 	}
+}
 
-	// ---- Acceptance 3: require_any_tag on universal create ----
-	if _, err := service.AddScoped(ctx, project.Context(), domain.CommentWrite{
-		Scope: domain.CommentScopeUniversal, Body: "untagged",
-	}); err == nil {
+func testUniversalTagCreate(t *testing.T, ctx context.Context, service *CommentService, project domain.ProjectContext, tag func(string) domain.Tag) {
+	if _, err := service.AddScoped(ctx, project, domain.CommentWrite{Scope: domain.CommentScopeUniversal, Body: "untagged"}); err == nil {
 		t.Fatal("universal create untagged = nil error, want guard violation")
 	} else {
 		assertCodedError(t, err, domain.ErrGuardViolation)
 	}
-	if _, err := service.AddScoped(ctx, project.Context(), domain.CommentWrite{
-		Scope: domain.CommentScopeUniversal, Body: "tagged", Tags: []domain.Tag{tag("anything")},
-	}); err != nil {
+	if _, err := service.AddScoped(ctx, project, domain.CommentWrite{Scope: domain.CommentScopeUniversal, Body: "tagged", Tags: []domain.Tag{tag("anything")}}); err != nil {
 		t.Fatalf("universal create with a tag: want allow, got %v", err)
 	}
+}
 
-	// ---- Acceptance 2: deny_tags on task-scope edit, stored tags as source ----
-	task, err := taskSvc.Add(ctx, project.Context(), "T", "", "", "backlog")
+func testTaskTagEdit(t *testing.T, ctx context.Context, service *CommentService, taskSvc *TaskService, project domain.ProjectContext, tag func(string) domain.Tag) {
+	task, err := taskSvc.Add(ctx, project, "T", "", "", "backlog")
 	if err != nil {
 		t.Fatalf("Add(task) = %v", err)
 	}
-	// A comment WITHOUT the denied tag edits fine.
-	plain, err := service.AddScoped(ctx, project.Context(), domain.CommentWrite{
-		Scope: domain.CommentScopeTask, TaskID: task.ID, Body: "plain",
-	})
+	plain, err := service.AddScoped(ctx, project, domain.CommentWrite{Scope: domain.CommentScopeTask, TaskID: task.ID, Body: "plain"})
 	if err != nil {
 		t.Fatalf("AddScoped(plain task comment) = %v", err)
 	}
-	if _, err := service.Edit(ctx, project.Context(), plain.ID, "plain edited", nil); err != nil {
+	if _, err := service.Edit(ctx, project, plain.ID, "plain edited", nil); err != nil {
 		t.Fatalf("edit comment without denied tag: want allow, got %v", err)
 	}
-	// A comment carrying the denied tag y cannot be edited (stored tags trip
-	// deny_tags even though the edit itself supplies no tags).
-	tagged, err := service.AddScoped(ctx, project.Context(), domain.CommentWrite{
-		Scope: domain.CommentScopeTask, TaskID: task.ID, Body: "tagged y", Tags: []domain.Tag{tag("y")},
-	})
+	tagged, err := service.AddScoped(ctx, project, domain.CommentWrite{Scope: domain.CommentScopeTask, TaskID: task.ID, Body: "tagged y", Tags: []domain.Tag{tag("y")}})
 	if err != nil {
 		t.Fatalf("AddScoped(y-tagged comment) = %v", err)
 	}
-	if _, err := service.Edit(ctx, project.Context(), tagged.ID, "blocked", []string{"y"}); err == nil {
+	if _, err := service.Edit(ctx, project, tagged.ID, "blocked", []string{"y"}); err == nil {
 		t.Fatal("edit y-tagged comment = nil error, want guard violation")
 	} else {
 		assertCodedError(t, err, domain.ErrGuardViolation)
 	}
+}
 
-	// ---- Acceptance 4: bucket + rule combine (done bucket deny_tags:[locked]) ----
-	doneTask, err := taskSvc.Add(ctx, project.Context(), "D", "", "", "backlog")
+func testDoneTagEdit(t *testing.T, ctx context.Context, service *CommentService, taskSvc *TaskService, project domain.ProjectContext, tag func(string) domain.Tag) {
+	doneTask, err := taskSvc.Add(ctx, project, "D", "", "", "backlog")
 	if err != nil {
 		t.Fatalf("Add(done task) = %v", err)
 	}
-	locked, err := service.AddScoped(ctx, project.Context(), domain.CommentWrite{
-		Scope: domain.CommentScopeTask, TaskID: doneTask.ID, Body: "locked note", Tags: []domain.Tag{tag("locked")},
-	})
+	locked, err := service.AddScoped(ctx, project, domain.CommentWrite{Scope: domain.CommentScopeTask, TaskID: doneTask.ID, Body: "locked note", Tags: []domain.Tag{tag("locked")}})
 	if err != nil {
 		t.Fatalf("AddScoped(locked comment) = %v", err)
 	}
-	if _, err := taskSvc.Move(ctx, project.Context(), doneTask.ID, "done"); err != nil {
+	if _, err := taskSvc.Move(ctx, project, doneTask.ID, "done"); err != nil {
 		t.Fatalf("Move(done task -> done) = %v", err)
 	}
-	if _, err := service.Edit(ctx, project.Context(), locked.ID, "blocked", []string{"locked"}); err == nil {
+	if _, err := service.Edit(ctx, project, locked.ID, "blocked", []string{"locked"}); err == nil {
 		t.Fatal("edit locked comment in done bucket = nil error, want guard violation")
 	} else {
 		assertCodedError(t, err, domain.ErrGuardViolation)

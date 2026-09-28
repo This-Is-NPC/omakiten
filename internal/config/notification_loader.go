@@ -46,7 +46,11 @@ func decodeNotificationBytes(path string, raw []byte) (Notification, error) {
 // the app stays usable while clearly flagging which custom files
 // were skipped.
 func LoadNotifications(dir string) (map[string]Notification, []SourceWarning, error) {
-	items, warnings, err := LoadFromDir(dir, LoadOptions[Notification]{
+	return loadNotificationsReader(dir, nil)
+}
+
+func loadNotificationsReader(dir string, reader bundleSourceReader) (map[string]Notification, []SourceWarning, error) {
+	opts := LoadOptions[Notification]{
 		Suffixes:     []string{".yaml", ".yml"},
 		MaxFileBytes: MaxNotificationFileBytes,
 		Decode: func(path string, raw []byte, isCustom bool) (Notification, *SourceWarning, error) {
@@ -68,7 +72,15 @@ func LoadNotifications(dir string) (map[string]Notification, []SourceWarning, er
 				Message: fmt.Sprintf("custom notification skipped — file is incompatible with the current schema: %v", derr),
 			}, true
 		},
-	})
+	}
+	var items []Notification
+	var warnings []SourceWarning
+	var err error
+	if reader == nil {
+		items, warnings, err = LoadFromDir(dir, opts)
+	} else {
+		items, warnings, err = loadFromDirReader(dir, opts, reader)
+	}
 	if err != nil {
 		return nil, nil, err
 	}

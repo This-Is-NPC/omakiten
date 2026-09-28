@@ -57,6 +57,10 @@ const importFileMaxBytes = MaxWiringFileBytes
 // decoded. Every error carries the import chain so the failing directive is
 // identifiable.
 func resolveImports(root *yaml.Node, rootPath string) (*yaml.Node, []string, error) {
+	return resolveImportsWithReader(root, rootPath, nil)
+}
+
+func resolveImportsWithReader(root *yaml.Node, rootPath string, reader bundleSourceReader) (*yaml.Node, []string, error) {
 	if root == nil {
 		return nil, nil, fmt.Errorf("import resolver: root node is nil")
 	}
@@ -75,6 +79,7 @@ func resolveImports(root *yaml.Node, rootPath string) (*yaml.Node, []string, err
 		seen:     map[string]struct{}{absRoot: {}},
 		visiting: map[string]struct{}{absRoot: {}},
 		sources:  []string{absRoot},
+		reader:   reader,
 	}
 
 	resolved, err := r.walk(root, absRoot, []string{absRoot}, 0)
@@ -93,6 +98,7 @@ type importResolver struct {
 	visiting map[string]struct{}
 	// sources is the ordered, de-duplicated list of every file touched.
 	sources []string
+	reader  bundleSourceReader
 }
 
 // walk expands directives within node. filePath is the absolute path of the file
@@ -102,58 +108,59 @@ func (r *importResolver) walk(node *yaml.Node, filePath string, chain []string, 
 	if node == nil {
 		return nil, nil
 	}
-
-	// A document node wraps a single content node; unwrap and recurse so a
-	// directive may appear as the document root.
 	if node.Kind == yaml.DocumentNode {
-		if len(node.Content) == 0 {
-			return node, nil
-		}
-		child, err := r.walk(node.Content[0], filePath, chain, depth)
-		if err != nil {
-			return nil, err
-		}
-		node.Content[0] = child
-		return node, nil
+		return r.walkDocument(node, filePath, chain, depth)
 	}
-
 	switch cls := classifyImport(node); cls.kind {
 	case importDirective:
 		return r.expand(cls.target, filePath, chain, depth)
 	case importMalformed:
 		return nil, fmt.Errorf("%s: malformed import directive: %s", chainContext(chain), cls.reason)
 	}
+	return r.walkComposite(node, filePath, chain, depth)
+}
 
-	// Not a directive: recurse into composite children. Mapping content
-	// alternates key/value; walking both is safe because a key is always a
-	// scalar and never classifies as a directive.
-	//
-	// Mappings get an extra pass first: applyMergeFrom scans for a
-	// merge_from: key and, when found, deep-merges the imported document
-	// into the mapping before the child walk runs. Sequences have no such
-	// directive so they fall straight into the recursive walk.
-	switch node.Kind {
-	case yaml.MappingNode:
-		var err error
-		node, err = r.applyMergeFrom(node, filePath, chain, depth)
+func (r *importResolver) walkDocument(node *yaml.Node, filePath string, chain []string, depth int) (*yaml.Node, error) {
+	if len(node.Content) == 0 {
+		return node, nil
+	}
+	child, err := r.walk(node.Content[0], filePath, chain, depth)
+	if err != nil {
+		return nil, err
+	}
+	node.Content[0] = child
+	return node, nil
+}
+
+func (r *importResolver) walkComposite(node *yaml.Node, filePath string, chain []string, depth int) (*yaml.Node, error) {
+	if node.Kind == yaml.MappingNode {
+		return r.walkMapping(node, filePath, chain, depth)
+	}
+	if node.Kind != yaml.SequenceNode {
+		return node, nil
+	}
+	for i, child := range node.Content {
+		expanded, err := r.walk(child, filePath, chain, depth)
 		if err != nil {
 			return nil, err
 		}
-		for i, child := range node.Content {
-			expanded, err := r.walk(child, filePath, chain, depth)
-			if err != nil {
-				return nil, err
-			}
-			node.Content[i] = expanded
+		node.Content[i] = expanded
+	}
+	return node, nil
+}
+
+func (r *importResolver) walkMapping(node *yaml.Node, filePath string, chain []string, depth int) (*yaml.Node, error) {
+	var err error
+	node, err = r.applyMergeFrom(node, filePath, chain, depth)
+	if err != nil {
+		return nil, err
+	}
+	for i, child := range node.Content {
+		expanded, err := r.walk(child, filePath, chain, depth)
+		if err != nil {
+			return nil, err
 		}
-	case yaml.SequenceNode:
-		for i, child := range node.Content {
-			expanded, err := r.walk(child, filePath, chain, depth)
-			if err != nil {
-				return nil, err
-			}
-			node.Content[i] = expanded
-		}
+		node.Content[i] = expanded
 	}
 	return node, nil
 }
@@ -170,7 +177,13 @@ func (r *importResolver) expand(rel, fromFile string, chain []string, depth int)
 		return nil, fmt.Errorf("import depth exceeds maximum of %d: %s", maxImportDepth, chainContext(append(chain, rel)))
 	}
 
-	abs, err := resolveImportPath(fromFile, filePart)
+	var abs string
+	var err error
+	if r.reader == nil {
+		abs, err = resolveImportPath(fromFile, filePart)
+	} else {
+		abs, err = resolveImportPathPinned(fromFile, filePart)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", chainContext(chain), err)
 	}
@@ -180,7 +193,12 @@ func (r *importResolver) expand(rel, fromFile string, chain []string, depth int)
 		return nil, fmt.Errorf("import cycle detected: %s", chainContext(append(chain, abs)))
 	}
 
-	data, err := readFileBounded(abs, importFileMaxBytes)
+	var data []byte
+	if r.reader == nil {
+		data, err = readFileBounded(abs, importFileMaxBytes)
+	} else {
+		data, err = r.reader.readFile(abs, importFileMaxBytes)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("%s: read import %q: %w", chainContext(chain), rel, err)
 	}
@@ -310,7 +328,26 @@ func resolveImportPath(fromFile, rel string) (string, error) {
 	if escapesDir(resolvedRoot, resolvedJoined) {
 		return "", fmt.Errorf("import %q: resolved path %q escapes directory %q via symlink", rel, resolvedJoined, resolvedRoot)
 	}
-	return resolvedJoined, nil
+	// Keep the lexical path for the descriptor-relative read below. Returning
+	// the EvalSymlinks result would turn a validated symlink into a new path and
+	// let the subsequent open bypass the no-follow check.
+	return joined, nil
+}
+
+func resolveImportPathPinned(fromFile, rel string) (string, error) {
+	trimmed := strings.TrimSpace(rel)
+	if trimmed == "" {
+		return "", fmt.Errorf("import path is empty")
+	}
+	if filepath.IsAbs(trimmed) {
+		return "", fmt.Errorf("import %q: path must be relative to %s", rel, filepath.Dir(fromFile))
+	}
+	for _, part := range strings.Split(filepath.ToSlash(trimmed), "/") {
+		if part == ".." {
+			return "", fmt.Errorf("import %q: path must not contain parent directory segments", rel)
+		}
+	}
+	return filepath.Clean(filepath.Join(filepath.Dir(fromFile), trimmed)), nil
 }
 
 // documentRoot unwraps a DocumentNode to its single content node, returning a

@@ -209,8 +209,8 @@ func TestResyncClampsCursorPastEnd(t *testing.T) {
 }
 
 func TestResyncPreservesNoSelectionSentinel(t *testing.T) {
-	// Cursor=-1 means "no selection" — callers (cardlist.Model post
-	// applyTaskFocus, linelist.Model after ScrollBy) rely on Resync
+	// Cursor=-1 means "no selection" — callers (list.Cards post
+	// focus transitions and linelist.Model after ScrollBy rely on Resync
 	// NOT promoting -1 to 0 silently. Scroll is preserved within
 	// bounds so prior body-scroll work survives the sentinel.
 	cursor, scroll := Resync(-1, 7, ones(10), 5)
@@ -258,5 +258,220 @@ func TestAboveBelowHelpers(t *testing.T) {
 	}
 	if got := Below(10, 10); got != 0 {
 		t.Fatalf("Below(10, 10) = %d, want 0", got)
+	}
+}
+
+func TestUnitHeightsIsOnesOrNil(t *testing.T) {
+	if got := UnitHeights(0); got != nil {
+		t.Fatalf("UnitHeights(0) = %v, want nil", got)
+	}
+	if got := UnitHeights(-2); got != nil {
+		t.Fatalf("UnitHeights(-2) = %v, want nil", got)
+	}
+	got := UnitHeights(3)
+	if len(got) != 3 {
+		t.Fatalf("UnitHeights(3) length = %d, want 3", len(got))
+	}
+	for i, h := range got {
+		if h != 1 {
+			t.Fatalf("UnitHeights(3)[%d] = %d, want 1", i, h)
+		}
+	}
+}
+
+// TestMaxOffsetRendersTheFinalItem is the contract MaxOffset exists for: at
+// the returned offset the renderer must still paint the LAST item, and one
+// row further must be wasted space rather than a requirement. The naive
+// `total - viewport` fails the first half — that is the picker defect.
+func TestMaxOffsetRendersTheFinalItem(t *testing.T) {
+	for _, tc := range []struct{ total, viewport int }{
+		{10, 3}, {10, 4}, {36, 7}, {36, 12}, {24, 5}, {9, 8},
+	} {
+		bound := MaxOffset(tc.total, tc.viewport, HintsSplit)
+		heights := UnitHeights(tc.total)
+		if end := Slice(bound, heights, tc.viewport, HintsSplit); end != tc.total {
+			t.Errorf("MaxOffset(%d, %d) = %d, but Slice stops at %d — the last item is stranded",
+				tc.total, tc.viewport, bound, end)
+		}
+		if naive := tc.total - tc.viewport; naive > 0 {
+			if end := Slice(naive, heights, tc.viewport, HintsSplit); end == tc.total && naive != bound {
+				t.Errorf("total-viewport (%d) already reaches the end for total=%d viewport=%d; the case proves nothing",
+					naive, tc.total, tc.viewport)
+			}
+		}
+	}
+}
+
+func TestMaxOffsetIsZeroWhenNothingScrolls(t *testing.T) {
+	for _, tc := range []struct {
+		total, viewport int
+		mode            HintMode
+	}{
+		{10, 0, HintsSplit}, {10, -1, HintsSplit}, {0, 5, HintsSplit}, {3, 10, HintsSplit}, {5, 5, HintsNone},
+	} {
+		if got := MaxOffset(tc.total, tc.viewport, tc.mode); got != 0 {
+			t.Errorf("MaxOffset(%d, %d, %v) = %d, want 0", tc.total, tc.viewport, tc.mode, got)
+		}
+	}
+}
+
+// --- partial-item edges ----------------------------------------------------
+//
+// The rows Slice cannot spend. Slice closes its window on an ITEM boundary, so
+// for a list of multi-line items the residue between the last whole item and
+// the viewport is up to (tallest item - 1) blank rows — under a list that is
+// simultaneously hiding content. PartialRows is what the caller fills them
+// with, and the property every one of these tests is really about is that
+// whole items + hints + previews == viewport, exactly.
+
+// spend is the rows a window of whole items plus its reserved hints occupies,
+// derived here INDEPENDENTLY of PartialRows so the equality below is a check
+// rather than a restatement.
+func spend(offset, end int, heights []int, mode HintMode) int {
+	used := 0
+	if offset > 0 && AboveHintRows(mode) > 0 {
+		used += AboveHintRows(mode)
+	}
+	if end < len(heights) && mode == HintsSplit {
+		used++
+	}
+	for _, h := range heights[offset:end] {
+		used += h
+	}
+	return used
+}
+
+func TestPartialRowsSpendsWhateverTheWholeItemWindowLeftOver(t *testing.T) {
+	// The sweep the pilot ran, at the level the arithmetic lives: for every
+	// item height and every viewport, a window that is hiding content must
+	// leave nothing blank.
+	for height := 2; height <= 9; height++ {
+		assertPartialHeight(t, height)
+	}
+}
+
+func assertPartialHeight(t *testing.T, height int) {
+	heights := make([]int, 40)
+	for i := range heights {
+		heights[i] = height
+	}
+	for viewport := height + 2; viewport <= 50; viewport++ {
+		for _, offset := range []int{0, 1, 7} {
+			assertPartialWindow(t, height, viewport, offset, heights)
+		}
+	}
+}
+
+func assertPartialWindow(t *testing.T, height, viewport, offset int, heights []int) {
+	end := Slice(offset, heights, viewport, HintsSplit)
+	if offset == 0 && end == len(heights) {
+		return
+	}
+	leading, trailing := PartialRows(offset, end, heights, viewport, HintsSplit)
+	got := spend(offset, end, heights, HintsSplit) + leading + trailing
+	if got != viewport {
+		t.Fatalf("height=%d viewport=%d offset=%d: window spends %d rows (whole %d + lead %d + trail %d), want the viewport exactly", height, viewport, offset, got, spend(offset, end, heights, HintsSplit), leading, trailing)
+	}
+}
+
+func TestPartialRowsFavoursTheTrailingEdgeOnAnOddSplit(t *testing.T) {
+	// Both edges have an item outside them, and the surface is being scrolled
+	// downward — so the odd row goes to the direction the user is heading.
+	heights := []int{4, 4, 4, 4, 4, 4}
+	// offset 1, viewport 12: ▲ + ▼ = 2 rows, two whole items = 8, 2 left over.
+	leading, trailing := PartialRows(1, Slice(1, heights, 12, HintsSplit), heights, 12, HintsSplit)
+	if leading != 1 || trailing != 1 {
+		t.Fatalf("an even leftover split %d/%d, want 1/1", leading, trailing)
+	}
+	// viewport 13 leaves 3, and the extra row goes trailing.
+	leading, trailing = PartialRows(1, Slice(1, heights, 13, HintsSplit), heights, 13, HintsSplit)
+	if leading != 1 || trailing != 2 {
+		t.Fatalf("an odd leftover split %d/%d, want 1 leading and 2 trailing", leading, trailing)
+	}
+}
+
+func TestPartialRowsGivesEverythingToTheOnlyEdgeThatHasAnItem(t *testing.T) {
+	heights := []int{5, 5, 5, 5}
+	// At the top: nothing above, so the whole leftover previews the next item.
+	end := Slice(0, heights, 9, HintsSplit)
+	leading, trailing := PartialRows(0, end, heights, 9, HintsSplit)
+	if leading != 0 || trailing != 3 {
+		t.Fatalf("at the top the split was %d/%d, want 0 leading and 3 trailing", leading, trailing)
+	}
+	// At the bottom: nothing below, so the leftover previews the item above —
+	// capped at that item's own height, which is all it has to show.
+	leading, trailing = PartialRows(3, 4, heights, 9, HintsSplit)
+	if leading != 3 || trailing != 0 {
+		t.Fatalf("at the bottom the split was %d/%d, want 3 leading and 0 trailing", leading, trailing)
+	}
+	leading, _ = PartialRows(3, 4, heights, 20, HintsSplit)
+	if leading != 5 {
+		t.Fatalf("leading preview = %d rows, want the whole %d-row item above and no more", leading, heights[2])
+	}
+}
+
+func TestPartialRowsIsZeroWhenTheWindowAlreadySpentTheViewport(t *testing.T) {
+	heights := []int{3, 3, 3, 3}
+	if l, tr := PartialRows(0, 4, heights, 12, HintsNone); l != 0 || tr != 0 {
+		t.Fatalf("a flush window asked for %d/%d preview rows, want none", l, tr)
+	}
+	// Slice's "render at least one item" escape: the item does not fit, so
+	// there is nothing left over to preview with.
+	if l, tr := PartialRows(0, 1, []int{9}, 3, HintsNone); l != 0 || tr != 0 {
+		t.Fatalf("an over-tall item asked for %d/%d preview rows, want none", l, tr)
+	}
+}
+
+func TestPartialRowsRefusesAWindowItDidNotSlice(t *testing.T) {
+	heights := ones(4)
+	for _, tc := range []struct {
+		name                          string
+		offset, end, viewport, length int
+	}{
+		{"empty list", 0, 1, 5, 0},
+		{"no viewport", 0, 1, 0, 4},
+		{"negative offset", -1, 1, 5, 4},
+		{"empty window", 2, 2, 5, 4},
+		{"end past the list", 0, 9, 5, 4},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if l, tr := PartialRows(tc.offset, tc.end, heights[:tc.length], tc.viewport, HintsSplit); l != 0 || tr != 0 {
+				t.Fatalf("PartialRows returned %d/%d for %s, want none", l, tr, tc.name)
+			}
+		})
+	}
+}
+
+func TestPartialRowsAccountsForTheCombinedFooterReservation(t *testing.T) {
+	heights := []int{4, 4, 4, 4}
+	// HintsCombined spends one row for both directions, not two, so it has one
+	// more row to preview with than HintsSplit at the same geometry.
+	splitLead, splitTrail := PartialRows(1, Slice(1, heights, 11, HintsSplit), heights, 11, HintsSplit)
+	combLead, combTrail := PartialRows(1, Slice(1, heights, 11, HintsCombined), heights, 11, HintsCombined)
+	split, combined := splitLead+splitTrail, combLead+combTrail
+	if combined != split+1 {
+		t.Fatalf("combined-footer previews %d rows and split-hint %d; the combined footer costs one row less, so it has exactly one more to preview with", combined, split)
+	}
+}
+
+func TestHeadAndTailRowsTakeTheEdgeTheirNameSays(t *testing.T) {
+	content := "r0\nr1\nr2\nr3"
+	if got := HeadRows(content, 2); got != "r0\nr1" {
+		t.Fatalf("HeadRows = %q, want the first two rows", got)
+	}
+	if got := TailRows(content, 2); got != "r2\nr3" {
+		t.Fatalf("TailRows = %q, want the last two rows", got)
+	}
+	if got := HeadRows(content, 9); got != content {
+		t.Fatalf("HeadRows past the end = %q, want the whole content", got)
+	}
+	if got := TailRows(content, 9); got != content {
+		t.Fatalf("TailRows past the end = %q, want the whole content", got)
+	}
+	if got := HeadRows(content, 0); got != "" {
+		t.Fatalf("HeadRows(0) = %q, want nothing", got)
+	}
+	if got := TailRows(content, -1); got != "" {
+		t.Fatalf("TailRows(-1) = %q, want nothing", got)
 	}
 }

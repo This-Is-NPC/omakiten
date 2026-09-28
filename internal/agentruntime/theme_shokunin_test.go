@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"omakiten/internal/agent"
+	"omakiten/internal/operation"
 )
 
 // openShokunin boots the runtime against the embedded shokunin default kit by
@@ -30,9 +30,9 @@ func openShokunin(t *testing.T) *Runtime {
 }
 
 // resolveShokunin resolves one command against the shokunin kit.
-func resolveShokunin(t *testing.T, rt *Runtime, name string) agent.ResolveCommandResponse {
+func resolveShokunin(t *testing.T, rt *Runtime, name string) operation.ResolveCommandResponse {
 	t.Helper()
-	resp, err := rt.Service().ResolveCommand(context.Background(), agent.ResolveCommandInput{Name: name})
+	resp, err := rt.Service().ResolveCommand(context.Background(), operation.ResolveCommandInput{Name: name})
 	if err != nil {
 		t.Fatalf("ResolveCommand(%s) error = %v", name, err)
 	}
@@ -42,7 +42,7 @@ func resolveShokunin(t *testing.T, rt *Runtime, name string) agent.ResolveComman
 // assertSkillsBulletWithBody pins the W4 theming contract for a resolved
 // command: every declared skill renders as a `- **Name** — body` bullet under
 // `## Skills` (never a bare name or an empty section).
-func assertSkillsBulletWithBody(t *testing.T, name string, resp agent.ResolveCommandResponse) {
+func assertSkillsBulletWithBody(t *testing.T, name string, resp operation.ResolveCommandResponse) {
 	t.Helper()
 	if len(resp.Skills) == 0 {
 		t.Fatalf("%s resolved with no skills — the command-level skill subset is not wired", name)
@@ -107,33 +107,42 @@ func TestShokuninPresetSmoke(t *testing.T) {
 	for _, name := range representative {
 		t.Run(name, func(t *testing.T) {
 			resp := resolveShokunin(t, rt, name)
-
-			if resp.Persona == nil {
-				t.Fatalf("%s resolved with no persona — the role slot is not wired in shokunin.yaml", name)
-			}
-			if !strings.Contains(resp.Markdown, "## Persona — ") {
-				t.Fatalf("%s markdown missing non-empty Persona section:\n%s", name, resp.Markdown)
-			}
-			if !strings.Contains(resp.Markdown, "## Skills\n") {
-				t.Fatalf("%s markdown missing the Skills section carrying the entity-sourced playbook:\n%s", name, resp.Markdown)
-			}
-			if strings.TrimSpace(resp.Description) == "" {
-				t.Fatalf("%s carries no prompts/list description (the bound playbook skill's frontmatter)", name)
-			}
-			if !strings.Contains(resp.Markdown, "## Laws\n") || len(resp.Laws) == 0 {
-				t.Fatalf("%s markdown missing non-empty Laws section (the global law floor should reach every command):\n%s", name, resp.Markdown)
-			}
-			assertSkillsBulletWithBody(t, name, resp)
-
-			if len(resp.Templates) > 0 {
-				if !strings.Contains(resp.Markdown, "## Templates\n") {
-					t.Fatalf("%s binds %d template(s) but renders no Templates section:\n%s", name, len(resp.Templates), resp.Markdown)
-				}
-				if !strings.Contains(resp.Markdown, "templates.show") {
-					t.Fatalf("%s binds templates but carries no templates.show JIT fetch hint:\n%s", name, resp.Markdown)
-				}
-			}
+			assertShokuninCommand(t, name, resp)
 		})
+	}
+}
+
+func assertShokuninCommand(t *testing.T, name string, resp operation.ResolveCommandResponse) {
+	t.Helper()
+	if resp.Persona == nil {
+		t.Fatalf("%s resolved with no persona — the role slot is not wired in shokunin.yaml", name)
+	}
+	if !strings.Contains(resp.Markdown, "## Persona — ") {
+		t.Fatalf("%s markdown missing non-empty Persona section:\n%s", name, resp.Markdown)
+	}
+	if !strings.Contains(resp.Markdown, "## Skills\n") {
+		t.Fatalf("%s markdown missing the Skills section carrying the entity-sourced playbook:\n%s", name, resp.Markdown)
+	}
+	if strings.TrimSpace(resp.Description) == "" {
+		t.Fatalf("%s carries no prompts/list description (the bound playbook skill's frontmatter)", name)
+	}
+	if !strings.Contains(resp.Markdown, "## Laws\n") || len(resp.Laws) == 0 {
+		t.Fatalf("%s markdown missing non-empty Laws section (the global law floor should reach every command):\n%s", name, resp.Markdown)
+	}
+	assertSkillsBulletWithBody(t, name, resp)
+	assertShokuninTemplates(t, name, resp)
+}
+
+func assertShokuninTemplates(t *testing.T, name string, resp operation.ResolveCommandResponse) {
+	t.Helper()
+	if len(resp.Templates) == 0 {
+		return
+	}
+	if !strings.Contains(resp.Markdown, "## Templates\n") {
+		t.Fatalf("%s binds %d template(s) but renders no Templates section:\n%s", name, len(resp.Templates), resp.Markdown)
+	}
+	if !strings.Contains(resp.Markdown, "templates.show") {
+		t.Fatalf("%s binds templates but carries no templates.show JIT fetch hint:\n%s", name, resp.Markdown)
 	}
 }
 
@@ -144,7 +153,11 @@ func TestShokuninPresetSmoke(t *testing.T) {
 func TestShokuninBuilderIdentity(t *testing.T) {
 	rt := openShokunin(t)
 	resp := resolveShokunin(t, rt, "okt-task-implement")
+	assertShokuninBuilder(t, resp)
+}
 
+func assertShokuninBuilder(t *testing.T, resp operation.ResolveCommandResponse) {
+	t.Helper()
 	if resp.Persona == nil {
 		t.Fatal("okt-task-implement resolved with no persona — Builder slot unwired")
 	}
@@ -166,17 +179,7 @@ func TestShokuninBuilderIdentity(t *testing.T) {
 	// Bullet-with-body Builder skills (incl. the themed gate-of-truth-toll +
 	// automail-fallback variants).
 	assertSkillsBulletWithBody(t, "okt-task-implement", resp)
-	wantSkills := map[string]bool{"gate-of-truth-toll": false, "automail-fallback": false, "implementation": false}
-	for _, sk := range resp.Skills {
-		if _, ok := wantSkills[sk.Slug]; ok {
-			wantSkills[sk.Slug] = true
-		}
-	}
-	for slug, seen := range wantSkills {
-		if !seen {
-			t.Fatalf("okt-task-implement Builder subset missing skill %q:\n%v", slug, resp.Skills)
-		}
-	}
+	assertShokuninBuilderSkills(t, resp)
 
 	// Themed law — the transmutation circle (pre-mortem) must reach the Builder
 	// loop and render its body.
@@ -199,6 +202,21 @@ func TestShokuninBuilderIdentity(t *testing.T) {
 	// body renders under ## Skills; there is no hardcoded Action text).
 	if !strings.Contains(resp.Markdown, "## Skills\n") {
 		t.Fatalf("okt-task-implement missing the Skills section carrying the entity-sourced playbook:\n%s", resp.Markdown)
+	}
+}
+
+func assertShokuninBuilderSkills(t *testing.T, resp operation.ResolveCommandResponse) {
+	t.Helper()
+	wantSkills := map[string]bool{"gate-of-truth-toll": false, "automail-fallback": false, "implementation": false}
+	for _, skill := range resp.Skills {
+		if _, ok := wantSkills[skill.Slug]; ok {
+			wantSkills[skill.Slug] = true
+		}
+	}
+	for slug, seen := range wantSkills {
+		if !seen {
+			t.Fatalf("okt-task-implement Builder subset missing skill %q:\n%v", slug, resp.Skills)
+		}
 	}
 }
 

@@ -1,10 +1,21 @@
 package paths
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
+
+func requireActiveMarkerBackend(t *testing.T) {
+	t.Helper()
+	if err := setActiveConfigFile(t.TempDir(), "probe.yaml"); errors.Is(err, errUnsupportedActiveMarker) {
+		t.Skipf("active marker backend unsupported on this target: %v", err)
+	} else if err != nil {
+		t.Fatalf("probe active marker backend: %v", err)
+	}
+}
 
 func TestConfigDirPrecedence(t *testing.T) {
 	tests := []struct {
@@ -117,6 +128,7 @@ func TestActiveConfigFileDiscoversFirstYAML(t *testing.T) {
 }
 
 func TestSetActiveConfigPersistsAcrossLookups(t *testing.T) {
+	requireActiveMarkerBackend(t)
 	tmp := t.TempDir()
 	t.Setenv(HomeEnv, tmp)
 	t.Setenv("XDG_CONFIG_HOME", "")
@@ -149,6 +161,7 @@ func TestSetActiveConfigPersistsAcrossLookups(t *testing.T) {
 }
 
 func TestActiveConfigFileFallsBackWhenActiveNameMissingAtRoot(t *testing.T) {
+	requireActiveMarkerBackend(t)
 	tmp := t.TempDir()
 	t.Setenv(HomeEnv, tmp)
 	t.Setenv("XDG_CONFIG_HOME", "")
@@ -178,6 +191,7 @@ func TestActiveConfigFileFallsBackWhenActiveNameMissingAtRoot(t *testing.T) {
 }
 
 func TestActiveConfigFileFallsBackToCustomWhenStaleAndRootEmpty(t *testing.T) {
+	requireActiveMarkerBackend(t)
 	tmp := t.TempDir()
 	t.Setenv(HomeEnv, tmp)
 	t.Setenv("XDG_CONFIG_HOME", "")
@@ -205,6 +219,7 @@ func TestActiveConfigFileFallsBackToCustomWhenStaleAndRootEmpty(t *testing.T) {
 }
 
 func TestActiveConfigFileResolvesCustomBeforeDefault(t *testing.T) {
+	requireActiveMarkerBackend(t)
 	tmp := t.TempDir()
 	t.Setenv(HomeEnv, tmp)
 	t.Setenv("XDG_CONFIG_HOME", "")
@@ -240,6 +255,93 @@ func TestSetActiveConfigRejectsPathSeparators(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", "")
 	if err := SetActiveConfig("nested/file.yaml"); err == nil {
 		t.Fatal("SetActiveConfig() error = nil, want rejection of path with separator")
+	}
+}
+
+func TestActiveConfigFileInDirRejectsSymlinkedMarker(t *testing.T) {
+	dir := t.TempDir()
+	victim := filepath.Join(t.TempDir(), "victim")
+	if err := os.WriteFile(victim, []byte("victim\n"), 0o600); err != nil {
+		t.Fatalf("write victim: %v", err)
+	}
+	if err := os.Symlink(victim, filepath.Join(dir, ActiveConfigStateFile)); err != nil {
+		t.Skipf("symlink unsupported: %v", err)
+	}
+
+	_, err := ActiveConfigFileInDir(dir)
+	if err == nil || !strings.Contains(err.Error(), "active config marker") {
+		t.Fatalf("ActiveConfigFileInDir error = %v, want marker rejection", err)
+	}
+	got, readErr := os.ReadFile(victim)
+	if readErr != nil {
+		t.Fatalf("read victim: %v", readErr)
+	}
+	if string(got) != "victim\n" {
+		t.Fatalf("victim changed to %q", got)
+	}
+}
+
+func TestSetActiveConfigRejectsNonRegularMarker(t *testing.T) {
+	requireActiveMarkerBackend(t)
+	dir := t.TempDir()
+	marker := filepath.Join(dir, ActiveConfigStateFile)
+	if err := os.Mkdir(marker, 0o755); err != nil {
+		t.Fatalf("mkdir marker: %v", err)
+	}
+
+	err := SetActiveConfigInDir(dir, "omakase.yaml")
+	if err == nil || !strings.Contains(err.Error(), "not a regular file") {
+		t.Fatalf("SetActiveConfigInDir error = %v, want non-regular rejection", err)
+	}
+}
+
+func TestSetActiveConfigReplacesMarkerAndPreservesMode(t *testing.T) {
+	requireActiveMarkerBackend(t)
+	dir := t.TempDir()
+	marker := filepath.Join(dir, ActiveConfigStateFile)
+	if err := os.WriteFile(marker, []byte("old.yaml\n"), 0o600); err != nil {
+		t.Fatalf("write marker: %v", err)
+	}
+
+	if err := SetActiveConfigInDir(dir, "new.yaml"); err != nil {
+		t.Fatalf("SetActiveConfigInDir: %v", err)
+	}
+	got, err := os.ReadFile(marker)
+	if err != nil {
+		t.Fatalf("read marker: %v", err)
+	}
+	if string(got) != "new.yaml\n" {
+		t.Fatalf("marker = %q, want new.yaml", got)
+	}
+	info, err := os.Stat(marker)
+	if err != nil {
+		t.Fatalf("stat marker: %v", err)
+	}
+	if got := info.Mode().Perm(); got != 0o600 {
+		t.Fatalf("marker mode = %o, want 600", got)
+	}
+}
+
+func TestSetActiveConfigCleansTempAfterWriteFailure(t *testing.T) {
+	requireActiveMarkerBackend(t)
+	dir := t.TempDir()
+	if err := os.Chmod(dir, 0o555); err != nil {
+		t.Fatalf("chmod config dir: %v", err)
+	}
+	defer func() { _ = os.Chmod(dir, 0o755) }()
+
+	err := SetActiveConfigInDir(dir, "omakase.yaml")
+	if err == nil {
+		t.Skip("write succeeded with read-only directory; test process can bypass directory permissions")
+	}
+	entries, readErr := os.ReadDir(dir)
+	if readErr != nil {
+		t.Fatalf("read config dir: %v", readErr)
+	}
+	for _, entry := range entries {
+		if strings.HasSuffix(entry.Name(), ".tmp") {
+			t.Fatalf("temporary marker remains after failed write: %s", entry.Name())
+		}
 	}
 }
 

@@ -17,7 +17,7 @@ func TestBuildSnapshotTrimsLanguageKeysForInactiveCodes(t *testing.T) {
 			Buckets: []Bucket{{ID: 1, Key: "backlog", Name: "Backlog", Position: 1}},
 		}},
 		Config: Settings{
-			Workflow: WorkflowSettings{Active: "demo"},
+			Workflow:  WorkflowSettings{Active: "demo"},
 			Languages: LanguageSettings{CLI: "pt-br", TUI: "en", AgentOutput: ""},
 		},
 		Languages: []Language{
@@ -29,16 +29,23 @@ func TestBuildSnapshotTrimsLanguageKeysForInactiveCodes(t *testing.T) {
 	}
 	snap := BuildSnapshot(bundle)
 
-	// Active codes keep their Keys: catalogs resolve them.
+	assertActiveLanguageCatalogs(t, snap)
+	assertLanguageTrim(t, snap)
+	assertTrimmedLanguageByCode(t, snap)
+}
+
+func assertActiveLanguageCatalogs(t *testing.T, snap *Snapshot) {
+	t.Helper()
 	if got := snap.Catalog(SurfaceCLI).Get("k"); got != "portuguese" {
 		t.Fatalf("CLI catalog should resolve via pt-br Keys, got %q", got)
 	}
 	if got := snap.Catalog(SurfaceTUI).Get("k"); got != "english" {
 		t.Fatalf("TUI catalog should resolve via en Keys (active TUI + baseline), got %q", got)
 	}
+}
 
-	// Inactive codes lose their Keys but keep Code/Name/Native for
-	// the picker.
+func assertLanguageTrim(t *testing.T, snap *Snapshot) {
+	t.Helper()
 	for _, lang := range snap.Languages() {
 		switch lang.Code {
 		case "pt-br", "en":
@@ -54,9 +61,10 @@ func TestBuildSnapshotTrimsLanguageKeysForInactiveCodes(t *testing.T) {
 			}
 		}
 	}
+}
 
-	// LanguageByCode also returns trimmed entries for inactive codes —
-	// the picker callsite reads this when surfacing display names.
+func assertTrimmedLanguageByCode(t *testing.T, snap *Snapshot) {
+	t.Helper()
 	fr, ok := snap.LanguageByCode("fr")
 	if !ok {
 		t.Fatalf("LanguageByCode(fr) missing")

@@ -6,13 +6,9 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"strconv"
 	"strings"
 
-	"omakiten/internal/app"
 	"omakiten/internal/cliutil"
-	"omakiten/internal/config"
-	"omakiten/internal/configstore"
 	"omakiten/internal/domain"
 )
 
@@ -26,15 +22,11 @@ func openEditorAndReimport(ctx context.Context, rt *runtime, path string) error 
 	if err := runEditorCommand(path); err != nil {
 		return domain.NewError(domain.ErrEditorFailed, err.Error(), map[string]any{"path": path})
 	}
-	editor := app.NewBundleEditor(configstore.New(), rt.configPath)
-	if _, err := editor.Apply(ctx, nil); err != nil {
-		return err
-	}
-	return nil
+	return rt.operationService().ReimportBundle(ctx)
 }
 
 func runEditorCommand(path string) error {
-	editor := app.ResolveEditor()
+	editor := cliutil.ResolveEditor()
 	parts := strings.Fields(editor)
 	if len(parts) == 0 {
 		return domain.NewError(domain.ErrEditorNotFound, t("cli.editor.not_configured"), nil)
@@ -70,76 +62,4 @@ func resolveEditorBinary(name string) (string, error) {
 		return "", domain.NewError(domain.ErrEditorNotFound, t("cli.editor.not_configured"), nil)
 	}
 	return "", domain.NewError(domain.ErrEditorNotFound, t("cli.editor.not_found"), map[string]any{"editor": strings.TrimSpace(name), "error": domain.SafeError(err)})
-}
-
-// resolveSkillSlug accepts either a bare slug or a numeric SQLite id. Numeric
-// ids stay supported as a back-compat fallback for scripts that already track
-// them; new code should prefer slugs.
-func resolveSkillSlug(ctx context.Context, service *app.SkillService, raw string) (string, error) {
-	raw = strings.TrimSpace(raw)
-	if raw == "" {
-		return "", domain.NewError(domain.ErrValidation, t("cli.err.skill_slug_required"), nil)
-	}
-	if id, err := strconv.ParseInt(raw, 10, 64); err == nil {
-		skills, err := service.List(ctx)
-		if err != nil {
-			return "", err
-		}
-		for _, skill := range skills {
-			if skill.ID == id {
-				return skill.Key, nil
-			}
-		}
-		return "", domain.NewError(domain.ErrSkillNotFound, t("cli.err.skill_not_found"), map[string]any{"id": id})
-	}
-	if config.Slugify(raw) != raw {
-		return "", domain.NewError(domain.ErrValidation, t("cli.err.skill_slug_bad_format"), map[string]any{"slug": raw})
-	}
-	return raw, nil
-}
-
-func resolveLawSlug(ctx context.Context, service *app.LawService, raw string) (string, error) {
-	raw = strings.TrimSpace(raw)
-	if raw == "" {
-		return "", domain.NewError(domain.ErrValidation, t("cli.err.law_slug_required"), nil)
-	}
-	if id, err := strconv.ParseInt(raw, 10, 64); err == nil {
-		laws, err := service.List(ctx)
-		if err != nil {
-			return "", err
-		}
-		for _, law := range laws {
-			if law.ID == id {
-				return law.Key, nil
-			}
-		}
-		return "", domain.NewError(domain.ErrLawNotFound, t("cli.err.law_not_found"), map[string]any{"id": id})
-	}
-	if config.Slugify(raw) != raw {
-		return "", domain.NewError(domain.ErrValidation, t("cli.err.law_slug_bad_format"), map[string]any{"slug": raw})
-	}
-	return raw, nil
-}
-
-func resolvePersonaSlug(ctx context.Context, service *app.PersonaService, raw string) (string, error) {
-	raw = strings.TrimSpace(raw)
-	if raw == "" {
-		return "", domain.NewError(domain.ErrValidation, t("cli.err.persona_slug_required"), nil)
-	}
-	if id, err := strconv.ParseInt(raw, 10, 64); err == nil {
-		personas, err := service.List(ctx)
-		if err != nil {
-			return "", err
-		}
-		for _, persona := range personas {
-			if persona.ID == id {
-				return persona.Key, nil
-			}
-		}
-		return "", domain.NewError(domain.ErrPersonaNotFound, t("cli.err.persona_not_found"), map[string]any{"id": id})
-	}
-	if config.Slugify(raw) != raw {
-		return "", domain.NewError(domain.ErrValidation, t("cli.err.persona_slug_bad_format"), map[string]any{"slug": raw})
-	}
-	return raw, nil
 }

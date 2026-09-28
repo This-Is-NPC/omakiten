@@ -93,7 +93,10 @@ func (a *NotificationShowAction) SetBundle(snapshot NotificationBundleSnapshot) 
 	a.mu.Unlock()
 }
 
-func (a *NotificationShowAction) Execute(_ context.Context, ev domain.Event, args map[string]any) error {
+func (a *NotificationShowAction) Execute(ctx context.Context, ev domain.Event, args map[string]any) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	a.mu.RLock()
 	sender := a.sender
 	snapshot := a.snapshot
@@ -144,6 +147,9 @@ func (a *NotificationShowAction) Execute(_ context.Context, ev domain.Event, arg
 	}
 	notification.Actions = rendered
 
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	sender.SendNotification(NotificationShowMsg{Notification: notification, Text: text, DetailText: detailText})
 	return nil
 }

@@ -3,20 +3,21 @@ package sqlite
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
-	"log/slog"
+	"io"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
+	"time"
 
 	_ "modernc.org/sqlite"
 
 	"omakiten/internal/config"
 	"omakiten/internal/domain"
 	"omakiten/internal/events"
-	"omakiten/migrations"
 )
 
 // kitBusyTimeoutMs reads PRAGMA busy_timeout from the embedded kit YAML.
@@ -29,7 +30,7 @@ func kitBusyTimeoutMs() int {
 		// Embedded YAML failure means the binary is corrupt; the rest of
 		// the runtime would also panic. Use a tiny safe value so the
 		// caller's error message points at the real failure (the next
-		// migration / query) rather than at an opaque PRAGMA reject.
+		// schema / query) rather than at an opaque PRAGMA reject.
 		return 1
 	}
 	return cfg.SQLite.BusyTimeoutMs
@@ -50,7 +51,7 @@ func kitCacheSizeKB() int {
 // Store wraps the SQLite connection pool with the domain-specific methods used
 // by the rest of the app. The methods themselves live in topic-focused files
 // (tasks.go, comments.go, bundles.go, ...) so this file stays small and
-// focused on lifecycle: opening, closing, and bringing the schema up to date.
+// focused on lifecycle: opening, closing, and validating the current schema.
 //
 // Knobs that flow from config (events retention, events fallback) live
 // as fields here so the composition root can write them once with
@@ -59,6 +60,10 @@ func kitCacheSizeKB() int {
 // affected code paths skip work or error out rather than masking the gap.
 type Store struct {
 	db *sql.DB
+	// configMu makes hot-reload configuration publication and readers of the
+	// event policy one Store-wide critical section. Database writes remain
+	// SQLite-transactional; this lock only prevents torn in-memory settings.
+	configMu sync.RWMutex
 	// maintenanceConn pins explicit database-maintenance operations to the
 	// physical connection opened and identity-checked by OpenSearchMaintenance.
 	// Normal stores leave these fields zero and continue using the pool.
@@ -67,13 +72,11 @@ type Store struct {
 	maintenancePath     string
 	maintenanceIdentity os.FileInfo
 
-	// busyTimeoutMs is the resolved PRAGMA busy_timeout in milliseconds —
-	// the value Open applied to the first pool connection plus any later
-	// override committed through ApplyConfig. Per-connection PRAGMAs
-	// firing from outside Open's loop (ClaimNextPlanTask reapplies on
-	// pinned conns the pool hands out cold) read this field so concurrent
-	// callers honour the user's config instead of falling back to the
-	// kit default.
+	// busyTimeoutMs is the resolved PRAGMA busy_timeout in milliseconds:
+	// Open threads the initial value through the DSN for every new
+	// connection, and ApplyConfig records any later override. ClaimNextPlanTask
+	// reapplies this field on its borrowed connection so hot-reloaded config
+	// supersedes the DSN's startup value.
 	busyTimeoutMs            int
 	eventsDefaultRecentLimit int
 	retentionGroups          []config.RetentionGroup
@@ -90,6 +93,19 @@ type Store struct {
 	// inherit a nil bus and silently skip the fan-out.
 	bus events.Bus
 
+	// orphanSweepMu guards the reconciliation policy, its schedule, and
+	// the warning sink. orphanSweepRunning is the separate non-blocking
+	// guard that keeps at most one pass in flight per process without
+	// holding orphanSweepMu for the whole (multi-batch) pass.
+	orphanSweepMu      sync.Mutex
+	orphanSweepPolicy  config.ResolvedOrphanSweep
+	orphanSweepNextDue time.Time
+	orphanSweepWarn    io.Writer
+	// orphanSweepNow replaces the time source in tests so cadence and the
+	// wall-clock cap are deterministic. nil means time.Now.
+	orphanSweepNow     func() time.Time
+	orphanSweepRunning atomic.Bool
+
 	// versionMu guards the lazily-pinned change-probe connection below.
 	versionMu sync.Mutex
 	// versionConn is a dedicated connection pinned out of the pool for the
@@ -97,10 +113,11 @@ type Store struct {
 	// is per-connection: the counter only advances on a connection when
 	// ANOTHER connection (this process's pool or a separate process via the
 	// shared WAL) has committed since this connection last read. Reading it
-	// through the 2-connection pool (MaxOpenConns=2) would hand back a
-	// different physical connection across calls and thrash the counter, so
-	// the probe MUST hold one pinned connection. Opened lazily on first
-	// DataVersion call and released in Close.
+	// through the pool would hand back a different physical connection across
+	// calls and thrash the counter, so the probe MUST hold one pinned
+	// connection. The pool has three slots; all three serve ordinary work until
+	// the first DataVersion call pins one for the Store's lifetime, leaving two
+	// ordinary slots. The pin is released in Close.
 	versionConn *sql.Conn
 }
 
@@ -108,6 +125,8 @@ type Store struct {
 // applies when callers pass <=0. Composition root resolves the value from
 // config.events.default_recent_limit.
 func (s *Store) SetEventsRecentLimit(limit int) {
+	s.configMu.Lock()
+	defer s.configMu.Unlock()
 	s.eventsDefaultRecentLimit = limit
 }
 
@@ -115,9 +134,24 @@ func (s *Store) SetEventsRecentLimit(limit int) {
 // policy resolves Log=false for an event_type, RecordTaskEvent /
 // RecordEntityEvent / insertTaskEvent drop the row before insertion
 // without surfacing an error to callers. Retention groups are rebuilt
-// from the same policy so post-insert pruning uses resolved limits.
+// from the same policy so post-insert pruning uses resolved limits, and
+// the orphan-sweep policy is armed from the same block.
 func (s *Store) SetEventsPolicy(policy config.EventsSettings) {
+	s.configMu.Lock()
+	defer s.configMu.Unlock()
+	s.setEventsPolicyLocked(policy)
+}
+
+func (s *Store) setEventsPolicyLocked(policy config.EventsSettings) {
 	s.eventsPolicy = policy
+	if s.bus != nil {
+		s.bus.SetSettings(policy)
+	}
+	// The orphan-sweep policy rides the same block, so installing the
+	// events settings also arms reconciliation. Stores that never call
+	// this setter (tests that skip ApplyConfig) keep the zero-valued
+	// policy, whose Enabled=false leaves every event row untouched.
+	s.SetOrphanSweepPolicy(policy.ResolveOrphanSweep())
 	s.retentionGroups = policy.BuildRetentionGroups()
 	s.eventTypeRetentionIndex = make(map[string]int, len(s.retentionGroups)*4)
 	for i, grp := range s.retentionGroups {
@@ -131,7 +165,21 @@ func (s *Store) SetEventsPolicy(policy config.EventsSettings) {
 // persisted. Centralised so every emission path consults the same
 // resolution logic.
 func (s *Store) shouldLogEvent(eventType string) bool {
+	s.configMu.RLock()
+	defer s.configMu.RUnlock()
 	return s.eventsPolicy.ResolveLog(eventType)
+}
+
+func (s *Store) recentEventLimit() int {
+	s.configMu.RLock()
+	defer s.configMu.RUnlock()
+	return s.eventsDefaultRecentLimit
+}
+
+func (s *Store) busyTimeout() int {
+	s.configMu.RLock()
+	defer s.configMu.RUnlock()
+	return s.busyTimeoutMs
 }
 
 // SetEventBus installs the in-process bus the Store fans events out to
@@ -139,6 +187,8 @@ func (s *Store) shouldLogEvent(eventType string) bool {
 // nil disables broadcast — tests that do not wire a bus inherit the
 // existing single-writer semantics.
 func (s *Store) SetEventBus(bus events.Bus) {
+	s.configMu.Lock()
+	defer s.configMu.Unlock()
 	s.bus = bus
 }
 
@@ -147,10 +197,15 @@ func (s *Store) SetEventBus(bus events.Bus) {
 // subscribers never observe rolled-back rows. Telemetry must not break
 // business logic — publish errors are swallowed.
 func (s *Store) publishEvent(ctx context.Context, ev domain.Event) {
-	if s.bus == nil || ev.EventType == "" {
+	if ev.EventType == "" {
 		return
 	}
-	_ = s.bus.Publish(ctx, ev)
+	s.configMu.RLock()
+	bus := s.bus
+	s.configMu.RUnlock()
+	if bus != nil {
+		_ = bus.Publish(ctx, ev)
+	}
 }
 
 // ConfigKnobs is the resolved bundle of Store-level knobs the composition
@@ -176,13 +231,33 @@ type ConfigKnobs struct {
 	EventBus events.Bus
 }
 
+// CurrentConfig returns the Store's in-memory runtime configuration. It is
+// intended for diagnostics and transaction tests; callers must not mutate the
+// returned EventsPolicy maps.
+func (s *Store) CurrentConfig() ConfigKnobs {
+	s.configMu.RLock()
+	defer s.configMu.RUnlock()
+	return ConfigKnobs{
+		BusyTimeoutMs:            s.busyTimeoutMs,
+		EventsDefaultRecentLimit: s.eventsDefaultRecentLimit,
+		EventsPolicy:             cloneEventsSettings(s.eventsPolicy),
+		EventBus:                 s.bus,
+	}
+}
+
 // ApplyConfig writes the resolved config knobs into the live Store. The
-// busy_timeout PRAGMA fires on the borrowed connection — modernc.org/sqlite
-// keeps it sticky for the connection's lifetime, and the small pool
-// (MaxOpenConns=2) means subsequent connections rerun PRAGMAs at first
-// use elsewhere. events policy + recent-limit knobs are simple field
-// writes the hot-path code reads without taking a lock.
+// PRAGMAs apply immediately to the borrowed connection; Open's DSN gives
+// every newly opened connection the startup values. The busy-timeout override
+// is also retained on Store so ClaimNextPlanTask can reapply the hot-reloaded
+// value to its connection. The Store-wide config lock publishes all in-memory
+// knobs together with the event bus policy.
 func (s *Store) ApplyConfig(ctx context.Context, k ConfigKnobs) error {
+	s.configMu.Lock()
+	defer s.configMu.Unlock()
+	return s.applyConfigLocked(ctx, k)
+}
+
+func (s *Store) applyConfigLocked(ctx context.Context, k ConfigKnobs) error {
 	if err := applyPragmas(ctx, s.db, pragmaSet{
 		BusyTimeoutMs: k.BusyTimeoutMs,
 		CacheSizeKB:   k.CacheSizeKB,
@@ -193,12 +268,26 @@ func (s *Store) ApplyConfig(ctx context.Context, k ConfigKnobs) error {
 	if k.BusyTimeoutMs > 0 {
 		s.busyTimeoutMs = k.BusyTimeoutMs
 	}
-	s.SetEventsRecentLimit(k.EventsDefaultRecentLimit)
-	s.SetEventsPolicy(k.EventsPolicy)
+	s.eventsDefaultRecentLimit = k.EventsDefaultRecentLimit
+	s.setEventsPolicyLocked(k.EventsPolicy)
 	if k.EventBus != nil {
-		s.SetEventBus(k.EventBus)
+		s.bus = k.EventBus
 	}
-	return s.pruneAllRetentionGroups(ctx)
+	if err := s.pruneAllRetentionGroups(ctx); err != nil {
+		return err
+	}
+	// Forced reconciliation pass, only after the rest of ApplyConfig
+	// succeeded. It is bounded by the same per-pass caps as the
+	// opportunistic path, so a database carrying a large orphan backlog
+	// costs the composition root one capped pass, not an unbounded scan.
+	// A failure here is swallowed: reconciliation is maintenance, and it
+	// must never be the reason a runtime refuses to compose. The pass
+	// reschedules itself on the retry cadence and the warning goes to
+	// the surface-safe sink.
+	if _, err := s.SweepOrphanEvents(ctx); err != nil {
+		s.warnOrphanSweep(err)
+	}
+	return nil
 }
 
 func (s *Store) pruneAllRetentionGroups(ctx context.Context) error {
@@ -211,6 +300,8 @@ func (s *Store) pruneAllRetentionGroups(ctx context.Context) error {
 }
 
 func (s *Store) pruneRetentionForEventType(ctx context.Context, eventType string) {
+	s.configMu.RLock()
+	defer s.configMu.RUnlock()
 	if len(s.retentionGroups) == 0 {
 		return
 	}
@@ -295,7 +386,7 @@ func Open(ctx context.Context, path string) (*Store, error) {
 }
 
 // OpenSearchMaintenance opens a current Omakiten database for explicit search
-// diagnostics without running migrations or changing persistent journal
+// diagnostics without changing the schema or persistent journal
 // settings. It rejects symlinks in every existing path component and verifies
 // the opened file still has the identity observed before sql.Open.
 func OpenSearchMaintenance(ctx context.Context, path string) (*Store, error) {
@@ -334,22 +425,29 @@ func openSearchMaintenance(ctx context.Context, path string, afterOpen func()) (
 	if afterOpen != nil {
 		afterOpen()
 	}
-	_, after, err := validateMaintenancePath(absolutePath)
-	if err != nil || !os.SameFile(before, after) {
-		return closeWith(maintenanceValidationError("database file changed while opening"))
-	}
-	var selectedPath string
-	if err := maintenanceConn.QueryRowContext(ctx, `SELECT file FROM pragma_database_list WHERE name = 'main'`).Scan(&selectedPath); err != nil {
-		return closeWith(maintenanceValidationError("database identity could not be verified"))
-	}
-	_, selected, err := validateMaintenancePath(selectedPath)
-	if err != nil || !os.SameFile(before, selected) {
-		return closeWith(maintenanceValidationError("opened database identity does not match requested file"))
+	if err := verifyOpenedDatabaseIdentity(ctx, maintenanceConn, absolutePath, before); err != nil {
+		return closeWith(err)
 	}
 	if err := verifyCurrentOmakitenSchema(ctx, maintenanceConn); err != nil {
 		return closeWith(err)
 	}
 	return store, nil
+}
+
+func verifyOpenedDatabaseIdentity(ctx context.Context, db schemaQueryer, path string, before os.FileInfo) error {
+	_, after, err := validateMaintenancePath(path)
+	if err != nil || !os.SameFile(before, after) {
+		return maintenanceValidationError("database file changed while opening")
+	}
+	var selectedPath string
+	if err := db.QueryRowContext(ctx, `SELECT file FROM pragma_database_list WHERE name = 'main'`).Scan(&selectedPath); err != nil {
+		return maintenanceValidationError("database identity could not be verified")
+	}
+	_, selected, err := validateMaintenancePath(selectedPath)
+	if err != nil || !os.SameFile(before, selected) {
+		return maintenanceValidationError("opened database identity does not match requested file")
+	}
+	return nil
 }
 
 func validateMaintenancePath(path string) (string, os.FileInfo, error) {
@@ -395,48 +493,6 @@ func maintenanceValidationError(reason string) error {
 type schemaQueryer interface {
 	QueryContext(context.Context, string, ...any) (*sql.Rows, error)
 	QueryRowContext(context.Context, string, ...any) *sql.Row
-}
-
-func verifyCurrentOmakitenSchema(ctx context.Context, db schemaQueryer) error {
-	requiredTables := []string{"schema_migrations", "projects", "tasks", "events", "errors", "solutions", "plans", "search_index"}
-	for _, name := range requiredTables {
-		var count int
-		if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = ?`, name).Scan(&count); err != nil || count != 1 {
-			return maintenanceValidationError("required Omakiten schema objects are missing")
-		}
-	}
-	entries, err := migrations.FS.ReadDir(".")
-	if err != nil {
-		return maintenanceValidationError("embedded migration catalog is unavailable")
-	}
-	expected := make(map[string]struct{})
-	for _, entry := range entries {
-		if !entry.IsDir() && strings.HasSuffix(entry.Name(), ".sql") {
-			expected[entry.Name()] = struct{}{}
-		}
-	}
-	rows, err := db.QueryContext(ctx, `SELECT version FROM schema_migrations`)
-	if err != nil {
-		return maintenanceValidationError("migration history is unreadable")
-	}
-	defer func() { _ = rows.Close() }()
-	seen := make(map[string]struct{})
-	for rows.Next() {
-		var version string
-		if err := rows.Scan(&version); err != nil {
-			return maintenanceValidationError("migration history is unreadable")
-		}
-		seen[version] = struct{}{}
-	}
-	if err := rows.Err(); err != nil || len(seen) != len(expected) {
-		return maintenanceValidationError("database schema version is incompatible")
-	}
-	for version := range expected {
-		if _, ok := seen[version]; !ok {
-			return maintenanceValidationError("database schema version is incompatible")
-		}
-	}
-	return nil
 }
 
 // dsnWithPragmas appends modernc.org/sqlite's `_pragma=...` query params to
@@ -496,11 +552,12 @@ func dsnWithPragmas(path string, busyTimeoutMs, cacheSizeKB, mmapSizeBytes int) 
 // back to the kit canonical so test paths don't have to load YAML
 // just to open a Store.
 func OpenWithOptions(ctx context.Context, path string, opts Options) (*Store, error) {
-	return openWithOptions(ctx, path, opts)
+	return openWithOptions(ctx, path, opts, nil)
 }
 
-func openWithOptions(ctx context.Context, path string, opts Options) (*Store, error) {
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+func openWithOptions(ctx context.Context, path string, opts Options, afterOpen func()) (*Store, error) {
+	absolutePath, fresh, identity, err := prepareDatabasePath(path)
+	if err != nil {
 		return nil, err
 	}
 
@@ -508,8 +565,8 @@ func openWithOptions(ctx context.Context, path string, opts Options) (*Store, er
 	// cache_size, mmap_size) MUST be threaded through the DSN's `_pragma`
 	// query param: SQLite applies them per-connection, so a single
 	// `db.ExecContext` after Open only protects whichever pooled
-	// connection ran it. A cold second connection (MaxOpenConns=2) would
-	// otherwise sit at the engine defaults — foreign_keys OFF (silent
+	// connection ran it. A connection opened later would otherwise sit at
+	// the engine defaults — foreign_keys OFF (silent
 	// no-op FK cascades), busy_timeout=0 (instant SQLITE_BUSY instead of
 	// waiting), synchronous=FULL. Threading them through the DSN makes
 	// the driver run them on EVERY connection it opens (modernc applies
@@ -533,26 +590,24 @@ func openWithOptions(ctx context.Context, path string, opts Options) (*Store, er
 	if mmapSize < 0 {
 		mmapSize = 0
 	}
-	db, err := sql.Open("sqlite", dsnWithPragmas(path, busyTimeout, cacheSize, mmapSize))
+	db, err := openSQLiteDatabase(absolutePath, fresh, busyTimeout, cacheSize, mmapSize)
 	if err != nil {
 		return nil, err
 	}
+	if afterOpen != nil {
+		afterOpen()
+	}
 
-	// SQLite is single-writer regardless of pool size, so a tiny pool with a
-	// single live connection avoids "database is locked" surprises when both
-	// the TUI and the MCP server share one Store. Idle conn caps at 2 so the
-	// reader pool can warm up without holding extra fds open indefinitely.
-	// MaxOpenConns was originally lowered from 4 → 2 because the TUI is
-	// read-mostly and the extra connections never carried real concurrency
-	// (single writer regardless) while costing extra fd / cache duplication.
+	// SQLite is single-writer regardless of pool size, so the pool stays small
+	// when the TUI and MCP server share one Store. The ordinary-work budget was
+	// originally reduced from four connections to two because the TUI is
+	// read-mostly and extra slots cost file descriptors and duplicate page
+	// caches without adding writer concurrency. The idle cap remains two.
 	//
-	// It is now 3, not 2: DataVersion pins ONE connection out of the pool for
-	// the Store's lifetime (see the versionConn field comment). That pin is
-	// permanent, so with MaxOpenConns=2 only a single connection remained for
-	// everything else — and the same *Store is shared with the MCP server, so
-	// under concurrent TUI + MCP load that lone connection serialized all other
-	// work. Reserving 1 for the lifetime data_version pin and keeping 2 usable
-	// restores the pre-pin concurrency budget.
+	// The ceiling is three because DataVersion lazily pins one connection for
+	// the Store's lifetime (see versionConn). Before that first probe all three
+	// slots are ordinary; afterward the pin leaves the intended two slots for
+	// TUI, MCP, and other Store work.
 	db.SetMaxOpenConns(3)
 	db.SetMaxIdleConns(2)
 
@@ -561,22 +616,121 @@ func openWithOptions(ctx context.Context, path string, opts Options) (*Store, er
 	// into the DSN; record it so the per-connection PRAGMA reappliers
 	// outside Open's path (ClaimNextPlanTask) honour the same value.
 	store.busyTimeoutMs = busyTimeout
-	// journal_mode=WAL persists to the DB header (not per-connection), so
-	// a single ExecContext on the first connection is enough — and it
-	// MUST run once at Open so the header flips before any writer commits.
-	// The per-connection PRAGMAs (foreign_keys, busy_timeout, synchronous,
-	// cache_size, mmap_size) ride the DSN's _pragma params instead (see
-	// dsnWithPragmas above).
+	if err := db.PingContext(ctx); err != nil {
+		_ = store.Close()
+		return nil, maintenanceValidationError("database could not be opened; use a new database path or restore a current-compatible backup")
+	}
+	if identity != nil {
+		if err := verifyOpenedDatabaseIdentity(ctx, db, absolutePath, identity); err != nil {
+			_ = store.Close()
+			return nil, err
+		}
+	}
+	if err := initializeOrValidateDatabase(ctx, db, fresh); err != nil {
+		_ = store.Close()
+		return nil, err
+	}
 	if _, err := db.ExecContext(ctx, "PRAGMA journal_mode = WAL"); err != nil {
 		_ = store.Close()
 		return nil, fmt.Errorf("apply PRAGMA journal_mode = WAL: %w", err)
 	}
-	if err := store.applyMigrations(ctx); err != nil {
-		_ = store.Close()
-		return nil, err
-	}
 
 	return store, nil
+}
+
+func openSQLiteDatabase(path string, fresh bool, busyTimeout, cacheSize, mmapSize int) (*sql.DB, error) {
+	dsnPath := path
+	if !fresh && path != ":memory:" {
+		absolutePath, err := filepath.Abs(path)
+		if err != nil {
+			return nil, maintenanceValidationError("database path is invalid")
+		}
+		dsnPath = sqliteFileURI(absolutePath, "mode=rw")
+	}
+	db, err := sql.Open("sqlite", dsnWithPragmas(dsnPath, busyTimeout, cacheSize, mmapSize))
+	if err != nil {
+		return nil, err
+	}
+	return db, nil
+}
+
+func initializeOrValidateDatabase(ctx context.Context, db *sql.DB, fresh bool) error {
+	if fresh {
+		return applyCurrentSchema(ctx, db)
+	}
+	if err := verifyCurrentOmakitenSchema(ctx, db); err == nil {
+		return nil
+	}
+	return bridgeV030ReleaseDatabase(ctx, db)
+}
+
+func prepareDatabasePath(path string) (string, bool, os.FileInfo, error) {
+	if path == ":memory:" {
+		return path, true, nil, nil
+	}
+	absolutePath, err := filepath.Abs(path)
+	if err != nil {
+		return "", false, nil, maintenanceValidationError("database path is invalid")
+	}
+	if err := ensureDatabaseParentPath(filepath.Dir(absolutePath)); err != nil {
+		return "", false, nil, err
+	}
+	fresh, err := claimFreshDatabasePath(absolutePath)
+	if err != nil {
+		return "", false, nil, err
+	}
+	absolutePath, identity, err := validateMaintenancePath(absolutePath)
+	if err != nil {
+		return "", false, nil, err
+	}
+	return absolutePath, fresh, identity, nil
+}
+
+func ensureDatabaseParentPath(path string) error {
+	absolutePath, err := filepath.Abs(path)
+	if err != nil {
+		return maintenanceValidationError("database path is invalid")
+	}
+	components := []string{filepath.Clean(absolutePath)}
+	for current := components[0]; ; {
+		parent := filepath.Dir(current)
+		if parent == current {
+			break
+		}
+		components = append(components, parent)
+		current = parent
+	}
+	for index := len(components) - 1; index >= 0; index-- {
+		component := components[index]
+		info, err := os.Lstat(component)
+		if errors.Is(err, os.ErrNotExist) {
+			if err := os.Mkdir(component, 0o755); err != nil && !errors.Is(err, os.ErrExist) {
+				return maintenanceValidationError("database path is unavailable")
+			}
+			info, err = os.Lstat(component)
+		}
+		if err != nil || info.Mode()&os.ModeSymlink != 0 || !info.IsDir() {
+			return maintenanceValidationError("database path contains a symlink or non-directory component")
+		}
+	}
+	return nil
+}
+
+func claimFreshDatabasePath(path string) (bool, error) {
+	if path == ":memory:" {
+		return true, nil
+	}
+	file, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE|os.O_EXCL, 0o600)
+	if err == nil {
+		if err := file.Close(); err != nil {
+			return false, err
+		}
+		return true, nil
+	}
+	if os.IsExist(err) {
+		return false, nil
+	}
+	return false, err
 }
 
 func (s *Store) Close() error {
@@ -596,6 +750,48 @@ func (s *Store) Close() error {
 	}
 	s.versionMu.Unlock()
 	return s.db.Close()
+}
+
+func cloneEventsSettings(in config.EventsSettings) config.EventsSettings {
+	out := in
+	out.Retention.ByCategory = cloneRetentionSettings(out.Retention.ByCategory)
+	out.Retention.Overrides = cloneRetentionSettings(out.Retention.Overrides)
+	out.Overrides = cloneEventChannels(out.Overrides)
+	out.Definitions = cloneEventDefinitions(out.Definitions)
+	return out
+}
+
+func cloneEventChannels(in map[string]config.EventChannelSettings) map[string]config.EventChannelSettings {
+	if in == nil {
+		return nil
+	}
+	out := make(map[string]config.EventChannelSettings, len(in))
+	for key, value := range in {
+		out[key] = value
+	}
+	return out
+}
+
+func cloneEventDefinitions(in map[string]config.EventDefinitionSettings) map[string]config.EventDefinitionSettings {
+	if in == nil {
+		return nil
+	}
+	out := make(map[string]config.EventDefinitionSettings, len(in))
+	for key, value := range in {
+		out[key] = value
+	}
+	return out
+}
+
+func cloneRetentionSettings(in map[string]config.EventRetentionSettings) map[string]config.EventRetentionSettings {
+	if in == nil {
+		return nil
+	}
+	out := make(map[string]config.EventRetentionSettings, len(in))
+	for key, value := range in {
+		out[key] = value
+	}
+	return out
 }
 
 // DataVersion returns the SQLite `PRAGMA data_version` watermark read on a
@@ -663,81 +859,6 @@ func (s *Store) Checkpoint(ctx context.Context) error {
 	}
 	if busy != 0 || checkpointed < logged {
 		return fmt.Errorf("wal_checkpoint incomplete: busy=%d logged=%d checkpointed=%d", busy, logged, checkpointed)
-	}
-	return nil
-}
-
-func (s *Store) applyMigrations(ctx context.Context) error {
-	if _, err := s.db.ExecContext(ctx, "CREATE TABLE IF NOT EXISTS schema_migrations (version TEXT PRIMARY KEY, applied_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)"); err != nil {
-		return err
-	}
-
-	entries, err := migrations.FS.ReadDir(".")
-	if err != nil {
-		return err
-	}
-	sort.Slice(entries, func(i, j int) bool { return entries[i].Name() < entries[j].Name() })
-
-	for _, entry := range entries {
-		name := entry.Name()
-		if entry.IsDir() || !strings.HasSuffix(name, ".sql") {
-			continue
-		}
-
-		var exists int
-		if err := s.db.QueryRowContext(ctx, "SELECT COUNT(1) FROM schema_migrations WHERE version = ?", name).Scan(&exists); err != nil {
-			return err
-		}
-		if exists > 0 {
-			continue
-		}
-
-		data, err := migrations.FS.ReadFile(name)
-		if err != nil {
-			return err
-		}
-
-		tx, err := s.db.BeginTx(ctx, nil)
-		if err != nil {
-			return err
-		}
-		if _, err := tx.ExecContext(ctx, string(data)); err != nil {
-			_ = tx.Rollback()
-			return fmt.Errorf("apply migration %s: %w", name, err)
-		}
-		if _, err := tx.ExecContext(ctx, "INSERT INTO schema_migrations(version) VALUES (?)", name); err != nil {
-			_ = tx.Rollback()
-			return err
-		}
-		if err := tx.Commit(); err != nil {
-			return err
-		}
-	}
-
-	if err := s.warnTaskDepthBackfillTruncation(ctx); err != nil {
-		return err
-	}
-
-	return nil
-}
-
-func (s *Store) warnTaskDepthBackfillTruncation(ctx context.Context) error {
-	var depthColumns int
-	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM pragma_table_info('tasks') WHERE name = 'depth'`).Scan(&depthColumns); err != nil {
-		return err
-	}
-	if depthColumns == 0 {
-		return nil
-	}
-	var truncatedRows int64
-	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM tasks WHERE parent_id IS NOT NULL AND depth = 0`).Scan(&truncatedRows); err != nil {
-		return err
-	}
-	if truncatedRows > 0 {
-		slog.Warn("tasks depth backfill truncated; descendants > 64 retain depth=0",
-			"truncated_rows", truncatedRows,
-			"depth_cap", orphanDepthLimit,
-		)
 	}
 	return nil
 }

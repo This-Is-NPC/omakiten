@@ -12,8 +12,8 @@ import (
 // laws on personas/templates must merge with the wiring without duplication.
 func TestLoadBundleAcceptsMCPCommands(t *testing.T) {
 	dir := t.TempDir()
-	configPath := filepath.Join(dir, "omakiten.yaml")
-	writeFile(t, configPath, `version: 1
+	configPath := filepath.Join(dir, "config", "omakiten.yaml")
+	writeWiring(t, configPath, `version: 1
 kit: { id: 1, key: default, name: Default }
 config:
   output: { json_minified: true, omit_empty: true }
@@ -44,7 +44,6 @@ config:
     logs: { sort: {order: desc}, limit: 50, window_days: 30 }
     task_activity: { sort: {order: asc} }
   sqlite: { busy_timeout_ms: 5000, cache_size_kb: 1024, mmap_size_bytes: 0 }
-  activity_log: { max_rows: 500, max_age_days: 7 }
   solutions: { default_top_limit: 10, max_top_limit: 100 }
   events: { default_recent_limit: 50, defaults: { log: true, broadcast: true, hook: true } }
   search: { stopwords: [and, the] }
@@ -61,7 +60,8 @@ laws:
   - template-fidelity
 personas:
   - slug: backend-agent
-    skills:
+    schema_version: 2
+    skill_repertoire:
       - go
 mcp_commands:
   global:
@@ -76,10 +76,10 @@ mcp_commands:
     laws_disabled:
       - template-fidelity
 `)
-	writeFile(t, filepath.Join(dir, "skills", "go.md"), "---\nname: Go\n---\nbody\n")
+	writeFile(t, filepath.Join(dir, "skills", "go.md"), "---\nname: Go\nschema_version: 2\n---\nbody\n")
 	writeFile(t, filepath.Join(dir, "laws", "project-scope-only.md"), "---\nseverity: error\n---\nbody\n")
 	writeFile(t, filepath.Join(dir, "laws", "template-fidelity.md"), "---\nseverity: warning\n---\nbody\n")
-	writeFile(t, filepath.Join(dir, "personas", "backend-agent.md"), "---\nname: Backend Agent\nlaws:\n  - project-scope-only\n---\nbody\n")
+	writeFile(t, filepath.Join(dir, "personas", "backend-agent.md"), "---\nname: Backend Agent\nschema_version: 2\nskill_repertoire: [go]\nlaws:\n  - project-scope-only\n---\nbody\n")
 	writeFile(t, filepath.Join(dir, "templates", "pull-request.md"), "---\nname: Pull Request\nentity: pr\ndefault: pr\nlaws:\n  - template-fidelity\n---\n\n## Before\n## After\n")
 
 	bundle, err := LoadBundle(configPath)
@@ -117,8 +117,8 @@ mcp_commands:
 // loaded entity.
 func TestLoadBundleRejectsDanglingCommandRefs(t *testing.T) {
 	dir := t.TempDir()
-	configPath := filepath.Join(dir, "omakiten.yaml")
-	writeFile(t, configPath, `version: 1
+	configPath := filepath.Join(dir, "config", "omakiten.yaml")
+	writeWiring(t, configPath, `version: 1
 kit: { id: 1, key: default, name: Default }
 config:
   output: { json_minified: true, omit_empty: true }
@@ -149,7 +149,6 @@ config:
     logs: { sort: {order: desc}, limit: 50, window_days: 30 }
     task_activity: { sort: {order: asc} }
   sqlite: { busy_timeout_ms: 5000, cache_size_kb: 1024, mmap_size_bytes: 0 }
-  activity_log: { max_rows: 500, max_age_days: 7 }
   solutions: { default_top_limit: 10, max_top_limit: 100 }
   events: { default_recent_limit: 50, defaults: { log: true, broadcast: true, hook: true } }
   search: { stopwords: [and, the] }
@@ -187,8 +186,8 @@ mcp_commands:
 // same command — that combination has no defined semantics.
 func TestLoadBundleRejectsLawsDisabledOverlap(t *testing.T) {
 	dir := t.TempDir()
-	configPath := filepath.Join(dir, "omakiten.yaml")
-	writeFile(t, configPath, `version: 1
+	configPath := filepath.Join(dir, "config", "omakiten.yaml")
+	writeWiring(t, configPath, `version: 1
 kit: { id: 1, key: default, name: Default }
 config:
   output: { json_minified: true, omit_empty: true }
@@ -219,7 +218,6 @@ config:
     logs: { sort: {order: desc}, limit: 50, window_days: 30 }
     task_activity: { sort: {order: asc} }
   sqlite: { busy_timeout_ms: 5000, cache_size_kb: 1024, mmap_size_bytes: 0 }
-  activity_log: { max_rows: 500, max_age_days: 7 }
   solutions: { default_top_limit: 10, max_top_limit: 100 }
   events: { default_recent_limit: 50, defaults: { log: true, broadcast: true, hook: true } }
   search: { stopwords: [and, the] }

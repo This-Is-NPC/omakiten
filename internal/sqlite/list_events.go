@@ -45,7 +45,7 @@ const MaxListEventsLimit = 10_000
 // event_type with a category arm propagates here automatically. The
 // expanded set becomes a `event_type IN (?, ?, ...)` predicate.
 //
-// Index coverage (migration 035, reshaped from 034 — see task #1291).
+// Index coverage is provided by the final current-schema indexes.
 // The hot query is project-scoped and ends with
 // `ORDER BY created_at <dir>, id <dir> LIMIT ?`, so the indexes carry
 // the ORDER BY columns immediately after the equality-filtered prefix
@@ -71,67 +71,10 @@ const MaxListEventsLimit = 10_000
 // short-circuit and return an empty slice instead so callers receive a
 // predictable "nothing matches" result.
 func (s *Store) ListEvents(ctx context.Context, filter domain.EventFilter) ([]domain.EventRow, error) {
-	conds := []string{}
-	args := []any{}
-
-	if filter.ProjectID > 0 {
-		conds = append(conds, "project_id = ?")
-		args = append(args, filter.ProjectID)
+	query, args, empty := listEventsQuery(filter)
+	if empty {
+		return nil, nil
 	}
-
-	if len(filter.Categories) > 0 {
-		// Expand each requested category into its concrete event_type
-		// set via the domain helper. Dedup across categories with a set
-		// — the partition guarantees no overlap today, but a defensive
-		// dedup means a future overlapping category can't produce a
-		// duplicate-laden IN list. Final order is sorted so the SQL
-		// shape stays stable for EXPLAIN diff review.
-		seen := make(map[string]struct{})
-		for _, cat := range filter.Categories {
-			for _, et := range domain.EventTypesForCategory(cat) {
-				seen[et] = struct{}{}
-			}
-		}
-		if len(seen) == 0 {
-			// Every supplied category was unknown — return an empty
-			// slice rather than build an invalid `IN ()` clause.
-			return nil, nil
-		}
-		eventTypes := make([]string, 0, len(seen))
-		for et := range seen {
-			eventTypes = append(eventTypes, et)
-		}
-		sort.Strings(eventTypes)
-		ph := make([]string, len(eventTypes))
-		for i, et := range eventTypes {
-			ph[i] = "?"
-			args = append(args, et)
-		}
-		conds = append(conds, "event_type IN ("+strings.Join(ph, ",")+")")
-	}
-
-	if !filter.Since.IsZero() {
-		conds = append(conds, "created_at >= ?")
-		args = append(args, filter.Since.UTC().Format(sqliteTimestampLayout))
-	}
-
-	query := "SELECT id, entity_type, COALESCE(entity_id, 0), COALESCE(project_id, 0), COALESCE(project_slug, ''), event_type, COALESCE(body, ''), COALESCE(payload, ''), COALESCE(author_type, ''), COALESCE(source, ''), COALESCE(status, ''), COALESCE(duration_ms, 0), COALESCE(error_message, ''), created_at, COALESCE(finished_at, ''), COALESCE(agent_model, '') FROM events"
-	if len(conds) > 0 {
-		query += " WHERE " + strings.Join(conds, " AND ")
-	}
-
-	direction := "DESC"
-	if strings.EqualFold(filter.Order, "asc") {
-		direction = "ASC"
-	}
-	query += " ORDER BY created_at " + direction + ", id " + direction
-
-	effective := filter.Limit
-	if effective <= 0 || effective > MaxListEventsLimit {
-		effective = MaxListEventsLimit
-	}
-	query += " LIMIT ?"
-	args = append(args, effective)
 
 	rows, err := s.db.QueryContext(ctx, query, args...)
 	if err != nil {
@@ -139,27 +82,83 @@ func (s *Store) ListEvents(ctx context.Context, filter domain.EventFilter) ([]do
 	}
 	defer func() { _ = rows.Close() }()
 
+	return scanEventRows(rows)
+}
+
+func listEventsQuery(filter domain.EventFilter) (string, []any, bool) {
+	conds, args, empty := eventFilterConditions(filter)
+	if empty {
+		return "", nil, true
+	}
+	query := "SELECT id, entity_type, COALESCE(entity_id, 0), COALESCE(project_id, 0), COALESCE(project_slug, ''), event_type, COALESCE(body, ''), COALESCE(payload, ''), COALESCE(author_type, ''), COALESCE(source, ''), COALESCE(status, ''), COALESCE(duration_ms, 0), COALESCE(error_message, ''), created_at, COALESCE(finished_at, ''), COALESCE(agent_model, '') FROM events"
+	if len(conds) > 0 {
+		query += " WHERE " + strings.Join(conds, " AND ")
+	}
+	direction := "DESC"
+	if strings.EqualFold(filter.Order, "asc") {
+		direction = "ASC"
+	}
+	query += " ORDER BY created_at " + direction + ", id " + direction
+	effective := filter.Limit
+	if effective <= 0 || effective > MaxListEventsLimit {
+		effective = MaxListEventsLimit
+	}
+	query += " LIMIT ?"
+	args = append(args, effective)
+	return query, args, false
+}
+
+func eventFilterConditions(filter domain.EventFilter) ([]string, []any, bool) {
+	conds := []string{}
+	args := []any{}
+	if filter.ProjectID > 0 {
+		conds = append(conds, "project_id = ?")
+		args = append(args, filter.ProjectID)
+	}
+	if len(filter.Categories) > 0 {
+		eventTypes := eventTypesForCategories(filter.Categories)
+		if len(eventTypes) == 0 {
+			return nil, nil, true
+		}
+		ph := make([]string, len(eventTypes))
+		for i, eventType := range eventTypes {
+			ph[i] = "?"
+			args = append(args, eventType)
+		}
+		conds = append(conds, "event_type IN ("+strings.Join(ph, ",")+")")
+	}
+	if !filter.Since.IsZero() {
+		conds = append(conds, "created_at >= ?")
+		args = append(args, filter.Since.UTC().Format(sqliteTimestampLayout))
+	}
+	return conds, args, false
+}
+
+func eventTypesForCategories(categories []domain.EventCategory) []string {
+	seen := make(map[string]struct{})
+	for _, category := range categories {
+		for _, eventType := range domain.EventTypesForCategory(category) {
+			seen[eventType] = struct{}{}
+		}
+	}
+	eventTypes := make([]string, 0, len(seen))
+	for eventType := range seen {
+		eventTypes = append(eventTypes, eventType)
+	}
+	sort.Strings(eventTypes)
+	return eventTypes
+}
+
+func scanEventRows(rows *sql.Rows) ([]domain.EventRow, error) {
 	var out []domain.EventRow
 	for rows.Next() {
 		var row domain.EventRow
 		var durationMs sql.NullInt64
 		if err := rows.Scan(
-			&row.ID,
-			&row.EntityType,
-			&row.EntityID,
-			&row.ProjectID,
-			&row.ProjectSlug,
-			&row.EventType,
-			&row.Body,
-			&row.Payload,
-			&row.AuthorType,
-			&row.Source,
-			&row.Status,
-			&durationMs,
-			&row.ErrorMessage,
-			&row.CreatedAt,
-			&row.FinishedAt,
-			&row.AgentModel,
+			&row.ID, &row.EntityType, &row.EntityID, &row.ProjectID,
+			&row.ProjectSlug, &row.EventType, &row.Body, &row.Payload,
+			&row.AuthorType, &row.Source, &row.Status, &durationMs,
+			&row.ErrorMessage, &row.CreatedAt, &row.FinishedAt, &row.AgentModel,
 		); err != nil {
 			return nil, err
 		}
@@ -225,4 +224,3 @@ func (s *Store) EventCategoryCounts(ctx context.Context, projectID int64, since 
 	}
 	return counts, rows.Err()
 }
-

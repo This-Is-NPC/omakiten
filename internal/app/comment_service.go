@@ -98,55 +98,54 @@ func (s *CommentService) AddScoped(ctx context.Context, project domain.ProjectCo
 		finish(status, errMsg)
 	}()
 
+	w, err = s.prepareCommentWrite(project, w)
+	if err != nil {
+		return
+	}
+
+	if err = s.enforceCommentCreatePermission(ctx, project, w.Scope, w.TaskID, tagNames(w.Tags)); err != nil {
+		return
+	}
+
+	comment, err = s.repo.AddScopedComment(ctx, w)
+	return
+}
+
+func (s *CommentService) prepareCommentWrite(project domain.ProjectContext, w domain.CommentWrite) (domain.CommentWrite, error) {
 	scope := w.Scope
 	if scope == "" {
 		scope = domain.CommentScopeTask
 	}
-	switch scope {
-	case domain.CommentScopeTask:
-		if w.TaskID <= 0 {
-			err = domain.NewError(domain.ErrValidation, "task id must be positive", nil)
-			return
-		}
-	case domain.CommentScopeProject, domain.CommentScopeUniversal:
-		// no task id required
-	default:
-		err = domain.NewError(domain.ErrValidation, "unknown comment scope", map[string]any{"scope": w.Scope})
-		return
+	if scope == domain.CommentScopeTask && w.TaskID <= 0 {
+		return w, domain.NewError(domain.ErrValidation, "task id must be positive", nil)
 	}
-
+	if scope != domain.CommentScopeTask && scope != domain.CommentScopeProject && scope != domain.CommentScopeUniversal {
+		return w, domain.NewError(domain.ErrValidation, "unknown comment scope", map[string]any{"scope": w.Scope})
+	}
 	w.Scope = scope
 	w.ProjectID = project.ID
 	w.Body = strings.TrimSpace(w.Body)
 	if w.Body == "" {
-		err = domain.NewError(domain.ErrValidation, "comment body is required", nil)
-		return
+		return w, domain.NewError(domain.ErrValidation, "comment body is required", nil)
 	}
-	if err = domain.ValidateCommentBody(w.Body); err != nil {
-		return
+	if err := domain.ValidateCommentBody(w.Body); err != nil {
+		return w, err
 	}
-	if err = domain.ValidateCommentTitle(w.Title); err != nil {
-		return
+	if err := domain.ValidateCommentTitle(w.Title); err != nil {
+		return w, err
 	}
-	if err = domain.ValidateCommentKind(w.Kind); err != nil {
-		return
+	if err := domain.ValidateCommentKind(w.Kind); err != nil {
+		return w, err
 	}
 	w.AuthorType = strings.TrimSpace(w.AuthorType)
 	if w.AuthorType == "" {
 		w.AuthorType = "human"
 	}
 	if w.AuthorType != "human" && w.AuthorType != "agent" {
-		err = domain.NewError(domain.ErrValidation, "author type must be human or agent", map[string]any{"author_type": w.AuthorType})
-		return
+		return w, domain.NewError(domain.ErrValidation, "author type must be human or agent", map[string]any{"author_type": w.AuthorType})
 	}
 	w.Tags = s.normalizeTags(w.Tags)
-
-	if err = s.enforceCommentCreatePermission(ctx, project, scope, w.TaskID, tagNames(w.Tags)); err != nil {
-		return
-	}
-
-	comment, err = s.repo.AddScopedComment(ctx, w)
-	return
+	return w, nil
 }
 
 // enforceCommentCreatePermission is the scope-aware create guard, mirroring
@@ -338,37 +337,8 @@ func (s *CommentService) EditScoped(ctx context.Context, project domain.ProjectC
 		err = domain.NewError(domain.ErrValidation, "comment id must be positive", nil)
 		return
 	}
-	// Body is tri-state: a nil pointer leaves the stored body untouched (a
-	// metadata-only edit), while a non-nil pointer overwrites it but must be
-	// non-empty after trim — you can rewrite a body but not blank it.
-	if edit.Body != nil {
-		trimmed := strings.TrimSpace(*edit.Body)
-		if trimmed == "" {
-			err = domain.NewError(domain.ErrValidation, "comment body is required", nil)
-			return
-		}
-		if err = domain.ValidateCommentBody(trimmed); err != nil {
-			return
-		}
-		edit.Body = &trimmed
-	}
-	if edit.Title != nil {
-		if err = domain.ValidateCommentTitle(*edit.Title); err != nil {
-			return
-		}
-	}
-	if edit.Kind != nil {
-		if err = domain.ValidateCommentKind(*edit.Kind); err != nil {
-			return
-		}
-	}
-
-	// Reject a no-op patch: an edit that changes nothing (no body, no
-	// title/kind/pinned, no tags) is not a real edit. Tri-state body must not
-	// silently let an empty patch through. A non-nil rawTags pointer counts as a
-	// provided field even when the slice is empty (an explicit tag clear).
-	if edit.Body == nil && edit.Title == nil && edit.Kind == nil && edit.Pinned == nil && rawTags == nil {
-		err = domain.NewError(domain.ErrValidation, "comment edit requires at least one field", nil)
+	edit, err = validateCommentEdit(edit, rawTags)
+	if err != nil {
 		return
 	}
 
@@ -385,19 +355,51 @@ func (s *CommentService) EditScoped(ctx context.Context, project domain.ProjectC
 	// rawTags pointer leaves edit.Tags nil so the store preserves the existing
 	// tag set (tri-state).
 	if rawTags != nil {
-		tags := make([]domain.Tag, 0, len(*rawTags))
-		for _, raw := range *rawTags {
-			name := NormalizeTagName(raw, s.snap.Synonyms())
-			if name == "" {
-				continue
-			}
-			tags = append(tags, domain.Tag{Name: name, Label: TagLabel(raw)})
-		}
+		tags := s.normalizeRawTags(*rawTags)
 		edit.Tags = &tags
 	}
 
 	comment, _, err = s.repo.EditComment(ctx, project.ID, commentID, edit)
 	return
+}
+
+func validateCommentEdit(edit domain.CommentEdit, rawTags *[]string) (domain.CommentEdit, error) {
+	if edit.Body != nil {
+		trimmed := strings.TrimSpace(*edit.Body)
+		if trimmed == "" {
+			return edit, domain.NewError(domain.ErrValidation, "comment body is required", nil)
+		}
+		if err := domain.ValidateCommentBody(trimmed); err != nil {
+			return edit, err
+		}
+		edit.Body = &trimmed
+	}
+	if edit.Title != nil {
+		if err := domain.ValidateCommentTitle(*edit.Title); err != nil {
+			return edit, err
+		}
+	}
+	if edit.Kind != nil {
+		if err := domain.ValidateCommentKind(*edit.Kind); err != nil {
+			return edit, err
+		}
+	}
+	if edit.Body == nil && edit.Title == nil && edit.Kind == nil && edit.Pinned == nil && rawTags == nil {
+		return edit, domain.NewError(domain.ErrValidation, "comment edit requires at least one field", nil)
+	}
+	return edit, nil
+}
+
+func (s *CommentService) normalizeRawTags(rawTags []string) []domain.Tag {
+	tags := make([]domain.Tag, 0, len(rawTags))
+	for _, raw := range rawTags {
+		name := NormalizeTagName(raw, s.snap.Synonyms())
+		if name == "" {
+			continue
+		}
+		tags = append(tags, domain.Tag{Name: name, Label: TagLabel(raw)})
+	}
+	return tags
 }
 
 // Remove hard-deletes a comment after enforcing the per-bucket comment.delete

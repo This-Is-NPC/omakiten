@@ -5,10 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	"omakiten/internal/app"
 	"omakiten/internal/config"
 	"omakiten/internal/domain"
-	"omakiten/internal/testfixtures"
 	"omakiten/internal/testfixtures/runtimecache"
 	"omakiten/internal/testfixtures/snapstore"
 	"omakiten/internal/token"
@@ -60,8 +58,8 @@ func scopedFeedModel(t *testing.T) (Model, domain.Project, domain.Task) {
 	}
 
 	model, err := NewModel(ctx, project.Context(), Repositories{
-		Tasks: store,
-		Cache: runtimecache.Install(0, store.Snapshot()), Workflow: app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot()),
+		Tasks:        store,
+		Cache:        runtimecache.InstallWithStore(0, store),
 		Comments:     store,
 		Dependencies: store,
 		Events:       store,
@@ -86,6 +84,15 @@ func TestCommentsForProjectScopeFetchesProjectAndUniversal(t *testing.T) {
 		t.Fatalf("commentsForProjectScope() = %v", err)
 	}
 
+	assertProjectScopeEvents(t, events, project)
+	card := model.renderCommentCardSelected(eventToComment(events[0]), true)
+	if !strings.Contains(card, "pinned cover sheet") {
+		t.Fatalf("project comment card missing body:\n%s", card)
+	}
+}
+
+func assertProjectScopeEvents(t *testing.T, events []domain.Event, project domain.Project) {
+	t.Helper()
 	gotScopes := map[string]int{}
 	for _, ev := range events {
 		if ev.EventType != domain.EventTypeComment {
@@ -113,13 +120,6 @@ func TestCommentsForProjectScopeFetchesProjectAndUniversal(t *testing.T) {
 	if len(events) == 0 || !strings.Contains(events[0].Body, "pinned cover sheet") {
 		t.Fatalf("pinned comment not first; head = %+v", events)
 	}
-
-	// Render smoke: the same comment renderer must produce a card for a
-	// project-scoped event without assuming a task owner.
-	card := model.renderCommentCardSelected(eventToComment(events[0]), true)
-	if !strings.Contains(card, "pinned cover sheet") {
-		t.Fatalf("project comment card missing body:\n%s", card)
-	}
 }
 
 // TestCommentsForProjectScopeFilterByKind proves the optional filter seam
@@ -134,33 +134,5 @@ func TestCommentsForProjectScopeFilterByScope(t *testing.T) {
 	}
 	if len(events) != 1 || events[0].EntityType != domain.EventEntityUniversal {
 		t.Fatalf("scope=universal filter returned %d events: %+v", len(events), events)
-	}
-}
-
-// TestActivityCacheKeyDisambiguatesScope pins the cache-collision fix: a
-// task-scoped feed and a project-scoped feed that share cursor + widths must
-// fingerprint to different keys, so they never share a cached card slice.
-func TestActivityCacheKeyDisambiguatesScope(t *testing.T) {
-	model, _, _ := scopedFeedModel(t)
-
-	taskFeed := []domain.Event{{
-		ID: 1, EntityType: domain.EventEntityTask, EntityID: 99,
-		EventType: domain.EventTypeComment, Body: "shared", AuthorType: "human",
-	}}
-	projectFeed := []domain.Event{{
-		ID: 1, EntityType: domain.EventEntityProject, EntityID: 99,
-		EventType: domain.EventTypeComment, Body: "shared", AuthorType: "human",
-	}}
-
-	if model.activityRowsForRenderKey(taskFeed) == model.activityRowsForRenderKey(projectFeed) {
-		t.Fatal("task and project feeds with same ids/cursor/width hashed identical — cache would collide")
-	}
-
-	// Warm the cache with the task feed, then prove the project feed does not
-	// hit that warmed slice (it must rebuild against its own scope key).
-	taskCards := model.cachedActivityRowsForRender(taskFeed)
-	projectCards := model.cachedActivityRowsForRender(projectFeed)
-	if sliceHeader(taskCards) == sliceHeader(projectCards) {
-		t.Fatal("project feed reused the task feed's cached slice — scope not disambiguated")
 	}
 }

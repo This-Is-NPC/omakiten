@@ -1,6 +1,6 @@
 # Omakiten documentation
 
-Public documentation for the Omakiten CLI/TUI/MCP toolkit. 27 docs total, grouped by audience.
+Public documentation for the Omakiten CLI/TUI/MCP toolkit, grouped by audience.
 
 ## Root — orientation and user-facing surfaces
 
@@ -43,5 +43,7 @@ Each doc inlines the YAML schema for the feature it teaches. See [configuration-
 | [architecture.md](internal/architecture.md) | High-level architecture map — hexagonal layering, packages, the per-project Snapshot pattern. | A package boundary, dependency direction, or composition root changes. |
 | [requirements.md](internal/requirements.md) | Functional / non-functional requirements with file references. | A new feature ships or a requirement's status shifts. |
 | [dev-guide.md](internal/dev-guide.md) | Local dev setup — `mise` tasks, test layout, common workflows. | A `mise` task, scaffold script, or local-dev convention changes. |
-| [data-model.md](internal/data-model.md) | SQLite schema map and the relationship to the in-memory bundle. | A migration lands or the table list changes shape. |
+| [tui-screen-assembly.md](internal/tui-screen-assembly.md) | Normative — the nine screen-assembly patterns, what charges each one, the per-screen refactor runbook, and the diagnostic for a moved keystroke budget. | A pattern's enforcement changes, a gate lands or is retired, or the runbook's steps change. |
+| [data-model.md](internal/data-model.md) | Current SQLite schema map and the relationship to the in-memory bundle. | The table list or operational data contract changes. |
 | [authoring.md](internal/authoring.md) | Rules for editing `.docs/` — atom map, token budgets, what NOT to prescribe, and workflows for adding entities or language packs. | A new entity type, token budget, or authoring rule changes. |
+| [claim-next-agent-ceiling.md](internal/claim-next-agent-ceiling.md) | Current manual `plans.claim_next` concurrency reference — status, freshness check, protocol, reproduction command, per-level results, and raw JSON. | The claim path, benchmark protocol, toolchain, connection pool, SQLite inputs, or target environment change; or a new full manual reference run is completed. |

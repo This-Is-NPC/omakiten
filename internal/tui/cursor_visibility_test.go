@@ -8,62 +8,41 @@ import (
 	"github.com/muesli/termenv"
 
 	"omakiten/internal/config"
+	"omakiten/internal/domain"
+	"omakiten/internal/tui/components/screenlayout"
+	"omakiten/internal/tui/screens/commentdetail"
 )
 
-// TestTaskDescriptionCursorRendersAsPrimaryBlock locks the fix for the
-// bug "no caret on the description textarea". The visible-state branch
-// of bubbles' cursor.View always applies Reverse(true); without an
-// explicit Cursor.Style the output is `\x1b[7m`, which lipgloss's outer
-// border wrap was emitting in a way the user couldn't see against the
-// dark theme. Setting Cursor.Style.Foreground(primary) makes the
-// reverse pass swap to a primary-colored Background so the cursor
-// renders as a visible green block — proven by the SGR sequence
-// `\x1b[7;38;2;<rgb>m` in the rendered string (reverse + truecolor fg
-// in one combined escape).
-func TestTaskDescriptionCursorRendersAsPrimaryBlock(t *testing.T) {
-	prev := lipgloss.ColorProfile()
-	lipgloss.SetColorProfile(termenv.TrueColor)
-	t.Cleanup(func() { lipgloss.SetColorProfile(prev) })
-
-	m := Model{styles: newStyles(config.Theme{})}
-	m.taskDescriptionInput = newTaskDescriptionInput()
-	m.taskField = taskFieldDescription
-	m.taskDescriptionInput.Focus()
-
-	rendered := m.renderTaskDescriptionField(80)
-
-	// Lipgloss combines Reverse + Foreground into one SGR sequence
-	// (`\x1b[7;38;2;...m`) — that's the visible-cursor cell.
-	if !strings.Contains(rendered, "\x1b[7;38;2;") {
-		t.Fatalf("description textarea: expected reverse + truecolor cursor SGR — cursor would be invisible.\nrendered:\n%s", rendered)
-	}
-}
-
-// TestCommentEditScreenInnerHeightStaysWithinViewport asserts the
-// dedicated comment edit overlay's textarea height is bounded by the
-// available task-viewport — never spilling beyond what the surrounding
-// chrome can fit. Prevents the "field renders the entire screen and
-// gets bigger than the terminal" regression.
+// TestCommentEditScreenInnerHeightStaysWithinViewport asserts the comment
+// edit textarea height is the HostBox remainder after header chrome (#2444) —
+// never taller than the body budget the arranger assigned.
 func TestCommentEditScreenInnerHeightStaysWithinViewport(t *testing.T) {
 	cases := []struct {
 		name           string
 		terminalHeight int
-		wantMax        int
 	}{
-		{"tall terminal — capped at preferredCap", 60, 16},
-		{"medium terminal — half of viewport", 30, 12},
-		{"short terminal — minHeight floor", 14, 8},
-		{"unknown height — minHeight fallback", 0, 8},
+		{"tall terminal", 60},
+		{"medium terminal", 30},
+		{"short terminal", 14},
+		{"unknown height", 0},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			m := Model{height: tc.terminalHeight}
-			h := m.commentEditScreenInnerHeight()
-			if h > tc.wantMax {
-				t.Fatalf("commentEditScreenInnerHeight() = %d, want <= %d (terminal height %d)", h, tc.wantMax, tc.terminalHeight)
+			m := Model{height: tc.terminalHeight, styles: newStyles(config.Theme{})}
+			frame := m.screenFrame()
+			screen := commentdetail.New().Open(commentdetail.Payload{Comment: domain.Comment{ID: 1}})
+			h := screen.EditHeight(frame)
+			hostRows := screenlayout.HostBox(frame.Kit()).Rows
+			header := 3 // kicker + hint + blank; Open leaves err nil
+			want := hostRows - header
+			if want < 1 {
+				want = 1
 			}
-			if h < 8 {
-				t.Fatalf("commentEditScreenInnerHeight() = %d, want >= 8 (minHeight floor)", h)
+			if h != want {
+				t.Fatalf("EditHeight() = %d, want %d (HostBox=%d minus header=%d at height %d)", h, want, hostRows, header, tc.terminalHeight)
+			}
+			if h > hostRows {
+				t.Fatalf("EditHeight() = %d exceeds HostBox %d", h, hostRows)
 			}
 		})
 	}

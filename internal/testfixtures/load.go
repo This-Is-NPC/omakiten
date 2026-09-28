@@ -112,7 +112,20 @@ func loadFromPath(t testing.TB, path string) (config.Bundle, *domain.EnumRegistr
 func mergeKitDefaults(b *config.Bundle) {
 	kit := config.MustLoadKitConfig()
 	cfg := &b.Config
+	mergeCollectionDefaults(cfg, kit)
+	mergeMCPDefaults(cfg, kit)
+	mergeTUIDefaults(cfg, kit)
+	mergeSQLiteDefaults(cfg, kit)
+	mergeEventDefaults(cfg, kit)
+	mergeServiceDefaults(cfg, kit)
+	mergeViewSettings(&cfg.Views, kit.Views)
 
+	if len(b.Surfaces) == 0 {
+		b.Surfaces = config.CanonicalSurfaceTable()
+	}
+}
+
+func mergeCollectionDefaults(cfg *config.Settings, kit config.Settings) {
 	// Priorities / severities — fixture wins when present.
 	if len(cfg.Priorities) == 0 {
 		cfg.Priorities = append([]config.PriorityDefinition(nil), kit.Priorities...)
@@ -125,8 +138,9 @@ func mergeKitDefaults(b *config.Bundle) {
 	if len(cfg.TemplateDefaults) == 0 {
 		cfg.TemplateDefaults = append([]string(nil), kit.TemplateDefaults...)
 	}
+}
 
-	// MCP block — fill missing scalar fields and pointer-bools.
+func mergeMCPDefaults(cfg *config.Settings, kit config.Settings) {
 	if cfg.MCP.RecentCommentLimit == 0 {
 		cfg.MCP.RecentCommentLimit = kit.MCP.RecentCommentLimit
 	}
@@ -146,16 +160,18 @@ func mergeKitDefaults(b *config.Bundle) {
 	if cfg.MCP.CachePrompts == nil {
 		cfg.MCP.CachePrompts = kit.MCP.CachePrompts
 	}
+}
 
-	// TUI badge thresholds.
+func mergeTUIDefaults(cfg *config.Settings, kit config.Settings) {
 	if cfg.TUI.TokenBadge.YellowAt == 0 {
 		cfg.TUI.TokenBadge.YellowAt = kit.TUI.TokenBadge.YellowAt
 	}
 	if cfg.TUI.TokenBadge.RedAt == 0 {
 		cfg.TUI.TokenBadge.RedAt = kit.TUI.TokenBadge.RedAt
 	}
+}
 
-	// SQLite knobs.
+func mergeSQLiteDefaults(cfg *config.Settings, kit config.Settings) {
 	if cfg.SQLite.BusyTimeoutMs == 0 {
 		cfg.SQLite.BusyTimeoutMs = kit.SQLite.BusyTimeoutMs
 	}
@@ -164,22 +180,16 @@ func mergeKitDefaults(b *config.Bundle) {
 	}
 	// MmapSizeBytes intentionally falls through: 0 is the valid
 	// "disabled" sentinel.
+}
 
-	// Events retention inherits kit defaults when the fixture omits the
-	// block (validator-required on full bundles).
+func mergeEventDefaults(cfg *config.Settings, kit config.Settings) {
 	config.NormalizeEventsRetention(cfg, kit)
+	config.NormalizeEventsOrphanSweep(cfg, kit)
+	mergeEventChannelDefaults(cfg, kit)
+	mergeEventDefinitions(cfg, kit)
+}
 
-	// Solutions limits.
-	if cfg.Solutions.DefaultTopLimit == 0 {
-		cfg.Solutions.DefaultTopLimit = kit.Solutions.DefaultTopLimit
-	}
-	if cfg.Solutions.MaxTopLimit == 0 {
-		cfg.Solutions.MaxTopLimit = kit.Solutions.MaxTopLimit
-	}
-
-	// Events fallback + channel policy. Defaults must be fully declared
-	// (validator-required), so fixtures inherit the kit values when their
-	// override left them nil.
+func mergeEventChannelDefaults(cfg *config.Settings, kit config.Settings) {
 	if cfg.Events.DefaultRecentLimit == 0 {
 		cfg.Events.DefaultRecentLimit = kit.Events.DefaultRecentLimit
 	}
@@ -207,6 +217,9 @@ func mergeKitDefaults(b *config.Bundle) {
 			cfg.Events.Overrides[k] = v
 		}
 	}
+}
+
+func mergeEventDefinitions(cfg *config.Settings, kit config.Settings) {
 	// Definitions inherit from the kit so validateEventsSettings (which
 	// now resolves `overrides:` keys against the local definitions map)
 	// accepts fixtures that omit the 41-entry block. Phase 1 of the YAML
@@ -229,8 +242,16 @@ func mergeKitDefaults(b *config.Bundle) {
 			}
 		}
 	}
+}
 
-	// Search stopwords.
+func mergeServiceDefaults(cfg *config.Settings, kit config.Settings) {
+	if cfg.Solutions.DefaultTopLimit == 0 {
+		cfg.Solutions.DefaultTopLimit = kit.Solutions.DefaultTopLimit
+	}
+	if cfg.Solutions.MaxTopLimit == 0 {
+		cfg.Solutions.MaxTopLimit = kit.Solutions.MaxTopLimit
+	}
+
 	if len(cfg.Search.Stopwords) == 0 {
 		cfg.Search.Stopwords = append([]string(nil), kit.Search.Stopwords...)
 	}
@@ -242,9 +263,6 @@ func mergeKitDefaults(b *config.Bundle) {
 			cfg.TagSynonyms[k] = v
 		}
 	}
-
-	// Views: each sub-block fills its omitted fields.
-	mergeViewSettings(&cfg.Views, kit.Views)
 }
 
 func mergeViewSettings(v *config.ViewSettings, kit config.ViewSettings) {

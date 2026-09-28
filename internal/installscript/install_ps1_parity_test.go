@@ -18,15 +18,19 @@ func TestInstallPs1PreservesVerifyBeforeExtractParity(t *testing.T) {
 		`"${INSTALL_DIR}/okt" setup`,
 	})
 
+	// install.ps1 composes its paths with Join-Path rather than backslash
+	// interpolation so the same script is executable under PowerShell 7 on a
+	// Unix host — which is what makes the strict-mode PowerShell tests in
+	// strict_install_ps1_test.go real runs instead of source assertions.
 	assertOrderedMarkers(t, "install.ps1", readRootFile(t, "install.ps1"), []string{
-		`Invoke-WebRequest -Uri $url -OutFile "$tmpdir\$asset"`,
-		`Verify-Checksum -Archive "$tmpdir\$asset" -Asset $asset -Tag $tag -TmpDir $tmpdir`,
-		`Expand-Archive -Path "$tmpdir\$asset" -DestinationPath $tmpdir -Force`,
+		`Invoke-WebRequest -Uri $url -OutFile $archivePath`,
+		`Verify-Checksum -Archive $archivePath -Asset $asset -Tag $tag -TmpDir $tmpdir`,
+		`Expand-Archive -Path $archivePath -DestinationPath $tmpdir -Force`,
 		`New-Item -ItemType Directory -Path $InstallDir -Force | Out-Null`,
-		`Copy-Item -Path "$tmpdir\okt.exe" -Destination "$InstallDir\okt.exe" -Force`,
+		`Copy-Item -Path (Join-Path $tmpdir "okt.exe") -Destination $installedExe -Force`,
 		`Add-ToPath -Dir $InstallDir`,
-		`& "$InstallDir\okt.exe" --version`,
-		`& "$InstallDir\okt.exe" setup`,
+		`& $installedExe --version`,
+		`& $installedExe setup`,
 	})
 }
 

@@ -44,7 +44,7 @@ func TestSkillSubsetRejectsSuperset(t *testing.T) {
 }
 
 // TestSkillSubsetEmptyCommandSkillsIsClean confirms that a command with no
-// skills imposes no constraint (legacy v1 commands skip the check).
+// skills imposes no constraint when the command selects no skills.
 func TestSkillSubsetEmptyCommandSkillsIsClean(t *testing.T) {
 	b := bundleWithCommandSkills([]string{"go"}, nil)
 	if err := validateMCPCommandSkillSubset(b); err != nil {

@@ -5,13 +5,13 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"omakiten/internal/app"
-	"omakiten/internal/domain"
+	"omakiten/internal/operation"
 )
 
-// newDeleteCommand wires `okt delete TASK_ID --confirm` against
-// TaskService.Delete. The confirm flag is required to avoid accidental hard
-// deletes; the service still enforces bucket policy and operations.delete.guards.
+// newDeleteCommand wires `okt delete TASK_ID [--confirm]` against
+// operation.Service.DeleteTask. Without --confirm the facade returns a
+// Confirmation block (matching tag remove / MCP); with --confirm the hard
+// delete runs and bucket policy / operations.delete.guards still apply.
 func newDeleteCommand(opts *runtimeOptions) *cobra.Command {
 	var confirmed bool
 	cmd := &cobra.Command{
@@ -24,25 +24,17 @@ func newDeleteCommand(opts *runtimeOptions) *cobra.Command {
 				if err != nil {
 					return nil, err
 				}
-				if !confirmed {
-					return nil, domain.NewError(domain.ErrValidation, opts.t("cli.err.task_delete_requires_confirm"), map[string]any{"task_id": taskID, "hint": "consider okt archive instead for a reversible alternative"})
-				}
 				rt, err := opts.open(ctx, true)
 				if err != nil {
 					return nil, err
 				}
 				defer rt.close()
-				ctx = rt.WithActivityRepo(ctx)
 
-				project, err := opts.resolveProject(ctx, rt.store)
-				if err != nil {
-					return nil, err
-				}
-				event, err := app.NewTaskServiceFromStore(rt.store, rt.activeRegistry(), rt.activeSnapshot()).Delete(ctx, project, taskID)
-				if err != nil {
-					return nil, err
-				}
-				return map[string]any{"project": project, "snapshot": event}, nil
+				return rt.operationService().DeleteTask(ctx, operation.DeleteTaskInput{
+					ProjectSelector: opts.projectSelector(),
+					TaskID:          taskID,
+					Confirmed:       confirmed,
+				})
 			})
 		},
 	}
@@ -66,17 +58,11 @@ func newArchiveCommand(opts *runtimeOptions) *cobra.Command {
 					return nil, err
 				}
 				defer rt.close()
-				ctx = rt.WithActivityRepo(ctx)
 
-				project, err := opts.resolveProject(ctx, rt.store)
-				if err != nil {
-					return nil, err
-				}
-				task, _, err := app.NewTaskServiceFromStore(rt.store, rt.activeRegistry(), rt.activeSnapshot()).Archive(ctx, project, taskID)
-				if err != nil {
-					return nil, err
-				}
-				return map[string]any{"project": project, "task": task}, nil
+				return rt.operationService().ArchiveTask(ctx, operation.ArchiveTaskInput{
+					ProjectSelector: opts.projectSelector(),
+					TaskID:          taskID,
+				})
 			})
 		},
 	}
@@ -99,17 +85,11 @@ func newUnarchiveCommand(opts *runtimeOptions) *cobra.Command {
 					return nil, err
 				}
 				defer rt.close()
-				ctx = rt.WithActivityRepo(ctx)
 
-				project, err := opts.resolveProject(ctx, rt.store)
-				if err != nil {
-					return nil, err
-				}
-				task, _, err := app.NewTaskServiceFromStore(rt.store, rt.activeRegistry(), rt.activeSnapshot()).Unarchive(ctx, project, taskID)
-				if err != nil {
-					return nil, err
-				}
-				return map[string]any{"project": project, "task": task}, nil
+				return rt.operationService().UnarchiveTask(ctx, operation.ArchiveTaskInput{
+					ProjectSelector: opts.projectSelector(),
+					TaskID:          taskID,
+				})
 			})
 		},
 	}

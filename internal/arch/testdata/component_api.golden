@@ -1,0 +1,841 @@
+# card
+	Comment.Author string
+	Comment.Body string
+	Comment.EmptyText string
+	Comment.Focused bool
+	Comment.LineLimit int
+	Comment.MoreFmt string
+	Comment.Tags []string
+	Comment.Timestamp string
+	Comment.Width int
+	Painter.Cache StyleCache
+	Painter.Styles screenkit.Styles
+	Spec.Accent bool
+	Spec.Archived bool
+	Spec.Badges []string
+	Spec.BoxWidth int
+	Spec.Cursor bool
+	Spec.ID int64
+	Spec.InnerWidth int
+	Spec.Meta []string
+	Spec.Selected bool
+	Spec.Title string
+	System.Focused bool
+	System.Label string
+	System.Timestamp string
+	System.Width int
+const DefaultLineLimit
+func (Painter) Comment(c Comment) string
+func (Painter) Height(spec Spec) int
+func (Painter) Render(spec Spec) string
+func (Painter) System(s System) string
+func ContentWidth(width int) int
+func NewCache() StyleCache
+type Comment struct
+type Painter struct
+type Spec struct
+type StyleCache alias
+type System struct
+
+# cardtable
+func Cols(width, cellWidth int) int
+func Layout(cards []string, cols int) (rows []string, heights []int)
+func Row(cards []string) string
+func RowHeight(cards []string) int
+
+# choice
+	Option.Detail string
+	Option.Label string
+	Option.Selected bool
+const Checkbox
+const Radio
+const Toggle
+func Glyph(mode Mode, selected bool) string
+func Row(mode Mode, opt Option) string
+type Mode alias
+type Option struct
+
+# dropdown
+	Option.Detail string
+	Option.Label string
+	Option.Mode choice.Mode
+	Option.Selected bool
+	Option.Trailing string
+	Spec.Cursor int
+	Spec.Filter string
+	Spec.Join DetailJoin
+	Spec.Open bool
+	Spec.Options []Option
+const DetailDash
+const DetailSpaced
+func Row(marker string, opt Option, hint lipgloss.Style, join DetailJoin) string
+func Rows(spec Spec, markerOn, markerOff string, hint lipgloss.Style) []string
+type DetailJoin alias
+type Option struct
+type Spec struct
+
+# field
+	FormTheme.ActiveBorder lipgloss.TerminalColor
+	FormTheme.Cursor lipgloss.Style
+	FormTheme.Hint lipgloss.Style
+	FormTheme.Input lipgloss.Style
+	FormTheme.Label lipgloss.Style
+	FormTheme.LabelActive lipgloss.Style
+	FormTheme.Multiline Theme
+	Theme.Border lipgloss.Style
+	Theme.BorderActive lipgloss.TerminalColor
+	Theme.Cursor lipgloss.Style
+const Indent
+func Fit(s screenkit.Styles, label string, available, floor int) (string, int)
+func Form(s screenkit.Styles) FormTheme
+func Multiline(s screenkit.Styles) Theme
+func RenderArea(input textarea.Model, width, height int, focused bool, theme Theme) string
+func RenderLine(s screenkit.Styles, label string, input textinput.Model, width int) string
+func Resize(input *textarea.Model, width, height int, theme Theme)
+func Width(s screenkit.Styles, available, labelWidth, floor int) int
+func WidthFor(cells int, theme Theme) int
+type FormTheme struct
+type Theme struct
+
+# gridtable
+	Layout.Lines int
+	Layout.RowHeights []int
+	Layout.RowOffsets []int
+	Options.Auto bool
+	Options.LabelWidth int
+	Options.MergeNarrow bool
+	Options.SideBySide bool
+	Options.ValueWidth int
+const LabelWidth
+func (Detail) Custom(content Cell) Detail
+func (Detail) Kicker(label string) Detail
+func (Detail) KickerCount(label string, count int) Detail
+func (Detail) Row(label, value string) Detail
+func (Detail) Span(content Cell) Detail
+func (Detail) View(border lipgloss.Style) string
+func (Layout) RowLine(row int) (int, bool)
+func CellWidth(cell Cell) int
+func ColumnWidths(available int, opts Options, tables ...[][]Cell) []int
+func FitWidths(natural []int, available, minWidth int) []int
+func FormatRow(cells []string, widths []int) string
+func FormatRowAligned(cells []string, widths []int, right []bool) string
+func MaxLabelWidth(tables [][][]Cell) int
+func NewDetail(valueW int, kicker lipgloss.Style) Detail
+func PadLine(line string, width int) string
+func Pairs(kicker func(string) string, title string, fields ...[2]string) [][]Cell
+func Raw(value string) Cell
+func RawRows(rows [][]string) [][]Cell
+func Render(rows [][]string, widths []int, border lipgloss.Style) string
+func RenderCells(rows [][]Cell, widths []int, border lipgloss.Style) string
+func RenderCellsWithLayout(rows [][]Cell, widths []int, border lipgloss.Style) (string, Layout)
+func RenderWithLayout(rows [][]string, widths []int, border lipgloss.Style) (string, Layout)
+func Rows(kicker func(string) string, title string, fields ...[2]string) [][]Cell
+func Styled(value string) Cell
+func Summaries(available int, border lipgloss.Style, opts Options, tables ...[][]Cell) string
+func Truncate(s string, width int) string
+func Width(available int, opts Options, tables ...[][]Cell) int
+func WrapLines(lines []string, width int) []string
+type Cell struct
+type Detail struct
+type Layout struct
+type Options struct
+
+# header
+	Item.Active bool
+	Item.Label string
+	Options.Brand string
+	Options.CompactHint string
+	Options.Home bool
+	Options.HomeLabel string
+	Options.HomeReturnHint string
+	Options.Overlay bool
+	Options.Segment string
+	Options.SegmentHint string
+	Options.Subs []Item
+	Options.Tops []Item
+	Options.Width int
+	Styles.ActiveNav lipgloss.Style
+	Styles.Hint lipgloss.Style
+	Styles.Nav lipgloss.Style
+	Styles.Title lipgloss.Style
+func Footer(tokens []tokenstrip.Key, styles tokenstrip.KeyStyles) string
+func Height(styles Styles, opts Options) int
+func HomeTitle(styles Styles, width int, homeLabel, returnHint string) string
+func Input(s screenkit.Styles, label string, input textinput.Model, width int) string
+func Render(styles Styles, opts Options) string
+func Stack(height int, top, middle, bottom string) string
+func Width(styles Styles, opts Options) int
+type Item struct
+type Options struct
+type Styles struct
+
+# lane
+	Frame.Chrome func(string) string
+	Frame.Footer []string
+	Frame.Header []string
+	Frame.Items []string
+	PaintSpec.Cards []string
+	PaintSpec.EmptyText string
+	PaintSpec.Header string
+	PaintSpec.Inner int
+	Spec.Cards list.Cards
+	Spec.EmptyText string
+	Spec.Header string
+	Spec.Height int
+	Spec.Inner int
+func Box(kit screenkit.Kit, inner, height int) lipgloss.Style
+func Paint(kit screenkit.Kit, spec PaintSpec) Frame
+func Render(kit screenkit.Kit, spec Spec) string
+type Frame struct
+type PaintSpec struct
+type Spec struct
+
+# list
+	Item.Content string
+	Item.Height int
+	Picker.Cursor int
+	Picker.Mode PickerMode
+	Picker.Scroll int
+	Viewport.Scroll int
+const Multi
+const PickerCancel
+const PickerNone
+const PickerSelect
+const PickerToggle
+const Single
+const ViewportCancel
+const ViewportNone
+func (Cards) ActiveItem() (Item, bool)
+func (Cards) Cursor() int
+func (Cards) JumpFirst() Cards
+func (Cards) JumpLast() Cards
+func (Cards) Len() int
+func (Cards) MoveCursor(delta int) Cards
+func (Cards) PageDown() Cards
+func (Cards) PageUp() Cards
+func (Cards) Scroll() int
+func (Cards) View(hintStyle lipgloss.Style) string
+func (Cards) VisibleRange() (first, last int, ok bool)
+func (Cards) WithCursor(idx int) Cards
+func (Cards) WithItems(items []Item) Cards
+func (Cards) WithText(text func(string) string) Cards
+func (Cards) WithViewport(rows int) Cards
+func (Picker) Init() tea.Cmd
+func (Picker) LastEvent() PickerEvent
+func (Picker) Update(msg tea.Msg, rowCount, viewport int) (Picker, tea.Cmd)
+func (Picker) WithCursor(idx, rowCount, viewport int) Picker
+func (Picker) WithScroll(scroll int) Picker
+func (Viewport) Fit(content string, height int, hintStyle lipgloss.Style, text func(string) string) string
+func (Viewport) Init() tea.Cmd
+func (Viewport) LastEvent() ViewportEvent
+func (Viewport) Update(msg tea.Msg, viewport int) (Viewport, tea.Cmd)
+func (Viewport) View(lines []string, viewport int, hintStyle lipgloss.Style) string
+func (Viewport) WithScroll(scroll int) Viewport
+func (Viewport) WithText(text func(string) string) Viewport
+func (Viewport) WithWidth(width int) Viewport
+func (Window) Cursor() int
+func (Window) ItemCount() int
+func (Window) JumpFirst() Window
+func (Window) JumpLast() Window
+func (Window) MoveCursor(delta int) Window
+func (Window) PageDown() Window
+func (Window) PageUp() Window
+func (Window) Scroll() int
+func (Window) SetCursor(idx int) Window
+func (Window) ViewportRows() int
+func (Window) VisibleRange() (start, end int)
+func (Window) WithItemCount(n int) Window
+func (Window) WithViewport(rows int) Window
+func NewCards() Cards
+func NewItem(content string) Item
+func NewPicker(mode PickerMode) Picker
+func NewViewport() Viewport
+func NewWindow(viewportRows int) Window
+func SliceLines(lines []string, scroll, viewport int) (visible []string, above, below int)
+type Cards struct
+type Item struct
+type Picker struct
+type PickerEvent alias
+type PickerMode alias
+type Viewport struct
+type ViewportEvent alias
+type Window struct
+
+# markdown
+const CacheCapacity
+func (*Renderer) Reload(t Tokens)
+func (*Renderer) Render(body string, width int) string
+func Body(r *Renderer, body string, width int, rendered bool) string
+func Lines(r *Renderer, body string, width int, rendered bool) int
+func New(t Tokens) *Renderer
+type Renderer struct
+type Tokens alias
+
+# overlay
+	Binding.Desc string
+	Binding.Key string
+	Card.AutoHeight bool
+	Card.Background lipgloss.Color
+	Card.BorderBackground lipgloss.Color
+	Card.BorderForeground lipgloss.Color
+	Card.BorderVisible bool
+	Card.CustomBorder lipgloss.Border
+	Card.Footer string
+	Card.FormatScrollHint func(above, below int) string
+	Card.Frame int
+	Card.Frames []string
+	Card.Height int
+	Card.Padding Padding
+	Card.PaddingInside bool
+	Card.Scroll int
+	Card.Style string
+	Card.TailSide string
+	Card.Text string
+	Card.Width int
+	Confirm.BorderForeground lipgloss.Color
+	Confirm.Fields []ConfirmField
+	Confirm.Footer string
+	Confirm.Hint string
+	Confirm.Kicker string
+	Confirm.ListEmpty string
+	Confirm.ListItems []string
+	Confirm.ListTitle string
+	Confirm.Message string
+	Confirm.Styles Styles
+	Confirm.Width int
+	ConfirmField.Label string
+	ConfirmField.Value string
+	Group.Bindings []Binding
+	Group.Title string
+	Options.FormatScrollHint func(above, below int) string
+	Options.Groups []Group
+	Options.KeyColumn int
+	Options.ScopeHint string
+	Options.Scroll int
+	Options.Title string
+	Options.Viewport int
+	Padding.Bottom int
+	Padding.Left int
+	Padding.Right int
+	Padding.Top int
+	Styles.Footer lipgloss.Style
+	Styles.Hint lipgloss.Style
+	Styles.Info lipgloss.Style
+	Styles.Key lipgloss.Style
+	Styles.Separator lipgloss.Style
+const PositionBottomCenter
+const PositionBottomLeft
+const PositionBottomRight
+const PositionCenter
+const PositionMiddleLeft
+const PositionMiddleRight
+const PositionTopCenter
+const PositionTopLeft
+const PositionTopRight
+const StyleCustom
+const StyleDouble
+const StyleHidden
+const StyleRounded
+const StyleSquare
+const StyleThick
+const TailBottom
+const TailLeft
+const TailRight
+const TailTop
+func Footer(styles Styles, text string) string
+func FooterHeight(styles Styles, text string) int
+func Height(styles Styles, opts Options) int
+func IsValidPosition(s string) bool
+func Lines(styles Styles, opts Options) []string
+func Overlay(base, over string, pos Position) string
+func Render(styles Styles, opts Options) string
+func RenderCard(c Card) string
+func RenderConfirm(c Confirm) string
+func ViewportRows(termHeight, headerRows, footerRows int) int
+type Binding struct
+type Card struct
+type Confirm struct
+type ConfirmField struct
+type Group struct
+type Options struct
+type Padding struct
+type Position alias
+type Styles struct
+var Positions
+
+# panel
+const BodyIndent
+const Borders
+func Chevron(accent lipgloss.Style, selected bool) string
+func ClampBox(style lipgloss.Style, content string, boxWidth, contentWidth int) string
+func FixedBox(lines []string, width int, border lipgloss.Style) string
+func FixedBoxHeight(contentLines int) int
+func HRule(separator lipgloss.Style, width int) string
+func Render(style lipgloss.Style, rows ...string) string
+func Wrap(boxed string) string
+
+# screenbody
+func (Body) Arrange(kit screenkit.Kit, box screenlayout.Box) screenlayout.Result
+func (Body) ArrangeHost(kit screenkit.Kit) screenlayout.Result
+func (Body) Compose(kit screenkit.Kit, box screenlayout.Box, compose Compose) Body
+func (Body) ComposeOn(event screenhost.LifecycleEvent, kit screenkit.Kit, box screenlayout.Box, compose Compose) Body
+func (Body) ComposeZones(kit screenkit.Kit, box screenlayout.Box, composers ...Compose) Body
+func (Body) HandleKey(kit screenkit.Kit, box screenlayout.Box, key string) (Body, bool)
+func (Body) HostView(kit screenkit.Kit) string
+func (Body) Invalidate() Body
+func (Body) Offset() int
+func (Body) ResetWindow() Body
+func (Body) Resync(kit screenkit.Kit, box screenlayout.Box) Body
+func (Body) View(kit screenkit.Kit, box screenlayout.Box) string
+func (Body) Width() int
+func (Body) WithCursor(id screenlayout.ID, index int) Body
+func AfterApply(screen screenhost.Screen, frame screenhost.Frame) screenhost.Screen
+func New(spec screenlayout.Spec, split Split) Body
+func NewZone(spec screenlayout.Spec, split Split) Zone
+func NewZones(zones ...Zone) Body
+func Spec(id screenlayout.ID) screenlayout.Spec
+type Body struct
+type Compose func
+type Split func
+type Zone struct
+
+# screengrid
+	Node.Spec screenlayout.Spec
+	Placement.Arrangement screenlayout.Arrangement
+	Placement.Box screenlayout.Box
+	Placement.Depth int
+	Placement.Dropped bool
+	Placement.First int
+	Placement.HiddenAfter int
+	Placement.HiddenBefore int
+	Placement.ID screenlayout.ID
+	Placement.Last int
+	Placement.Leaf bool
+	Placement.Windowed bool
+	Result.Focus screenlayout.ID
+	Result.Placements []Placement
+	Result.View string
+const EnterKey
+const LeaveKey
+func (Node) Children() []Node
+func (Node) IsLeaf() bool
+func (Node) IsUnit() bool
+func (Node) Windowed() Node
+func (Node) WithHint(hint func(first, last, total int) string) Node
+func (Result) Placement(id screenlayout.ID) (Placement, bool)
+func (Result) Rows() int
+func (State) Focus() screenlayout.ID
+func (State) Fullscreen() bool
+func (State) HandleKey(kit screenkit.Kit, box screenlayout.Box, key string, root Node) (State, bool)
+func (State) Layout() screenlayout.State
+func (State) Path() []screenlayout.ID
+func (State) Resync(kit screenkit.Kit, box screenlayout.Box, root Node) State
+func (State) WithCursor(id screenlayout.ID, index int) State
+func (State) WithFocus(id screenlayout.ID) State
+func (State) WithLayout(layout screenlayout.State) State
+func Cell(spec screenlayout.Spec, body func(screenlayout.Canvas) screenlayout.Block) Node
+func Cols(spec screenlayout.Spec, children ...Node) Node
+func InspectorColumn(ids screenlayout.InspectorIDs, fields, detail Node, hasFields, hasDetail bool) Node
+func KeyHints(root Node) []screenlayout.Binding
+func ListInspector(root screenlayout.ID, list, inspector Node) Node
+func NewState() State
+func Render(kit screenkit.Kit, state State, box screenlayout.Box, root Node) Result
+func Rows(spec screenlayout.Spec, children ...Node) Node
+type Node struct
+type Placement struct
+type Result struct
+type State struct
+
+# screenkit
+	Kit.ChromeRows int
+	Kit.Height int
+	Kit.Markdown MarkdownTokens
+	Kit.Styles Styles
+	Kit.Text func(string) string
+	Kit.Width int
+	MarkdownTokens.Border string
+	MarkdownTokens.Foreground string
+	MarkdownTokens.ImageFormat string
+	MarkdownTokens.Primary string
+	MarkdownTokens.Secondary string
+	MarkdownTokens.ThemeKey string
+	Styles.ActiveNav lipgloss.Style
+	Styles.BadgeActive lipgloss.Style
+	Styles.BadgeBlocker lipgloss.Style
+	Styles.BadgeComment lipgloss.Style
+	Styles.BadgeFix lipgloss.Style
+	Styles.BadgeHigh lipgloss.Style
+	Styles.BadgeInfo lipgloss.Style
+	Styles.BadgeLow lipgloss.Style
+	Styles.BadgeNormal lipgloss.Style
+	Styles.BadgeScope lipgloss.Style
+	Styles.BadgeSubtask lipgloss.Style
+	Styles.Border lipgloss.Style
+	Styles.Card lipgloss.Style
+	Styles.CardArchived lipgloss.Style
+	Styles.CardSelected lipgloss.Style
+	Styles.CategoryAudit lipgloss.Style
+	Styles.CategoryComment lipgloss.Style
+	Styles.CategoryGuard lipgloss.Style
+	Styles.CategoryPlan lipgloss.Style
+	Styles.CategoryTask lipgloss.Style
+	Styles.CategoryToolCall lipgloss.Style
+	Styles.CategoryTrick lipgloss.Style
+	Styles.Column lipgloss.Style
+	Styles.CommentCard lipgloss.Style
+	Styles.Cursor lipgloss.Style
+	Styles.Empty lipgloss.Style
+	Styles.Error lipgloss.Style
+	Styles.FormMultiline lipgloss.Style
+	Styles.Hint lipgloss.Style
+	Styles.HintAccent lipgloss.Style
+	Styles.HintBox lipgloss.Style
+	Styles.Info lipgloss.Style
+	Styles.Input lipgloss.Style
+	Styles.Marker lipgloss.Style
+	Styles.Nav lipgloss.Style
+	Styles.Panel lipgloss.Style
+	Styles.Separator lipgloss.Style
+	Styles.Success lipgloss.Style
+	Styles.SystemEventCard lipgloss.Style
+	Styles.TokenGreen lipgloss.Style
+	Styles.TokenRed lipgloss.Style
+	Styles.TokenYellow lipgloss.Style
+	Styles.Warning lipgloss.Style
+const AccentAudit
+const AccentComment
+const AccentGuard
+const AccentNone
+const AccentPlan
+const AccentTask
+const AccentToolCall
+const AccentTrick
+const ComfortableReadingWidth
+const DetailColumnFloor
+const FeedFloor
+const FeedProportion
+const InspectorFloor
+const ListFloor
+const PanelFloor
+const ZoneGap
+func (Chrome) Around(oneRowRender string) Chrome
+func (Chrome) Box(style lipgloss.Style) Chrome
+func (Chrome) Lines(blocks ...string) Chrome
+func (Chrome) Plus(other Chrome) Chrome
+func (Chrome) Rows() int
+func (Chrome) ViewportRows() int
+func (Kit) AvailableWidth() int
+func (Kit) BoxWidth() int
+func (Kit) Chrome() Chrome
+func (Kit) CursorMarker(selected bool) string
+func (Kit) HRule(width int) string
+func (Kit) Panel(content string) string
+func (Kit) PanelBox(content string) string
+func (Kit) PanelChrome() Chrome
+func (Kit) PanelContentWidth() int
+func (Kit) PanelRows(rows []string) []string
+func (Kit) PanelViewportRows(panelChrome int) int
+func (Kit) Rows() int
+func (Kit) ScrollWindowSplit(items []string, heights []int, offset, viewport int) []string
+func (Kit) SliceScrollRows(dataRows []string, scroll, viewport int) []string
+func (Kit) T(key string) string
+func (Kit) ViewportRows(bodyChrome int) int
+func (Kit) WrapBody(block string) string
+func (Styles) Accent(accent Accent) lipgloss.Style
+func (Styles) Kicker(label string) string
+func (Styles) KickerCount(label string, count int) string
+func (Styles) PanelFlush() lipgloss.Style
+func BlockRows(block string) int
+func CapRows(rows []string, width int) []string
+func Clamp(value, minValue, maxValue int) int
+func Indent(block string, spaces int) string
+func Kicker(style lipgloss.Style, label string) string
+func KickerCount(style lipgloss.Style, label string, count int) string
+func PadRight(s string, width int) string
+func PageStep(viewport int) int
+func PaintColumn(style lipgloss.Style, entries []string) []string
+func Sanitize(s string) string
+func SanitizeMultiline(s string) string
+func ScrollDataRows(viewport int) int
+func Truncate(s string, max int) string
+func TruncatePath(value string, width int) string
+func TruncateStyled(row string, width int) string
+func VisibleWidth(block string) int
+func WrapAt(block string, width int) string
+func WrapWords(s string, firstWidth, restWidth int) []string
+type Accent alias
+type Chrome struct
+type Kit struct
+type MarkdownTokens struct
+type Styles struct
+
+# screenlayout
+	Binding.Action Action
+	Binding.Footer string
+	Binding.Keys []string
+	Binding.LabelKey string
+	Block.Chrome func(string) string
+	Block.Cursor Cursor
+	Block.Footer []string
+	Block.Header []string
+	Block.Heights []int
+	Block.Items []string
+	Block.PerRow int
+	Block.Selectable []int
+	Box.Rows int
+	Box.Width int
+	Func.Body func(Canvas) Block
+	Func.Def Spec
+	InspectorIDs.Detail ID
+	InspectorIDs.Fields ID
+	InspectorIDs.Inspector ID
+	Placement.Above int
+	Placement.Below int
+	Placement.Cursor int
+	Placement.CursorLine int
+	Placement.CursorUnread bool
+	Placement.DeclaredHeightsDisagree bool
+	Placement.Dropped bool
+	Placement.First int
+	Placement.FooterRows int
+	Placement.HeaderRows int
+	Placement.Heights []int
+	Placement.ID ID
+	Placement.ItemViewport int
+	Placement.Items []string
+	Placement.Last int
+	Placement.LeadingPartialRows int
+	Placement.Offset int
+	Placement.PerRow int
+	Placement.Rows int
+	Placement.Spec Spec
+	Placement.TopLine int
+	Placement.TrailingPartialRows int
+	Placement.Width int
+	Result.Arrangement Arrangement
+	Result.BodyRows int
+	Result.Placements []Placement
+	Result.View string
+	Spec.Column bool
+	Spec.ColumnGap int
+	Spec.Group ID
+	Spec.ID ID
+	Spec.MaxRows int
+	Spec.MaxWidth int
+	Spec.MinRows int
+	Spec.MinWidth int
+	Spec.Scroll ScrollPolicy
+	Spec.SelectFirst bool
+	Spec.Weight int
+	Spec.WidthPercent int
+const ActionDown
+const ActionFirst
+const ActionLast
+const ActionNextSection
+const ActionNone
+const ActionPageDown
+const ActionPageUp
+const ActionPrevSection
+const ActionUp
+const ScrollItems
+const ScrollNone
+const SideBySide
+const Stacked
+func (*BlockMemo[K]) Block(key K, inputs []string, build func() Block) Block
+func (*BlockMemo[K]) BlockMany(key K, inputs []string, build func() Block) Block
+func (*BlockMemo[K]) Reset()
+func (Action) String() string
+func (Arrangement) String() string
+func (Arranger) Arrange(kit screenkit.Kit) Result
+func (Arranger) HandleKey(kit screenkit.Kit, key string) (Arranger, bool)
+func (Arranger) Resync(kit screenkit.Kit) Arranger
+func (Arranger) State() State
+func (Canvas) Cursor() int
+func (Canvas) Rows() int
+func (Canvas) Width() int
+func (Func) Render(c Canvas) Block
+func (Func) Spec() Spec
+func (InspectorIDs) DetailSpec(selects bool, chromeRows int) Spec
+func (InspectorIDs) FieldsSpec(fields int) Spec
+func (Result) Placement(id ID) (Placement, bool)
+func (Result) Rows() int
+func (ScrollPolicy) Scrolls() bool
+func (State) Cursor(id ID) int
+func (State) Focus() ID
+func (State) HandleKey(kit screenkit.Kit, key string, sections ...Section) (State, bool)
+func (State) HandleKeyIn(kit screenkit.Kit, box Box, key string, sections ...Section) (State, bool)
+func (State) Offset(id ID) int
+func (State) Resync(kit screenkit.Kit, sections ...Section) State
+func (State) ResyncIn(kit screenkit.Kit, box Box, sections ...Section) State
+func (State) WithCursor(id ID, index int) State
+func (State) WithFocus(id ID) State
+func Arrange(kit screenkit.Kit, state State, sections ...Section) Result
+func ArrangeIn(kit screenkit.Kit, box Box, state State, sections ...Section) Result
+func At(index int) Cursor
+func BesideFeed(id, group ID, minWidth, minRows int, scroll ScrollPolicy) Spec
+func BodyRows(kit screenkit.Kit) int
+func Feed(id ID, minRows int) Spec
+func FitsSideBySide(box Box, specs ...Spec) bool
+func Fixed(id ID, minWidth, rows int) Spec
+func Flex(id ID, minWidth, minRows, weight int) Spec
+func HostBox(kit screenkit.Kit) Box
+func Inspector(id ID) Spec
+func KeyHints(sections ...Section) []Binding
+func List(id ID) Spec
+func NewArranger(state State, box Box, sections ...Section) Arranger
+func NewCanvas(width, rows, cursor int) Canvas
+func NewState() State
+func NoSelection() Cursor
+func StandardBindings() []Binding
+func TwoSpecsFitSideBySide(box Box, first, second Spec) bool
+func Widths(kit screenkit.Kit, sections ...Section) []int
+func WidthsIn(box Box, sections ...Section) []int
+type Action alias
+type Arrangement alias
+type Arranger struct
+type Binding struct
+type Block struct
+type BlockMemo struct
+type Box struct
+type Canvas struct
+type Cursor struct
+type Func struct
+type ID alias
+type InspectorIDs struct
+type Placement struct
+type Result struct
+type ScrollPolicy alias
+type Section interface
+type Spec struct
+type State struct
+
+# screenstate
+	State.Detail string
+	State.Kicker string
+	State.Message string
+const Failed
+const Loading
+const Vazio
+func (Identity) Failed(err error, message string) State
+func (Identity) Loading(loading bool, message string) State
+func (Identity) Unavailable(unavailable bool, message string) State
+func (Identity) Vazio(empty bool, message, hint string) State
+func (State) Kind() Kind
+func (State) Live() bool
+func For(kicker string) Identity
+func Resolve(kit screenkit.Kit, width int, candidates ...State) (string, bool)
+func Winner(candidates ...State) (State, bool)
+type Identity struct
+type Kind alias
+type State struct
+
+# scrollwindow
+const HintsCombined
+const HintsNone
+const HintsSplit
+func Above(offset int) int
+func AboveHintRows(mode HintMode) int
+func Below(end, total int) int
+func Follow(offset, cursor int, heights []int, viewport int, mode HintMode) int
+func HeadRows(content string, rows int) string
+func MaxOffset(total, viewport int, mode HintMode) int
+func PartialRows(offset, end int, heights []int, viewport int, mode HintMode) (leading, trailing int)
+func Resync(cursor, scroll int, heights []int, viewport int) (newCursor, newScroll int)
+func Slice(offset int, heights []int, viewport int, mode HintMode) int
+func TailRows(content string, rows int) string
+func UnitHeights(n int) []int
+type HintMode alias
+
+# selectlist
+	Frame.Footer []string
+	Frame.Header []string
+	Frame.Items []string
+	Row.Left string
+	Row.Right string
+	Spec.ColumnHeader string
+	Spec.Cursor int
+	Spec.Empty string
+	Spec.Height int
+	Spec.Kicker string
+	Spec.Rows []Row
+	Spec.Subtitle string
+	Spec.Width int
+func (Frame) View() string
+func InnerWidth(width int) int
+func Paint(kit screenkit.Kit, spec Spec) Frame
+func Render(kit screenkit.Kit, spec Spec) string
+type Frame struct
+type Row struct
+type Spec struct
+
+# tokenstrip
+	Chip.Active bool
+	Chip.Label string
+	ChipOptions.BracketActive bool
+	ChipOptions.Hint string
+	ChipOptions.Kicker string
+	ChipOptions.Sep string
+	ChipOptions.Width int
+	ChipStyles.Active lipgloss.Style
+	ChipStyles.Hint lipgloss.Style
+	ChipStyles.Inactive lipgloss.Style
+	ChipStyles.Kicker lipgloss.Style
+	ChipStyles.Sep lipgloss.Style
+	Counts.Blockers int
+	Counts.Comments int
+	Counts.Subtasks int
+	Key.Key string
+	Key.Label string
+	Key.Primary bool
+	KeyStyles.Align string
+	KeyStyles.MaxPrimaries int
+	KeyStyles.Primary lipgloss.Style
+	KeyStyles.Secondary lipgloss.Style
+	KeyStyles.Separator string
+	Options.Align string
+	Options.BandGap bool
+	Options.Keep int
+	Options.Lead string
+	Options.Policy Policy
+	Options.Sep string
+	Options.Trail string
+	Options.Width int
+const AlignCenter
+const AlignLeft
+const AlignRight
+const Drop
+const Wrap
+func (Counts) Render(s screenkit.Styles, t Text) []string
+func Active(s screenkit.Styles, t Text) string
+func Chips(chips []Chip, styles ChipStyles, opts ChipOptions) string
+func ChipsWidth(chips []Chip, styles ChipStyles, opts ChipOptions) int
+func Count(style lipgloss.Style, t Text, n int, singularKey, pluralKey string) string
+func CountBand(s screenkit.Styles, n int, label string) string
+func Custom(s screenkit.Styles, t Text) string
+func Fix(s screenkit.Styles, t Text) string
+func ForColor(s screenkit.Styles, color string) lipgloss.Style
+func FromStyles(s screenkit.Styles) KeyStyles
+func Height(tokens []string, opts Options) int
+func Keys(keys []Key, styles KeyStyles) string
+func KeysHeight(keys []Key, styles KeyStyles, width int) int
+func KeysWrapped(keys []Key, styles KeyStyles, width int) string
+func Label(s screenkit.Styles, text string) string
+func Pill(s screenkit.Styles, color, value string) string
+func PillOptions(maxWidth int) Options
+func PillRows(pills []string, maxWidth int) int
+func Pills(pills []string, maxWidth int) string
+func Render(tokens []string, opts Options) string
+func Scope(s screenkit.Styles, label string) string
+func Spend(s screenkit.Styles, t Text, tokens, yellow, red int) string
+func Tag(s screenkit.Styles, label string) string
+func Width(tokens []string, opts Options) int
+type Chip struct
+type ChipOptions struct
+type ChipStyles struct
+type Counts struct
+type Key struct
+type KeyStyles struct
+type Options struct
+type Policy alias
+type Text func
+

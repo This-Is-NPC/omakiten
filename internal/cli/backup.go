@@ -5,7 +5,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"omakiten/internal/app"
+	"omakiten/internal/agentruntime"
 	"omakiten/internal/config"
 	"omakiten/internal/paths"
 	"omakiten/internal/sqlite"
@@ -24,7 +24,7 @@ import (
 // fallback the spec calls for — a partially-migrated config should not
 // block recovery work — and emits a stderr warning naming the cause so
 // the user still sees that retention defaulted to zero.
-func buildCLIBackupService(cmd *cobra.Command, opts *runtimeOptions, dbPath string, strict bool) (*app.BackupService, int, error) {
+func buildCLIBackupService(cmd *cobra.Command, opts *runtimeOptions, dbPath string, strict bool) (*agentruntime.Backup, int, error) {
 	destDir, err := paths.BackupDir()
 	if err != nil {
 		return nil, 0, fmt.Errorf("resolve backup dir: %w", err)
@@ -40,7 +40,7 @@ func buildCLIBackupService(cmd *cobra.Command, opts *runtimeOptions, dbPath stri
 
 	stderr := cmd.ErrOrStderr()
 	warnFormat := opts.t("cli.db.backup.prune_warn_fmt")
-	svc := app.NewBackupService(app.BackupOptions{
+	svc := agentruntime.NewBackup(agentruntime.BackupOptions{
 		SourcePath:     dbPath,
 		DestDir:        destDir,
 		Retention:      retention,

@@ -1,11 +1,15 @@
 package tui
 
 import (
+	"fmt"
 	"io/fs"
 	"strings"
 	"testing"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 	"gopkg.in/yaml.v3"
 
 	"omakiten/defaults"
@@ -136,6 +140,15 @@ func TestNewStylesNoPanicOnEmptyTheme(t *testing.T) {
 // categoryTokens. Adding a new category without populating the YAMLs (or
 // adding a YAML that forgets the new color) fails this test by name.
 func TestThemesPopulateEveryCategoryToken(t *testing.T) {
+	for _, name := range themeYAMLNames(t) {
+		t.Run(name, func(t *testing.T) {
+			assertThemeCategoryTokens(t, name)
+		})
+	}
+}
+
+func themeYAMLNames(t *testing.T) []string {
+	t.Helper()
 	entries, err := fs.ReadDir(defaults.FS, "themes")
 	if err != nil {
 		t.Fatalf("read embedded themes/: %v", err)
@@ -151,21 +164,159 @@ func TestThemesPopulateEveryCategoryToken(t *testing.T) {
 	if len(yamls) == 0 {
 		t.Fatalf("no theme YAMLs embedded under defaults/themes")
 	}
+	return yamls
+}
 
-	for _, name := range yamls {
+func assertThemeCategoryTokens(t *testing.T, name string) {
+	t.Helper()
+	data, err := fs.ReadFile(defaults.FS, "themes/"+name)
+	if err != nil {
+		t.Fatalf("read themes/%s: %v", name, err)
+	}
+	var theme config.Theme
+	if err := yaml.Unmarshal(data, &theme); err != nil {
+		t.Fatalf("parse themes/%s: %v", name, err)
+	}
+	for _, token := range categoryTokens {
+		if value := strings.TrimSpace(theme.Colors[token]); value == "" {
+			t.Errorf("themes/%s: missing color %q (add it to keep the Logs event inspector tonally on-brand; fallback would be the muted `border` color)", name, token)
+		}
+	}
+}
+
+// A screen that holds only a Kit must be able to paint every badge the root can.
+// It could not: BadgeHigh, BadgeComment and BadgeSubtask had no projection, so
+// the contract carried three of the four priorities and a caller outside the
+// event loop could render LOW but not HIGH.
+//
+// The assertion is on the resolved colours rather than on Render output: lipgloss
+// degrades to a colourless profile in a test process, so two badges that differ
+// only in tone render byte-identical here and the comparison would pass on a
+// token wired to the wrong source.
+func TestEveryBadgeReachesTheScreenContract(t *testing.T) {
+	theme := config.Theme{Colors: map[string]string{
+		"primary": "#39FF14", "secondary": "#8FAE9A", "border": "#494543",
+		"foreground": "#E5E2E1", "success": "#86D27A", "warning": "#FFB347",
+		"error": "#FF5544", "badge_fg": "#1A1A1A",
+	}}
+	root := newStyles(theme)
+	contract := ScreenStyles(theme)
+
+	for name, pair := range map[string][2]lipgloss.Style{
+		"info":         {root.badgeInfo, contract.BadgeInfo},
+		"low":          {root.badgeLow, contract.BadgeLow},
+		"normal":       {root.badgeNormal, contract.BadgeNormal},
+		"high":         {root.badgeHigh, contract.BadgeHigh},
+		"blocker":      {root.badgeBlocker, contract.BadgeBlocker},
+		"comment":      {root.badgeComment, contract.BadgeComment},
+		"subtask":      {root.badgeSubtask, contract.BadgeSubtask},
+		"scope":        {root.badgeScope, contract.BadgeScope},
+		"fix":          {root.badgeFix, contract.BadgeFix},
+		"active":       {root.badgeActive, contract.BadgeActive},
+		"token green":  {root.badgeTokenGreen, contract.TokenGreen},
+		"token yellow": {root.badgeTokenYellow, contract.TokenYellow},
+		"token red":    {root.badgeTokenRed, contract.TokenRed},
+	} {
+		if want, got := pair[0].GetBackground(), pair[1].GetBackground(); want != got {
+			t.Errorf("%s badge: contract background %v, root has %v", name, got, want)
+		}
+		if want, got := pair[0].GetForeground(), pair[1].GetForeground(); want != got {
+			t.Errorf("%s badge: contract foreground %v, root has %v", name, got, want)
+		}
+	}
+}
+
+// The four priority tones have to be distinguishable, or the badge stops
+// carrying the information it exists for.
+func TestThePriorityBadgesAreDistinct(t *testing.T) {
+	theme := config.Theme{Colors: map[string]string{
+		"secondary": "#8FAE9A", "success": "#86D27A", "error": "#FF5544", "badge_fg": "#1A1A1A",
+	}}
+	contract := ScreenStyles(theme)
+	seen := map[string]string{}
+	for name, style := range map[string]lipgloss.Style{
+		"low":    contract.BadgeLow,
+		"normal": contract.BadgeNormal,
+		"high":   contract.BadgeHigh,
+	} {
+		tone := fmt.Sprintf("%v", style.GetBackground())
+		if other, clash := seen[tone]; clash {
+			t.Errorf("%s and %s resolve to the same background %s", name, other, tone)
+		}
+		seen[tone] = name
+	}
+}
+
+const hostileGlobalStatus = "failure diagnostic\x1b[31m red\x1b[0m\x1b]2;owned\a c0\r\n\t\x00del\x7fc1\u0085\u009b31m\u009dtitle"
+
+func assertHostileStatusIsSafe(t *testing.T, rendered string) {
+	t.Helper()
+	for _, r := range rendered {
+		if r != '\n' && unicode.IsControl(r) {
+			t.Fatalf("rendered view retained control U+%04X in %q", r, rendered)
+		}
+	}
+	for _, forbidden := range []string{"[31m", "]2;owned", "owned"} {
+		if strings.Contains(rendered, forbidden) {
+			t.Fatalf("rendered view retained terminal payload %q in %q", forbidden, rendered)
+		}
+	}
+	if !strings.Contains(rendered, "failure diagnostic") {
+		t.Fatalf("rendered view lost meaningful failure copy: %q", rendered)
+	}
+}
+
+func TestStatusBadgeSanitizesClassifiesAndBoundsText(t *testing.T) {
+	t.Parallel()
+	styles := newStyles(config.Theme{})
+
+	for name, tc := range map[string]struct {
+		message string
+		level   string
+	}{
+		"info":                          {message: "refreshed successfully", level: "[INFO]"},
+		"warn":                          {message: "confirmation pending", level: "[WARN]"},
+		"error":                         {message: hostileGlobalStatus, level: "[ERROR]"},
+		"stripped payload is not error": {message: "healthy\x1b]2;failure\a", level: "[INFO]"},
+	} {
 		t.Run(name, func(t *testing.T) {
-			data, err := fs.ReadFile(defaults.FS, "themes/"+name)
-			if err != nil {
-				t.Fatalf("read themes/%s: %v", name, err)
+			t.Parallel()
+			got := ansi.Strip(styles.statusBadge(tc.message))
+			if !strings.HasPrefix(got, tc.level+" ") {
+				t.Fatalf("statusBadge(%q) = %q, want %s classification", tc.message, got, tc.level)
 			}
-			var theme config.Theme
-			if err := yaml.Unmarshal(data, &theme); err != nil {
-				t.Fatalf("parse themes/%s: %v", name, err)
+			if name == "error" {
+				assertHostileStatusIsSafe(t, got)
 			}
-			for _, token := range categoryTokens {
-				if value := strings.TrimSpace(theme.Colors[token]); value == "" {
-					t.Errorf("themes/%s: missing color %q (add it to keep the Logs event inspector tonally on-brand; fallback would be the muted `border` color)", name, token)
-				}
+		})
+	}
+
+	zeroWidthFlood := "failure diagnostic " + strings.Repeat("\u0301", 10_000)
+	bounded := ansi.Strip(styles.statusBadge(zeroWidthFlood))
+	text := strings.TrimPrefix(bounded, "[ERROR] ")
+	if got := utf8.RuneCountInString(text); got > maxStatusTextRunes {
+		t.Fatalf("status text retained %d runes from a zero-width flood, want at most %d", got, maxStatusTextRunes)
+	}
+	if got := ansi.StringWidth(text); got > maxStatusTextCells {
+		t.Fatalf("status text is %d cells wide, want at most %d", got, maxStatusTextCells)
+	}
+}
+
+func TestStatusBadgePreservesControlWhitespaceBoundaries(t *testing.T) {
+	t.Parallel()
+	styles := newStyles(config.Theme{})
+
+	for name, tc := range map[string]struct {
+		message string
+		want    string
+	}{
+		"readable boundary":           {message: "load\nfailed", want: "[ERROR] load failed"},
+		"does not synthesize keyword": {message: "fa\nil", want: "[INFO] fa il"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			if got := ansi.Strip(styles.statusBadge(tc.message)); got != tc.want {
+				t.Fatalf("statusBadge(%q) = %q, want %q", tc.message, got, tc.want)
 			}
 		})
 	}

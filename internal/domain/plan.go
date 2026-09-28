@@ -3,7 +3,7 @@ package domain
 // PlanStatus tracks the high-level state of a plan. Plans start `active`
 // when created, transition to `done` when the last child task closes, and
 // `abandoned` when the user explicitly aborts the plan. The catalog mirrors
-// the `status` CHECK constraint on the `plans` table (migration 023).
+// the `status` CHECK constraint on the `plans` table.
 type PlanStatus string
 
 const (

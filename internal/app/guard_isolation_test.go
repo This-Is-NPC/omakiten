@@ -53,69 +53,72 @@ func TestGuardIsolationCrossProjectMoveTask(t *testing.T) {
 	// per-call repo so the test does not race on fakeStores counters.
 	const goroutinesPerProject = 64
 
-	type result struct {
-		projectKey rune
-		err        error
-	}
-	results := make(chan result, goroutinesPerProject*2)
+	results := runIsolationMoves(snapA, snapB, evalA, evalB, goroutinesPerProject)
+	assertIsolationResults(t, results, goroutinesPerProject)
+}
 
+func runIsolationMoves(snapA, snapB *config.Snapshot, evalA, evalB *guards.Evaluator, count int) []isolationResult {
+	results := make(chan isolationResult, count*2)
 	var wg sync.WaitGroup
-	for i := 0; i < goroutinesPerProject; i++ {
+	for i := 0; i < count; i++ {
 		wg.Add(2)
-		go func() {
-			defer wg.Done()
-			repo := newIsolationRepo()
-			svcA := NewWorkflowService(snapA, repo, evalA, repo, repo, snapA.Registry())
-			_, err := svcA.MoveTask(context.Background(), domain.ProjectContext{ID: 1}, 100, "dev")
-			results <- result{projectKey: 'A', err: err}
-		}()
-		go func() {
-			defer wg.Done()
-			repo := newIsolationRepo()
-			svcB := NewWorkflowService(snapB, repo, evalB, repo, repo, snapB.Registry())
-			_, err := svcB.MoveTask(context.Background(), domain.ProjectContext{ID: 2}, 200, "dev")
-			results <- result{projectKey: 'B', err: err}
-		}()
+		go runIsolationMove(&wg, results, snapA, evalA, 1, 100, 'A')
+		go runIsolationMove(&wg, results, snapB, evalB, 2, 200, 'B')
 	}
 	wg.Wait()
 	close(results)
+	out := make([]isolationResult, 0, count*2)
+	for result := range results {
+		out = append(out, result)
+	}
+	return out
+}
 
-	var aGuardFails, bGuardFails, aSuccess, bSuccess int
-	for r := range results {
+func runIsolationMove(wg *sync.WaitGroup, results chan<- isolationResult, snap *config.Snapshot, evaluator *guards.Evaluator, projectID, taskID int64, key rune) {
+	defer wg.Done()
+	repo := newIsolationRepo()
+	service := NewWorkflowService(snap, repo, evaluator, repo, repo, snap.Registry())
+	_, err := service.MoveTask(context.Background(), domain.ProjectContext{ID: projectID}, taskID, "dev")
+	results <- isolationResult{projectKey: key, err: err}
+}
+
+func assertIsolationResults(t *testing.T, results []isolationResult, count int) {
+	t.Helper()
+	stats := summarizeIsolationResults(t, results)
+	if stats.aGuardFails != count || stats.aSuccess != 0 || stats.bSuccess != count || stats.bGuardFails != 0 {
+		t.Fatalf("isolation results: A guard=%d success=%d, B guard=%d success=%d; want A guard=%d success=0, B guard=0 success=%d", stats.aGuardFails, stats.aSuccess, stats.bGuardFails, stats.bSuccess, count, count)
+	}
+}
+
+type isolationStats struct {
+	aGuardFails, bGuardFails, aSuccess, bSuccess int
+}
+
+func summarizeIsolationResults(t *testing.T, results []isolationResult) isolationStats {
+	stats := isolationStats{}
+	for _, result := range results {
 		var coded *domain.CodedError
-		isGuardFail := errors.As(r.err, &coded) && coded.Code == domain.ErrGuardViolation
-		switch r.projectKey {
+		isGuardFail := errors.As(result.err, &coded) && coded.Code == domain.ErrGuardViolation
+		switch result.projectKey {
 		case 'A':
 			if isGuardFail {
-				aGuardFails++
-			} else if r.err == nil {
-				aSuccess++
+				stats.aGuardFails++
+			} else if result.err == nil {
+				stats.aSuccess++
 			} else {
-				t.Fatalf("project A unexpected error: %v", r.err)
+				t.Fatalf("project A unexpected error: %v", result.err)
 			}
 		case 'B':
 			if isGuardFail {
-				bGuardFails++
-			} else if r.err == nil {
-				bSuccess++
+				stats.bGuardFails++
+			} else if result.err == nil {
+				stats.bSuccess++
 			} else {
-				t.Fatalf("project B unexpected error: %v", r.err)
+				t.Fatalf("project B unexpected error: %v", result.err)
 			}
 		}
 	}
-
-	if aGuardFails != goroutinesPerProject {
-		t.Fatalf("project A guard violations = %d, want %d (project A's snapshot carries the comments_min guard; every move must trip it)", aGuardFails, goroutinesPerProject)
-	}
-	if aSuccess != 0 {
-		t.Fatalf("project A successful moves = %d, want 0 (the guard would have to leak away from the snapshot for this to happen)", aSuccess)
-	}
-	if bSuccess != goroutinesPerProject {
-		t.Fatalf("project B successful moves = %d, want %d (project B's snapshot carries no guard; A's guard must NOT leak in)", bSuccess, goroutinesPerProject)
-	}
-	if bGuardFails != 0 {
-		t.Fatalf("project B guard violations = %d, want 0 (A's comments_min guard bled into B's evaluator — per-project isolation broken)", bGuardFails)
-	}
+	return stats
 }
 
 // buildIsolationSnapshot builds a Snapshot wrapping a minimal two-bucket
@@ -161,6 +164,11 @@ type isolationRepo struct {
 	blockersFn  func(taskID int64) []domain.TaskBlocker
 	taskState   domain.TaskState
 	currentBkID int64
+}
+
+type isolationResult struct {
+	projectKey rune
+	err        error
 }
 
 func newIsolationRepo() *isolationRepo {

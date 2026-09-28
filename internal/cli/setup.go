@@ -117,7 +117,14 @@ type setupFlagValues struct {
 func resolveSetupInputs(cmd *cobra.Command, flags setupFlagValues) (setupInputs, pickerNeeds, error) {
 	inputs := setupInputs{}
 	needs := pickerNeeds{}
+	resolveSetupLanguages(cmd, flags, &inputs, &needs)
+	resolveSetupAgentLanguage(cmd, flags, &inputs, &needs)
+	resolveSetupPreset(cmd, flags, &inputs, &needs)
+	resolveSetupHarnesses(cmd, flags, &inputs, &needs)
+	return inputs, needs, nil
+}
 
+func resolveSetupLanguages(cmd *cobra.Command, flags setupFlagValues, inputs *setupInputs, needs *pickerNeeds) {
 	// CLI + TUI share a single picker screen on install; the per-surface
 	// split lives in omakiten.yaml so the user can override later via
 	// `okt config language`. If either env var is set we treat both as
@@ -139,7 +146,9 @@ func resolveSetupInputs(cmd *cobra.Command, flags setupFlagValues) (setupInputs,
 	default:
 		needs.Lang = true
 	}
+}
 
+func resolveSetupAgentLanguage(cmd *cobra.Command, flags setupFlagValues, inputs *setupInputs, needs *pickerNeeds) {
 	if flags.AgentLangSet {
 		if cmd.Flags().Changed("agent-lang") {
 			inputs.AgentLang = strings.TrimSpace(flags.AgentLang)
@@ -150,7 +159,9 @@ func resolveSetupInputs(cmd *cobra.Command, flags setupFlagValues) (setupInputs,
 	} else {
 		needs.Agent = true
 	}
+}
 
+func resolveSetupPreset(cmd *cobra.Command, flags setupFlagValues, inputs *setupInputs, needs *pickerNeeds) {
 	rawPreset := flagOrEnv(cmd, "preset", flags.Preset, "OKT_PRESET")
 	if flags.PresetSet || rawPreset != "" {
 		resolvedPreset, fellback := installer.ResolvePreset(rawPreset)
@@ -165,7 +176,9 @@ func resolveSetupInputs(cmd *cobra.Command, flags setupFlagValues) (setupInputs,
 	} else {
 		needs.Preset = true
 	}
+}
 
+func resolveSetupHarnesses(cmd *cobra.Command, flags setupFlagValues, inputs *setupInputs, needs *pickerNeeds) {
 	if flags.HarnessesSet {
 		raw := flagOrEnv(cmd, "harnesses", flags.HarnessesCSV, "OKT_HARNESSES")
 		harnesses, status, warnings := installer.ParseHarnessSelection(raw)
@@ -186,8 +199,6 @@ func resolveSetupInputs(cmd *cobra.Command, flags setupFlagValues) (setupInputs,
 	} else {
 		needs.Harness = true
 	}
-
-	return inputs, needs, nil
 }
 
 type runSetupOptions struct {
@@ -204,35 +215,7 @@ type runSetupOptions struct {
 // language fields and the wrapper block in place without touching
 // other yaml fields or unrelated rc-file content.
 func runSetup(ctx context.Context, opts *runtimeOptions, inputs setupInputs, runOpts runSetupOptions) (any, error) {
-	rootDir, err := paths.ConfigRoot()
-	if err != nil {
-		return nil, err
-	}
-	seedRes, err := config.SeedInstall(rootDir, inputs.Preset, runOpts.Update)
-	if err != nil {
-		return nil, presetCLIError(opts, err)
-	}
-
-	bundle, err := config.LoadBundle(seedRes.Path)
-	if err != nil {
-		return nil, domain.NewError(domain.ErrConfigInvalid, t("cli.err.init_seeded_config_invalid"), map[string]any{"path": seedRes.Path, "error": fmt.Sprint(err)})
-	}
-	bundle.Config.Languages = config.LanguageSettings{
-		CLI:         inputs.CLILang,
-		TUI:         inputs.TUILang,
-		AgentOutput: inputs.AgentLang,
-	}
-	if err := validateSetupLanguageChoice("cli-lang", inputs.CLILang, bundle.Languages); err != nil {
-		return nil, err
-	}
-	if err := validateSetupLanguageChoice("tui-lang", inputs.TUILang, bundle.Languages); err != nil {
-		return nil, err
-	}
-	if err := config.SaveBundle(seedRes.Path, bundle); err != nil {
-		return nil, fmt.Errorf("save %s: %w", seedRes.Path, err)
-	}
-
-	activeDir, err := installer.WriteActivePreset(inputs.Preset)
+	rootDir, seedRes, activeDir, err := prepareSetupConfig(opts, inputs, runOpts.Update)
 	if err != nil {
 		return nil, err
 	}
@@ -249,47 +232,81 @@ func runSetup(ctx context.Context, opts *runtimeOptions, inputs setupInputs, run
 	}
 
 	if !runOpts.SkipWrapper {
-		home, err := os.UserHomeDir()
+		wrapper, err := setupWrappers()
 		if err != nil {
 			return nil, err
 		}
-		installedInto, err := installer.WriteWrappers(home)
-		if err != nil {
-			return nil, err
-		}
-		psInstalledInto, err := installer.WritePowerShellWrappers(home)
-		if err != nil {
-			return nil, err
-		}
-		result["wrapper"] = map[string]any{
-			"installed_into":            installedInto,
-			"powershell_installed_into": psInstalledInto,
-		}
+		result["wrapper"] = wrapper
 	}
 
 	result["harnesses_planned"] = inputs.Harnesses
 	if len(inputs.Harnesses) > 0 && !runOpts.SkipHarnesses {
-		oktBin, err := os.Executable()
-		if err != nil {
-			oktBin = "okt"
-		}
-		harnessResults := installer.SetupHarnesses(ctx, oktBin, inputs.Harnesses)
-		summary := make([]map[string]any, 0, len(harnessResults))
-		for _, r := range harnessResults {
-			entry := map[string]any{
-				"harness":   r.Harness,
-				"status":    r.Status,
-				"exit_code": r.ExitCode,
-			}
-			if r.Err != nil {
-				entry["error"] = r.Err.Error()
-			}
-			summary = append(summary, entry)
-		}
-		result["harnesses"] = summary
+		result["harnesses"] = setupHarnesses(ctx, inputs.Harnesses)
 	}
 
 	return result, nil
+}
+
+func prepareSetupConfig(opts *runtimeOptions, inputs setupInputs, update bool) (string, config.SeedResult, string, error) {
+	rootDir, err := paths.ConfigRoot()
+	if err != nil {
+		return "", config.SeedResult{}, "", err
+	}
+	seedRes, err := config.SeedInstall(rootDir, inputs.Preset, update)
+	if err != nil {
+		return "", config.SeedResult{}, "", presetCLIError(opts, err)
+	}
+	bundle, err := config.LoadBundle(seedRes.Path)
+	if err != nil {
+		return "", config.SeedResult{}, "", domain.NewError(domain.ErrConfigInvalid, t("cli.err.init_seeded_config_invalid"), map[string]any{"path": seedRes.Path, "error": fmt.Sprint(err)})
+	}
+	bundle.Config.Languages = config.LanguageSettings{CLI: inputs.CLILang, TUI: inputs.TUILang, AgentOutput: inputs.AgentLang}
+	for _, choice := range []struct{ flag, value string }{{"cli-lang", inputs.CLILang}, {"tui-lang", inputs.TUILang}} {
+		if err := validateSetupLanguageChoice(choice.flag, choice.value, bundle.Languages); err != nil {
+			return "", config.SeedResult{}, "", err
+		}
+	}
+	if err := config.SaveBundle(seedRes.Path, bundle); err != nil {
+		return "", config.SeedResult{}, "", fmt.Errorf("save %s: %w", seedRes.Path, err)
+	}
+	activeDir, err := installer.WriteActivePreset(inputs.Preset)
+	if err != nil {
+		return "", config.SeedResult{}, "", err
+	}
+	return rootDir, seedRes, activeDir, nil
+}
+
+func setupWrappers() (map[string]any, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return nil, err
+	}
+	installedInto, err := installer.WriteWrappers(home)
+	if err != nil {
+		return nil, err
+	}
+	psInstalledInto, err := installer.WritePowerShellWrappers(home)
+	if err != nil {
+		return nil, err
+	}
+	return map[string]any{"installed_into": installedInto, "powershell_installed_into": psInstalledInto}, nil
+}
+
+func setupHarnesses(ctx context.Context, harnesses []string) []map[string]any {
+	oktBin, err := os.Executable()
+	if err != nil {
+		oktBin = "okt"
+	}
+	harnessResults := installer.SetupHarnesses(ctx, oktBin, harnesses)
+	summary := make([]map[string]any, 0, len(harnessResults))
+	for _, r := range harnessResults {
+		entry := map[string]any{"harness": r.Harness, "status": r.Status, "exit_code": r.ExitCode}
+		if r.Err != nil {
+			entry["error"] = r.Err.Error()
+		}
+		summary = append(summary, entry)
+	}
+	return summary
 }
 
 // validateSetupLanguageChoice is the setup-surface equivalent of
@@ -336,4 +353,3 @@ func firstNonEmpty(a, b string) string {
 	}
 	return b
 }
-

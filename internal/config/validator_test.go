@@ -61,76 +61,11 @@ func TestValidateTheme(t *testing.T) {
 }
 
 func TestValidateBundleErrors(t *testing.T) {
-	// validBundle returns the minimal Bundle that passes the strict
+	// validTestBundle returns the minimal Bundle that passes the strict
 	// validator: every required canonical block (mcp, tui, views,
-	// priorities, severities, template_defaults) is set to the kit's
-	// canonical values. Per-test mutations target the field under
+	// priorities, severities, template_defaults, surfaces) is set to the
+	// kit's canonical values. Per-test mutations target the field under
 	// exercise without re-declaring everything else.
-	tru := true
-	validBundle := func() Bundle {
-		return Bundle{
-			Version: 1,
-			Kit:     Kit{ID: 1, Key: "default", Name: "Default"},
-			Config: Settings{
-				Output:   OutputSettings{JSONMinified: true, OmitEmpty: true},
-				Workflow: WorkflowSettings{Active: "default"},
-				Theme:    ThemeSettings{Active: "catppuccin"},
-				MCP: MCPSettings{
-					RecentCommentLimit:        5,
-					MaxCommentChars:           0,
-					IncludeWorkflowInContinue: &tru,
-					CachePrompts:              &tru,
-					NextWorkLimit:             5,
-					SimilarTaskLimit:          5,
-				},
-				TUI:              TUISettings{TokenBadge: TokenBadgeThresholds{YellowAt: 150, RedAt: 400}},
-				TemplateDefaults: []string{"task"},
-				Priorities: []PriorityDefinition{
-					{ID: 1, Value: "low"},
-					{ID: 2, Value: "normal", Default: true},
-					{ID: 3, Value: "high"},
-				},
-				Severities: []SeverityDefinition{
-					{ID: 1, Value: "info"},
-					{ID: 2, Value: "warning", Default: true},
-					{ID: 3, Value: "error"},
-				},
-				Views: ViewSettings{
-					Board:        BoardViewSettings{Sort: SortSettings{Field: "created_at", Order: "desc"}},
-					Table:        TableViewSettings{Sort: SortSettings{Field: "created_at", Order: "desc"}},
-					Graph:        GraphViewSettings{Sort: SortSettings{Field: "id", Order: "asc"}},
-					Logs:         LogsViewSettings{Sort: SortSettings{Order: "desc"}, Limit: 50, WindowDays: 30},
-					TaskActivity: TaskActivityViewSettings{Sort: SortSettings{Order: "asc"}},
-				},
-				SQLite:      SQLiteSettings{BusyTimeoutMs: 5000, CacheSizeKB: 1024, MmapSizeBytes: 0},
-				Solutions: SolutionsSettings{DefaultTopLimit: 10, MaxTopLimit: 100},
-				Backup:    BackupSettings{RetentionCount: 5},
-				Events: EventsSettings{
-					DefaultRecentLimit: 50,
-					Retention: EventsRetentionBlock{
-						Defaults: EventRetentionDefaults{MaxAgeDays: 0, MaxRows: 0},
-						ByCategory: map[string]EventRetentionSettings{
-							"tool_call": {MaxAgeDays: intPtr(7), MaxRows: intPtr(500)},
-						},
-					},
-					Defaults: EventChannelSettings{Log: &tru, Broadcast: &tru, Hook: &tru},
-				},
-				Search:      SearchSettings{Stopwords: []string{"and", "the"}},
-				TagSynonyms: map[string]string{"golang": "go"},
-			},
-			Skills: []Skill{{Slug: "go", Name: "Go"}},
-			Laws:   []Law{{Slug: "scope", Severity: "error", Body: "Stay scoped.", Scope: "global"}},
-			Workflows: []Workflow{{
-				ID:   1,
-				Key:  "default",
-				Name: "Default",
-				Buckets: []Bucket{
-					{ID: 1, Key: "backlog", Name: "Backlog", Position: 1},
-				},
-			}},
-		}
-	}
-
 	tests := []struct {
 		name    string
 		mutate  func(*Bundle)
@@ -214,7 +149,7 @@ func TestValidateBundleErrors(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			b := validBundle()
+			b := validTestBundle()
 			tc.mutate(&b)
 			err := ValidateBundle(b, b.Skills, b.Laws, b.Personas, b.Templates)
 			if err == nil {
@@ -276,18 +211,94 @@ func TestValidatePrioritiesEnforcesAscendingIDs(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			err := validatePriorities(tc.input)
-			if tc.wantErr == "" && err != nil {
-				t.Fatalf("unexpected error: %v", err)
-			}
-			if tc.wantErr != "" {
-				if err == nil {
-					t.Fatalf("expected error containing %q, got nil", tc.wantErr)
-				}
-				if !strings.Contains(err.Error(), tc.wantErr) {
-					t.Fatalf("error %q missing %q", err.Error(), tc.wantErr)
-				}
-			}
+			assertPriorityValidation(t, tc.input, tc.wantErr)
 		})
+	}
+}
+
+func assertPriorityValidation(t *testing.T, input []PriorityDefinition, wantErr string) {
+	t.Helper()
+	err := validatePriorities(input)
+	if wantErr == "" && err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if wantErr == "" {
+		return
+	}
+	if err == nil {
+		t.Fatalf("expected error containing %q, got nil", wantErr)
+	}
+	if !strings.Contains(err.Error(), wantErr) {
+		t.Fatalf("error %q missing %q", err.Error(), wantErr)
+	}
+}
+
+// validTestBundle returns the minimal Bundle that passes ValidateBundle.
+// Surfaces is the canonical 70-row table so completeness checks stay
+// green unless a test mutates them. In-memory bundles that never call
+// ValidateBundle do not need this helper.
+func validTestBundle() Bundle {
+	tru := true
+	return Bundle{
+		Version: 1,
+		Kit:     Kit{ID: 1, Key: "default", Name: "Default"},
+		Config: Settings{
+			Output:   OutputSettings{JSONMinified: true, OmitEmpty: true},
+			Workflow: WorkflowSettings{Active: "default"},
+			Theme:    ThemeSettings{Active: "catppuccin"},
+			MCP: MCPSettings{
+				RecentCommentLimit:        5,
+				MaxCommentChars:           0,
+				IncludeWorkflowInContinue: &tru,
+				CachePrompts:              &tru,
+				NextWorkLimit:             5,
+				SimilarTaskLimit:          5,
+			},
+			TUI:              TUISettings{TokenBadge: TokenBadgeThresholds{YellowAt: 150, RedAt: 400}},
+			TemplateDefaults: []string{"task"},
+			Priorities: []PriorityDefinition{
+				{ID: 1, Value: "low"},
+				{ID: 2, Value: "normal", Default: true},
+				{ID: 3, Value: "high"},
+			},
+			Severities: []SeverityDefinition{
+				{ID: 1, Value: "info"},
+				{ID: 2, Value: "warning", Default: true},
+				{ID: 3, Value: "error"},
+			},
+			Views: ViewSettings{
+				Board:        BoardViewSettings{Sort: SortSettings{Field: "created_at", Order: "desc"}},
+				Table:        TableViewSettings{Sort: SortSettings{Field: "created_at", Order: "desc"}},
+				Graph:        GraphViewSettings{Sort: SortSettings{Field: "id", Order: "asc"}},
+				Logs:         LogsViewSettings{Sort: SortSettings{Order: "desc"}, Limit: 50, WindowDays: 30},
+				TaskActivity: TaskActivityViewSettings{Sort: SortSettings{Order: "asc"}},
+			},
+			SQLite:    SQLiteSettings{BusyTimeoutMs: 5000, CacheSizeKB: 1024, MmapSizeBytes: 0},
+			Solutions: SolutionsSettings{DefaultTopLimit: 10, MaxTopLimit: 100},
+			Backup:    BackupSettings{RetentionCount: 5},
+			Events: EventsSettings{
+				DefaultRecentLimit: 50,
+				Retention: EventsRetentionBlock{
+					Defaults: EventRetentionDefaults{MaxAgeDays: 0, MaxRows: 0},
+					ByCategory: map[string]EventRetentionSettings{
+						"tool_call": {MaxAgeDays: intPtr(7), MaxRows: intPtr(500)},
+					},
+				},
+				Defaults: EventChannelSettings{Log: &tru, Broadcast: &tru, Hook: &tru},
+			},
+			Search:      SearchSettings{Stopwords: []string{"and", "the"}},
+			TagSynonyms: map[string]string{"golang": "go"},
+		},
+		Skills:   []Skill{{Slug: "go", Name: "Go"}},
+		Laws:     []Law{{Slug: "scope", Severity: "error", Body: "Stay scoped.", Scope: "global"}},
+		Surfaces: CanonicalSurfaceTable(),
+		Workflows: []Workflow{{
+			ID:   1,
+			Key:  "default",
+			Name: "Default",
+			Buckets: []Bucket{
+				{ID: 1, Key: "backlog", Name: "Backlog", Position: 1},
+			},
+		}},
 	}
 }

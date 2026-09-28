@@ -55,38 +55,45 @@ func TestStoreHookExecutedSmoke(t *testing.T) {
 		t.Fatalf("CreateTask = %v", err)
 	}
 
-	// Wait for the script to finish writing.
+	waitForHookScript(t, scriptOut)
+	assertHookExecutedPayload(t, waitForHookExecuted(t, ctx, store))
+}
+
+func waitForHookScript(t *testing.T, path string) {
+	t.Helper()
 	deadline := time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {
-		if _, err := os.Stat(scriptOut); err == nil {
-			break
+		if _, err := os.Stat(path); err == nil {
+			return
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	if _, err := os.Stat(scriptOut); err != nil {
+	if _, err := os.Stat(path); err != nil {
 		t.Fatalf("script never wrote stdin file: %v", err)
 	}
+}
 
-	// Wait for hook.executed to be recorded (engine emits AFTER action returns).
-	var hookEvents []domain.Event
-	deadline = time.Now().Add(5 * time.Second)
+func waitForHookExecuted(t *testing.T, ctx context.Context, store *storeFixture) domain.Event {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {
 		got, err := store.ListRecentEvents(ctx, domain.EventTypeHookExecuted, 10)
 		if err != nil {
 			t.Fatalf("ListRecentEvents = %v", err)
 		}
 		if len(got) > 0 {
-			hookEvents = got
-			break
+			return got[0]
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	if len(hookEvents) == 0 {
-		t.Fatalf("hook.executed never recorded")
-	}
+	t.Fatal("hook.executed never recorded")
+	return domain.Event{}
+}
 
+func assertHookExecutedPayload(t *testing.T, event domain.Event) {
+	t.Helper()
 	var payload map[string]any
-	if err := json.Unmarshal([]byte(hookEvents[0].Payload), &payload); err != nil {
+	if err := json.Unmarshal([]byte(event.Payload), &payload); err != nil {
 		t.Fatalf("payload not JSON: %v", err)
 	}
 	if payload["success"] != true {

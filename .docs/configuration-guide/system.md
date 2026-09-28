@@ -21,6 +21,7 @@ For ConfigRoot precedence, `.active` resolution, and the `<root>/` layout, see [
 - [`config.solutions`](#configsolutions)
 - [`config.backup`](#configbackup)
 - [`config.events`](#configevents)
+  - [`config.events.orphan_sweep` — orphan-event reconciliation](#configeventsorphan_sweep--orphan-event-reconciliation)
 - [`config.hooks`](#confighooks)
 - [`config.search`](#configsearch)
 - [`config.tag_synonyms`](#configtag_synonyms)
@@ -40,7 +41,7 @@ workflows: [ … ]
 skills:       [ <slug>, … ]    # optional allowlist
 laws:         [ <slug>, … ]    # optional allowlist
 templates:    [ <slug>, … ]    # optional allowlist
-personas:     [ { slug, skills?, laws? }, … ]
+personas:     [ { slug, schema_version, skill_repertoire?, laws? }, … ]
 projects:     [ { slug, name, description?, laws? }, … ]
 mcp_commands: { <slug>: { persona?, laws?, laws_disabled?, templates? } }
 ```
@@ -298,9 +299,46 @@ config:
 | `defaults.hook` | bool | required | Lets the hooks engine consider matching events when true. |
 | `overrides` | map | optional; keys must be known event types | Per-event channel overrides. Omitted channel fields inherit from `defaults`; unknown event names fail validation. |
 
-Legacy `config.activity_log` is deprecated. Loaders normalize it into `retention.by_category.tool_call` when that category is unset.
+Retention is configured only through `config.events.retention`; unset layers inherit from the active kit.
 
 Domain event names live in `internal/domain/event.go::KnownEventTypes` — that file is the source of truth for what's emittable. For action contracts that consume events, see [hooks.md](hooks.md).
+
+### `config.events.orphan_sweep` — orphan-event reconciliation
+
+Bounded, periodic cleanup of event rows whose **positive** `project_id` no longer resolves to a `projects` row. **Optional block** — every knob may be omitted and inherits the active kit's value, then the canonical floor in `internal/config/events_orphan_sweep.go`.
+
+```yaml
+config:
+  events:
+    orphan_sweep:
+      enabled: true                 # bool  — kill switch
+      interval_minutes: 1440        # int >0 — cadence between successful passes (24h)
+      retry_interval_minutes: 60    # int >0 — cadence after a capped or failed pass (1h)
+      batch_rows: 100               # int >0 — rows per DELETE (one implicit transaction)
+      max_rows_per_pass: 500        # int >0 — hard cap per pass; must be >= batch_rows
+      max_duration_ms: 50           # int >0 — wall-clock budget per pass
+```
+
+| Field | Type | Constraint | What it does |
+|---|---|---|---|
+| `enabled` | bool | optional (default `true`) | Turns reconciliation off entirely. A disabled sweep deletes nothing and returns an empty report. |
+| `interval_minutes` | int | `> 0` | How long after a pass that drained cleanly before the next opportunistic pass is due. |
+| `retry_interval_minutes` | int | `> 0` | How long after a pass that hit a cap or failed. Shorter than `interval_minutes` so a backlog drains without a busy loop. |
+| `batch_rows` | int | `> 0` | Rows removed per `DELETE`. SQLite wraps each statement in one implicit transaction, so a crash mid-pass leaves whole batches committed and nothing half-deleted. |
+| `max_rows_per_pass` | int | `> 0`, `>= batch_rows` | Ceiling on rows a single pass may delete before it yields, however large the backlog. |
+| `max_duration_ms` | int | `> 0` | Wall-clock ceiling for a single pass, checked between batches. |
+
+**Not a substitute for project deletion.** `okt project delete` (`Store.DeleteProject` / `Store.DeleteProjectWithBackup`) already removes every event row of the project inside the same transaction as the `projects` row — that is the canonical, backed-up, audited path and it leaves nothing for the sweep to find. The sweep only reclaims what a process that *bypassed* that sequence left behind: typically a long-lived MCP or TUI session that still holds the old project id and keeps writing events after another process deleted the project. Deleting a project through this sweep is not possible and not intended; it never touches the `projects` table.
+
+**Operational behavior:**
+
+- **No background goroutine and no TUI timer.** Two call sites drive it: a *forced* pass at the end of a successful `Store.ApplyConfig` (once per composed runtime), and a *due-checked* opportunistic pass right after the activity-log retention prune on the `BeginActivityLog` write path. Activity is the heartbeat — an idle process sweeps nothing.
+- **Scope.** Only `project_id > 0` with no matching `projects` row, ascending by event id, with an outer anti-join recheck on the row actually being deleted. `NULL` and `0` project ids (global/system rows) and events of **live and archived** projects are structurally out of scope. There is no age grace: an orphan is reclaimable the moment its project row is gone.
+- **Dependents** ride existing schema machinery — `event_tags` through its `ON DELETE CASCADE`, comment FTS rows through the `search_index_comments_ad` trigger. The sweep issues no extra SQL for them.
+- **Bounded cursor.** The ascending-id cursor lives inside a single pass and resets to zero on the next one, so a row inserted below the previous high-water mark is still reachable.
+- **Concurrency.** At most one pass runs per process; a second in-process caller returns immediately with an empty report rather than blocking. Two processes sweeping the same database need no coordination — the loser's candidates no longer satisfy the anti-join recheck and it deletes zero rows.
+- **Silence.** A successful sweep produces no output on any surface and emits no domain event, and it takes no backup (it removes only rows the canonical delete would already have removed). Failures go to an operator-installable sink that defaults to discarding — the sweep can run underneath the bubbletea alternate screen, where a stray stdout/stderr write would corrupt the frame.
+- **Recovery.** A capped or failed pass reschedules on `retry_interval_minutes`; repeated passes are idempotent. A backlog larger than `max_rows_per_pass` drains across successive passes rather than in one long stall.
 
 ## `config.hooks`
 
@@ -399,6 +437,8 @@ The runtime applies one substitution; `golang` → `go` works, but if you also d
 | Missing/invalid `config.events.retention` | `config.events.retention.defaults.max_age_days: must be >= 0` / unknown category or event type in overrides |
 | Missing/zero `config.solutions.*` or inverted range | `config.solutions: max_top_limit (<n>) must be >= default_top_limit (<n>)` |
 | Missing/zero `config.events.default_recent_limit` | `config.events.default_recent_limit: must be > 0 (see defaults/config/omakase.yaml)` |
+| Negative `config.events.orphan_sweep.*` | `config.events.orphan_sweep.batch_rows: must be > 0 (omit the key to inherit the kit canonical; …)` |
+| `config.events.orphan_sweep` pass cap below batch size | `config.events.orphan_sweep: max_rows_per_pass (<n>) must be >= batch_rows (<n>)` |
 | Empty/uppercase/duplicate `config.search.stopwords` | `config.search.stopwords: entry "X" must be lowercase (matching tokenizer output)` |
 | Empty / self-loop / two-hop `config.tag_synonyms` | `config.tag_synonyms[<key>]: target "<v>" is itself a key (two-hop chains are not resolved)` |
 

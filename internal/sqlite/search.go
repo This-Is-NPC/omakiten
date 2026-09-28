@@ -2,6 +2,7 @@ package sqlite
 
 import (
 	"context"
+	"database/sql"
 	"strings"
 
 	"omakiten/internal/domain"
@@ -10,7 +11,7 @@ import (
 const searchResultLimit = 200
 
 // Search runs an FTS5 MATCH against the unified `search_index` virtual
-// table created by migration 022. Score is computed as `-bm25(...)` so
+// table created by the current schema baseline. Score is computed as `-bm25(...)` so
 // callers can sort/expect "larger is better" without knowing FTS5's
 // convention that raw bm25 returns negative values where smaller (more
 // negative) is more relevant.
@@ -32,6 +33,17 @@ func (s *Store) Search(ctx context.Context, query string, projectID int64, entit
 	if len(entityTypes) == 0 {
 		entityTypes = domain.AllSearchEntityTypes()
 	}
+	statement, args := buildSearchQuery(query, projectID, entityTypes)
+	rows, err := s.db.QueryContext(ctx, statement, args...)
+	if err != nil {
+		return nil, classifyFTSQueryError(err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	return scanSearchHits(rows)
+}
+
+func buildSearchQuery(query string, projectID int64, entityTypes []domain.SearchEntityType) (string, []any) {
 
 	includeTask := includesTaskEntity(entityTypes)
 
@@ -71,15 +83,14 @@ func (s *Store) Search(ctx context.Context, query string, projectID int64, entit
 		args = append(args, projectID)
 	}
 
-	b.WriteString(`ORDER BY score DESC LIMIT ?`)
+	// FTS5 does not guarantee row order when scores tie. Keep same-project
+	// palette results stable so repeated searches do not move the focused row.
+	b.WriteString(`ORDER BY score DESC, si.entity_type ASC, si.entity_id ASC LIMIT ?`)
 	args = append(args, searchResultLimit)
+	return b.String(), args
+}
 
-	rows, err := s.db.QueryContext(ctx, b.String(), args...)
-	if err != nil {
-		return nil, classifyFTSQueryError(err)
-	}
-	defer func() { _ = rows.Close() }()
-
+func scanSearchHits(rows *sql.Rows) ([]domain.SearchHit, error) {
 	var out []domain.SearchHit
 	for rows.Next() {
 		var hit domain.SearchHit

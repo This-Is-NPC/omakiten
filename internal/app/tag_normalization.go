@@ -1,15 +1,10 @@
 package app
 
 import (
-	"regexp"
 	"strings"
 	"unicode"
-)
 
-var (
-	spacesUnderscoresRE = regexp.MustCompile(`[\s_]+`)
-	nonAlphanumRE       = regexp.MustCompile(`[^a-z0-9-]`)
-	multiHyphenRE       = regexp.MustCompile(`-+`)
+	"omakiten/internal/taskvalidation"
 )
 
 // NormalizeTagName converts a raw tag name to its canonical kebab-case
@@ -28,17 +23,7 @@ var (
 // returns kebab-case output. Tests that do not care about synonyms
 // pass nil.
 func NormalizeTagName(raw string, synonyms map[string]string) string {
-	s := strings.ToLower(strings.TrimSpace(raw))
-	s = spacesUnderscoresRE.ReplaceAllString(s, "-")
-	s = nonAlphanumRE.ReplaceAllString(s, "")
-	s = multiHyphenRE.ReplaceAllString(s, "-")
-	s = strings.Trim(s, "-")
-	if synonyms != nil {
-		if canonical, ok := synonyms[s]; ok {
-			s = canonical
-		}
-	}
-	return s
+	return taskvalidation.NormalizeTagName(raw, synonyms)
 }
 
 // TagLabel derives a display label from the raw input (first letter uppercased).

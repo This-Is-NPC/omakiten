@@ -10,8 +10,8 @@ import (
 // against Hook.Do; Execute receives the event and the hook's Args.
 // Returning an error surfaces in the hook.executed payload as
 // success=false but never blocks other hooks. Implementations must
-// honor ctx — the engine wraps Execute in a context with timeout
-// derived from action-specific args.
+// honor ctx cancellation; actions that can block must also apply an
+// action-specific timeout.
 type Action interface {
 	Name() string
 	Execute(ctx context.Context, ev domain.Event, args map[string]any) error

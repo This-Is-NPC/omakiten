@@ -203,7 +203,7 @@ func TestTxMutateAndEmit_RollbackOnMutateFailure(t *testing.T) {
 
 // TestTxMutateAndEmit_RollbackOnEventInsertFailure asserts that when
 // insertEntityEvent itself fails (here: the helper's inserter receives
-// an entity_type='' value which the helper passes through; instead of
+// an entity_type="" value which the helper passes through; instead of
 // relying on schema quirks we force the failure by cancelling the
 // helper's context AFTER Mutate succeeds — QueryRowContext for the
 // events INSERT then bails out with context.Canceled and the

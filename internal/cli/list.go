@@ -5,8 +5,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"omakiten/internal/app"
-	"omakiten/internal/domain"
+	"omakiten/internal/operation"
 )
 
 func newListCommand(opts *runtimeOptions) *cobra.Command {
@@ -23,32 +22,24 @@ func newListCommand(opts *runtimeOptions) *cobra.Command {
 					return nil, err
 				}
 				defer rt.close()
-				ctx = rt.WithActivityRepo(ctx)
 
-				project, err := opts.resolveProject(ctx, rt.store)
-				if err != nil {
-					return nil, err
+				input := operation.ListTasksInput{
+					ProjectSelector: opts.projectSelector(),
+					BucketKey:       bucket,
 				}
-
-				filter := domain.TaskFilter{BucketKey: bucket}
 				if cmd.Flags().Changed("parent") {
 					// Tri-state via the sentinel `0`: zero requests roots
 					// only (parent_id IS NULL) and any positive id scopes
 					// the listing to that parent's direct children. The
 					// flag stays absent → no filter (every task surfaces).
 					if parent == 0 {
-						filter.ParentMode = domain.ParentRoots
+						input.ParentID = operation.OptionalInt64{Set: true, Value: nil}
 					} else {
-						filter.ParentMode = domain.ParentChildren
-						filter.ParentValue = parent
+						pid := parent
+						input.ParentID = operation.OptionalInt64{Set: true, Value: &pid}
 					}
 				}
-
-				tasks, err := app.NewTaskServiceFromStore(rt.store, rt.activeRegistry(), rt.activeSnapshot()).List(ctx, project, filter)
-				if err != nil {
-					return nil, err
-				}
-				return map[string]any{"project": project, "tasks": tasks}, nil
+				return rt.operationService().ListTasks(ctx, input)
 			})
 		},
 	}

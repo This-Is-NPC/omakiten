@@ -5,8 +5,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"omakiten/internal/app"
-	"omakiten/internal/domain"
+	"omakiten/internal/operation"
 )
 
 // (parsePriority lives in enums.go for cross-command reuse.)
@@ -34,55 +33,7 @@ func newEditCommand(opts *runtimeOptions) *cobra.Command {
 					return nil, err
 				}
 				defer rt.close()
-				ctx = rt.WithActivityRepo(ctx)
-
-				project, err := opts.resolveProject(ctx, rt.store)
-				if err != nil {
-					return nil, err
-				}
-
-				update := domain.TaskUpdate{}
-				if cmd.Flags().Changed("title") {
-					update.Title = &title
-				}
-				if cmd.Flags().Changed("description") {
-					update.Description = &description
-				}
-				if cmd.Flags().Changed("priority") {
-					// CLI accepts either the priority label ("high") or
-					// the numeric id ("3"). Numeric is parsed first so
-					// scripts can pass the storage handle directly;
-					// label fallback covers the human-friendly path.
-					// Both routes funnel through registry validation —
-					// the service layer never sees raw user input.
-					value, err := parsePriority(priority, rt.activeRegistry())
-					if err != nil {
-						return nil, err
-					}
-					update.Priority = &value
-				}
-				if cmd.Flags().Changed("bucket") {
-					update.BucketKey = bucket
-				}
-				if cmd.Flags().Changed("parent") {
-					// Tri-state via the sentinel `0`: zero clears the FK
-					// (re-roots the task) and any positive id sets it.
-					// Anti-cycle + cross-project rejection live in the
-					// service layer; the CLI just forwards the value.
-					update.ChangeParent = true
-					if parent == 0 {
-						update.NewParentID = nil
-					} else {
-						pid := parent
-						update.NewParentID = &pid
-					}
-				}
-
-				task, err := app.NewTaskServiceFromStore(rt.store, rt.activeRegistry(), rt.activeSnapshot()).Edit(ctx, project, taskID, update)
-				if err != nil {
-					return nil, err
-				}
-				return map[string]any{"project": project, "task": task}, nil
+				return runTaskEdit(ctx, cmd, opts, rt, taskID, title, description, priority, bucket, parent)
 			})
 		},
 	}
@@ -93,4 +44,72 @@ func newEditCommand(opts *runtimeOptions) *cobra.Command {
 	cmd.Flags().StringVarP(&bucket, "bucket", "b", "", opts.t("cli.task.edit.flag.bucket"))
 	cmd.Flags().Int64Var(&parent, "parent", 0, opts.t("cli.task.edit.flag.parent"))
 	return cmd
+}
+
+func runTaskEdit(ctx context.Context, cmd *cobra.Command, opts *runtimeOptions, rt *runtime, taskID int64, title, description, priority, bucket string, parent int64) (any, error) {
+	var response any
+	if taskEditFieldsChanged(cmd) {
+		input, err := editTaskInput(cmd, opts, rt, taskID, title, description, priority, parent)
+		if err != nil {
+			return nil, err
+		}
+		response, err = rt.operationService().EditTask(ctx, input)
+		if err != nil {
+			return nil, err
+		}
+	}
+	if cmd.Flags().Changed("bucket") {
+		// Bucket moves go through MoveTask so the activity log distinguishes
+		// edit vs move (EditTask omits BucketKey).
+		response, err := rt.operationService().MoveTask(ctx, operation.MoveTaskInput{
+			ProjectSelector: opts.projectSelector(),
+			TaskID:          taskID,
+			BucketKey:       bucket,
+		})
+		if err != nil {
+			return nil, err
+		}
+		return response, nil
+	}
+	if response != nil {
+		return response, nil
+	}
+	// Mirror app.TaskService.Edit: empty patch is invalid.
+	_, err := rt.operationService().EditTask(ctx, operation.EditTaskInput{
+		ProjectSelector: opts.projectSelector(),
+		TaskID:          taskID,
+	})
+	return nil, err
+}
+
+func taskEditFieldsChanged(cmd *cobra.Command) bool {
+	return cmd.Flags().Changed("title") ||
+		cmd.Flags().Changed("description") ||
+		cmd.Flags().Changed("priority") ||
+		cmd.Flags().Changed("parent")
+}
+
+func editTaskInput(cmd *cobra.Command, opts *runtimeOptions, rt *runtime, taskID int64, title, description, priority string, parent int64) (operation.EditTaskInput, error) {
+	input := operation.EditTaskInput{ProjectSelector: opts.projectSelector(), TaskID: taskID}
+	if cmd.Flags().Changed("title") {
+		input.Title = &title
+	}
+	if cmd.Flags().Changed("description") {
+		input.Description = &description
+	}
+	if cmd.Flags().Changed("priority") {
+		value, err := parsePriority(priority, rt.activeRegistry())
+		if err != nil {
+			return operation.EditTaskInput{}, err
+		}
+		label := rt.activeRegistry().PriorityLabel(value)
+		input.Priority = &label
+	}
+	if cmd.Flags().Changed("parent") {
+		input.ParentID = operation.OptionalInt64{Set: true}
+		if parent != 0 {
+			input.ParentID.Value = &parent
+		}
+	}
+	return input, nil
 }

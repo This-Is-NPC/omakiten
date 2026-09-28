@@ -11,9 +11,9 @@ import (
 	"sync"
 	"testing"
 
-	"omakiten/internal/agent"
 	"omakiten/internal/config"
 	"omakiten/internal/domain"
+	"omakiten/internal/operation"
 	"omakiten/internal/testfixtures"
 	"omakiten/internal/testfixtures/snapstore"
 )
@@ -37,53 +37,48 @@ func withModel(extra map[string]any) map[string]any {
 // error the LLM cannot act on (the field is invisible to it).
 func TestToolsDeclareAgentAttributionSchema(t *testing.T) {
 	for _, tool := range Tools() {
-		props, ok := tool.InputSchema["properties"].(map[string]any)
-		if !ok {
-			t.Fatalf("%s: InputSchema.properties missing or wrong type: %#v", tool.Name, tool.InputSchema["properties"])
-		}
-		modelSchema, ok := props["_agent_model"].(map[string]any)
-		if !ok {
-			t.Fatalf("%s: properties._agent_model missing", tool.Name)
-		}
-		if modelSchema["type"] != "string" {
-			t.Fatalf("%s: _agent_model.type = %v, want string", tool.Name, modelSchema["type"])
-		}
-		desc, _ := modelSchema["description"].(string)
-		if !strings.Contains(desc, "claude-opus-4-7") || !strings.Contains(desc, "Required") {
-			t.Fatalf("%s: _agent_model.description missing exemplars or required hint: %q", tool.Name, desc)
-		}
-		sessionSchema, ok := props["_agent_session_id"].(map[string]any)
-		if !ok {
-			t.Fatalf("%s: properties._agent_session_id missing", tool.Name)
-		}
-		if sessionSchema["type"] != "string" {
-			t.Fatalf("%s: _agent_session_id.type = %v, want string", tool.Name, sessionSchema["type"])
-		}
+		assertAgentSchemaFields(t, tool)
+		assertAgentRequiredFields(t, tool)
+	}
+}
 
-		required, ok := tool.InputSchema["required"].([]string)
-		if !ok {
-			t.Fatalf("%s: InputSchema.required missing or wrong type: %#v", tool.Name, tool.InputSchema["required"])
+func assertAgentSchemaFields(t *testing.T, tool ToolDefinition) {
+	t.Helper()
+	props, ok := tool.InputSchema["properties"].(map[string]any)
+	if !ok {
+		t.Fatalf("%s: InputSchema.properties missing or wrong type: %#v", tool.Name, tool.InputSchema["properties"])
+	}
+	model, ok := props["_agent_model"].(map[string]any)
+	if !ok || model["type"] != "string" {
+		t.Fatalf("%s: _agent_model schema invalid: %#v", tool.Name, props["_agent_model"])
+	}
+	desc, _ := model["description"].(string)
+	if !strings.Contains(desc, "claude-opus-4-7") || !strings.Contains(desc, "Required") {
+		t.Fatalf("%s: _agent_model.description missing exemplars or required hint: %q", tool.Name, desc)
+	}
+	session, ok := props["_agent_session_id"].(map[string]any)
+	if !ok || session["type"] != "string" {
+		t.Fatalf("%s: _agent_session_id schema invalid: %#v", tool.Name, props["_agent_session_id"])
+	}
+}
+
+func assertAgentRequiredFields(t *testing.T, tool ToolDefinition) {
+	t.Helper()
+	required, ok := tool.InputSchema["required"].([]string)
+	if !ok {
+		t.Fatalf("%s: InputSchema.required missing or wrong type: %#v", tool.Name, tool.InputSchema["required"])
+	}
+	modelRequired := false
+	for _, name := range required {
+		if name == "_agent_model" {
+			modelRequired = true
 		}
-		found := false
-		for _, name := range required {
-			if name == "_agent_model" {
-				found = true
-				break
-			}
+		if name == "_agent_session_id" {
+			t.Fatalf("%s: required must NOT include _agent_session_id: %v", tool.Name, required)
 		}
-		if !found {
-			t.Fatalf("%s: required missing _agent_model: %v", tool.Name, required)
-		}
-		if found2 := false; func() bool {
-			for _, name := range required {
-				if name == "_agent_session_id" {
-					return true
-				}
-			}
-			return found2
-		}() {
-			t.Fatalf("%s: required must NOT include _agent_session_id (it is optional): %v", tool.Name, required)
-		}
+	}
+	if !modelRequired {
+		t.Fatalf("%s: required missing _agent_model: %v", tool.Name, required)
 	}
 }
 
@@ -177,81 +172,91 @@ func TestAdapterSkillsToolsReadOnly(t *testing.T) {
 	service := newMCPTestService(t, ctx)
 	adapter := NewAdapter(service)
 
-	// No write path exists.
-	for _, name := range []string{"skills.create", "skills.edit", "skills.delete"} {
-		if _, err := adapter.CallTool(ctx, name, withModel(nil)); err == nil {
-			t.Fatalf("%s unexpectedly dispatched — skills must be read-only", name)
-		}
-	}
+	assertReadOnlyTools(t, ctx, adapter, []string{"skills.create", "skills.edit", "skills.delete"}, "skills")
+	assertSkillsList(t, ctx, adapter)
+	assertSkillGet(t, ctx, adapter)
+	assertUnknownSkill(t, ctx, adapter)
+}
 
-	// list: slugs + descriptions, no bodies.
-	listRes, err := adapter.CallTool(ctx, "skills.list", withModel(nil))
+func assertSkillsList(t *testing.T, ctx context.Context, adapter *Adapter) {
+	t.Helper()
+	result, err := adapter.CallTool(ctx, "skills.list", withModel(nil))
 	if err != nil {
 		t.Fatalf("CallTool(skills.list) error = %v", err)
 	}
-	if listRes.IsError {
-		t.Fatalf("skills.list error: %s", listRes.Content[0].Text)
+	if result.IsError {
+		t.Fatalf("skills.list error: %s", result.Content[0].Text)
 	}
-	var listPayload struct {
+	var payload struct {
 		Skills []struct {
 			Slug        string `json:"slug"`
 			Description string `json:"description"`
 			Body        string `json:"body"`
 		} `json:"skills"`
 	}
-	if err := json.Unmarshal([]byte(listRes.Content[0].Text), &listPayload); err != nil {
+	if err := json.Unmarshal([]byte(result.Content[0].Text), &payload); err != nil {
 		t.Fatalf("skills.list payload not JSON: %v", err)
 	}
-	if len(listPayload.Skills) == 0 {
-		t.Fatalf("skills.list returned no skills")
+	if len(payload.Skills) == 0 {
+		t.Fatal("skills.list returned no skills")
 	}
 	found := false
-	for _, sk := range listPayload.Skills {
-		if sk.Body != "" {
-			t.Fatalf("skills.list leaked a body for %q — list must omit bodies", sk.Slug)
+	for _, skill := range payload.Skills {
+		if skill.Body != "" {
+			t.Fatalf("skills.list leaked a body for %q", skill.Slug)
 		}
-		if sk.Slug == "go" {
+		if skill.Slug == "go" {
 			found = true
-			if sk.Description == "" {
-				t.Fatalf("skills.list dropped the description for %q", sk.Slug)
+			if skill.Description == "" {
+				t.Fatalf("skills.list dropped the description for %q", skill.Slug)
 			}
 		}
 	}
 	if !found {
-		t.Fatalf("skills.list missing known skill %q", "go")
+		t.Fatal("skills.list missing known skill \"go\"")
 	}
+}
 
-	// get: returns the body for a known slug.
-	getRes, err := adapter.CallTool(ctx, "skills.get", withModel(map[string]any{"slug": "go"}))
+func assertSkillGet(t *testing.T, ctx context.Context, adapter *Adapter) {
+	t.Helper()
+	result, err := adapter.CallTool(ctx, "skills.get", withModel(map[string]any{"slug": "go"}))
 	if err != nil {
 		t.Fatalf("CallTool(skills.get) error = %v", err)
 	}
-	if getRes.IsError {
-		t.Fatalf("skills.get error: %s", getRes.Content[0].Text)
+	if result.IsError {
+		t.Fatalf("skills.get error: %s", result.Content[0].Text)
 	}
-	var getPayload struct {
+	var payload struct {
 		Skill struct {
 			Slug string `json:"slug"`
 			Body string `json:"body"`
 		} `json:"skill"`
 	}
-	if err := json.Unmarshal([]byte(getRes.Content[0].Text), &getPayload); err != nil {
+	if err := json.Unmarshal([]byte(result.Content[0].Text), &payload); err != nil {
 		t.Fatalf("skills.get payload not JSON: %v", err)
 	}
-	if getPayload.Skill.Slug != "go" || getPayload.Skill.Body == "" {
-		t.Fatalf("skills.get returned %#v, want slug=go with a non-empty body", getPayload.Skill)
+	if payload.Skill.Slug != "go" || payload.Skill.Body == "" {
+		t.Fatalf("skills.get returned %#v, want slug=go with a non-empty body", payload.Skill)
 	}
+}
 
-	// get: unknown slug rejects cleanly, naming the missing slug.
-	missRes, err := adapter.CallTool(ctx, "skills.get", withModel(map[string]any{"slug": "does-not-exist"}))
+func assertUnknownSkill(t *testing.T, ctx context.Context, adapter *Adapter) {
+	t.Helper()
+	result, err := adapter.CallTool(ctx, "skills.get", withModel(map[string]any{"slug": "does-not-exist"}))
 	if err != nil {
 		t.Fatalf("CallTool(skills.get unknown) transport error = %v", err)
 	}
-	if !missRes.IsError {
-		t.Fatalf("skills.get on unknown slug should be a tool error, got: %s", missRes.Content[0].Text)
+	if !result.IsError || !strings.Contains(result.Content[0].Text, "does-not-exist") {
+		t.Fatalf("skills.get unknown-slug response = %s, want named tool error", result.Content[0].Text)
 	}
-	if !strings.Contains(missRes.Content[0].Text, "does-not-exist") {
-		t.Fatalf("skills.get unknown-slug error should name the slug, got: %s", missRes.Content[0].Text)
+}
+
+func assertReadOnlyTools(t *testing.T, ctx context.Context, adapter *Adapter, names []string, surface string) {
+	t.Helper()
+	for _, name := range names {
+		if _, err := adapter.CallTool(ctx, name, withModel(nil)); err == nil {
+			t.Fatalf("%s unexpectedly dispatched — %s must be read-only", name, surface)
+		}
 	}
 }
 
@@ -281,7 +286,11 @@ func TestAdapterInsightsSummaryFrozenContract(t *testing.T) {
 	if res.IsError {
 		t.Fatalf("insights.summary error: %s", res.Content[0].Text)
 	}
+	assertInsightsSummaryPayload(t, res)
+}
 
+func assertInsightsSummaryPayload(t *testing.T, res ToolResult) {
+	t.Helper()
 	var payload struct {
 		SchemaVersion int `json:"schema_version"`
 		Insights      struct {
@@ -350,64 +359,65 @@ func TestAdapterInsightsSummaryScopesToResolvedProject(t *testing.T) {
 	if err := store.ImportBundle(ctx, mcpTestBundle(t), "test.yaml", "hash"); err != nil {
 		t.Fatalf("ImportBundle() error = %v", err)
 	}
-	makeProject := func(slug string, tasks int) domain.Project {
-		t.Helper()
-		root := filepath.Join(t.TempDir(), slug)
-		if err := os.MkdirAll(root, 0o755); err != nil {
-			t.Fatalf("MkdirAll(%s) error = %v", slug, err)
-		}
-		project, err := store.UpsertProject(ctx, slug, slug, root)
-		if err != nil {
-			t.Fatalf("UpsertProject(%s) error = %v", slug, err)
-		}
-		for i := 0; i < tasks; i++ {
-			if _, err := store.CreateTask(ctx, project.ID, fmt.Sprintf("%s-%d", slug, i), "", domain.Priority(2), "backlog", nil, store.Snapshot()); err != nil {
-				t.Fatalf("CreateTask(%s-%d) error = %v", slug, i, err)
-			}
-		}
-		return project
-	}
-	projectA := makeProject("alpha", 1)
-	projectB := makeProject("bravo", 2)
+	projectA := createInsightsProject(t, ctx, store, "alpha", 1)
+	projectB := createInsightsProject(t, ctx, store, "bravo", 2)
 
-	svc := agent.NewService(store, agent.ProjectSelector{CWD: projectA.RootPath})
+	svc := operation.NewService(store, operation.ProjectSelector{CWD: projectA.RootPath})
 	svc.SetSnapshot(store.Snapshot())
 	adapter := NewAdapter(svc)
 
-	wipTotal := func(args map[string]any) int {
-		t.Helper()
-		res, err := adapter.CallTool(ctx, "insights.summary", withModel(args))
-		if err != nil {
-			t.Fatalf("CallTool(insights.summary) error = %v", err)
-		}
-		if res.IsError {
-			t.Fatalf("insights.summary error: %s", res.Content[0].Text)
-		}
-		var payload struct {
-			Insights struct {
-				WIP struct {
-					Buckets []struct {
-						Count int `json:"count"`
-					} `json:"buckets"`
-				} `json:"wip"`
-			} `json:"insights"`
-		}
-		if err := json.Unmarshal([]byte(res.Content[0].Text), &payload); err != nil {
-			t.Fatalf("insights.summary payload not JSON: %v / %s", err, res.Content[0].Text)
-		}
-		total := 0
-		for _, b := range payload.Insights.WIP.Buckets {
-			total += b.Count
-		}
-		return total
-	}
-
-	if got := wipTotal(nil); got != 1 {
+	if got := insightsWIPTotal(t, ctx, adapter, nil); got != 1 {
 		t.Fatalf("insights.summary contextual WIP total = %d, want 1 (alpha only — global rollup leaked)", got)
 	}
-	if got := wipTotal(map[string]any{"project_id": projectB.ID}); got != 2 {
+	if got := insightsWIPTotal(t, ctx, adapter, map[string]any{"project_id": projectB.ID}); got != 2 {
 		t.Fatalf("insights.summary explicit project_id WIP total = %d, want 2 (bravo)", got)
 	}
+}
+
+func createInsightsProject(t *testing.T, ctx context.Context, store *snapstore.Store, slug string, taskCount int) domain.Project {
+	t.Helper()
+	root := filepath.Join(t.TempDir(), slug)
+	if err := os.MkdirAll(root, 0o755); err != nil {
+		t.Fatalf("MkdirAll(%s) error = %v", slug, err)
+	}
+	project, err := store.UpsertProject(ctx, slug, slug, root)
+	if err != nil {
+		t.Fatalf("UpsertProject(%s) error = %v", slug, err)
+	}
+	for i := 0; i < taskCount; i++ {
+		if _, err := store.CreateTask(ctx, project.ID, fmt.Sprintf("%s-%d", slug, i), "", domain.Priority(2), "backlog", nil, store.Snapshot()); err != nil {
+			t.Fatalf("CreateTask(%s-%d) error = %v", slug, i, err)
+		}
+	}
+	return project
+}
+
+func insightsWIPTotal(t *testing.T, ctx context.Context, adapter *Adapter, args map[string]any) int {
+	t.Helper()
+	result, err := adapter.CallTool(ctx, "insights.summary", withModel(args))
+	if err != nil {
+		t.Fatalf("CallTool(insights.summary) error = %v", err)
+	}
+	if result.IsError {
+		t.Fatalf("insights.summary error: %s", result.Content[0].Text)
+	}
+	var payload struct {
+		Insights struct {
+			WIP struct {
+				Buckets []struct {
+					Count int `json:"count"`
+				} `json:"buckets"`
+			} `json:"wip"`
+		} `json:"insights"`
+	}
+	if err := json.Unmarshal([]byte(result.Content[0].Text), &payload); err != nil {
+		t.Fatalf("insights.summary payload not JSON: %v / %s", err, result.Content[0].Text)
+	}
+	total := 0
+	for _, bucket := range payload.Insights.WIP.Buckets {
+		total += bucket.Count
+	}
+	return total
 }
 
 func TestAdapterCallToolRequiresAgentModel(t *testing.T) {
@@ -563,7 +573,7 @@ func TestAdapterGetPromptCacheHintToggle(t *testing.T) {
 	service := newMCPTestService(t, ctx)
 	adapter := NewAdapter(service)
 
-	service.SetSettings(agent.ServiceSettings{
+	service.SetSettings(operation.ServiceSettings{
 		RecentCommentLimit: 5,
 		IncludeWorkflow:    true,
 		CachePrompts:       true,
@@ -583,7 +593,7 @@ func TestAdapterGetPromptCacheHintToggle(t *testing.T) {
 		t.Fatalf("cache_control payload = %+v, want {type: ephemeral}", cc)
 	}
 
-	service.SetSettings(agent.ServiceSettings{
+	service.SetSettings(operation.ServiceSettings{
 		RecentCommentLimit: 5,
 		IncludeWorkflow:    true,
 		CachePrompts:       false,
@@ -684,29 +694,30 @@ func TestToolsSchemaExposesParentID(t *testing.T) {
 		if !wantTools[tool.Name] {
 			continue
 		}
-		props, ok := tool.InputSchema["properties"].(map[string]any)
-		if !ok {
-			t.Fatalf("%s: InputSchema.properties missing or wrong type: %#v", tool.Name, tool.InputSchema["properties"])
-		}
-		raw, ok := props["parent_id"]
-		if !ok {
-			t.Fatalf("%s: properties.parent_id missing", tool.Name)
-		}
-		schema, ok := raw.(map[string]any)
-		if !ok {
-			t.Fatalf("%s: parent_id schema wrong shape: %#v", tool.Name, raw)
-		}
-		typ, ok := schema["type"].([]string)
-		if !ok {
-			t.Fatalf("%s: parent_id.type = %#v, want []string{\"integer\",\"null\"}", tool.Name, schema["type"])
-		}
-		if len(typ) != 2 || typ[0] != "integer" || typ[1] != "null" {
-			t.Fatalf("%s: parent_id.type = %v, want [integer null]", tool.Name, typ)
-		}
-		desc, _ := schema["description"].(string)
-		if desc == "" {
-			t.Fatalf("%s: parent_id missing description", tool.Name)
-		}
+		assertParentIDSchema(t, tool)
+	}
+}
+
+func assertParentIDSchema(t *testing.T, tool ToolDefinition) {
+	t.Helper()
+	props, ok := tool.InputSchema["properties"].(map[string]any)
+	if !ok {
+		t.Fatalf("%s: InputSchema.properties missing or wrong type: %#v", tool.Name, tool.InputSchema["properties"])
+	}
+	raw, ok := props["parent_id"]
+	if !ok {
+		t.Fatalf("%s: properties.parent_id missing", tool.Name)
+	}
+	schema, ok := raw.(map[string]any)
+	if !ok {
+		t.Fatalf("%s: parent_id schema wrong shape: %#v", tool.Name, raw)
+	}
+	typ, ok := schema["type"].([]string)
+	if !ok || len(typ) != 2 || typ[0] != "integer" || typ[1] != "null" {
+		t.Fatalf("%s: parent_id.type = %#v, want [integer null]", tool.Name, schema["type"])
+	}
+	if desc, _ := schema["description"].(string); desc == "" {
+		t.Fatalf("%s: parent_id missing description", tool.Name)
 	}
 }
 
@@ -719,87 +730,74 @@ func TestAdapterTasksParentIDTriStateRoundTrip(t *testing.T) {
 	service := newMCPTestService(t, ctx)
 	adapter := NewAdapter(service)
 
-	// 1. Create a child of task #1 by passing parent_id as an integer.
-	createResult, err := adapter.CallTool(ctx, "tasks.create", withModel(map[string]any{
-		"description": "child of one",
-		"parent_id":   float64(1),
+	childID := createChildTask(t, ctx, adapter)
+	if got := taskListCount(t, ctx, adapter, nil); got != 2 {
+		t.Fatalf("tasks.list (no filter) returned %d, want 2", got)
+	}
+	if got := taskListCount(t, ctx, adapter, map[string]any{"parent_id": nil}); got != 1 {
+		t.Fatalf("tasks.list (roots) returned %d, want 1", got)
+	}
+	if got := taskListCount(t, ctx, adapter, map[string]any{"parent_id": float64(1)}); got != 1 {
+		t.Fatalf("tasks.list (children) returned %d, want 1", got)
+	}
+	clearTaskParent(t, ctx, adapter, childID)
+}
+
+func createChildTask(t *testing.T, ctx context.Context, adapter *Adapter) int64 {
+	t.Helper()
+	result, err := adapter.CallTool(ctx, "tasks.create", withModel(map[string]any{
+		"description": "child of one", "parent_id": float64(1),
 	}))
-	if err != nil {
-		t.Fatalf("tasks.create with parent_id error = %v", err)
+	if err != nil || result.IsError {
+		t.Fatalf("tasks.create with parent_id failed: %v / %s", err, snippet(result))
 	}
-	if createResult.IsError {
-		t.Fatalf("tasks.create with parent_id failed: %s", createResult.Content[0].Text)
-	}
-	var created map[string]any
-	if err := json.Unmarshal([]byte(createResult.Content[0].Text), &created); err != nil {
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(result.Content[0].Text), &payload); err != nil {
 		t.Fatalf("tasks.create payload not JSON: %v", err)
 	}
-	task, _ := created["task"].(map[string]any)
-	if task == nil {
-		t.Fatalf("tasks.create payload missing task: %v", created)
+	task, _ := payload["task"].(map[string]any)
+	childID, _ := task["id"].(float64)
+	if task == nil || childID == 0 {
+		t.Fatalf("tasks.create payload missing task.id: %v", payload)
 	}
-	childIDFloat, _ := task["id"].(float64)
-	childID := int64(childIDFloat)
-	if childID == 0 {
-		t.Fatalf("tasks.create payload missing task.id: %v", task)
-	}
-	if pidFloat, ok := task["parent_id"].(float64); !ok || int64(pidFloat) != 1 {
+	parentID, _ := task["parent_id"].(float64)
+	if int64(parentID) != 1 {
 		t.Fatalf("created task parent_id = %v, want 1", task["parent_id"])
 	}
+	return int64(childID)
+}
 
-	// 2. tasks.list with parent_id absent returns every task (the new child
-	// and the seeded root).
-	listAll, err := adapter.CallTool(ctx, "tasks.list", withModel(map[string]any{}))
-	if err != nil || listAll.IsError {
-		t.Fatalf("tasks.list (no filter) failed: %v / %s", err, listAll.Content[0].Text)
+func taskListCount(t *testing.T, ctx context.Context, adapter *Adapter, args map[string]any) int {
+	t.Helper()
+	result, err := adapter.CallTool(ctx, "tasks.list", withModel(args))
+	if err != nil || result.IsError {
+		t.Fatalf("tasks.list failed: %v / %s", err, snippet(result))
 	}
-	var listAllPayload map[string]any
-	_ = json.Unmarshal([]byte(listAll.Content[0].Text), &listAllPayload)
-	allTasks, _ := listAllPayload["tasks"].([]any)
-	if len(allTasks) != 2 {
-		t.Fatalf("tasks.list (no filter) returned %d, want 2", len(allTasks))
+	var payload struct {
+		Tasks []any `json:"tasks"`
 	}
+	if err := json.Unmarshal([]byte(result.Content[0].Text), &payload); err != nil {
+		t.Fatalf("tasks.list payload not JSON: %v", err)
+	}
+	return len(payload.Tasks)
+}
 
-	// 3. tasks.list with parent_id=null returns roots only (the seeded
-	// task #1; the child is filtered out).
-	listRoots, err := adapter.CallTool(ctx, "tasks.list", withModel(map[string]any{"parent_id": nil}))
-	if err != nil || listRoots.IsError {
-		t.Fatalf("tasks.list (roots) failed: %v / %s", err, listRoots.Content[0].Text)
-	}
-	var listRootsPayload map[string]any
-	_ = json.Unmarshal([]byte(listRoots.Content[0].Text), &listRootsPayload)
-	rootTasks, _ := listRootsPayload["tasks"].([]any)
-	if len(rootTasks) != 1 {
-		t.Fatalf("tasks.list (roots) returned %d, want 1 (sub-task should be filtered out)", len(rootTasks))
-	}
-
-	// 4. tasks.list with parent_id=<id> returns direct children only.
-	listChildren, err := adapter.CallTool(ctx, "tasks.list", withModel(map[string]any{"parent_id": float64(1)}))
-	if err != nil || listChildren.IsError {
-		t.Fatalf("tasks.list (children) failed: %v / %s", err, listChildren.Content[0].Text)
-	}
-	var listChildrenPayload map[string]any
-	_ = json.Unmarshal([]byte(listChildren.Content[0].Text), &listChildrenPayload)
-	childTasks, _ := listChildrenPayload["tasks"].([]any)
-	if len(childTasks) != 1 {
-		t.Fatalf("tasks.list (children) returned %d, want 1", len(childTasks))
-	}
-
-	// 5. tasks.edit with parent_id=null clears the parent (re-roots the
-	// child). Bucket policy permits edit in the planning bucket — the
-	// fixture parent lives in `backlog` so the inherited bucket is OK.
-	editResult, err := adapter.CallTool(ctx, "tasks.edit", withModel(map[string]any{
-		"task_id":   childID,
-		"parent_id": nil,
+func clearTaskParent(t *testing.T, ctx context.Context, adapter *Adapter, taskID int64) {
+	t.Helper()
+	result, err := adapter.CallTool(ctx, "tasks.edit", withModel(map[string]any{
+		"task_id": taskID, "parent_id": nil,
 	}))
-	if err != nil || editResult.IsError {
-		t.Fatalf("tasks.edit (clear) failed: %v / %s", err, editResult.Content[0].Text)
+	if err != nil || result.IsError {
+		t.Fatalf("tasks.edit (clear) failed: %v / %s", err, snippet(result))
 	}
-	var editedPayload map[string]any
-	_ = json.Unmarshal([]byte(editResult.Content[0].Text), &editedPayload)
-	editedTask, _ := editedPayload["task"].(map[string]any)
-	if _, present := editedTask["parent_id"]; present {
-		t.Fatalf("tasks.edit (clear) left parent_id on payload: %v", editedTask)
+	var payload struct {
+		Task map[string]any `json:"task"`
+	}
+	if err := json.Unmarshal([]byte(result.Content[0].Text), &payload); err != nil {
+		t.Fatalf("tasks.edit payload not JSON: %v", err)
+	}
+	if _, present := payload.Task["parent_id"]; present {
+		t.Fatalf("tasks.edit (clear) left parent_id on payload: %v", payload.Task)
 	}
 }
 
@@ -824,7 +822,7 @@ func TestServeHandlesToolsList(t *testing.T) {
 	}
 }
 
-func newMCPTestService(t *testing.T, ctx context.Context) *agent.Service {
+func newMCPTestService(t *testing.T, ctx context.Context) *operation.Service {
 	t.Helper()
 	store := snapstore.Open(t, filepath.Join(t.TempDir(), "omakiten.db"))
 	if err := store.ImportBundle(ctx, mcpTestBundle(t), "test.yaml", "hash"); err != nil {
@@ -841,7 +839,7 @@ func newMCPTestService(t *testing.T, ctx context.Context) *agent.Service {
 	if _, err := store.CreateTask(ctx, project.ID, "Task", "", domain.Priority(2), "backlog", nil, store.Snapshot()); err != nil {
 		t.Fatalf("CreateTask() error = %v", err)
 	}
-	svc := agent.NewService(store, agent.ProjectSelector{CWD: root})
+	svc := operation.NewService(store, operation.ProjectSelector{CWD: root})
 	svc.SetSnapshot(store.Snapshot())
 	return svc
 }
@@ -857,14 +855,14 @@ func TestAdapterServiceResolverRoutesByProjectArg(t *testing.T) {
 	storeA, projectA := newMCPProjectFixture(t, ctx, "alpha")
 	storeB, projectB := newMCPProjectFixture(t, ctx, "bravo")
 
-	defaultService := agent.NewService(storeA, agent.ProjectSelector{ProjectID: projectA.ID})
+	defaultService := operation.NewService(storeA, operation.ProjectSelector{ProjectID: projectA.ID})
 	defaultService.SetSnapshot(storeA.Snapshot())
-	projectBService := agent.NewService(storeB, agent.ProjectSelector{ProjectID: projectB.ID})
+	projectBService := operation.NewService(storeB, operation.ProjectSelector{ProjectID: projectB.ID})
 	projectBService.SetSnapshot(storeB.Snapshot())
 
 	adapter := NewAdapter(defaultService)
 	var observed []string
-	adapter.SetServiceResolver(func(_ context.Context, project string, projectID int64) (*agent.Service, error) {
+	adapter.SetServiceResolver(func(_ context.Context, project string, projectID int64) (*operation.Service, error) {
 		observed = append(observed, fmt.Sprintf("project=%q id=%d", project, projectID))
 		if project == "bravo" || projectID == projectB.ID {
 			return projectBService, nil
@@ -981,13 +979,13 @@ func TestAdapterServiceResolverIsolatesGuards(t *testing.T) {
 	storeA, projectA, taskA := newMCPProjectWithBundle(t, ctx, "alpha", bundleA)
 	storeB, projectB, taskB := newMCPProjectWithBundle(t, ctx, "bravo", bundleB)
 
-	serviceA := agent.NewService(storeA, agent.ProjectSelector{ProjectID: projectA.ID})
+	serviceA := operation.NewService(storeA, operation.ProjectSelector{ProjectID: projectA.ID})
 	serviceA.SetSnapshot(storeA.Snapshot())
-	serviceB := agent.NewService(storeB, agent.ProjectSelector{ProjectID: projectB.ID})
+	serviceB := operation.NewService(storeB, operation.ProjectSelector{ProjectID: projectB.ID})
 	serviceB.SetSnapshot(storeB.Snapshot())
 
 	adapter := NewAdapter(serviceA)
-	adapter.SetServiceResolver(func(_ context.Context, project string, _ int64) (*agent.Service, error) {
+	adapter.SetServiceResolver(func(_ context.Context, project string, _ int64) (*operation.Service, error) {
 		switch project {
 		case "alpha":
 			return serviceA, nil
@@ -1050,18 +1048,18 @@ func TestAdapterServiceResolverIsolatesSettings(t *testing.T) {
 		}
 	}
 
-	serviceA := agent.NewService(storeA, agent.ProjectSelector{ProjectID: projectA.ID})
+	serviceA := operation.NewService(storeA, operation.ProjectSelector{ProjectID: projectA.ID})
 	serviceA.SetSnapshot(storeA.Snapshot())
 	includeFalse := false
-	serviceA.SetSettings(agent.ServiceSettings{RecentCommentLimit: 1, IncludeWorkflow: false, CachePrompts: false})
+	serviceA.SetSettings(operation.ServiceSettings{RecentCommentLimit: 1, IncludeWorkflow: false, CachePrompts: false})
 	_ = includeFalse
 
-	serviceB := agent.NewService(storeB, agent.ProjectSelector{ProjectID: projectB.ID})
+	serviceB := operation.NewService(storeB, operation.ProjectSelector{ProjectID: projectB.ID})
 	serviceB.SetSnapshot(storeB.Snapshot())
-	serviceB.SetSettings(agent.ServiceSettings{RecentCommentLimit: 10, IncludeWorkflow: false, CachePrompts: false})
+	serviceB.SetSettings(operation.ServiceSettings{RecentCommentLimit: 10, IncludeWorkflow: false, CachePrompts: false})
 
 	adapter := NewAdapter(serviceA)
-	adapter.SetServiceResolver(func(_ context.Context, project string, _ int64) (*agent.Service, error) {
+	adapter.SetServiceResolver(func(_ context.Context, project string, _ int64) (*operation.Service, error) {
 		switch project {
 		case "alpha":
 			return serviceA, nil
@@ -1123,13 +1121,13 @@ func TestAdapterServiceResolverIsolatesTemplateCatalog(t *testing.T) {
 	storeA, projectA, _ := newMCPProjectWithBundle(t, ctx, "alpha", bundleA)
 	storeB, projectB, _ := newMCPProjectWithBundle(t, ctx, "bravo", bundleB)
 
-	serviceA := agent.NewService(storeA, agent.ProjectSelector{ProjectID: projectA.ID})
+	serviceA := operation.NewService(storeA, operation.ProjectSelector{ProjectID: projectA.ID})
 	serviceA.SetSnapshot(storeA.Snapshot())
-	serviceB := agent.NewService(storeB, agent.ProjectSelector{ProjectID: projectB.ID})
+	serviceB := operation.NewService(storeB, operation.ProjectSelector{ProjectID: projectB.ID})
 	serviceB.SetSnapshot(storeB.Snapshot())
 
 	adapter := NewAdapter(serviceA)
-	adapter.SetServiceResolver(func(_ context.Context, project string, _ int64) (*agent.Service, error) {
+	adapter.SetServiceResolver(func(_ context.Context, project string, _ int64) (*operation.Service, error) {
 		switch project {
 		case "alpha":
 			return serviceA, nil
@@ -1214,28 +1212,15 @@ func TestAdapterServiceResolverConcurrentRouting(t *testing.T) {
 
 	storeA, projectA, _ := newMCPProjectWithBundle(t, ctx, "alpha", mcpTestBundle(t))
 	storeB, projectB, _ := newMCPProjectWithBundle(t, ctx, "bravo", mcpTestBundle(t))
+	seedResolverTasks(t, ctx, storeA, projectA, storeB, projectB)
 
-	// Plant extra tasks so the backlog count differs per project. A
-	// resolver collapse would surface as both projects reporting the
-	// same count regardless of slug.
-	if _, err := storeA.CreateTask(ctx, projectA.ID, "T-alpha-extra", "", domain.Priority(2), "backlog", nil, storeA.Snapshot()); err != nil {
-		t.Fatalf("CreateTask(alpha extra): %v", err)
-	}
-	for i := 0; i < 2; i++ {
-		if _, err := storeB.CreateTask(ctx, projectB.ID, fmt.Sprintf("T-bravo-extra-%d", i), "", domain.Priority(2), "backlog", nil, storeB.Snapshot()); err != nil {
-			t.Fatalf("CreateTask(bravo extra %d): %v", i, err)
-		}
-	}
-	const alphaBacklogCount = 2 // seeded T-alpha + T-alpha-extra
-	const bravoBacklogCount = 3 // seeded T-bravo + 2 extras
-
-	serviceA := agent.NewService(storeA, agent.ProjectSelector{ProjectID: projectA.ID})
+	serviceA := operation.NewService(storeA, operation.ProjectSelector{ProjectID: projectA.ID})
 	serviceA.SetSnapshot(storeA.Snapshot())
-	serviceB := agent.NewService(storeB, agent.ProjectSelector{ProjectID: projectB.ID})
+	serviceB := operation.NewService(storeB, operation.ProjectSelector{ProjectID: projectB.ID})
 	serviceB.SetSnapshot(storeB.Snapshot())
 
 	adapter := NewAdapter(serviceA)
-	adapter.SetServiceResolver(func(_ context.Context, project string, _ int64) (*agent.Service, error) {
+	adapter.SetServiceResolver(func(_ context.Context, project string, _ int64) (*operation.Service, error) {
 		switch project {
 		case "alpha":
 			return serviceA, nil
@@ -1251,57 +1236,7 @@ func TestAdapterServiceResolverConcurrentRouting(t *testing.T) {
 	errs := make(chan error, workers)
 	for i := 0; i < workers; i++ {
 		wg.Add(1)
-		go func(id int) {
-			defer wg.Done()
-			project := "alpha"
-			wantBacklog := alphaBacklogCount
-			if id%2 == 1 {
-				project = "bravo"
-				wantBacklog = bravoBacklogCount
-			}
-			for j := 0; j < iters; j++ {
-				result, err := adapter.CallTool(ctx, "project.overview", withModel(map[string]any{"project": project}))
-				if err != nil {
-					errs <- fmt.Errorf("worker %d iter %d call: %w", id, j, err)
-					return
-				}
-				if result.IsError {
-					errs <- fmt.Errorf("worker %d iter %d error: %s", id, j, result.Content[0].Text)
-					return
-				}
-				var payload struct {
-					Project struct {
-						Slug string `json:"slug"`
-					} `json:"project"`
-					TaskBuckets []struct {
-						BucketKey string `json:"bucket_key"`
-						Count     int    `json:"count"`
-					} `json:"task_buckets"`
-				}
-				if err := json.Unmarshal([]byte(result.Content[0].Text), &payload); err != nil {
-					errs <- fmt.Errorf("worker %d iter %d decode: %w", id, j, err)
-					return
-				}
-				if payload.Project.Slug != project {
-					errs <- fmt.Errorf("worker %d iter %d crosstalk: got %q want %q", id, j, payload.Project.Slug, project)
-					return
-				}
-				// Routing isolation: the bucket count comes from the
-				// resolver-selected store, NOT the request args, so a
-				// silent resolver collapse fails this assertion.
-				gotBacklog := -1
-				for _, b := range payload.TaskBuckets {
-					if b.BucketKey == "backlog" {
-						gotBacklog = b.Count
-						break
-					}
-				}
-				if gotBacklog != wantBacklog {
-					errs <- fmt.Errorf("worker %d iter %d project %q backlog count = %d, want %d (resolver may have collapsed to wrong store)", id, j, project, gotBacklog, wantBacklog)
-					return
-				}
-			}
-		}(i)
+		go runResolverWorker(ctx, adapter, i, iters, &wg, errs)
 	}
 	wg.Wait()
 	close(errs)
@@ -1310,6 +1245,64 @@ func TestAdapterServiceResolverConcurrentRouting(t *testing.T) {
 			t.Fatalf("concurrent routing failure: %v", err)
 		}
 	}
+}
+
+func seedResolverTasks(t *testing.T, ctx context.Context, storeA *snapstore.Store, projectA domain.Project, storeB *snapstore.Store, projectB domain.Project) {
+	t.Helper()
+	if _, err := storeA.CreateTask(ctx, projectA.ID, "T-alpha-extra", "", domain.Priority(2), "backlog", nil, storeA.Snapshot()); err != nil {
+		t.Fatalf("CreateTask(alpha extra): %v", err)
+	}
+	for i := 0; i < 2; i++ {
+		if _, err := storeB.CreateTask(ctx, projectB.ID, fmt.Sprintf("T-bravo-extra-%d", i), "", domain.Priority(2), "backlog", nil, storeB.Snapshot()); err != nil {
+			t.Fatalf("CreateTask(bravo extra %d): %v", i, err)
+		}
+	}
+}
+
+func runResolverWorker(ctx context.Context, adapter *Adapter, id, iters int, wg *sync.WaitGroup, errs chan<- error) {
+	defer wg.Done()
+	project, wantBacklog := "alpha", 2
+	if id%2 == 1 {
+		project, wantBacklog = "bravo", 3
+	}
+	for j := 0; j < iters; j++ {
+		result, err := adapter.CallTool(ctx, "project.overview", withModel(map[string]any{"project": project}))
+		if err != nil {
+			errs <- fmt.Errorf("worker %d iter %d call: %w", id, j, err)
+			return
+		}
+		if err := validateResolverResult(result, project, wantBacklog); err != nil {
+			errs <- fmt.Errorf("worker %d iter %d: %w", id, j, err)
+			return
+		}
+	}
+}
+
+func validateResolverResult(result ToolResult, project string, wantBacklog int) error {
+	if result.IsError {
+		return fmt.Errorf("tool error: %s", snippet(result))
+	}
+	var payload struct {
+		Project struct {
+			Slug string `json:"slug"`
+		} `json:"project"`
+		TaskBuckets []struct {
+			BucketKey string `json:"bucket_key"`
+			Count     int    `json:"count"`
+		} `json:"task_buckets"`
+	}
+	if err := json.Unmarshal([]byte(result.Content[0].Text), &payload); err != nil {
+		return fmt.Errorf("decode: %w", err)
+	}
+	if payload.Project.Slug != project {
+		return fmt.Errorf("crosstalk: got %q want %q", payload.Project.Slug, project)
+	}
+	for _, bucket := range payload.TaskBuckets {
+		if bucket.BucketKey == "backlog" && bucket.Count == wantBacklog {
+			return nil
+		}
+	}
+	return fmt.Errorf("project %q backlog count does not equal %d", project, wantBacklog)
 }
 
 // TestAdapterDefaultServiceProviderTracksFreshService asserts the
@@ -1324,14 +1317,14 @@ func TestAdapterDefaultServiceProviderTracksFreshService(t *testing.T) {
 	storeA, projectA, _ := newMCPProjectWithBundle(t, ctx, "alpha", mcpTestBundle(t))
 	storeB, projectB, _ := newMCPProjectWithBundle(t, ctx, "bravo", mcpTestBundle(t))
 
-	svcA := agent.NewService(storeA, agent.ProjectSelector{ProjectID: projectA.ID, CWD: filepath.Join(t.TempDir(), "a")})
+	svcA := operation.NewService(storeA, operation.ProjectSelector{ProjectID: projectA.ID, CWD: filepath.Join(t.TempDir(), "a")})
 	svcA.SetSnapshot(storeA.Snapshot())
-	svcB := agent.NewService(storeB, agent.ProjectSelector{ProjectID: projectB.ID, CWD: filepath.Join(t.TempDir(), "b")})
+	svcB := operation.NewService(storeB, operation.ProjectSelector{ProjectID: projectB.ID, CWD: filepath.Join(t.TempDir(), "b")})
 	svcB.SetSnapshot(storeB.Snapshot())
 
 	active := svcA
 	adapter := NewAdapter(svcA)
-	adapter.SetDefaultServiceProvider(func() *agent.Service { return active })
+	adapter.SetDefaultServiceProvider(func() *operation.Service { return active })
 
 	resA, err := adapter.CallTool(ctx, "project.overview", withModel(nil))
 	if err != nil || resA.IsError {
@@ -1415,12 +1408,12 @@ func mcpTestBundle(t *testing.T) config.Bundle {
 	bundle, _ := testfixtures.LoadBundle(t, "default.yaml")
 	bundle.Skills = []config.Skill{{Slug: "go", Name: "Go", Description: "Idiomatic Go.", Body: "Write idiomatic, well-tested Go."}}
 	bundle.Personas = []config.Persona{{
-		Slug:        "agent",
-		Name:        "Agent",
-		Description: "Test agent persona.",
-		Body:        "You are the test agent.",
-		Skills:      []string{"go"},
-		Laws:        []string{"scope"},
+		Slug:            "agent",
+		Name:            "Agent",
+		Description:     "Test agent persona.",
+		Body:            "You are the test agent.",
+		SkillRepertoire: []string{"go"},
+		Laws:            []string{"scope"},
 	}}
 	bundle.Laws = []config.Law{{Slug: "scope", Name: "Scope", Severity: "error", Body: "Stay scoped.", Scope: "global"}}
 	return bundle
@@ -1434,79 +1427,76 @@ func TestAdapterPersonasAndLawsToolsReadOnly(t *testing.T) {
 	service := newMCPTestService(t, ctx)
 	adapter := NewAdapter(service)
 
-	for _, name := range []string{"personas.create", "personas.edit", "laws.create"} {
-		if _, err := adapter.CallTool(ctx, name, withModel(nil)); err == nil {
-			t.Fatalf("%s unexpectedly dispatched — catalog must be read-only", name)
-		}
-	}
+	assertReadOnlyTools(t, ctx, adapter, []string{"personas.create", "personas.edit", "laws.create"}, "catalog")
+	assertPersonaList(t, ctx, adapter)
 
-	listRes, err := adapter.CallTool(ctx, "personas.list", withModel(nil))
-	if err != nil {
-		t.Fatalf("CallTool(personas.list) error = %v", err)
+	assertPersonaGet(t, ctx, adapter)
+	assertLawTools(t, ctx, adapter)
+}
+
+func assertPersonaList(t *testing.T, ctx context.Context, adapter *Adapter) {
+	t.Helper()
+	result, err := adapter.CallTool(ctx, "personas.list", withModel(nil))
+	if err != nil || result.IsError {
+		t.Fatalf("personas.list failed: %v / %s", err, snippet(result))
 	}
-	if listRes.IsError {
-		t.Fatalf("personas.list error: %s", listRes.Content[0].Text)
-	}
-	var listPayload struct {
+	var payload struct {
 		Personas []struct {
 			Slug string `json:"slug"`
 			Body string `json:"body"`
 		} `json:"personas"`
 	}
-	if err := json.Unmarshal([]byte(listRes.Content[0].Text), &listPayload); err != nil {
+	if err := json.Unmarshal([]byte(result.Content[0].Text), &payload); err != nil {
 		t.Fatalf("personas.list payload not JSON: %v", err)
 	}
-	if len(listPayload.Personas) == 0 {
+	if len(payload.Personas) == 0 {
 		t.Fatal("personas.list returned no personas")
 	}
-	for _, p := range listPayload.Personas {
-		if p.Body != "" {
-			t.Fatalf("personas.list leaked body for %q", p.Slug)
+	for _, persona := range payload.Personas {
+		if persona.Body != "" {
+			t.Fatalf("personas.list leaked body for %q", persona.Slug)
 		}
 	}
+}
 
-	getRes, err := adapter.CallTool(ctx, "personas.get", withModel(map[string]any{"slug": "agent"}))
-	if err != nil {
-		t.Fatalf("CallTool(personas.get) error = %v", err)
+func assertPersonaGet(t *testing.T, ctx context.Context, adapter *Adapter) {
+	t.Helper()
+	result, err := adapter.CallTool(ctx, "personas.get", withModel(map[string]any{"slug": "agent"}))
+	if err != nil || result.IsError {
+		t.Fatalf("personas.get failed: %v / %s", err, snippet(result))
 	}
-	if getRes.IsError {
-		t.Fatalf("personas.get error: %s", getRes.Content[0].Text)
-	}
-	var getPayload struct {
+	var payload struct {
 		Persona struct {
-			Slug string `json:"slug"`
 			Body string `json:"body"`
 			Laws []struct {
 				Body string `json:"body"`
 			} `json:"laws"`
-			Skills []struct {
+			SkillRepertoire []struct {
 				Body string `json:"body"`
-			} `json:"skills"`
+			} `json:"skill_repertoire"`
 		} `json:"persona"`
 	}
-	if err := json.Unmarshal([]byte(getRes.Content[0].Text), &getPayload); err != nil {
+	if err := json.Unmarshal([]byte(result.Content[0].Text), &payload); err != nil {
 		t.Fatalf("personas.get payload not JSON: %v", err)
 	}
-	if getPayload.Persona.Body == "" || len(getPayload.Persona.Laws) == 0 || getPayload.Persona.Laws[0].Body == "" {
-		t.Fatalf("personas.get missing expanded payload: %#v", getPayload.Persona)
+	if payload.Persona.Body == "" || len(payload.Persona.Laws) == 0 || payload.Persona.Laws[0].Body == "" || len(payload.Persona.SkillRepertoire) == 0 || payload.Persona.SkillRepertoire[0].Body == "" {
+		t.Fatalf("personas.get missing expanded payload: %#v", payload.Persona)
 	}
-	if len(getPayload.Persona.Skills) == 0 || getPayload.Persona.Skills[0].Body == "" {
-		t.Fatalf("personas.get missing expanded skills: %#v", getPayload.Persona.Skills)
-	}
+}
 
-	lawList, err := adapter.CallTool(ctx, "laws.list", withModel(nil))
-	if err != nil {
-		t.Fatalf("CallTool(laws.list) error = %v", err)
-	}
-	if lawList.IsError {
-		t.Fatalf("laws.list error: %s", lawList.Content[0].Text)
-	}
-	lawGet, err := adapter.CallTool(ctx, "laws.get", withModel(map[string]any{"slug": "scope"}))
-	if err != nil {
-		t.Fatalf("CallTool(laws.get) error = %v", err)
-	}
-	if lawGet.IsError {
-		t.Fatalf("laws.get error: %s", lawGet.Content[0].Text)
+func assertLawTools(t *testing.T, ctx context.Context, adapter *Adapter) {
+	t.Helper()
+	for _, call := range []struct {
+		name string
+		args map[string]any
+	}{
+		{name: "laws.list"},
+		{name: "laws.get", args: map[string]any{"slug": "scope"}},
+	} {
+		result, err := adapter.CallTool(ctx, call.name, withModel(call.args))
+		if err != nil || result.IsError {
+			t.Fatalf("%s failed: %v / %s", call.name, err, snippet(result))
+		}
 	}
 }
 
@@ -1518,65 +1508,66 @@ func TestAdapterCommentsScopeDispatch(t *testing.T) {
 	service := newMCPTestService(t, ctx)
 	adapter := NewAdapter(service)
 
-	add := func(args map[string]any) map[string]any {
-		t.Helper()
-		result, err := adapter.CallTool(ctx, "comments.add", withModel(args))
-		if err != nil {
-			t.Fatalf("CallTool(comments.add) error = %v", err)
-		}
-		if result.IsError {
-			t.Fatalf("comments.add IsError = true, content = %s", result.Content[0].Text)
-		}
-		var payload map[string]any
-		if err := json.Unmarshal([]byte(result.Content[0].Text), &payload); err != nil {
-			t.Fatalf("comments.add content not JSON: %v", err)
-		}
-		comment, _ := payload["comment"].(map[string]any)
-		if comment == nil {
-			t.Fatalf("comments.add payload missing comment: %#v", payload)
-		}
-		return comment
-	}
-
-	taskC := add(map[string]any{"task_id": 1, "body": "task note", "author_type": "agent"})
+	taskC := addScopedComment(t, ctx, adapter, map[string]any{"task_id": 1, "body": "task note", "author_type": "agent"})
 	if taskC["scope"] != "task" {
 		t.Fatalf("task comment scope = %v, want task", taskC["scope"])
 	}
 
-	projC := add(map[string]any{"scope": "project", "body": "project recap", "author_type": "agent", "kind": "recap"})
+	projC := addScopedComment(t, ctx, adapter, map[string]any{"scope": "project", "body": "project recap", "author_type": "agent", "kind": "recap"})
 	if projC["scope"] != "project" || projC["kind"] != "recap" {
 		t.Fatalf("project comment = %#v, want scope=project kind=recap", projC)
 	}
 
-	uniC := add(map[string]any{"scope": "universal", "body": "global note", "author_type": "agent"})
+	uniC := addScopedComment(t, ctx, adapter, map[string]any{"scope": "universal", "body": "global note", "author_type": "agent"})
 	if uniC["scope"] != "universal" {
 		t.Fatalf("universal comment scope = %v, want universal", uniC["scope"])
 	}
 
-	// project scope must not carry task_id.
-	bad, err := adapter.CallTool(ctx, "comments.add", withModel(map[string]any{"scope": "project", "task_id": 1, "body": "x"}))
+	assertInvalidScopedComment(t, ctx, adapter)
+	assertScopedCommentList(t, ctx, adapter)
+}
+
+func addScopedComment(t *testing.T, ctx context.Context, adapter *Adapter, args map[string]any) map[string]any {
+	t.Helper()
+	result, err := adapter.CallTool(ctx, "comments.add", withModel(args))
+	if err != nil || result.IsError {
+		t.Fatalf("comments.add failed: %v / %s", err, snippet(result))
+	}
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(result.Content[0].Text), &payload); err != nil {
+		t.Fatalf("comments.add content not JSON: %v", err)
+	}
+	comment, _ := payload["comment"].(map[string]any)
+	if comment == nil {
+		t.Fatalf("comments.add payload missing comment: %#v", payload)
+	}
+	return comment
+}
+
+func assertInvalidScopedComment(t *testing.T, ctx context.Context, adapter *Adapter) {
+	t.Helper()
+	result, err := adapter.CallTool(ctx, "comments.add", withModel(map[string]any{"scope": "project", "task_id": 1, "body": "x"}))
 	if err != nil {
 		t.Fatalf("CallTool(comments.add bad) error = %v", err)
 	}
-	if !bad.IsError {
-		t.Fatalf("comments.add(project+task_id) IsError = false, want validation failure")
+	if !result.IsError {
+		t.Fatal("comments.add(project+task_id) should return validation failure")
 	}
+}
 
-	// Filtered list: kind=recap returns exactly the project recap row.
-	listResult, err := adapter.CallTool(ctx, "comments.list", withModel(map[string]any{"kind": "recap"}))
-	if err != nil {
-		t.Fatalf("CallTool(comments.list) error = %v", err)
+func assertScopedCommentList(t *testing.T, ctx context.Context, adapter *Adapter) {
+	t.Helper()
+	result, err := adapter.CallTool(ctx, "comments.list", withModel(map[string]any{"kind": "recap"}))
+	if err != nil || result.IsError {
+		t.Fatalf("comments.list failed: %v / %s", err, snippet(result))
 	}
-	if listResult.IsError {
-		t.Fatalf("comments.list IsError = true, content = %s", listResult.Content[0].Text)
-	}
-	var listPayload struct {
+	var payload struct {
 		Comments []map[string]any `json:"comments"`
 	}
-	if err := json.Unmarshal([]byte(listResult.Content[0].Text), &listPayload); err != nil {
+	if err := json.Unmarshal([]byte(result.Content[0].Text), &payload); err != nil {
 		t.Fatalf("comments.list content not JSON: %v", err)
 	}
-	if len(listPayload.Comments) != 1 || listPayload.Comments[0]["kind"] != "recap" {
-		t.Fatalf("comments.list(kind=recap) = %#v, want one recap row", listPayload.Comments)
+	if len(payload.Comments) != 1 || payload.Comments[0]["kind"] != "recap" {
+		t.Fatalf("comments.list(kind=recap) = %#v, want one recap row", payload.Comments)
 	}
 }

@@ -204,116 +204,113 @@ func (s *TaskService) Edit(ctx context.Context, project domain.ProjectContext, t
 		return
 	}
 
+	update, hasFieldEdit, err := s.normalizeTaskEdit(update)
+	if err != nil {
+		return
+	}
+	var before domain.Task
+	if hasFieldEdit {
+		before, err = s.authorizeTaskFieldEdit(ctx, project, taskID)
+		if err != nil {
+			return
+		}
+	}
+
+	task, err = s.applyTaskEdit(ctx, project, taskID, update, hasFieldEdit, before)
+
+	return
+}
+
+func (s *TaskService) applyTaskEdit(ctx context.Context, project domain.ProjectContext, taskID int64, update domain.TaskUpdate, hasFieldEdit bool, before domain.Task) (domain.Task, error) {
+	var task domain.Task
+	var err error
+	if update.BucketKey != "" {
+		task, err = s.workflow.MoveTask(ctx, project, taskID, update.BucketKey)
+		if err != nil {
+			return domain.Task{}, err
+		}
+	}
+	if hasFieldEdit {
+		task, err = s.persistTaskFields(ctx, project, taskID, update, before)
+		if err != nil {
+			return domain.Task{}, err
+		}
+	}
+	if update.ChangeParent {
+		if err := s.applyParentChange(ctx, project, taskID, update.NewParentID); err != nil {
+			return domain.Task{}, err
+		}
+		// Re-read because a parent change can recompute depth and rebind the bucket.
+		task, err = s.taskByID(ctx, project, taskID)
+		if err != nil {
+			return domain.Task{}, err
+		}
+	}
+	return task, nil
+}
+
+func (s *TaskService) normalizeTaskEdit(update domain.TaskUpdate) (domain.TaskUpdate, bool, error) {
 	changed := false
 	if update.Title != nil {
 		title := strings.TrimSpace(*update.Title)
 		if title == "" {
-			err = domain.NewError(domain.ErrValidation, "task title is required", nil)
-			return
+			return update, false, domain.NewError(domain.ErrValidation, "task title is required", nil)
 		}
-		if err = domain.ValidateTaskTitle(title); err != nil {
-			return
+		if err := domain.ValidateTaskTitle(title); err != nil {
+			return update, false, err
 		}
-		update.Title = &title
-		changed = true
+		update.Title, changed = &title, true
 	}
 	if update.Description != nil {
 		description := strings.TrimSpace(*update.Description)
-		if err = domain.ValidateTaskDescription(description); err != nil {
-			return
+		if err := domain.ValidateTaskDescription(description); err != nil {
+			return update, false, err
 		}
-		update.Description = &description
-		changed = true
+		update.Description, changed = &description, true
 	}
 	if update.Priority != nil {
-		// Edit callers already hold a resolved Priority id (TUI cycles
-		// through the configured table; CLI/MCP went through
-		// resolvePriorityInput before reaching here). The service still
-		// re-checks the id is registered so a stale id (priority entry
-		// removed since the caller cached it) is rejected loud rather
-		// than silently passed through to the store.
 		if !s.isPriorityRegistered(*update.Priority) {
-			err = domain.NewError(domain.ErrValidation,
-				"priority id is not in config.priorities",
-				map[string]any{"priority": int(*update.Priority)})
-			return
+			return update, false, domain.NewError(domain.ErrValidation, "priority id is not in config.priorities", map[string]any{"priority": int(*update.Priority)})
 		}
 		changed = true
 	}
-
 	update.BucketKey = strings.TrimSpace(update.BucketKey)
-	if update.BucketKey != "" {
-		changed = true
-	}
-	if update.ChangeParent {
-		changed = true
-	}
+	changed = changed || update.BucketKey != "" || update.ChangeParent
 	if !changed {
-		err = domain.NewError(domain.ErrValidation, "at least one task update is required", nil)
-		return
+		return update, false, domain.NewError(domain.ErrValidation, "at least one task update is required", nil)
 	}
+	return update, update.Title != nil || update.Description != nil || update.Priority != nil, nil
+}
 
-	hasFieldEdit := update.Title != nil || update.Description != nil || update.Priority != nil
-	var before domain.Task
-	if hasFieldEdit {
-		before, err = s.taskByID(ctx, project, taskID)
-		if err != nil {
-			return
-		}
-		if before.State == domain.TaskStateArchived {
-			err = domain.NewError(domain.ErrValidation, "task is archived; unarchive before editing", map[string]any{"task_id": taskID, "hint": "call tasks.unarchive(task_id) first"})
-			return
-		}
-		var allowed bool
-		var hint string
-		allowed, hint, err = s.workflow.ResolveBucketPermissions(ctx, project, taskID, EntityTask, PermissionEdit)
-		if err != nil {
-			return
-		}
-		if !allowed {
-			s.workflow.Evaluator().EmitViolatedForTask(ctx, project.ID, before, s.snap.For(before),
-				GuardOperationTaskEdit, GuardRulePermissions, hint,
-				map[string]any{"task_id": taskID, "entity": EntityTask, "operation": PermissionEdit})
-			err = domain.NewError(domain.ErrGuardViolation, hint, map[string]any{"task_id": taskID, "hint": hint, "entity": EntityTask, "operation": PermissionEdit})
-			return
-		}
+func (s *TaskService) authorizeTaskFieldEdit(ctx context.Context, project domain.ProjectContext, taskID int64) (domain.Task, error) {
+	before, err := s.taskByID(ctx, project, taskID)
+	if err != nil {
+		return domain.Task{}, err
 	}
+	if before.State == domain.TaskStateArchived {
+		return domain.Task{}, domain.NewError(domain.ErrValidation, "task is archived; unarchive before editing", map[string]any{"task_id": taskID, "hint": "call tasks.unarchive(task_id) first"})
+	}
+	allowed, hint, err := s.workflow.ResolveBucketPermissions(ctx, project, taskID, EntityTask, PermissionEdit)
+	if err != nil {
+		return domain.Task{}, err
+	}
+	if !allowed {
+		s.workflow.Evaluator().EmitViolatedForTask(ctx, project.ID, before, s.snap.For(before), GuardOperationTaskEdit, GuardRulePermissions, hint, map[string]any{"task_id": taskID, "entity": EntityTask, "operation": PermissionEdit})
+		return domain.Task{}, domain.NewError(domain.ErrGuardViolation, hint, map[string]any{"task_id": taskID, "hint": hint, "entity": EntityTask, "operation": PermissionEdit})
+	}
+	return before, nil
+}
 
-	if update.BucketKey != "" {
-		task, err = s.workflow.MoveTask(ctx, project, taskID, update.BucketKey)
-		if err != nil {
-			return
-		}
+func (s *TaskService) persistTaskFields(ctx context.Context, project domain.ProjectContext, taskID int64, update domain.TaskUpdate, before domain.Task) (domain.Task, error) {
+	task, err := s.repo.UpdateTask(ctx, project.ID, taskID, update, s.snap)
+	if err != nil {
+		return domain.Task{}, err
 	}
-	if hasFieldEdit {
-		task, err = s.repo.UpdateTask(ctx, project.ID, taskID, update, s.snap)
-		if err != nil {
-			return
-		}
-		task = s.withResolvedBucketKey(task)
-		if _, evErr := s.repo.EmitTaskEditedEvent(ctx, project.ID, taskID, before, task, s.snap.For(task)); evErr != nil {
-			err = evErr
-			return
-		}
+	task = s.withResolvedBucketKey(task)
+	if _, err := s.repo.EmitTaskEditedEvent(ctx, project.ID, taskID, before, task, s.snap.For(task)); err != nil {
+		return domain.Task{}, err
 	}
-	if update.ChangeParent {
-		if err = s.applyParentChange(ctx, project, taskID, update.NewParentID); err != nil {
-			return
-		}
-		// Always re-read after a parent change. `applyParentChange` may
-		// have recomputed depth via the storage layer (tasks.depth
-		// trigger) and the cross-kit recovery path may have forced the
-		// bucket to the new resolved kit's first bucket. Returning the
-		// stale `task` snapshot from the field-edit branch would lie
-		// about Depth / BucketKey to the caller (#301 review §11557
-		// finding B6).
-		task, err = s.taskByID(ctx, project, taskID)
-		if err != nil {
-			return
-		}
-	}
-
-	return
+	return task, nil
 }
 
 // applyParentChange validates a re-parent request against the cycle

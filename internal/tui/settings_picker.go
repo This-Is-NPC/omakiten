@@ -7,12 +7,13 @@ import (
 	"sort"
 	"strings"
 
-	tea "github.com/charmbracelet/bubbletea"
-
 	"omakiten/internal/config"
 	"omakiten/internal/paths"
-	"omakiten/internal/tui/components/picker"
+	"omakiten/internal/tui/screenhost"
+	"omakiten/internal/tui/screens/settingspicker"
 )
+
+var setActiveConfigInDir = paths.SetActiveConfigInDir
 
 // themeOption is one row in the theme picker. Slug is the basename without
 // the `.yaml` extension; IsCustom indicates that the file lives under
@@ -46,21 +47,8 @@ func (m *Model) openThemePicker() {
 		m.status = m.t("tui.status.no_themes_found")
 		return
 	}
-	cursor := 0
-	for i, opt := range options {
-		if opt.Slug == m.theme.Key {
-			cursor = i
-			break
-		}
-	}
-	m.themePickerOptions = options
-	m.entityScreen = entityScreenView
-	m.entityForm = entityForm{mode: entityScreenThemePicker}
-	// picker.WithCursor routes the open-time seed cursor through one
-	// typed mutator that clamps + follow-scrolls; the prior raw field
-	// write left scroll at whatever stale value the prior open
-	// happened to land on.
-	m.entityPicker = picker.New(picker.Single).WithCursor(cursor, len(options), 0)
+	m.themePickerScreen = settingspicker.New(settingspicker.Theme).Open(themePickerPayload(options, m.theme.Key))
+	m.pushScreen(screenhost.ThemePicker)
 	m.status = m.t("tui.status.theme_picker")
 }
 
@@ -75,18 +63,25 @@ func (m *Model) openConfigPicker() {
 		return
 	}
 	active := filepath.Base(m.repos.Editor.Path())
-	cursor := 0
-	for i, opt := range options {
-		if opt.Filename == active {
-			cursor = i
-			break
-		}
-	}
-	m.configPickerOptions = options
-	m.entityScreen = entityScreenView
-	m.entityForm = entityForm{mode: entityScreenConfigPicker}
-	m.entityPicker = picker.New(picker.Single).WithCursor(cursor, len(options), 0)
+	m.configPickerScreen = settingspicker.New(settingspicker.Config).Open(configPickerPayload(options, active))
+	m.pushScreen(screenhost.ConfigPicker)
 	m.status = m.t("tui.status.config_picker")
+}
+
+func themePickerPayload(options []themeOption, active string) settingspicker.Payload {
+	rows := make([]settingspicker.Option, len(options))
+	for i, option := range options {
+		rows[i] = settingspicker.Option{Value: option.Slug, Label: option.Name, Detail: option.Slug, Custom: option.IsCustom, Active: option.Slug == active}
+	}
+	return settingspicker.Payload{Kind: settingspicker.Theme, Current: active, Options: rows}
+}
+
+func configPickerPayload(options []configOption, active string) settingspicker.Payload {
+	rows := make([]settingspicker.Option, len(options))
+	for i, option := range options {
+		rows[i] = settingspicker.Option{Value: option.Filename, Label: option.Display, Detail: option.Filename, Custom: option.IsCustom, Active: option.Filename == active}
+	}
+	return settingspicker.Payload{Kind: settingspicker.Config, Current: active, Options: rows}
 }
 
 // discoverThemes scans <root>/themes (defaults) + <root>/themes/custom for
@@ -191,68 +186,29 @@ func readYAMLProfilesIn(dir string, isCustom bool) ([]configOption, error) {
 	return out, nil
 }
 
-// updateThemePicker handles input while the theme picker is open. Returns
-// the model + any tea.Cmd to dispatch (the editorFinishedMsg post-write
-// reuses the same enrichment path as the entity flows).
-func (m Model) updateThemePicker(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	if msg.String() == "ctrl+c" || msg.String() == "q" {
-		return m, tea.Quit
-	}
-	var cmd tea.Cmd
-	m.entityPicker, cmd = m.entityPicker.Update(msg, len(m.themePickerOptions), scrollDataRows(m.pickerViewportRows()))
-	switch m.entityPicker.LastEvent() {
-	case picker.EventCancel:
-		m.closeEntityScreen(m.t("tui.status.theme_picker_cancelled"))
-	case picker.EventSelect:
-		// Evaluate the side-effecting call before reading m for the return
-		// tuple — Go does not specify the order of non-function operands
-		// against intervening function calls, and the pointer-receiver method
-		// must run before m is captured for the returned tea.Model.
-		applied := m.applyThemeSelection()
-		return m, applied
-	}
-	return m, cmd
-}
-
 // applyThemeSelection writes the chosen theme slug into the active yaml,
 // re-imports the bundle, and reloads the theme + styles in place.
-func (m *Model) applyThemeSelection() tea.Cmd {
-	if m.entityPicker.Cursor < 0 || m.entityPicker.Cursor >= len(m.themePickerOptions) {
-		return nil
+func (m *Model) applyThemeSelection(chosen string) {
+	if chosen == "" {
+		return
 	}
-	chosen := m.themePickerOptions[m.entityPicker.Cursor].Slug
-	if _, err := m.repos.Editor.Apply(m.ctx, func(bundle *config.Bundle) error {
+	if _, err := applyBundleEditor(m.ctx, m.repos.Editor, func(bundle *config.Bundle) error {
 		bundle.Config.Theme.Active = chosen
 		return nil
 	}); err != nil {
 		m.status = err.Error()
-		return nil
+		return
 	}
 	if err := m.reloadTheme(); err != nil {
 		m.status = err.Error()
-		return nil
+		return
 	}
 	if err := m.refresh(); err != nil {
 		m.status = err.Error()
-		return nil
+		return
 	}
-	m.closeEntityScreen(fmt.Sprintf(m.t("tui.status.theme_switched_fmt"), chosen))
-	return nil
-}
-
-func (m Model) updateConfigPicker(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	if msg.String() == "ctrl+c" || msg.String() == "q" {
-		return m, tea.Quit
-	}
-	var cmd tea.Cmd
-	m.entityPicker, cmd = m.entityPicker.Update(msg, len(m.configPickerOptions), scrollDataRows(m.pickerViewportRows()))
-	switch m.entityPicker.LastEvent() {
-	case picker.EventCancel:
-		m.closeEntityScreen(m.t("tui.status.config_picker_cancelled"))
-	case picker.EventSelect:
-		m.applyConfigSelection()
-	}
-	return m, cmd
+	m.popScreen()
+	m.status = fmt.Sprintf(m.t("tui.status.theme_switched_fmt"), chosen)
 }
 
 // reloadTheme re-reads the theme yaml referenced by the (just-saved) active
@@ -278,37 +234,37 @@ func (m *Model) reloadTheme() error {
 	}
 	m.theme = theme
 	m.styles = newStyles(theme)
-	// Rebuild the markdown renderer so cached body renders pick up the
-	// new palette on the next View() — the cache lives inside the
-	// renderer, so swapping the pointer is enough to invalidate it.
-	m.markdown = newMarkdownRenderer(tokensFromTheme(theme))
+	// Kit.Markdown tokens rotate with the theme; each screen Reloads its
+	// Renderer on the next paint so the StyleConfig follows without a
+	// process-wide cache.
 	return nil
 }
 
 // applyConfigSelection imports the chosen workflow preset in place: it
-// re-imports the new bundle into SQLite, repoints the editor at the new yaml,
+// stages the new bundle, repoints the editor at the new yaml,
 // refreshes every bundle-derived field on the Model (theme, styles, markdown,
 // priorities/severities, registry, notifications, token badge, workflow
 // service), and re-queries the task snapshot. On any failure the DB and the
 // .active state file stay untouched and the error surfaces in m.status so
 // the user can retry without leaving the TUI in a half-applied state.
-func (m *Model) applyConfigSelection() {
-	if m.entityPicker.Cursor < 0 || m.entityPicker.Cursor >= len(m.configPickerOptions) {
+func (m *Model) applyConfigSelection(chosen string) {
+	if chosen == "" {
 		return
 	}
-	chosen := m.configPickerOptions[m.entityPicker.Cursor].Filename
 	newPath := m.resolveConfigPath(chosen)
+	configDir := m.repos.Editor.ConfigDir()
+	if err := setActiveConfigInDir(configDir, chosen); err != nil {
+		m.status = err.Error()
+		return
+	}
 
 	if err := m.reloadBundle(newPath); err != nil {
 		m.status = fmt.Sprintf(m.t("tui.status.config_switch_failed_fmt"), chosen, err.Error())
 		return
 	}
-	if err := paths.SetActiveConfig(chosen); err != nil {
-		m.status = err.Error()
-		return
-	}
 	display := strings.TrimSuffix(chosen, filepath.Ext(chosen))
-	m.closeEntityScreen(fmt.Sprintf(m.t("tui.status.config_switched_fmt"), display))
+	m.popScreen()
+	m.status = fmt.Sprintf(m.t("tui.status.config_switched_fmt"), display)
 }
 
 // resolveConfigPath mirrors paths.ActiveConfigFile's custom/<name> →
@@ -323,54 +279,73 @@ func (m *Model) resolveConfigPath(filename string) string {
 	return filepath.Join(dir, filename)
 }
 
-func (m Model) renderThemePicker() string {
-	rows := make([]string, 0, len(m.themePickerOptions))
-	for index, opt := range m.themePickerOptions {
-		marker := m.cursorMarker(m.entityPicker.Cursor == index)
-		active := " "
-		if opt.Slug == m.theme.Key {
-			active = "•"
-		}
-		label := opt.Name
-		if label == "" {
-			label = opt.Slug
-		}
-		row := fmt.Sprintf("%s %s %s", marker, active, label)
-		if opt.Slug != label {
-			row += "  " + m.styles.hint.Render(opt.Slug)
-		}
-		if opt.IsCustom {
-			row += " " + m.styles.badgeInfo.Render(m.t("tui.badge.custom"))
-		}
-		rows = append(rows, row)
+func (m *Model) applySettingsPicker(action screenhost.Action) {
+	kind := settingspicker.Kind(action.EntityKind)
+	if !m.settingsPickerAllows(kind, action.Value) {
+		m.status = fmt.Sprintf("invalid %s picker selection", kind)
+		return
 	}
-	header := []string{
-		m.styles.kicker(fmt.Sprintf(m.t("tui.kicker.theme_current_fmt"), m.theme.Key)),
-		m.styles.hint.Render(m.t("tui.picker.hint.theme")),
-		"",
+	switch kind {
+	case settingspicker.Theme:
+		m.applyThemeSelection(action.Value)
+	case settingspicker.Config:
+		m.applyConfigSelection(action.Value)
+	case settingspicker.SubtaskKit:
+		m.applySubtaskKitSelection(action.Value)
 	}
-	return m.renderPickerPanel(header, rows, m.entityPicker.Scroll, m.pickerViewportRows())
 }
 
-func (m Model) renderConfigPicker() string {
-	active := filepath.Base(m.repos.Editor.Path())
-	rows := make([]string, 0, len(m.configPickerOptions))
-	for index, opt := range m.configPickerOptions {
-		marker := m.cursorMarker(m.entityPicker.Cursor == index)
-		dot := " "
-		if opt.Filename == active {
-			dot = "•"
-		}
-		row := fmt.Sprintf("%s %s %s  %s", marker, dot, opt.Display, m.styles.hint.Render(opt.Filename))
-		if opt.IsCustom {
-			row += " " + m.styles.badgeInfo.Render(m.t("tui.badge.custom"))
-		}
-		rows = append(rows, row)
+func (m Model) settingsPickerAllows(kind settingspicker.Kind, value string) bool {
+	var screen settingspicker.Screen
+	switch kind {
+	case settingspicker.Theme:
+		screen = m.themePickerScreen
+	case settingspicker.Config:
+		screen = m.configPickerScreen
+	case settingspicker.SubtaskKit:
+		screen = m.subtaskKitPickerScreen
+	default:
+		return false
 	}
-	header := []string{
-		m.styles.kicker(fmt.Sprintf(m.t("tui.kicker.config_active_fmt"), active)),
-		m.styles.hint.Render(m.t("tui.picker.hint.theme")),
-		"",
+	if !pickerRouteIDOpen(m, kind.ID()) {
+		return false
 	}
-	return m.renderPickerPanel(header, rows, m.entityPicker.Scroll, m.pickerViewportRows())
+	for _, option := range screen.Payload().Options {
+		if option.Value == value && (value != "" || option.None) {
+			return true
+		}
+	}
+	return false
+}
+
+func pickerRouteIDOpen(m Model, id screenhost.ID) bool {
+	return len(m.screenStack) > 0 && m.screenStack[len(m.screenStack)-1] == id
+}
+
+func (m *Model) refreshSettingsPicker(screen settingspicker.Screen) {
+	switch screen.Payload().Kind {
+	case settingspicker.Theme:
+		options, err := discoverThemes(m.repos.Editor.RootDir())
+		if err != nil {
+			m.status = err.Error()
+			return
+		}
+		m.themePickerScreen = screen.Refresh(themePickerPayload(options, m.theme.Key), nil)
+	case settingspicker.Config:
+		active := filepath.Base(m.repos.Editor.Path())
+		options, err := discoverConfigProfiles(m.repos.Editor.ConfigDir())
+		if err != nil {
+			m.status = err.Error()
+			return
+		}
+		m.configPickerScreen = screen.Refresh(configPickerPayload(options, active), nil)
+	case settingspicker.SubtaskKit:
+		options, err := discoverSubtaskKitOptions(m.repos.Editor.ConfigDir())
+		if err != nil {
+			m.status = err.Error()
+			return
+		}
+		m.subtaskKitPickerScreen = screen.Refresh(subtaskKitPickerPayload(options, m.currentSubtaskKitRelative()), nil)
+	}
+	m.status = m.t("tui.status.refreshed")
 }

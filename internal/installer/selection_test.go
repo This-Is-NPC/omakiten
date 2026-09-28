@@ -39,24 +39,29 @@ func TestParseHarnessSelection_ShellParity(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			got, status, warnings := ParseHarnessSelection(tc.raw)
-			if diff := cmp.Diff(tc.want, got); diff != "" {
-				t.Fatalf("harnesses mismatch (-want +got):\n%s", diff)
-			}
-			if status != tc.status {
-				t.Fatalf("status: got %v want %v", status, tc.status)
-			}
-			if tc.warnFrag == "" {
-				if len(warnings) != 0 {
-					t.Fatalf("unexpected warnings: %v", warnings)
-				}
-				return
-			}
-			joined := strings.Join(warnings, " | ")
-			if !strings.Contains(joined, tc.warnFrag) {
-				t.Fatalf("warnings missing %q: %v", tc.warnFrag, warnings)
-			}
+			assertHarnessSelection(t, tc.raw, tc.want, tc.status, tc.warnFrag)
 		})
+	}
+}
+
+func assertHarnessSelection(t *testing.T, raw string, want []string, wantStatus SelectionStatus, warnFrag string) {
+	t.Helper()
+	got, status, warnings := ParseHarnessSelection(raw)
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Fatalf("harnesses mismatch (-want +got):\n%s", diff)
+	}
+	if status != wantStatus {
+		t.Fatalf("status: got %v want %v", status, wantStatus)
+	}
+	if warnFrag == "" {
+		if len(warnings) != 0 {
+			t.Fatalf("unexpected warnings: %v", warnings)
+		}
+		return
+	}
+	joined := strings.Join(warnings, " | ")
+	if !strings.Contains(joined, warnFrag) {
+		t.Fatalf("warnings missing %q: %v", warnFrag, warnings)
 	}
 }
 

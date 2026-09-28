@@ -111,6 +111,11 @@ config:
       notification: kitten_knowledge
       message: "${{intl:notifications.izakaya.solution_viewed_top.message}}"
 
+# surfaces is the per-operation CLI/TUI/MCP exposure table (70 rows).
+# Sibling of workflows: — not nested under workflow.operations (domain guards).
+surfaces:
+  from: ./modules/surfaces.yaml
+
 workflows:
   - id: 1
     key: izakaya

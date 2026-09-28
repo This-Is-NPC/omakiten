@@ -31,7 +31,7 @@ RETURNING id, name, slug, root_path
 
 // UpdateProjectDescription persists a new description onto a live
 // (non-archived) project and returns the refreshed row. The
-// projects.description column has existed since migration 002 but had
+// projects.description is part of the current schema and has
 // no write path; this restores it. An unknown or archived id matches
 // no row, surfacing ErrProjectNotFound via scanProject's sql.ErrNoRows
 // branch.
@@ -133,8 +133,30 @@ func (s *Store) ProjectDeleteCounts(ctx context.Context, projectID int64) (domai
 	return counters, nil
 }
 
+type projectDeleteExecutor interface {
+	ExecContext(context.Context, string, ...any) (sql.Result, error)
+}
+
+func deleteProjectRows(ctx context.Context, executor projectDeleteExecutor, projectID int64) error {
+	if _, err := executor.ExecContext(ctx, `DELETE FROM events WHERE project_id = ?`, projectID); err != nil {
+		return err
+	}
+	res, err := executor.ExecContext(ctx, `DELETE FROM projects WHERE id = ?`, projectID)
+	if err != nil {
+		return err
+	}
+	rows, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if rows == 0 {
+		return domain.NewError(domain.ErrProjectNotFound, "project not found", map[string]any{"project_id": projectID})
+	}
+	return nil
+}
+
 // DeleteProject hard-deletes a project row in a single transaction.
-// The FK CASCADE chain installed by migration 025 takes care of
+// The current FK CASCADE chain takes care of
 // tasks (→ task_tags, task_dependencies), plans (→ plan_waves),
 // errors (→ solutions, error_tags), and project_tags. Event rows
 // have no FK to projects so they would
@@ -146,23 +168,9 @@ func (s *Store) DeleteProject(ctx context.Context, projectID int64) error {
 	if err != nil {
 		return err
 	}
-	if _, err := tx.ExecContext(ctx, `DELETE FROM events WHERE project_id = ?`, projectID); err != nil {
+	if err := deleteProjectRows(ctx, tx, projectID); err != nil {
 		_ = tx.Rollback()
 		return err
-	}
-	res, err := tx.ExecContext(ctx, `DELETE FROM projects WHERE id = ?`, projectID)
-	if err != nil {
-		_ = tx.Rollback()
-		return err
-	}
-	rows, err := res.RowsAffected()
-	if err != nil {
-		_ = tx.Rollback()
-		return err
-	}
-	if rows == 0 {
-		_ = tx.Rollback()
-		return domain.NewError(domain.ErrProjectNotFound, "project not found", map[string]any{"project_id": projectID})
 	}
 	return tx.Commit()
 }
@@ -235,20 +243,8 @@ func (s *Store) deleteProjectWithBackup(
 
 	// From this point onward a destructive statement has been attempted.
 	// Preserve backupPath on every error even when rollback succeeds.
-	if _, err := conn.ExecContext(ctx, `DELETE FROM events WHERE project_id = ?`, projectID); err != nil {
+	if err := deleteProjectRows(ctx, conn, projectID); err != nil {
 		return backupPath, errors.Join(err, rollbackTransactionControlled(ctx, conn, transaction))
-	}
-	res, err := conn.ExecContext(ctx, `DELETE FROM projects WHERE id = ?`, projectID)
-	if err != nil {
-		return backupPath, errors.Join(err, rollbackTransactionControlled(ctx, conn, transaction))
-	}
-	rows, err := res.RowsAffected()
-	if err != nil {
-		return backupPath, errors.Join(err, rollbackTransactionControlled(ctx, conn, transaction))
-	}
-	if rows == 0 {
-		notFound := domain.NewError(domain.ErrProjectNotFound, "project not found", map[string]any{"project_id": projectID})
-		return backupPath, errors.Join(notFound, rollbackTransactionControlled(ctx, conn, transaction))
 	}
 	if hooks.BeforeCommit != nil {
 		if err := hooks.BeforeCommit(attempt); err != nil {

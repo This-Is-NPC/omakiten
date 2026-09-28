@@ -81,7 +81,7 @@ func resolvedKitKey(buckets domain.BucketResolver) string {
 // the kit canonical so tests using bare sqlite.Open still work.
 func (s *Store) ListRecentEvents(ctx context.Context, eventType string, limit int) ([]domain.Event, error) {
 	if limit <= 0 {
-		limit = s.eventsDefaultRecentLimit
+		limit = s.recentEventLimit()
 	}
 	if limit <= 0 {
 		// Composition root forgot to wire SetEventsRecentLimit; fall
@@ -180,17 +180,18 @@ func (s *Store) ListTaskActivity(ctx context.Context, projectID, taskID int64, o
 	if strings.EqualFold(order, "desc") {
 		direction = "DESC"
 	}
-	// Bound the per-task feed with the same config-backed limit ListRecentEvents
-	// uses (events.default_recent_limit). Without a cap the feed returns every
-	// row for the task's lifetime, and the TUI re-runs this query every ~1s
-	// while a task view is open. The inner select always takes the most recent
-	// rows by id; the outer select re-orders that window into the requested
-	// direction so an "asc" (oldest-first) feed still shows the newest activity.
-	limit := s.eventsDefaultRecentLimit
+	events, err := s.loadTaskActivityRows(ctx, projectID, taskID, direction)
+	if err != nil {
+		return nil, err
+	}
+	return s.attachTaskActivityTags(ctx, events)
+}
+
+func (s *Store) loadTaskActivityRows(ctx context.Context, projectID, taskID int64, direction string) ([]domain.Event, error) {
+	// The inner select takes the newest rows; the outer select preserves the
+	// requested direction within that bounded window.
+	limit := s.recentEventLimit()
 	if limit <= 0 {
-		// Composition root forgot to wire SetEventsRecentLimit; fall through to
-		// the kit canonical so the query still runs. Production always sets a
-		// positive value via the runtime bootstrap.
 		if cfg, err := config.LoadKitConfig(); err == nil && cfg.Events.DefaultRecentLimit > 0 {
 			limit = cfg.Events.DefaultRecentLimit
 		}
@@ -225,26 +226,26 @@ ORDER BY created_at `+direction+`, id `+direction+`
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
+	return events, nil
+}
 
-	// Eager-load tags only for rows that can carry them (comments today;
-	// system events stay tag-less by design).
-	if len(events) > 0 {
-		commentIDs := make([]int64, 0, len(events))
-		for _, ev := range events {
-			if ev.EventType == domain.EventTypeComment {
-				commentIDs = append(commentIDs, ev.ID)
-			}
+func (s *Store) attachTaskActivityTags(ctx context.Context, events []domain.Event) ([]domain.Event, error) {
+	commentIDs := make([]int64, 0, len(events))
+	for _, ev := range events {
+		if ev.EventType == domain.EventTypeComment {
+			commentIDs = append(commentIDs, ev.ID)
 		}
-		if len(commentIDs) > 0 {
-			tagsByEvent, err := s.eventTagsByIDs(ctx, commentIDs)
-			if err != nil {
-				return nil, err
-			}
-			for i := range events {
-				if tags, ok := tagsByEvent[events[i].ID]; ok {
-					events[i].Tags = tags
-				}
-			}
+	}
+	if len(commentIDs) == 0 {
+		return events, nil
+	}
+	tagsByEvent, err := s.eventTagsByIDs(ctx, commentIDs)
+	if err != nil {
+		return nil, err
+	}
+	for i := range events {
+		if tags, ok := tagsByEvent[events[i].ID]; ok {
+			events[i].Tags = tags
 		}
 	}
 	return events, nil

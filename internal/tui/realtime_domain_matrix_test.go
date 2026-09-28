@@ -12,13 +12,15 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"omakiten/internal/app"
 	"omakiten/internal/config"
 	"omakiten/internal/domain"
-	"omakiten/internal/testfixtures"
+	"omakiten/internal/operation"
 	"omakiten/internal/testfixtures/runtimecache"
 	"omakiten/internal/testfixtures/snapstore"
 	"omakiten/internal/token"
+	"omakiten/internal/tui/screenhost"
+	"omakiten/internal/tui/screens/plannetwork"
+	"omakiten/internal/tui/screens/taskdetail"
 )
 
 type scriptedWatermark struct {
@@ -42,7 +44,7 @@ func (w *scriptedWatermark) DataVersion(context.Context) (int64, error) {
 }
 
 type countingEventRepo struct {
-	app.EventRepository
+	EventStore
 	listTaskActivityCalls atomic.Int64
 	listEventsCalls       atomic.Int64
 	eventCountCalls       atomic.Int64
@@ -56,7 +58,7 @@ func (r *countingEventRepo) ListTaskActivity(ctx context.Context, projectID, tas
 	if r.failNextTaskActivity.CompareAndSwap(true, false) {
 		return nil, errors.New("transient activity query failure")
 	}
-	return r.EventRepository.ListTaskActivity(ctx, projectID, taskID, order)
+	return r.EventStore.ListTaskActivity(ctx, projectID, taskID, order)
 }
 
 func (r *countingEventRepo) ListEvents(ctx context.Context, filter domain.EventFilter) ([]domain.EventRow, error) {
@@ -64,7 +66,7 @@ func (r *countingEventRepo) ListEvents(ctx context.Context, filter domain.EventF
 	if r.failNextListEvents.CompareAndSwap(true, false) {
 		return nil, errors.New("transient logs query failure")
 	}
-	return r.EventRepository.ListEvents(ctx, filter)
+	return r.EventStore.ListEvents(ctx, filter)
 }
 
 func (r *countingEventRepo) EventCategoryCounts(ctx context.Context, projectID int64, since time.Time) (map[domain.EventCategory]int, error) {
@@ -72,7 +74,7 @@ func (r *countingEventRepo) EventCategoryCounts(ctx context.Context, projectID i
 	if r.failNextEventCounts.CompareAndSwap(true, false) {
 		return nil, errors.New("transient logs counts failure")
 	}
-	return r.EventRepository.EventCategoryCounts(ctx, projectID, since)
+	return r.EventStore.EventCategoryCounts(ctx, projectID, since)
 }
 
 type countingMetricsRepo struct {
@@ -93,8 +95,16 @@ func (r *countingMetricsRepo) AgentMetricsSummary(context.Context, string, int64
 	}}, "2026-06-18", nil
 }
 
+func (r *countingMetricsRepo) Summary(_ context.Context, _ domain.ProjectContext, period string, projectID int64) (domain.MetricsSummary, error) {
+	rows, since, err := r.AgentMetricsSummary(context.Background(), period, projectID)
+	if err != nil {
+		return domain.MetricsSummary{}, err
+	}
+	return domain.MetricsSummary{Period: period, Since: since, ByModel: rows}, nil
+}
+
 type countingPlanRepo struct {
-	app.PlanRepository
+	*snapstore.Store
 	getBySlugCalls           atomic.Int64
 	listProjectPlanTaskCalls atomic.Int64
 	failNextShow             atomic.Bool
@@ -105,12 +115,33 @@ func (r *countingPlanRepo) GetPlanBySlug(ctx context.Context, projectID int64, s
 	if r.failNextShow.CompareAndSwap(true, false) {
 		return domain.Plan{}, errors.New("transient plan show failure")
 	}
-	return r.PlanRepository.GetPlanBySlug(ctx, projectID, slug)
+	return r.Store.GetPlanBySlug(ctx, projectID, slug)
 }
 
 func (r *countingPlanRepo) ListProjectPlanTasks(ctx context.Context, projectID int64, buckets domain.BucketResolver) ([]domain.ProjectPlanTaskRow, error) {
 	r.listProjectPlanTaskCalls.Add(1)
-	return r.PlanRepository.ListProjectPlanTasks(ctx, projectID, buckets)
+	return r.Store.ListProjectPlanTasks(ctx, projectID, buckets)
+}
+
+// matrixServiceRepo is the single operation.Repository the facade
+// uses so ListTasks and GetPlanBySlug counters on the fixture wrappers
+// both see board/plan-show reloads.
+type matrixServiceRepo struct {
+	*snapstore.Store
+	tasks *countingTaskRepo
+	plans *countingPlanRepo
+}
+
+func (r *matrixServiceRepo) ListTasks(ctx context.Context, projectID int64, filter domain.TaskFilter, buckets domain.BucketResolver) ([]domain.Task, error) {
+	return r.tasks.ListTasks(ctx, projectID, filter, buckets)
+}
+
+func (r *matrixServiceRepo) GetPlanBySlug(ctx context.Context, projectID int64, slug string) (domain.Plan, error) {
+	return r.plans.GetPlanBySlug(ctx, projectID, slug)
+}
+
+func (r *matrixServiceRepo) ListProjectPlanTasks(ctx context.Context, projectID int64, buckets domain.BucketResolver) ([]domain.ProjectPlanTaskRow, error) {
+	return r.plans.ListProjectPlanTasks(ctx, projectID, buckets)
 }
 
 type realtimeMatrixFixture struct {
@@ -168,9 +199,9 @@ func newRealtimeMatrixFixture(t *testing.T) (*realtimeMatrixFixture, Model) {
 		plan:      plan,
 		wave:      wave,
 		planTask:  planTask,
-		tasks:     &countingTaskRepo{TaskRepository: store},
-		events:    &countingEventRepo{EventRepository: store},
-		plans:     &countingPlanRepo{PlanRepository: store},
+		tasks:     &countingTaskRepo{Store: store},
+		events:    &countingEventRepo{EventStore: store},
+		plans:     &countingPlanRepo{Store: store},
 		metrics:   &countingMetricsRepo{},
 		watermark: newScriptedWatermark(1),
 	}
@@ -180,11 +211,10 @@ func newRealtimeMatrixFixture(t *testing.T) (*realtimeMatrixFixture, Model) {
 		Comments:     store,
 		Dependencies: store,
 		Events:       fixture.events,
-		Metrics:      app.NewMetricsService(fixture.metrics),
+		Metrics:      fixture.metrics,
 		Plans:        fixture.plans,
 		Watermark:    fixture.watermark,
-		Cache:        runtimecache.Install(0, store.Snapshot()),
-		Workflow:     app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot()),
+		Cache:        runtimecache.InstallWithStore(0, &matrixServiceRepo{Store: store, tasks: fixture.tasks, plans: fixture.plans}),
 		Catalog:      newTestCatalog(t),
 	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
 	if err != nil {
@@ -223,39 +253,35 @@ func allRealtimeReloadDomains() []realtimeReloadKind {
 
 func openPlanNetworkFixture(t *testing.T, f *realtimeMatrixFixture, m *Model) {
 	t.Helper()
-	show, err := app.NewPlanServiceWithSnapshot(f.store, f.store.Snapshot()).Show(f.ctx, f.project.Context(), f.plan.Slug)
+	svc := operation.NewService(f.store, operation.ProjectSelector{ProjectID: f.project.ID})
+	svc.SetSnapshot(f.store.Snapshot())
+	show, err := svc.ShowPlanView(f.ctx, operation.ShowPlanInput{
+		ProjectSelector: operation.ProjectSelector{ProjectID: f.project.ID},
+		Slug:            f.plan.Slug,
+	})
 	if err != nil {
 		t.Fatalf("PlanService.Show() error = %v", err)
 	}
-	m.taskScreen = taskScreenClosed
 	m.top = topTasks
 	m.sub = subPlans
-	m.planNetworkOpen = true
-	m.planNetworkShow = show
-	m.invalidatePlanNetworkRowsCache()
-	m.syncPlanNetworkScroll(m.planNetworkBuildRows())
+	m.planNetworkScreen = plannetwork.New().Open(m.planNetworkPayload(show))
+	m.screenStack = []screenhost.ID{screenhost.PlanNetwork}
 }
 
 func setRealtimeDomainView(t *testing.T, f *realtimeMatrixFixture, m *Model, kind realtimeReloadKind) {
 	t.Helper()
-	m.taskScreen = taskScreenClosed
-	m.planNetworkOpen = false
-	m.commentScreenOpen = false
-	m.descriptionScreenOpen = false
-	m.planGoalScreenOpen = false
-	m.projectFormScreenOpen = false
-	m.entityScreen = entityScreenClosed
+	m.screenStack = nil
 	m.helpOpen = false
 	m.paletteOpen = false
 	m.mode = modeNormal
-	m.moveMode = false
+	m.boardScreen = m.boardScreen.CancelMove()
 	switch kind {
 	case realtimeReloadBundle:
 		m.top = topTasks
 		m.sub = subBoard
 	case realtimeReloadActivity:
 		m.openTaskView(f.task)
-		m.applyTaskFocus(taskFocusActivity)
+		m.taskDetailScreen = m.taskDetailScreen.WithFocus(taskdetail.FocusActivity)
 	case realtimeReloadPlanShow:
 		openPlanNetworkFixture(t, f, m)
 	case realtimeReloadStats:
@@ -371,14 +397,14 @@ func validRealtimeReloadMsg(kind realtimeReloadKind, version int64) realtimeRelo
 	msg := realtimeReloadMsg{kind: kind, dataVersion: version, dataVersionValid: true}
 	switch kind {
 	case realtimeReloadBundle:
-		msg.snap = app.TUISnapshot{Tasks: []domain.Task{{ID: 1, Title: "bundle"}}}
+		msg.snap = operation.BoardSnapshot{Tasks: []domain.Task{{ID: 1, Title: "bundle"}}}
 		msg.snapValid = true
 	case realtimeReloadActivity:
 		msg.activity = []domain.Event{{ID: 1, Body: "activity"}}
 		msg.activityForID = 1
 		msg.activityValid = true
 	case realtimeReloadPlanShow:
-		msg.planShow = app.PlanShow{Plan: domain.Plan{ID: 1, Slug: "plan"}}
+		msg.planShow = domain.PlanShow{Plan: domain.Plan{ID: 1, Slug: "plan"}}
 		msg.planValid = true
 	case realtimeReloadStats:
 		msg.statsSummary = domain.MetricsSummary{Period: "30d"}
@@ -428,42 +454,44 @@ func TestRealtimeTickScopedViewsCatchUpBundleMatrix(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			f, model := newRealtimeMatrixFixture(t)
-			model.commitDataVersion(realtimeReloadBundle, 1)
-			model.commitDataVersion(tc.scopedKind, 1)
-			setRealtimeDomainView(t, f, &model, tc.scopedKind)
-
-			boardTitle := fmt.Sprintf("bundle-catch-up-%s", realtimeKindName(tc.scopedKind))
-			if _, err := f.store.CreateTask(f.ctx, f.project.ID, boardTitle, "", domain.Priority(2), "backlog", nil, f.store.Snapshot()); err != nil {
-				t.Fatalf("CreateTask(%s) error = %v", boardTitle, err)
-			}
-			tc.seedScoped(t, f)
-			f.watermark.version.Store(2)
-			f.tasks.listCalls.Store(0)
-
-			model, msgs := driveRealtimeTickAll(t, model)
-			assertReloadKinds(t, msgs, tc.scopedKind)
-			assertRealtimeBaseline(t, model, tc.scopedKind, 2)
-			assertRealtimeBaseline(t, model, realtimeReloadBundle, 1)
-			if got := f.tasks.listCalls.Load(); got != 0 {
-				t.Fatalf("%s scoped tick rebuilt bundle ListTasks calls = %d, want 0", realtimeKindName(tc.scopedKind), got)
-			}
-			if taskTitlePresent(model.tasks, boardTitle) {
-				t.Fatalf("%s scoped tick pulled bundle task %q before returning to board", realtimeKindName(tc.scopedKind), boardTitle)
-			}
-
-			setRealtimeDomainView(t, f, &model, realtimeReloadBundle)
-			f.tasks.listCalls.Store(0)
-			model, msgs = driveRealtimeTickAll(t, model)
-			assertReloadKinds(t, msgs, realtimeReloadBundle)
-			assertRealtimeBaseline(t, model, realtimeReloadBundle, 2)
-			if got := f.tasks.listCalls.Load(); got == 0 {
-				t.Fatalf("returning to board after %s did not reload bundle", realtimeKindName(tc.scopedKind))
-			}
-			if !taskTitlePresent(model.tasks, boardTitle) {
-				t.Fatalf("board did not catch up after %s scoped tick; missing %q", realtimeKindName(tc.scopedKind), boardTitle)
-			}
+			runScopedViewsCatchUpBundleCase(t, tc.scopedKind, tc.seedScoped)
 		})
+	}
+}
+
+func runScopedViewsCatchUpBundleCase(t *testing.T, kind realtimeReloadKind, seed func(t *testing.T, f *realtimeMatrixFixture)) {
+	t.Helper()
+	f, model := newRealtimeMatrixFixture(t)
+	model.commitDataVersion(realtimeReloadBundle, 1)
+	model.commitDataVersion(kind, 1)
+	setRealtimeDomainView(t, f, &model, kind)
+	boardTitle := fmt.Sprintf("bundle-catch-up-%s", realtimeKindName(kind))
+	if _, err := f.store.CreateTask(f.ctx, f.project.ID, boardTitle, "", domain.Priority(2), "backlog", nil, f.store.Snapshot()); err != nil {
+		t.Fatalf("CreateTask(%s) error = %v", boardTitle, err)
+	}
+	seed(t, f)
+	f.watermark.version.Store(2)
+	f.tasks.listCalls.Store(0)
+	model, msgs := driveRealtimeTickAll(t, model)
+	assertReloadKinds(t, msgs, kind)
+	assertRealtimeBaseline(t, model, kind, 2)
+	assertRealtimeBaseline(t, model, realtimeReloadBundle, 1)
+	if got := f.tasks.listCalls.Load(); got != 0 {
+		t.Fatalf("%s scoped tick rebuilt bundle ListTasks calls = %d, want 0", realtimeKindName(kind), got)
+	}
+	if taskTitlePresent(model.tasks, boardTitle) {
+		t.Fatalf("%s scoped tick pulled bundle task %q before returning to board", realtimeKindName(kind), boardTitle)
+	}
+	setRealtimeDomainView(t, f, &model, realtimeReloadBundle)
+	f.tasks.listCalls.Store(0)
+	model, msgs = driveRealtimeTickAll(t, model)
+	assertReloadKinds(t, msgs, realtimeReloadBundle)
+	assertRealtimeBaseline(t, model, realtimeReloadBundle, 2)
+	if got := f.tasks.listCalls.Load(); got == 0 {
+		t.Fatalf("returning to board after %s did not reload bundle", realtimeKindName(kind))
+	}
+	if !taskTitlePresent(model.tasks, boardTitle) {
+		t.Fatalf("board did not catch up after %s scoped tick; missing %q", realtimeKindName(kind), boardTitle)
 	}
 }
 
@@ -532,67 +560,68 @@ func TestRealtimeTickScopedFailedReloadAndProbeErrorNoAdvanceRetry(t *testing.T)
 }
 
 func TestRealtimeTickPlanNetworkMultiDomainConsumerIndependence(t *testing.T) {
-	t.Run("bundle-only bump refreshes bundle while planShow is untouched", func(t *testing.T) {
-		f, model := newRealtimeMatrixFixture(t)
-		openPlanNetworkFixture(t, f, &model)
-		model.commitDataVersion(realtimeReloadBundle, 1)
-		model.commitDataVersion(realtimeReloadPlanShow, 2)
-		f.watermark.version.Store(2)
-		boardTitle := "plan-network-bundle-only"
-		if _, err := f.store.CreateTask(f.ctx, f.project.ID, boardTitle, "", domain.Priority(2), "backlog", nil, f.store.Snapshot()); err != nil {
-			t.Fatalf("CreateTask(%s) error = %v", boardTitle, err)
-		}
-		f.tasks.listCalls.Store(0)
-		f.plans.getBySlugCalls.Store(0)
+	t.Run("bundle-only bump refreshes bundle while planShow is untouched", testPlanNetworkBundleOnly)
+	t.Run("bundle and planShow bumps advance independently", testPlanNetworkBothDomains)
+}
 
-		model, msgs := driveRealtimeTickAll(t, model)
-		assertReloadKinds(t, msgs, realtimeReloadBundle)
-		assertRealtimeBaseline(t, model, realtimeReloadBundle, 2)
-		assertRealtimeBaseline(t, model, realtimeReloadPlanShow, 2)
-		if got := f.tasks.listCalls.Load(); got == 0 {
-			t.Fatal("plan-network bundle-only bump did not refresh bundle-derived task data")
-		}
-		if got := f.plans.getBySlugCalls.Load(); got != 0 {
-			t.Fatalf("planShow reloaded on bundle-only bump: GetPlanBySlug calls = %d, want 0", got)
-		}
-		if !taskTitlePresent(model.tasks, boardTitle) {
-			t.Fatalf("plan-network bundle-only bump missing bundle task %q", boardTitle)
-		}
-	})
+func testPlanNetworkBundleOnly(t *testing.T) {
+	f, model := newRealtimeMatrixFixture(t)
+	openPlanNetworkFixture(t, f, &model)
+	model.commitDataVersion(realtimeReloadBundle, 1)
+	model.commitDataVersion(realtimeReloadPlanShow, 2)
+	f.watermark.version.Store(2)
+	boardTitle := "plan-network-bundle-only"
+	if _, err := f.store.CreateTask(f.ctx, f.project.ID, boardTitle, "", domain.Priority(2), "backlog", nil, f.store.Snapshot()); err != nil {
+		t.Fatalf("CreateTask(%s) error = %v", boardTitle, err)
+	}
+	f.tasks.listCalls.Store(0)
+	f.plans.getBySlugCalls.Store(0)
+	model, msgs := driveRealtimeTickAll(t, model)
+	assertReloadKinds(t, msgs, realtimeReloadBundle)
+	assertRealtimeBaseline(t, model, realtimeReloadBundle, 2)
+	assertRealtimeBaseline(t, model, realtimeReloadPlanShow, 2)
+	if got := f.tasks.listCalls.Load(); got == 0 {
+		t.Fatal("plan-network bundle-only bump did not refresh bundle-derived task data")
+	}
+	if got := f.plans.getBySlugCalls.Load(); got != 0 {
+		t.Fatalf("planShow reloaded on bundle-only bump: GetPlanBySlug calls = %d, want 0", got)
+	}
+	if !taskTitlePresent(model.tasks, boardTitle) {
+		t.Fatalf("plan-network bundle-only bump missing bundle task %q", boardTitle)
+	}
+}
 
-	t.Run("bundle and planShow bumps advance independently", func(t *testing.T) {
-		f, model := newRealtimeMatrixFixture(t)
-		openPlanNetworkFixture(t, f, &model)
-		model.commitDataVersion(realtimeReloadBundle, 2)
-		model.commitDataVersion(realtimeReloadPlanShow, 2)
-		f.watermark.version.Store(3)
-		boardTitle := "plan-network-both-bundle"
-		if _, err := f.store.CreateTask(f.ctx, f.project.ID, boardTitle, "", domain.Priority(2), "backlog", nil, f.store.Snapshot()); err != nil {
-			t.Fatalf("CreateTask(%s) error = %v", boardTitle, err)
-		}
-		if _, err := f.store.UpdatePlanGoalBody(f.ctx, f.project.ID, f.plan.ID, "updated goal from planShow bump"); err != nil {
-			t.Fatalf("UpdatePlanGoalBody() error = %v", err)
-		}
-		f.tasks.listCalls.Store(0)
-		f.plans.getBySlugCalls.Store(0)
-
-		model, msgs := driveRealtimeTickAll(t, model)
-		assertReloadKinds(t, msgs, realtimeReloadBundle, realtimeReloadPlanShow)
-		assertRealtimeBaseline(t, model, realtimeReloadBundle, 3)
-		assertRealtimeBaseline(t, model, realtimeReloadPlanShow, 3)
-		if got := f.tasks.listCalls.Load(); got == 0 {
-			t.Fatal("bundle+planShow bump did not refresh bundle-derived task data")
-		}
-		if got := f.plans.getBySlugCalls.Load(); got == 0 {
-			t.Fatal("bundle+planShow bump did not refresh planShow data")
-		}
-		if !taskTitlePresent(model.tasks, boardTitle) {
-			t.Fatalf("bundle+planShow bump missing bundle task %q", boardTitle)
-		}
-		if model.planNetworkShow.Plan.GoalBody != "updated goal from planShow bump" {
-			t.Fatalf("planShow goal = %q, want updated goal", model.planNetworkShow.Plan.GoalBody)
-		}
-	})
+func testPlanNetworkBothDomains(t *testing.T) {
+	f, model := newRealtimeMatrixFixture(t)
+	openPlanNetworkFixture(t, f, &model)
+	model.commitDataVersion(realtimeReloadBundle, 2)
+	model.commitDataVersion(realtimeReloadPlanShow, 2)
+	f.watermark.version.Store(3)
+	boardTitle := "plan-network-both-bundle"
+	if _, err := f.store.CreateTask(f.ctx, f.project.ID, boardTitle, "", domain.Priority(2), "backlog", nil, f.store.Snapshot()); err != nil {
+		t.Fatalf("CreateTask(%s) error = %v", boardTitle, err)
+	}
+	if _, err := f.store.UpdatePlanGoalBody(f.ctx, f.project.ID, f.plan.ID, "updated goal from planShow bump"); err != nil {
+		t.Fatalf("UpdatePlanGoalBody() error = %v", err)
+	}
+	f.tasks.listCalls.Store(0)
+	f.plans.getBySlugCalls.Store(0)
+	model, msgs := driveRealtimeTickAll(t, model)
+	assertReloadKinds(t, msgs, realtimeReloadBundle, realtimeReloadPlanShow)
+	assertRealtimeBaseline(t, model, realtimeReloadBundle, 3)
+	assertRealtimeBaseline(t, model, realtimeReloadPlanShow, 3)
+	if got := f.tasks.listCalls.Load(); got == 0 {
+		t.Fatal("bundle+planShow bump did not refresh bundle-derived task data")
+	}
+	if got := f.plans.getBySlugCalls.Load(); got == 0 {
+		t.Fatal("bundle+planShow bump did not refresh planShow data")
+	}
+	if !taskTitlePresent(model.tasks, boardTitle) {
+		t.Fatalf("bundle+planShow bump missing bundle task %q", boardTitle)
+	}
+	if model.planNetworkScreen.Show().Plan.GoalBody != "updated goal from planShow bump" {
+		t.Fatalf("planShow goal = %q, want updated goal", model.planNetworkScreen.Show().Plan.GoalBody)
+	}
 }
 
 func TestRealtimeTickRapidCrossViewWritesDoNotMaskPendingDomain(t *testing.T) {
@@ -645,7 +674,8 @@ func TestRealtimeTickRapidCrossViewWritesDoNotMaskPendingDomain(t *testing.T) {
 func TestRealtimeReloadStaleScopeDroppedAfterNavigation(t *testing.T) {
 	t.Run("activity reload for a different task is dropped", func(t *testing.T) {
 		var m Model
-		m.taskID = 5 // user is now viewing task #5
+		m.taskDetailScreen = taskdetail.New().Open(taskdetail.Payload{Task: domain.Task{ID: 5}}, m.screenFrame())
+		m.screenStack = []screenhost.ID{screenhost.TaskDetail}
 
 		// Stale worker captured task #99 before the user navigated to #5.
 		m.applyRealtimeReload(realtimeReloadMsg{
@@ -658,8 +688,8 @@ func TestRealtimeReloadStaleScopeDroppedAfterNavigation(t *testing.T) {
 			dataVersion:      9,
 			dataVersionValid: true,
 		})
-		if len(m.activity) != 0 {
-			t.Fatalf("stale-scope activity folded; activity=%#v, want dropped", m.activity)
+		if len(m.taskDetailScreen.Payload().Activity) != 0 {
+			t.Fatalf("stale-scope activity folded; activity=%#v, want dropped", m.taskDetailScreen.Payload().Activity)
 		}
 		if _, ok := m.dataVersionBaseline(realtimeReloadActivity); ok {
 			t.Fatal("stale-scope activity drop committed the activity baseline; must leave it uncommitted for retry")
@@ -676,28 +706,28 @@ func TestRealtimeReloadStaleScopeDroppedAfterNavigation(t *testing.T) {
 			dataVersion:      9,
 			dataVersionValid: true,
 		})
-		if len(m.activity) != 1 || m.activityForTask != 5 {
-			t.Fatalf("matching-scope activity not folded; activity=%#v forTask=%d", m.activity, m.activityForTask)
+		if activity := m.taskDetailScreen.Payload().Activity; len(activity) != 1 {
+			t.Fatalf("matching-scope activity not folded; activity=%#v", activity)
 		}
 		assertRealtimeBaseline(t, m, realtimeReloadActivity, 9)
 	})
 
 	t.Run("plan-show reload for a different plan is dropped", func(t *testing.T) {
 		var m Model
-		m.planNetworkShow = app.PlanShow{Plan: domain.Plan{ID: 1, Slug: "alpha"}}
+		m.planNetworkScreen = plannetwork.New().Open(plannetwork.Payload{Show: domain.PlanShow{Plan: domain.Plan{ID: 1, Slug: "alpha"}}})
 
 		// Stale worker captured plan "beta" before the user switched to "alpha".
 		m.applyRealtimeReload(realtimeReloadMsg{
 			kind:             realtimeReloadPlanShow,
 			gen:              1,
 			scopeSlug:        "beta",
-			planShow:         app.PlanShow{Plan: domain.Plan{ID: 2, Slug: "beta", GoalBody: "stale-beta"}},
+			planShow:         domain.PlanShow{Plan: domain.Plan{ID: 2, Slug: "beta", GoalBody: "stale-beta"}},
 			planValid:        true,
 			dataVersion:      9,
 			dataVersionValid: true,
 		})
-		if m.planNetworkShow.Plan.Slug != "alpha" {
-			t.Fatalf("stale-scope planShow clobbered the active plan; slug=%q, want alpha", m.planNetworkShow.Plan.Slug)
+		if m.planNetworkScreen.Show().Plan.Slug != "alpha" {
+			t.Fatalf("stale-scope planShow clobbered the active plan; slug=%q, want alpha", m.planNetworkScreen.Show().Plan.Slug)
 		}
 		if _, ok := m.dataVersionBaseline(realtimeReloadPlanShow); ok {
 			t.Fatal("stale-scope planShow drop committed the planShow baseline; must leave it uncommitted for retry")
@@ -708,94 +738,83 @@ func TestRealtimeReloadStaleScopeDroppedAfterNavigation(t *testing.T) {
 			kind:             realtimeReloadPlanShow,
 			gen:              2,
 			scopeSlug:        "alpha",
-			planShow:         app.PlanShow{Plan: domain.Plan{ID: 1, Slug: "alpha", GoalBody: "fresh-alpha"}},
+			planShow:         domain.PlanShow{Plan: domain.Plan{ID: 1, Slug: "alpha", GoalBody: "fresh-alpha"}},
 			planValid:        true,
 			dataVersion:      9,
 			dataVersionValid: true,
 		})
-		if m.planNetworkShow.Plan.GoalBody != "fresh-alpha" {
-			t.Fatalf("matching-scope planShow not folded; goal=%q, want fresh-alpha", m.planNetworkShow.Plan.GoalBody)
+		if m.planNetworkScreen.Show().Plan.GoalBody != "fresh-alpha" {
+			t.Fatalf("matching-scope planShow not folded; goal=%q, want fresh-alpha", m.planNetworkScreen.Show().Plan.GoalBody)
 		}
 		assertRealtimeBaseline(t, m, realtimeReloadPlanShow, 9)
 	})
 }
 
 func Test1289RealtimeTickInvariantsByName(t *testing.T) {
-	t.Run("idle tick = exactly 1 probe / 0 rebuild across N idle ticks", func(t *testing.T) {
-		f, model := newRealtimeMatrixFixture(t)
-		setRealtimeDomainView(t, f, &model, realtimeReloadBundle)
-		model, msgs := driveRealtimeTickAll(t, model)
-		assertReloadKinds(t, msgs, realtimeReloadBundle)
-		assertRealtimeBaseline(t, model, realtimeReloadBundle, 1)
-		f.tasks.listCalls.Store(0)
-		probesBefore := f.watermark.calls.Load()
+	t.Run("idle tick = exactly 1 probe / 0 rebuild across N idle ticks", testIdleTickInvariant)
+	t.Run("off-thread worker never references m", testRealtimeWorkerIsolation)
+	t.Run("generation guard drops an older-gen msg", testRealtimeGenerationGuard)
+}
 
-		const idleTicks = 5
-		for i := 0; i < idleTicks; i++ {
-			model, _ = updateRealtimeTick(t, model)
-		}
-		if got := f.watermark.calls.Load() - probesBefore; got != idleTicks {
-			t.Fatalf("idle ticks ran %d probes, want exactly %d", got, idleTicks)
-		}
-		if got := f.tasks.listCalls.Load(); got != 0 {
-			t.Fatalf("idle ticks rebuilt bundle %d time(s), want 0", got)
-		}
-	})
+func testIdleTickInvariant(t *testing.T) {
+	f, model := newRealtimeMatrixFixture(t)
+	setRealtimeDomainView(t, f, &model, realtimeReloadBundle)
+	model, msgs := driveRealtimeTickAll(t, model)
+	assertReloadKinds(t, msgs, realtimeReloadBundle)
+	assertRealtimeBaseline(t, model, realtimeReloadBundle, 1)
+	f.tasks.listCalls.Store(0)
+	probesBefore := f.watermark.calls.Load()
+	const idleTicks = 5
+	for i := 0; i < idleTicks; i++ {
+		model, _ = updateRealtimeTick(t, model)
+	}
+	if got := f.watermark.calls.Load() - probesBefore; got != idleTicks {
+		t.Fatalf("idle ticks ran %d probes, want exactly %d", got, idleTicks)
+	}
+	if got := f.tasks.listCalls.Load(); got != 0 {
+		t.Fatalf("idle ticks rebuilt bundle %d time(s), want 0", got)
+	}
+}
 
-	t.Run("off-thread worker never references m", func(t *testing.T) {
-		srcBytes, err := os.ReadFile("model.go")
-		if err != nil {
-			t.Fatalf("ReadFile(model.go) error = %v", err)
+func testRealtimeWorkerIsolation(t *testing.T) {
+	srcBytes, err := os.ReadFile("model.go")
+	if err != nil {
+		t.Fatalf("ReadFile(model.go) error = %v", err)
+	}
+	src := string(srcBytes)
+	start := strings.Index(src, "func (m *Model) realtimeRefreshCmd")
+	if start < 0 {
+		t.Fatal("realtimeRefreshCmd source not found")
+	}
+	endRel := strings.Index(src[start:], "// realtimeReloadRegistry")
+	if endRel < 0 {
+		t.Fatal("realtimeRefreshCmd end sentinel not found")
+	}
+	body := src[start : start+endRel]
+	parts := strings.Split(body, "cmd = func() tea.Msg {")
+	if len(parts) < 2 {
+		t.Fatal("realtimeRefreshCmd worker closures not found")
+	}
+	for i, part := range parts[1:] {
+		end := strings.Index(part, "registerRealtimeReloadCmd(cmd)")
+		if end < 0 {
+			t.Fatalf("worker closure %d end sentinel not found", i+1)
 		}
-		src := string(srcBytes)
-		start := strings.Index(src, "func (m *Model) realtimeRefreshCmd")
-		if start < 0 {
-			t.Fatal("realtimeRefreshCmd source not found")
+		closure := part[:end]
+		if strings.Contains(closure, "m.") {
+			t.Fatalf("worker closure %d references m; off-thread reload workers must use captured inputs only:\n%s", i+1, closure)
 		}
-		endRel := strings.Index(src[start:], "// realtimeReloadRegistry")
-		if endRel < 0 {
-			t.Fatal("realtimeRefreshCmd end sentinel not found")
-		}
-		body := src[start : start+endRel]
-		parts := strings.Split(body, "cmd = func() tea.Msg {")
-		if len(parts) < 2 {
-			t.Fatal("realtimeRefreshCmd worker closures not found")
-		}
-		for i, part := range parts[1:] {
-			end := strings.Index(part, "registerRealtimeReloadCmd(cmd)")
-			if end < 0 {
-				t.Fatalf("worker closure %d end sentinel not found", i+1)
-			}
-			closure := part[:end]
-			if strings.Contains(closure, "m.") {
-				t.Fatalf("worker closure %d references m; off-thread reload workers must use captured inputs only:\n%s", i+1, closure)
-			}
-		}
-	})
+	}
+}
 
-	t.Run("generation guard drops an older-gen msg", func(t *testing.T) {
-		var model Model
-		newer := realtimeReloadMsg{
-			kind:             realtimeReloadBundle,
-			gen:              2,
-			dataVersion:      20,
-			dataVersionValid: true,
-			snap:             app.TUISnapshot{Tasks: []domain.Task{{ID: 1, Title: "newer"}, {ID: 2, Title: "newer-2"}}},
-			snapValid:        true,
-		}
-		older := realtimeReloadMsg{
-			kind:             realtimeReloadBundle,
-			gen:              1,
-			dataVersion:      10,
-			dataVersionValid: true,
-			snap:             app.TUISnapshot{Tasks: []domain.Task{{ID: 1, Title: "older"}}},
-			snapValid:        true,
-		}
-		model.applyRealtimeReload(newer)
-		model.applyRealtimeReload(older)
-		if len(model.tasks) != 2 || model.tasks[0].Title != "newer" {
-			t.Fatalf("older-gen msg was not dropped; tasks=%#v", model.tasks)
-		}
-		assertRealtimeBaseline(t, model, realtimeReloadBundle, 20)
-	})
+func testRealtimeGenerationGuard(t *testing.T) {
+	var model Model
+	newer := realtimeReloadMsg{kind: realtimeReloadBundle, gen: 2, dataVersion: 20, dataVersionValid: true, snap: operation.BoardSnapshot{Tasks: []domain.Task{{ID: 1, Title: "newer"}, {ID: 2, Title: "newer-2"}}}, snapValid: true}
+	older := realtimeReloadMsg{kind: realtimeReloadBundle, gen: 1, dataVersion: 10, dataVersionValid: true, snap: operation.BoardSnapshot{Tasks: []domain.Task{{ID: 1, Title: "older"}}}, snapValid: true}
+	model.applyRealtimeReload(newer)
+	model.applyRealtimeReload(older)
+	if len(model.tasks) != 2 || model.tasks[0].Title != "newer" {
+		t.Fatalf("older-gen msg was not dropped; tasks=%#v", model.tasks)
+	}
+	assertRealtimeBaseline(t, model, realtimeReloadBundle, 20)
 }

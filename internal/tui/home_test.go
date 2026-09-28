@@ -11,13 +11,11 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
 
-	"omakiten/internal/app"
 	"omakiten/internal/domain"
-	"omakiten/internal/testfixtures"
 	"omakiten/internal/testfixtures/runtimecache"
 	"omakiten/internal/testfixtures/snapstore"
 	"omakiten/internal/token"
-	"omakiten/internal/tui/components/notification"
+	"omakiten/internal/tui/screens/home"
 )
 
 // pumpAsync drives any tea.Cmd the model returned through to its
@@ -47,23 +45,38 @@ type busyCheckpointer struct {
 	calls int
 }
 
-// legacyProjectRepository deliberately hides optional adapter capabilities so
-// tests can keep exercising ProjectService's fake/non-SQLite fallback path.
-type legacyProjectRepository struct {
-	app.ProjectRepository
-}
-
 func (b *busyCheckpointer) Checkpoint(context.Context) error {
 	b.calls++
 	return b.err
 }
 
-// firstCountsFailRepo wraps a ProjectRepository and fails the first
+// projectDeleteStore is the agentruntime.ProjectStore method set without
+// sqlite.DeleteProjectWithBackup, so wrapping it hides the atomic delete
+// path and ProjectService.Delete uses checkpoint + BackupService.Run.
+type projectDeleteStore interface {
+	UpsertProject(ctx context.Context, name, slug, rootPath string) (domain.Project, error)
+	FindProjectByID(ctx context.Context, id int64) (domain.Project, error)
+	FindProjectBySlug(ctx context.Context, slug string) (domain.Project, error)
+	FindProjectsContainingPath(ctx context.Context, path string) ([]domain.Project, error)
+	ListProjects(ctx context.Context) ([]domain.Project, error)
+	ProjectDeleteCounts(ctx context.Context, projectID int64) (domain.ProjectDeleteCounters, error)
+	DeleteProject(ctx context.Context, projectID int64) error
+	UpdateProjectDescription(ctx context.Context, id int64, description string) (domain.Project, error)
+	RecordEntityEvent(ctx context.Context, entityType string, entityID, projectID int64, eventType, payload string) error
+	Checkpoint(ctx context.Context) error
+}
+
+// legacyProjectStore satisfies agentruntime.ProjectStore without promoting
+// AtomicProjectDeleteRepository — TUI tests that pin the checkpoint /
+// SnapshotWriter / audit-event path need the legacy Delete sequence.
+type legacyProjectStore struct{ projectDeleteStore }
+
+// firstCountsFailRepo wraps a project store and fails the first
 // ProjectDeleteCounts call (mirroring a transient SQLite hiccup at
-// arm-time); subsequent calls delegate to the real repo so the
-// re-query path lands the actual counts.
+// arm-time); subsequent calls delegate so the re-query path lands
+// the actual counts.
 type firstCountsFailRepo struct {
-	app.ProjectRepository
+	projectDeleteStore
 	calls int
 }
 
@@ -72,14 +85,14 @@ func (r *firstCountsFailRepo) ProjectDeleteCounts(ctx context.Context, projectID
 	if r.calls == 1 {
 		return domain.ProjectDeleteCounters{}, errors.New("transient sqlite hiccup")
 	}
-	return r.ProjectRepository.ProjectDeleteCounts(ctx, projectID)
+	return r.projectDeleteStore.ProjectDeleteCounts(ctx, projectID)
 }
 
 // recordingEvents captures every RecordEntityEvent payload so tests
 // can assert the audit truthfulness of post-commit emissions. Other
 // methods delegate to the embedded EventRepository (the real store).
 type recordingEvents struct {
-	app.EventRepository
+	EventStore
 	calls []recordingEventCall
 }
 
@@ -99,7 +112,7 @@ func (r *recordingEvents) RecordEntityEvent(ctx context.Context, entityType stri
 		EventType:  eventType,
 		Payload:    payload,
 	})
-	return r.EventRepository.RecordEntityEvent(ctx, entityType, entityID, projectID, eventType, payload)
+	return r.EventStore.RecordEntityEvent(ctx, entityType, entityID, projectID, eventType, payload)
 }
 
 // TestNewModelWithEmptyProjectOpensHome covers AC1/AC14: launching the TUI
@@ -119,9 +132,9 @@ func TestNewModelWithEmptyProjectOpensHome(t *testing.T) {
 	}
 
 	model, err := NewModel(ctx, domain.ProjectContext{}, Repositories{
-		Tasks:    store,
-		Projects: store,
-		Cache:    runtimecache.Install(0, store.Snapshot()), Workflow: app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot()),
+		Tasks:        store,
+		Projects:     legacyProjectStore{store},
+		Cache:        runtimecache.InstallWithStore(0, store),
 		Comments:     store,
 		Dependencies: store,
 
@@ -135,7 +148,7 @@ func TestNewModelWithEmptyProjectOpensHome(t *testing.T) {
 	}
 
 	rendered := ansi.Strip(model.View())
-	if !strings.Contains(rendered, "// PROJECTS · 2") {
+	if !strings.Contains(rendered, "PROJECTS · 2") {
 		t.Fatalf("home should list 2 projects:\n%s", rendered)
 	}
 	if !strings.Contains(rendered, "Alpha") || !strings.Contains(rendered, "Bravo") {
@@ -146,6 +159,7 @@ func TestNewModelWithEmptyProjectOpensHome(t *testing.T) {
 // TestHomeHidesTabBar covers AC8/AC15: the per-view tab bar is suppressed
 // while on Home so tab/digit navigation never lands on Home and the surface
 // reads as chromeless.
+
 func TestHomeHidesTabBar(t *testing.T) {
 	ctx := context.Background()
 	store := snapstore.Open(t, t.TempDir()+"/omakiten.db")
@@ -157,9 +171,9 @@ func TestHomeHidesTabBar(t *testing.T) {
 	}
 
 	model, err := NewModel(ctx, domain.ProjectContext{}, Repositories{
-		Tasks:    store,
-		Projects: store,
-		Cache:    runtimecache.Install(0, store.Snapshot()), Workflow: app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot()),
+		Tasks:        store,
+		Projects:     legacyProjectStore{store},
+		Cache:        runtimecache.InstallWithStore(0, store),
 		Comments:     store,
 		Dependencies: store,
 
@@ -170,7 +184,7 @@ func TestHomeHidesTabBar(t *testing.T) {
 	}
 
 	rendered := ansi.Strip(model.View())
-	for _, label := range []string{"01 // TASKS", "02 // STATS", "03 // SETTINGS"} {
+	for _, label := range []string{"01 // TASKS", "02 // STATS", "03 // STUDIO", "04 // SETTINGS"} {
 		if strings.Contains(rendered, label) {
 			t.Fatalf("home should hide nav bar but found %q:\n%s", label, rendered)
 		}
@@ -197,9 +211,9 @@ func TestCtrlHReturnsToHome(t *testing.T) {
 	}
 
 	model, err := NewModel(ctx, project.Context(), Repositories{
-		Tasks:    store,
-		Projects: store,
-		Cache:    runtimecache.Install(0, store.Snapshot()), Workflow: app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot()),
+		Tasks:        store,
+		Projects:     legacyProjectStore{store},
+		Cache:        runtimecache.InstallWithStore(0, store),
 		Comments:     store,
 		Dependencies: store,
 
@@ -212,8 +226,8 @@ func TestCtrlHReturnsToHome(t *testing.T) {
 		t.Fatalf("(top, sub) = (%d, %d), want (topTasks, subBoard)", model.top, model.sub)
 	}
 
-	updated, _ := model.Update(tea.KeyMsg{Type: tea.KeyCtrlH})
-	got := updated.(Model)
+	updated, cmd := model.Update(tea.KeyMsg{Type: tea.KeyCtrlH})
+	got := pumpAsync(t, updated.(Model), cmd)
 	if got.top != topHome {
 		t.Fatalf("top = %d after ctrl+h, want topHome (%d)", got.top, topHome)
 	}
@@ -232,9 +246,9 @@ func TestHomeEnterSelectsProject(t *testing.T) {
 	}
 
 	model, err := NewModel(ctx, domain.ProjectContext{}, Repositories{
-		Tasks:    store,
-		Projects: store,
-		Cache:    runtimecache.Install(0, store.Snapshot()), Workflow: app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot()),
+		Tasks:        store,
+		Projects:     legacyProjectStore{store},
+		Cache:        runtimecache.InstallWithStore(0, store),
 		Comments:     store,
 		Dependencies: store,
 
@@ -272,9 +286,9 @@ func TestCtrlHOnHomeReloads(t *testing.T) {
 	}
 
 	model, err := NewModel(ctx, domain.ProjectContext{}, Repositories{
-		Tasks:    store,
-		Projects: store,
-		Cache:    runtimecache.Install(0, store.Snapshot()), Workflow: app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot()),
+		Tasks:        store,
+		Projects:     legacyProjectStore{store},
+		Cache:        runtimecache.InstallWithStore(0, store),
 		Comments:     store,
 		Dependencies: store,
 
@@ -285,8 +299,8 @@ func TestCtrlHOnHomeReloads(t *testing.T) {
 		t.Fatalf("NewModel() error = %v", err)
 	}
 
-	updated, _ := model.Update(tea.KeyMsg{Type: tea.KeyCtrlH})
-	got := updated.(Model)
+	updated, cmd := model.Update(tea.KeyMsg{Type: tea.KeyCtrlH})
+	got := pumpAsync(t, updated.(Model), cmd)
 	if got.top != topHome {
 		t.Fatalf("top = %d after ctrl+h on home, want topHome (%d)", got.top, topHome)
 	}
@@ -319,9 +333,8 @@ func TestHomeProjectDeleteArmThenConfirm(t *testing.T) {
 
 	model, err := NewModel(ctx, domain.ProjectContext{}, Repositories{
 		Tasks:        store,
-		Projects:     store,
-		Cache:        runtimecache.Install(0, store.Snapshot()),
-		Workflow:     app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot()),
+		Projects:     legacyProjectStore{store},
+		Cache:        runtimecache.InstallWithStore(0, store),
 		Comments:     store,
 		Dependencies: store,
 		Tags:         store,
@@ -336,11 +349,11 @@ func TestHomeProjectDeleteArmThenConfirm(t *testing.T) {
 	// First `d` arms the gate but does not delete.
 	updated, _ := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}})
 	armed := updated.(Model)
-	if armed.homeProjectDeletePendingID == 0 {
+	if armed.homeScreen.ArmedProjectID() == 0 {
 		t.Fatalf("first `d` did not arm home delete gate")
 	}
-	if armed.homeProjectDeletePendingID != doomed.ID {
-		t.Fatalf("pending id = %d, want %d (cursor on first card)", armed.homeProjectDeletePendingID, doomed.ID)
+	if armed.homeScreen.ArmedProjectID() != doomed.ID {
+		t.Fatalf("pending id = %d, want %d (cursor on first card)", armed.homeScreen.ArmedProjectID(), doomed.ID)
 	}
 	if _, err := store.FindProjectByID(ctx, doomed.ID); err != nil {
 		t.Fatalf("project gone after arm-only press: %v", err)
@@ -352,8 +365,8 @@ func TestHomeProjectDeleteArmThenConfirm(t *testing.T) {
 	if _, err := store.FindProjectByID(ctx, doomed.ID); err == nil {
 		t.Fatalf("project still present after confirm")
 	}
-	if deleted.homeProjectDeletePendingID != 0 {
-		t.Fatalf("pending id = %d after confirm, want 0", deleted.homeProjectDeletePendingID)
+	if deleted.homeScreen.ArmedProjectID() != 0 {
+		t.Fatalf("pending id = %d after confirm, want 0", deleted.homeScreen.ArmedProjectID())
 	}
 	if !strings.Contains(deleted.status, "doomed") || !strings.Contains(deleted.status, "backup") {
 		t.Fatalf("post-delete status = %q, want project slug + backup mention", deleted.status)
@@ -403,9 +416,8 @@ func TestHomeProjectDeleteOverlayConfirm(t *testing.T) {
 
 	model, err := NewModel(ctx, domain.ProjectContext{}, Repositories{
 		Tasks:        store,
-		Projects:     store,
-		Cache:        runtimecache.Install(0, store.Snapshot()),
-		Workflow:     app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot()),
+		Projects:     legacyProjectStore{store},
+		Cache:        runtimecache.InstallWithStore(0, store),
 		Comments:     store,
 		Dependencies: store,
 		Tags:         store,
@@ -425,8 +437,8 @@ func TestHomeProjectDeleteOverlayConfirm(t *testing.T) {
 	if armed.notification == nil {
 		t.Fatalf("first `d` did not spawn the home-project-delete-confirm overlay")
 	}
-	if armed.homeProjectDeletePendingID != doomed.ID {
-		t.Fatalf("pending id = %d, want %d", armed.homeProjectDeletePendingID, doomed.ID)
+	if armed.homeScreen.ArmedProjectID() != doomed.ID {
+		t.Fatalf("pending id = %d, want %d", armed.homeScreen.ArmedProjectID(), doomed.ID)
 	}
 	if _, err := store.FindProjectByID(ctx, doomed.ID); err != nil {
 		t.Fatalf("project gone after overlay show: %v", err)
@@ -443,16 +455,16 @@ func TestHomeProjectDeleteOverlayConfirm(t *testing.T) {
 		t.Fatalf("D on settled overlay returned no Cmd")
 	}
 	actionMsg := cmd()
-	if _, ok := actionMsg.(notification.ActionMsg); !ok {
-		t.Fatalf("Cmd produced %T, want notification.ActionMsg", actionMsg)
+	if _, ok := actionMsg.(ActionMsg); !ok {
+		t.Fatalf("Cmd produced %T, want ActionMsg", actionMsg)
 	}
 	updated, actionCmd := armed.Update(actionMsg)
 	deleted := pumpAsync(t, updated.(Model), actionCmd)
 	if deleted.notification != nil {
 		t.Fatalf("notification still set after confirm action")
 	}
-	if deleted.homeProjectDeletePendingID != 0 {
-		t.Fatalf("pending id = %d after confirm, want 0", deleted.homeProjectDeletePendingID)
+	if deleted.homeScreen.ArmedProjectID() != 0 {
+		t.Fatalf("pending id = %d after confirm, want 0", deleted.homeScreen.ArmedProjectID())
 	}
 	if _, err := store.FindProjectByID(ctx, doomed.ID); err == nil {
 		t.Fatalf("project still present after overlay confirm")
@@ -501,9 +513,8 @@ func TestHomeProjectDeleteOverlayEscClears(t *testing.T) {
 
 	model, err := NewModel(ctx, domain.ProjectContext{}, Repositories{
 		Tasks:        store,
-		Projects:     store,
-		Cache:        runtimecache.Install(0, store.Snapshot()),
-		Workflow:     app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot()),
+		Projects:     legacyProjectStore{store},
+		Cache:        runtimecache.InstallWithStore(0, store),
 		Comments:     store,
 		Dependencies: store,
 		Tags:         store,
@@ -531,16 +542,16 @@ func TestHomeProjectDeleteOverlayEscClears(t *testing.T) {
 		t.Fatalf("esc on settled overlay returned no Cmd")
 	}
 	dismissMsg := cmd()
-	if _, ok := dismissMsg.(notification.DismissedMsg); !ok {
-		t.Fatalf("Cmd produced %T, want notification.DismissedMsg", dismissMsg)
+	if _, ok := dismissMsg.(DismissedMsg); !ok {
+		t.Fatalf("Cmd produced %T, want DismissedMsg", dismissMsg)
 	}
 	updated, _ = armed.Update(dismissMsg)
 	cancelled := updated.(Model)
 	if cancelled.notification != nil {
 		t.Fatalf("notification still set after esc")
 	}
-	if cancelled.homeProjectDeletePendingID != 0 {
-		t.Fatalf("pending id = %d after esc, want 0", cancelled.homeProjectDeletePendingID)
+	if cancelled.homeScreen.ArmedProjectID() != 0 {
+		t.Fatalf("pending id = %d after esc, want 0", cancelled.homeScreen.ArmedProjectID())
 	}
 	if _, err := store.FindProjectByID(ctx, doomed.ID); err != nil {
 		t.Fatalf("project removed despite esc dismissal: %v", err)
@@ -573,9 +584,8 @@ func TestHomeProjectDeleteSurfacesAuditWarn(t *testing.T) {
 
 	model, err := NewModel(ctx, domain.ProjectContext{}, Repositories{
 		Tasks:        store,
-		Projects:     &legacyProjectRepository{ProjectRepository: store},
-		Cache:        runtimecache.Install(0, store.Snapshot()),
-		Workflow:     app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot()),
+		Projects:     legacyProjectStore{store},
+		Cache:        runtimecache.InstallWithStore(0, store),
 		Comments:     store,
 		Dependencies: store,
 		Tags:         store,
@@ -636,9 +646,8 @@ func TestHomeProjectDeleteAuditWarnSurvivesBackupFailure(t *testing.T) {
 
 	model, err := NewModel(ctx, domain.ProjectContext{}, Repositories{
 		Tasks:        store,
-		Projects:     &legacyProjectRepository{ProjectRepository: store},
-		Cache:        runtimecache.Install(0, store.Snapshot()),
-		Workflow:     app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot()),
+		Projects:     legacyProjectStore{store},
+		Cache:        runtimecache.InstallWithStore(0, store),
 		Comments:     store,
 		Dependencies: store,
 		Tags:         store,
@@ -717,9 +726,8 @@ func TestHomeProjectDeleteOverlayPathSurfacesAuditWarn(t *testing.T) {
 
 	model, err := NewModel(ctx, domain.ProjectContext{}, Repositories{
 		Tasks:        store,
-		Projects:     &legacyProjectRepository{ProjectRepository: store},
-		Cache:        runtimecache.Install(0, store.Snapshot()),
-		Workflow:     app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot()),
+		Projects:     legacyProjectStore{store},
+		Cache:        runtimecache.InstallWithStore(0, store),
 		Comments:     store,
 		Dependencies: store,
 		Tags:         store,
@@ -745,8 +753,8 @@ func TestHomeProjectDeleteOverlayPathSurfacesAuditWarn(t *testing.T) {
 		t.Fatalf("D on settled overlay returned no Cmd")
 	}
 	actionMsg := cmd()
-	if _, ok := actionMsg.(notification.ActionMsg); !ok {
-		t.Fatalf("Cmd produced %T, want notification.ActionMsg", actionMsg)
+	if _, ok := actionMsg.(ActionMsg); !ok {
+		t.Fatalf("Cmd produced %T, want ActionMsg", actionMsg)
 	}
 	updated, actionCmd := armed.Update(actionMsg)
 	final := pumpAsync(t, updated.(Model), actionCmd)
@@ -795,14 +803,13 @@ func TestHomeProjectDeleteRequeriesZeroCountersForAuditTruth(t *testing.T) {
 		}
 	}
 
-	wrappedRepo := &firstCountsFailRepo{ProjectRepository: store}
-	recorder := &recordingEvents{EventRepository: store}
+	wrappedRepo := &firstCountsFailRepo{projectDeleteStore: store}
+	recorder := &recordingEvents{EventStore: store}
 
 	model, err := NewModel(ctx, domain.ProjectContext{}, Repositories{
 		Tasks:        store,
 		Projects:     wrappedRepo,
-		Cache:        runtimecache.Install(0, store.Snapshot()),
-		Workflow:     app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot()),
+		Cache:        runtimecache.InstallWithStore(0, store),
 		Comments:     store,
 		Dependencies: store,
 		Tags:         store,
@@ -872,9 +879,9 @@ func TestHomeRendersProjectTagBadges(t *testing.T) {
 	}
 
 	model, err := NewModel(ctx, domain.ProjectContext{}, Repositories{
-		Tasks:    store,
-		Projects: store,
-		Cache:    runtimecache.Install(0, store.Snapshot()), Workflow: app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot()),
+		Tasks:        store,
+		Projects:     legacyProjectStore{store},
+		Cache:        runtimecache.InstallWithStore(0, store),
 		Comments:     store,
 		Dependencies: store,
 
@@ -887,5 +894,43 @@ func TestHomeRendersProjectTagBadges(t *testing.T) {
 	rendered := ansi.Strip(model.View())
 	if !strings.Contains(rendered, "GO") {
 		t.Fatalf("home card should surface project_tags as upper-cased badges:\n%s", rendered)
+	}
+}
+
+func TestHomeDropsStaleDeleteResult(t *testing.T) {
+	model := Model{top: topHome, homeScreen: home.New().Loading(2), status: "current"}
+	model.handleHomeProjectDeleteResult(homeProjectDeleteResultMsg{generation: 1, err: errors.New("stale failure")})
+	if model.status != "current" || !model.homeScreen.IsLoading() {
+		t.Fatalf("stale delete result applied: status=%q loading=%v", model.status, model.homeScreen.IsLoading())
+	}
+	model.top = topTasks
+	model.handleHomeProjectDeleteResult(homeProjectDeleteResultMsg{generation: 2, err: errors.New("wrong route")})
+	if model.status != "current" {
+		t.Fatalf("off-route delete result applied: status=%q", model.status)
+	}
+}
+
+func TestHomeFailureFinalRenderSanitizesGlobalStatus(t *testing.T) {
+	model := Model{
+		styles:     newStyles(config.Theme{}),
+		width:      80,
+		height:     24,
+		top:        topHome,
+		homeScreen: home.New().Loading(1),
+	}
+	model.applyHomeReload(homeReloadResultMsg{generation: 1, err: errors.New(hostileGlobalStatus)})
+
+	assertHostileStatusIsSafe(t, model.View())
+}
+
+func TestHomeReloadDropsResultAfterRuntimeRotation(t *testing.T) {
+	model := Model{top: topHome, homeScreen: home.New().Loading(1), status: "current", studioRuntimeGeneration: 2}
+	model.applyHomeReload(homeReloadResultMsg{
+		generation:        1,
+		runtimeGeneration: 1,
+		err:               errors.New("old runtime failure"),
+	})
+	if model.status != "current" || !model.homeScreen.IsLoading() {
+		t.Fatalf("stale runtime home result applied: status=%q loading=%v", model.status, model.homeScreen.IsLoading())
 	}
 }

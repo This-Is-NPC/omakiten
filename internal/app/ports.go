@@ -33,7 +33,7 @@ type ProjectRepository interface {
 	DeleteProject(ctx context.Context, projectID int64) error
 	// UpdateProjectDescription persists a new description onto a live
 	// (non-archived) project and returns the refreshed row. The
-	// projects.description column has existed since migration 002 but
+	// projects.description is part of the current schema but
 	// had no write path until this restored it. An unknown or archived
 	// id matches no row and surfaces ErrProjectNotFound.
 	UpdateProjectDescription(ctx context.Context, id int64, description string) (domain.Project, error)
@@ -108,17 +108,6 @@ type DataVersionReader interface {
 // satisfies it via RecordEntityEvent.
 type EventRecorder interface {
 	RecordEntityEvent(ctx context.Context, entityType string, entityID int64, projectID int64, eventType string, payload string) error
-}
-
-// SnapshotSource exposes the active per-project *config.Snapshot. The
-// Phase 2-bis app services capture this pointer at construction time
-// and read every config knob through it; the pointer is stable for the
-// service's lifetime. *sqlite.Store satisfies it transitionally by
-// projecting its in-memory providers through config.BuildSnapshot;
-// agentruntime.ProjectRuntime will become the canonical implementor
-// once the Store stops carrying config.
-type SnapshotSource interface {
-	Snapshot() *config.Snapshot
 }
 
 // TaskRepository persists task rows. The methods are deliberately policy-free:
@@ -349,14 +338,14 @@ type PlanRepository interface {
 	// the plan id belongs to a different project or does not exist, and
 	// ErrValidation when no field is supplied (no-op rejected).
 	UpdatePlan(ctx context.Context, projectID, planID int64, name, slug, status *string) (domain.Plan, error)
-	// DeletePlan hard-deletes a plan row. FK policy (migration 023)
+	// DeletePlan hard-deletes a plan row. Current FK policy
 	// cascades plan_waves and SET-NULLs tasks.plan_id / wave_id, so member
 	// tasks survive unattached. Emits plan.deleted carrying {slug, name,
 	// status}. Returns ErrPlanNotFound when the plan id belongs to a
 	// different project or does not exist.
 	DeletePlan(ctx context.Context, projectID, planID int64) (domain.Event, error)
 	AddPlanWave(ctx context.Context, projectID, planID int64, name string, position int) (domain.PlanWave, error)
-	// RemovePlanWave deletes a wave. The FK policy (migration 023,
+	// RemovePlanWave deletes a wave. The FK policy
 	// tasks.wave_id ON DELETE SET NULL) clears member tasks' wave_id
 	// while leaving plan_id intact, so the tasks survive in the plan but
 	// unscheduled. Emits plan.wave_removed. Returns ErrPlanWaveNotFound
@@ -439,17 +428,18 @@ type PlanFinalizer interface {
 // hexagonal direction stays inward (app → port → adapter → disk).
 type BundleStore interface {
 	LoadBundle(path string) (config.Bundle, error)
+	LoadBundlePlan(path string) (config.Bundle, map[string]string, error)
 	SaveBundle(path string, bundle config.Bundle) error
 	HashFile(path string) (string, error)
 	WriteAtomic(path string, data []byte) error
+	RemoveFile(path string) error
+	ValidatePath(root, path string) error
 	EnsureDefaultFiles(rootDir string) error
-	MigrateLayout(rootDir string) error
 	ConfigRootFromYAMLPath(path string) string
 }
 
 // EntityFileWriter renders per-entity (.md) file payloads and resolves their
-// canonical disk paths. Used by the law/persona/skill services to stage
-// FileOps that the BundleEditor then writes through atomically.
+// canonical disk paths. BundleEditor applies those payloads atomically.
 type EntityFileWriter interface {
 	LawFileBytes(law config.Law) ([]byte, error)
 	PersonaFileBytes(persona config.Persona) ([]byte, error)
@@ -463,4 +453,15 @@ type EntityFileWriter interface {
 // the slug-policy isn't owned by a specific config-package import.
 type Slugifier interface {
 	Slugify(value string) string
+}
+
+// TUIQuery is the TUI board read-model port: one Snapshot call fans out to
+// the task/dependency/comment/tag repositories plus the cached
+// *config.Snapshot. It is deliberately NOT a persistence port — sqlite
+// must not implement it. *TUIQueryService is the in-app aggregator that
+// satisfies the port. Distinct from operation.Service.Snapshot
+// (wiring.snapshot), which is composition-root wiring, not the board
+// read-model.
+type TUIQuery interface {
+	Snapshot(ctx context.Context, project domain.ProjectContext, sort domain.TaskSort, opts ...SnapshotOptions) (TUISnapshot, error)
 }

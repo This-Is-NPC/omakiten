@@ -6,10 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"omakiten/internal/app"
 	"omakiten/internal/domain"
-	"omakiten/internal/testfakes/eventrepo"
-	"omakiten/internal/tui/components/notification"
 )
 
 func TestHandleNotificationAction_emptyCommandSkipsDispatch(t *testing.T) {
@@ -19,7 +16,7 @@ func TestHandleNotificationAction_emptyCommandSkipsDispatch(t *testing.T) {
 		called = true
 		return nil, nil
 	}
-	m.handleNotificationAction(notification.ActionMsg{Slug: "kit", ActionID: "skip", Command: nil})
+	m.handleNotificationAction(ActionMsg{Slug: "kit", ActionID: "skip", Command: nil})
 	if called {
 		t.Fatal("DispatchCommand must not run for empty Command")
 	}
@@ -35,7 +32,7 @@ func TestHandleNotificationAction_dispatchSuccessRefreshes(t *testing.T) {
 		gotArgs = args
 		return []byte(`{"ok":true,"data":{"message":"applied"}}` + "\n"), nil
 	}
-	m.handleNotificationAction(notification.ActionMsg{Slug: "kit", ActionID: "apply", Command: []string{"workflow", "show"}})
+	m.handleNotificationAction(ActionMsg{Slug: "kit", ActionID: "apply", Command: []string{"workflow", "show"}})
 	if len(gotArgs) != 2 || gotArgs[0] != "workflow" || gotArgs[1] != "show" {
 		t.Fatalf("DispatchCommand received %v, want [workflow show]", gotArgs)
 	}
@@ -49,7 +46,7 @@ func TestHandleNotificationAction_dispatchFailureKeepsErrorInStatus(t *testing.T
 	m.repos.DispatchCommand = func(_ context.Context, _ []string) ([]byte, error) {
 		return []byte(`{"ok":false,"code":"validation_error","msg":"bad args"}` + "\n"), nil
 	}
-	m.handleNotificationAction(notification.ActionMsg{Slug: "kit", ActionID: "apply", Command: []string{"workflow", "show"}})
+	m.handleNotificationAction(ActionMsg{Slug: "kit", ActionID: "apply", Command: []string{"workflow", "show"}})
 	if !strings.Contains(m.status, "validation_error") || !strings.Contains(m.status, "bad args") {
 		t.Fatalf("status = %q, want envelope error", m.status)
 	}
@@ -62,7 +59,7 @@ func TestHandleNotificationAction_recordsConfirmationGranted(t *testing.T) {
 	m.repos.DispatchCommand = func(_ context.Context, _ []string) ([]byte, error) {
 		return []byte(`{"ok":true,"data":{"message":"applied"}}` + "\n"), nil
 	}
-	m.handleNotificationAction(notification.ActionMsg{Slug: "kit", ActionID: "apply", Command: []string{"workflow", "show"}})
+	m.handleNotificationAction(ActionMsg{Slug: "kit", ActionID: "apply", Command: []string{"workflow", "show"}})
 	got := recorder.countByType[domain.EventTypeConfirmationGranted]
 	if got != 1 {
 		t.Fatalf("confirmation.granted count = %d, want 1", got)
@@ -76,14 +73,8 @@ func TestHandleNotificationAction_recordsConfirmationGranted(t *testing.T) {
 // when new methods land on app.EventRepository, the recorder inherits
 // no-op defaults instead of failing to compile in lock-step.
 type recordingEventRepo struct {
-	eventrepo.NoOp
-	inner       app.EventRepository
+	inner       EventStore
 	countByType map[string]int
-}
-
-func (r *recordingEventRepo) RecordTaskEvent(ctx context.Context, projectID, taskID int64, eventType, body, payload string) (domain.Event, error) {
-	r.tick(eventType)
-	return r.inner.RecordTaskEvent(ctx, projectID, taskID, eventType, body, payload)
 }
 
 func (r *recordingEventRepo) RecordEntityEvent(ctx context.Context, entityType string, entityID, projectID int64, eventType, payload string) error {

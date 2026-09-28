@@ -209,9 +209,10 @@ func TestCLICommentEditPreservesTagsOnBodyOnly(t *testing.T) {
 
 // TestCLICommentGuardDenied proves the comment edit/delete guards are
 // enforced THROUGH the `okt comment` CLI (not just at the agent/MCP layer):
-// the CLI routes edit/delete via commentServiceWithWorkflow(...).Edit/Remove
-// → enforceCommentPermission, the same guard path MCP uses. A denial must
-// surface the coded `guard_violation` envelope.
+// the CLI routes edit/delete via operation.Service.EditComment/DeleteComment
+// → CommentService.EditScoped/Remove → enforceCommentPermission, the same
+// guard path MCP uses. A denial must surface the coded `guard_violation`
+// envelope.
 //
 // Two scopes are exercised against the seeded default omakase workflow:
 //
@@ -282,6 +283,32 @@ func TestCLICommentAddCreateGuardDenied(t *testing.T) {
 
 	runCLIExpectError(t, dbPath, configPath, "guard_violation",
 		"comment", "add", "--scope", "project", "-b", "blocked")
+}
+
+// TestCLICommentDeleteViaFacade pins the delete path through
+// operation.Service.DeleteComment: without --confirm the facade returns a
+// Confirmation block; with --confirm the comment is hard-deleted and list
+// no longer surfaces it.
+func TestCLICommentDeleteViaFacade(t *testing.T) {
+	dbPath, configPath := commentTestEnv(t)
+
+	created := runCLI(t, dbPath, configPath, "comment", "add", "--scope", "project", "-b", "to delete")
+	id := commentIDFromJSON(t, created)
+
+	preview := runCLI(t, dbPath, configPath, "comment", "delete", id)
+	if !strings.Contains(preview, `"requires_confirmation":true`) && !strings.Contains(preview, `"requires_confirmation": true`) {
+		t.Fatalf("delete-without-confirm missing requires_confirmation: %s", preview)
+	}
+
+	deleted := runCLI(t, dbPath, configPath, "comment", "delete", id, "--confirm")
+	if !strings.Contains(deleted, `"snapshot"`) {
+		t.Fatalf("confirmed delete missing snapshot: %s", deleted)
+	}
+
+	listed := runCLI(t, dbPath, configPath, "comment", "list", "--comment-id", id)
+	if strings.Contains(listed, `"body":"to delete"`) {
+		t.Fatalf("deleted comment still listed: %s", listed)
+	}
 }
 
 // injectProjectCommentDeny rewrites the seeded omakase preset so the active
