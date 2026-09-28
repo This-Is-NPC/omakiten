@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"omakiten/internal/domain"
+	"omakiten/internal/tui/screens/entitylist"
 )
 
 // TestActiveBadgeMarksWiredEntities pins the Settings catalog contract: the
@@ -16,11 +17,10 @@ func TestActiveBadgeMarksWiredEntities(t *testing.T) {
 		{Key: "wired", Name: "Wired One", Description: "active persona", Active: true},
 		{Key: "dormant", Name: "Dormant One", Description: "inactive persona", Active: false},
 	}
-	model.entityKind = entityKindPersona
 	model.width = 200
 	model.height = 40
 
-	cell := model.renderEntityCell(entityKindPersona)
+	cell := model.boundEntityListScreen(entitylist.New(entitylist.Personas())).View(model.screenFrame())
 
 	// Both catalog entries must be listed regardless of wiring.
 	for _, want := range []string{"wired", "dormant"} {
@@ -44,11 +44,10 @@ func TestInactiveLawHasNoScopeBadge(t *testing.T) {
 		{Key: "wired-law", Body: "active law body", Scope: domain.LawScopeGlobal, Active: true},
 		{Key: "dormant-law", Body: "inactive law body", Active: false},
 	}
-	model.entityKind = entityKindLaw
 	model.width = 200
 	model.height = 40
 
-	cell := model.renderEntityCell(entityKindLaw)
+	cell := model.boundEntityListScreen(entitylist.New(entitylist.Laws())).View(model.screenFrame())
 
 	for _, want := range []string{"wired-law", "dormant-law"} {
 		if !strings.Contains(cell, want) {

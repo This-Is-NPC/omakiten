@@ -15,7 +15,7 @@ import (
 
 // TestRunTUI_BrokenConfigReturnsStructuredEnvelope pins #365 AC 5: a
 // broken bundle on `okt tui` must surface the same structured failure
-// the `okt config validate --migrate` path emits, so the user sees
+// the `okt config validate` path emits, so the user sees
 // the per-error kind + suggested_command instead of a bare validator
 // string. The TUI must abort before tea.NewProgram is constructed —
 // the assertion on cmd.Execute() returning err proves bubbletea was

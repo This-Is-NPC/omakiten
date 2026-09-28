@@ -58,6 +58,51 @@ func effectivePriorityValues(bundle Bundle) []string {
 //   - persona skill refs resolve to loaded skills
 //   - persona/project law refs resolve and don't double-list a global law
 func ValidateBundle(bundle Bundle, loadedSkills []Skill, loadedLaws []Law, loadedPersonas []Persona, loadedTemplates []TaskTemplate) error {
+	if err := validateBundleHeader(bundle); err != nil {
+		return err
+	}
+	if err := validateBundleSettings(bundle); err != nil {
+		return err
+	}
+
+	skillSet := slugSet(loadedSkillSlugs(loadedSkills))
+	lawSet := slugSet(loadedLawSlugs(loadedLaws))
+	personaSet := slugSet(loadedPersonaSlugs(loadedPersonas))
+	templateSet := slugSet(loadedTemplateSlugs(loadedTemplates))
+	if err := validateTemplateRefs(bundle, templateSet, lawSet); err != nil {
+		return err
+	}
+	if err := validateTemplateDefaults(bundle); err != nil {
+		return err
+	}
+	if err := validateSkillRefs(bundle, skillSet); err != nil {
+		return err
+	}
+	if err := validateLawRefs(bundle, lawSet); err != nil {
+		return err
+	}
+	if err := validatePersonaRefs(bundle, personaSet, skillSet, lawSet); err != nil {
+		return err
+	}
+	if err := validateProjectRefs(bundle, lawSet); err != nil {
+		return err
+	}
+	if err := validateScopeUniqueness(bundle); err != nil {
+		return err
+	}
+	if err := validateMCPCommands(bundle, personaSet, lawSet, templateSet); err != nil {
+		return err
+	}
+	if err := validateMCPCommandSkillSubset(bundle); err != nil {
+		return err
+	}
+	if err := validateSurfaces(bundle.Surfaces); err != nil {
+		return err
+	}
+	return validateWorkflows(bundle.Workflows, bundle.Config.Workflow.Active)
+}
+
+func validateBundleHeader(bundle Bundle) error {
 	if bundle.Version != 1 {
 		return fmt.Errorf("version must be 1")
 	}
@@ -70,6 +115,10 @@ func ValidateBundle(bundle Bundle, loadedSkills []Skill, loadedLaws []Law, loade
 	if strings.TrimSpace(bundle.Config.Theme.Active) == "" {
 		return fmt.Errorf("config.theme.active is required")
 	}
+	return nil
+}
+
+func validateBundleSettings(bundle Bundle) error {
 	if err := validateViewSettings(bundle.Config.Views, bundle.Workflows, bundle.Config.Workflow.Active, effectivePriorityValues(bundle)); err != nil {
 		return err
 	}
@@ -123,12 +172,10 @@ func ValidateBundle(bundle Bundle, loadedSkills []Skill, loadedLaws []Law, loade
 	if len(bundle.Config.TemplateDefaults) == 0 {
 		return fmt.Errorf("config.template_defaults: required (declare the kinds the TUI picker offers; see defaults/omakiten.yaml)")
 	}
+	return nil
+}
 
-	skillSet := slugSet(loadedSkillSlugs(loadedSkills))
-	lawSet := slugSet(loadedLawSlugs(loadedLaws))
-	personaSet := slugSet(loadedPersonaSlugs(loadedPersonas))
-	templateSet := slugSet(loadedTemplateSlugs(loadedTemplates))
-
+func validateTemplateRefs(bundle Bundle, templateSet, lawSet map[string]struct{}) error {
 	for _, template := range bundle.Templates {
 		if _, ok := templateSet[template.Slug]; !ok {
 			return fmt.Errorf("templates: ref %q has no matching file", template.Slug)
@@ -144,15 +191,19 @@ func ValidateBundle(bundle Bundle, loadedSkills []Skill, loadedLaws []Law, loade
 			}
 		}
 	}
-	if err := validateTemplateDefaults(bundle); err != nil {
-		return err
-	}
+	return nil
+}
 
+func validateSkillRefs(bundle Bundle, skillSet map[string]struct{}) error {
 	for _, skill := range bundle.Skills {
 		if _, ok := skillSet[skill.Slug]; !ok {
 			return fmt.Errorf("skills: ref %q has no matching file", skill.Slug)
 		}
 	}
+	return nil
+}
+
+func validateLawRefs(bundle Bundle, lawSet map[string]struct{}) error {
 	severityValues := effectiveSeverityValues(bundle)
 	allowedSeveritySet := make(map[string]struct{}, len(severityValues))
 	for _, v := range severityValues {
@@ -166,27 +217,41 @@ func ValidateBundle(bundle Bundle, loadedSkills []Skill, loadedLaws []Law, loade
 			return fmt.Errorf("laws.%s has invalid severity %q (must match a value in config.severities)", law.Slug, law.Severity)
 		}
 	}
+	return nil
+}
+
+func validatePersonaRefs(bundle Bundle, personaSet, skillSet, lawSet map[string]struct{}) error {
 	for _, persona := range bundle.Personas {
-		if _, ok := personaSet[persona.Slug]; !ok {
-			return fmt.Errorf("personas: ref %q has no matching file", persona.Slug)
-		}
-		seenSkill := map[string]struct{}{}
-		for _, slug := range persona.Skills {
-			if _, dup := seenSkill[slug]; dup {
-				return fmt.Errorf("personas.%s skills: duplicate %q", persona.Slug, slug)
-			}
-			seenSkill[slug] = struct{}{}
-			if _, ok := skillSet[slug]; !ok {
-				return fmt.Errorf("personas.%s skills: ref %q has no matching skill file", persona.Slug, slug)
-			}
-		}
-		for _, slug := range persona.Laws {
-			if _, ok := lawSet[slug]; !ok {
-				return fmt.Errorf("personas.%s laws: ref %q has no matching law file", persona.Slug, slug)
-			}
+		if err := validatePersonaRef(persona, personaSet, skillSet, lawSet); err != nil {
+			return err
 		}
 	}
+	return nil
+}
 
+func validatePersonaRef(persona Persona, personaSet, skillSet, lawSet map[string]struct{}) error {
+	if _, ok := personaSet[persona.Slug]; !ok {
+		return fmt.Errorf("personas: ref %q has no matching file", persona.Slug)
+	}
+	seenSkill := map[string]struct{}{}
+	for _, slug := range persona.SkillRepertoire {
+		if _, dup := seenSkill[slug]; dup {
+			return fmt.Errorf("personas.%s skill_repertoire: duplicate %q", persona.Slug, slug)
+		}
+		seenSkill[slug] = struct{}{}
+		if _, ok := skillSet[slug]; !ok {
+			return fmt.Errorf("personas.%s skill_repertoire: ref %q has no matching skill file", persona.Slug, slug)
+		}
+	}
+	for _, slug := range persona.Laws {
+		if _, ok := lawSet[slug]; !ok {
+			return fmt.Errorf("personas.%s laws: ref %q has no matching law file", persona.Slug, slug)
+		}
+	}
+	return nil
+}
+
+func validateProjectRefs(bundle Bundle, lawSet map[string]struct{}) error {
 	for _, project := range bundle.Projects {
 		if strings.TrimSpace(project.Slug) == "" {
 			return fmt.Errorf("projects: slug is required")
@@ -200,20 +265,7 @@ func ValidateBundle(bundle Bundle, loadedSkills []Skill, loadedLaws []Law, loade
 			}
 		}
 	}
-
-	if err := validateScopeUniqueness(bundle); err != nil {
-		return err
-	}
-
-	if err := validateMCPCommands(bundle, personaSet, lawSet, templateSet); err != nil {
-		return err
-	}
-
-	if err := validateMCPCommandSkillSubset(bundle); err != nil {
-		return err
-	}
-
-	return validateWorkflows(bundle.Workflows, bundle.Config.Workflow.Active)
+	return nil
 }
 
 // validateMCPCommands enforces structural rules inside `mcp_commands`: empty
@@ -260,14 +312,7 @@ func validateMCPCommandSkillSubset(bundle Bundle) error {
 	if len(bundle.MCPCommands) == 0 {
 		return nil
 	}
-	repertoire := map[string]map[string]struct{}{}
-	for _, persona := range bundle.Personas {
-		set := make(map[string]struct{}, len(persona.SkillRepertoire))
-		for _, slug := range persona.SkillRepertoire {
-			set[slug] = struct{}{}
-		}
-		repertoire[persona.Slug] = set
-	}
+	repertoire := skillRepertoires(bundle.Personas)
 
 	names := make([]string, 0, len(bundle.MCPCommands))
 	for name := range bundle.MCPCommands {
@@ -276,32 +321,44 @@ func validateMCPCommandSkillSubset(bundle Bundle) error {
 	sort.Strings(names)
 
 	for _, name := range names {
-		if name == MCPCommandsGlobalKey {
-			continue
-		}
-		spec := bundle.MCPCommands[name]
-		if len(spec.Skills) == 0 {
-			continue
-		}
-		personaSlug := strings.TrimSpace(spec.Persona)
-		if personaSlug == "" {
-			continue
-		}
-		pool := repertoire[personaSlug]
-		var missing []string
-		for _, slug := range spec.Skills {
-			if _, ok := pool[slug]; !ok {
-				missing = append(missing, slug)
-			}
-		}
-		if len(missing) > 0 {
-			return fmt.Errorf(
-				"mcp_commands.%s.skills: %s not in persona %q skill_repertoire",
-				name, strings.Join(missing, ", "), personaSlug,
-			)
+		if err := validateCommandSkillSubset(name, bundle.MCPCommands[name], repertoire); err != nil {
+			return err
 		}
 	}
 	return nil
+}
+
+func skillRepertoires(personas []Persona) map[string]map[string]struct{} {
+	out := map[string]map[string]struct{}{}
+	for _, persona := range personas {
+		set := make(map[string]struct{}, len(persona.SkillRepertoire))
+		for _, slug := range persona.SkillRepertoire {
+			set[slug] = struct{}{}
+		}
+		out[persona.Slug] = set
+	}
+	return out
+}
+
+func validateCommandSkillSubset(name string, spec MCPCommandSpec, repertoire map[string]map[string]struct{}) error {
+	if name == MCPCommandsGlobalKey || len(spec.Skills) == 0 {
+		return nil
+	}
+	personaSlug := strings.TrimSpace(spec.Persona)
+	if personaSlug == "" {
+		return nil
+	}
+	pool := repertoire[personaSlug]
+	var missing []string
+	for _, slug := range spec.Skills {
+		if _, ok := pool[slug]; !ok {
+			missing = append(missing, slug)
+		}
+	}
+	if len(missing) == 0 {
+		return nil
+	}
+	return fmt.Errorf("mcp_commands.%s.skills: %s not in persona %q skill_repertoire", name, strings.Join(missing, ", "), personaSlug)
 }
 
 // warnMCPCommandRefs collects soft warnings for every slug inside mcp_commands
@@ -310,35 +367,37 @@ func validateMCPCommandSkillSubset(bundle Bundle) error {
 // along on the loaded bundle without aborting the load.
 func warnMCPCommandRefs(bundle Bundle, personaSet, lawSet, templateSet map[string]struct{}) []SourceWarning {
 	var warns []SourceWarning
-	missingRef := func(scope, kind, slug string) {
-		warns = append(warns, SourceWarning{Slug: slug, Message: fmt.Sprintf("%s: ref %q has no matching %s file", scope, slug, kind)})
-	}
 	for name, spec := range bundle.MCPCommands {
-		if strings.TrimSpace(name) == "" {
-			continue
+		warns = appendMCPCommandRefs(warns, name, spec, personaSet, lawSet, templateSet)
+	}
+	return warns
+}
+
+func appendMCPCommandRefs(warns []SourceWarning, name string, spec MCPCommandSpec, personaSet, lawSet, templateSet map[string]struct{}) []SourceWarning {
+	if strings.TrimSpace(name) == "" {
+		return warns
+	}
+	if name != MCPCommandsGlobalKey {
+		persona := strings.TrimSpace(spec.Persona)
+		if persona != "" {
+			warns = appendMissingMCPRef(warns, "mcp_commands."+name+".persona", "persona", persona, personaSet)
 		}
-		if name != MCPCommandsGlobalKey {
-			if persona := strings.TrimSpace(spec.Persona); persona != "" {
-				if _, ok := personaSet[persona]; !ok {
-					missingRef("mcp_commands."+name+".persona", "persona", persona)
-				}
-			}
-			for _, slug := range spec.Templates {
-				if _, ok := templateSet[slug]; !ok {
-					missingRef("mcp_commands."+name+".templates", "template", slug)
-				}
-			}
-		}
-		for _, slug := range spec.Laws {
-			if _, ok := lawSet[slug]; !ok {
-				missingRef("mcp_commands."+name+".laws", "law", slug)
-			}
-		}
-		for _, slug := range spec.LawsDisabled {
-			if _, ok := lawSet[slug]; !ok {
-				missingRef("mcp_commands."+name+".laws_disabled", "law", slug)
-			}
-		}
+		warns = appendMissingMCPRefs(warns, "mcp_commands."+name+".templates", "template", spec.Templates, templateSet)
+	}
+	warns = appendMissingMCPRefs(warns, "mcp_commands."+name+".laws", "law", spec.Laws, lawSet)
+	return appendMissingMCPRefs(warns, "mcp_commands."+name+".laws_disabled", "law", spec.LawsDisabled, lawSet)
+}
+
+func appendMissingMCPRefs(warns []SourceWarning, scope, kind string, slugs []string, loaded map[string]struct{}) []SourceWarning {
+	for _, slug := range slugs {
+		warns = appendMissingMCPRef(warns, scope, kind, slug, loaded)
+	}
+	return warns
+}
+
+func appendMissingMCPRef(warns []SourceWarning, scope, kind, slug string, loaded map[string]struct{}) []SourceWarning {
+	if _, ok := loaded[slug]; !ok {
+		warns = append(warns, SourceWarning{Slug: slug, Message: fmt.Sprintf("%s: ref %q has no matching %s file", scope, slug, kind)})
 	}
 	return warns
 }
@@ -441,6 +500,9 @@ func validateEventsSettings(e EventsSettings) error {
 		return err
 	}
 	if err := validateEventsRetentionOverridesKeys(e); err != nil {
+		return err
+	}
+	if err := validateEventsOrphanSweep(e.OrphanSweep); err != nil {
 		return err
 	}
 	return nil
@@ -836,58 +898,7 @@ func validateWorkflows(workflows []Workflow, activeKey string) error {
 		if workflow.Key == activeKey {
 			activeFound = true
 		}
-		if len(workflow.Buckets) == 0 {
-			return fmt.Errorf("workflows.%s.buckets is required", workflow.Key)
-		}
-
-		bucketIDs := map[int]struct{}{}
-		if err := validateItems("workflows."+workflow.Key+".buckets", workflow.Buckets, func(bucket Bucket) (int, string, string) {
-			return bucket.ID, bucket.Key, bucket.Name
-		}); err != nil {
-			return err
-		}
-		for _, bucket := range workflow.Buckets {
-			bucketIDs[bucket.ID] = struct{}{}
-			if bucket.Position < 1 {
-				return fmt.Errorf("workflows.%s.buckets.%s.position must be positive", workflow.Key, bucket.Key)
-			}
-		}
-
-		bucketKeySet := make(map[string]struct{}, len(workflow.Buckets))
-		for _, bucket := range workflow.Buckets {
-			bucketKeySet[bucket.Key] = struct{}{}
-		}
-
-		seenTransitions := map[[2]int]struct{}{}
-		for _, transition := range workflow.Transitions {
-			if _, ok := bucketIDs[transition.From]; !ok {
-				return fmt.Errorf("workflows.%s transitions from missing bucket id %d", workflow.Key, transition.From)
-			}
-			if _, ok := bucketIDs[transition.To]; !ok {
-				return fmt.Errorf("workflows.%s transitions to missing bucket id %d", workflow.Key, transition.To)
-			}
-			key := [2]int{transition.From, transition.To}
-			if _, exists := seenTransitions[key]; exists {
-				return fmt.Errorf("workflows.%s has duplicated transition %d -> %d", workflow.Key, transition.From, transition.To)
-			}
-			seenTransitions[key] = struct{}{}
-
-			if err := validateGuards(workflow.Key, fmt.Sprintf("transition %d→%d", transition.From, transition.To), transition.Guards, bucketKeySet); err != nil {
-				return err
-			}
-		}
-
-		if err := validatePermissionScopes(workflow); err != nil {
-			return err
-		}
-
-		if err := validateGuards(workflow.Key, "operations.archive", workflow.Operations.Archive.Guards, bucketKeySet); err != nil {
-			return err
-		}
-		if err := validateGuards(workflow.Key, "operations.delete", workflow.Operations.Delete.Guards, bucketKeySet); err != nil {
-			return err
-		}
-		if err := validateGuards(workflow.Key, "operations.unarchive", workflow.Operations.Unarchive.Guards, bucketKeySet); err != nil {
+		if err := validateWorkflow(workflow); err != nil {
 			return err
 		}
 	}
@@ -896,6 +907,70 @@ func validateWorkflows(workflows []Workflow, activeKey string) error {
 		return fmt.Errorf("config.workflow.active %q does not match any workflow", activeKey)
 	}
 
+	return nil
+}
+
+func validateWorkflow(workflow Workflow) error {
+	if len(workflow.Buckets) == 0 {
+		return fmt.Errorf("workflows.%s.buckets is required", workflow.Key)
+	}
+	bucketIDs := map[int]struct{}{}
+	if err := validateItems("workflows."+workflow.Key+".buckets", workflow.Buckets, func(bucket Bucket) (int, string, string) {
+		return bucket.ID, bucket.Key, bucket.Name
+	}); err != nil {
+		return err
+	}
+	bucketKeySet := make(map[string]struct{}, len(workflow.Buckets))
+	for _, bucket := range workflow.Buckets {
+		bucketIDs[bucket.ID] = struct{}{}
+		bucketKeySet[bucket.Key] = struct{}{}
+		if bucket.Position < 1 {
+			return fmt.Errorf("workflows.%s.buckets.%s.position must be positive", workflow.Key, bucket.Key)
+		}
+	}
+	if err := validateWorkflowTransitions(workflow, bucketIDs, bucketKeySet); err != nil {
+		return err
+	}
+	if err := validatePermissionScopes(workflow); err != nil {
+		return err
+	}
+	return validateWorkflowOperationGuards(workflow, bucketKeySet)
+}
+
+func validateWorkflowTransitions(workflow Workflow, bucketIDs map[int]struct{}, bucketKeySet map[string]struct{}) error {
+	seen := map[[2]int]struct{}{}
+	for _, transition := range workflow.Transitions {
+		if _, ok := bucketIDs[transition.From]; !ok {
+			return fmt.Errorf("workflows.%s transitions from missing bucket id %d", workflow.Key, transition.From)
+		}
+		if _, ok := bucketIDs[transition.To]; !ok {
+			return fmt.Errorf("workflows.%s transitions to missing bucket id %d", workflow.Key, transition.To)
+		}
+		key := [2]int{transition.From, transition.To}
+		if _, exists := seen[key]; exists {
+			return fmt.Errorf("workflows.%s has duplicated transition %d -> %d", workflow.Key, transition.From, transition.To)
+		}
+		seen[key] = struct{}{}
+		if err := validateGuards(workflow.Key, fmt.Sprintf("transition %d→%d", transition.From, transition.To), transition.Guards, bucketKeySet); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func validateWorkflowOperationGuards(workflow Workflow, bucketKeySet map[string]struct{}) error {
+	for _, operation := range []struct {
+		name   string
+		guards []TransitionGuard
+	}{
+		{"operations.archive", workflow.Operations.Archive.Guards},
+		{"operations.delete", workflow.Operations.Delete.Guards},
+		{"operations.unarchive", workflow.Operations.Unarchive.Guards},
+	} {
+		if err := validateGuards(workflow.Key, operation.name, operation.guards, bucketKeySet); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -909,43 +984,47 @@ func validateWorkflows(workflows []Workflow, activeKey string) error {
 // placement rather than the key names themselves.
 func validatePermissionScopes(workflow Workflow) error {
 	if workflow.Defaults != nil {
-		if hasScopeBlocks(workflow.Defaults.Task) {
-			return fmt.Errorf("workflows.%s.defaults.task: scope sub-blocks (task/project/universal) are only valid under defaults.comment", workflow.Key)
-		}
-		// Task permissions stay plain bool: tag predicates are comment-only.
-		if err := rejectTaskTagRules(workflow.Defaults.Task, fmt.Sprintf("workflows.%s.defaults.task", workflow.Key)); err != nil {
-			return err
-		}
-		// A comment scope sub-block must not itself carry scope sub-blocks:
-		// scopeBlock descends a single level, so a nested scope (e.g.
-		// comment.task.project) decodes cleanly but silently never resolves.
-		if err := rejectNestedScopes(workflow.Defaults.Comment, fmt.Sprintf("workflows.%s.defaults.comment", workflow.Key)); err != nil {
-			return err
-		}
-		// Tag names must be non-empty everywhere they may appear (the comment
-		// block, recursively through its scope sub-blocks).
-		if err := validateCommentTagNames(workflow.Defaults.Comment, fmt.Sprintf("workflows.%s.defaults.comment", workflow.Key)); err != nil {
+		if err := validateDefaultPermissionScopes(workflow); err != nil {
 			return err
 		}
 	}
 	for _, bucket := range workflow.Buckets {
-		if bucket.Permissions == nil {
-			continue
-		}
-		if hasScopeBlocks(bucket.Permissions.Task) {
-			return fmt.Errorf("workflows.%s.buckets.%s.permissions.task: scope sub-blocks are not valid at the bucket level", workflow.Key, bucket.Key)
-		}
-		if hasScopeBlocks(bucket.Permissions.Comment) {
-			return fmt.Errorf("workflows.%s.buckets.%s.permissions.comment: scope sub-blocks (task/project/universal) are only valid under workflow.defaults.comment", workflow.Key, bucket.Key)
-		}
-		if err := rejectTaskTagRules(bucket.Permissions.Task, fmt.Sprintf("workflows.%s.buckets.%s.permissions.task", workflow.Key, bucket.Key)); err != nil {
-			return err
-		}
-		if err := validateCommentTagNames(bucket.Permissions.Comment, fmt.Sprintf("workflows.%s.buckets.%s.permissions.comment", workflow.Key, bucket.Key)); err != nil {
+		if err := validateBucketPermissionScopes(workflow, bucket); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+func validateDefaultPermissionScopes(workflow Workflow) error {
+	defaults := workflow.Defaults
+	if hasScopeBlocks(defaults.Task) {
+		return fmt.Errorf("workflows.%s.defaults.task: scope sub-blocks (task/project/universal) are only valid under defaults.comment", workflow.Key)
+	}
+	if err := rejectTaskTagRules(defaults.Task, fmt.Sprintf("workflows.%s.defaults.task", workflow.Key)); err != nil {
+		return err
+	}
+	if err := rejectNestedScopes(defaults.Comment, fmt.Sprintf("workflows.%s.defaults.comment", workflow.Key)); err != nil {
+		return err
+	}
+	return validateCommentTagNames(defaults.Comment, fmt.Sprintf("workflows.%s.defaults.comment", workflow.Key))
+}
+
+func validateBucketPermissionScopes(workflow Workflow, bucket Bucket) error {
+	if bucket.Permissions == nil {
+		return nil
+	}
+	permissions := bucket.Permissions
+	if hasScopeBlocks(permissions.Task) {
+		return fmt.Errorf("workflows.%s.buckets.%s.permissions.task: scope sub-blocks are not valid at the bucket level", workflow.Key, bucket.Key)
+	}
+	if hasScopeBlocks(permissions.Comment) {
+		return fmt.Errorf("workflows.%s.buckets.%s.permissions.comment: scope sub-blocks (task/project/universal) are only valid under workflow.defaults.comment", workflow.Key, bucket.Key)
+	}
+	if err := rejectTaskTagRules(permissions.Task, fmt.Sprintf("workflows.%s.buckets.%s.permissions.task", workflow.Key, bucket.Key)); err != nil {
+		return err
+	}
+	return validateCommentTagNames(permissions.Comment, fmt.Sprintf("workflows.%s.buckets.%s.permissions.comment", workflow.Key, bucket.Key))
 }
 
 // policyHasTagRules reports whether a comment-op value declares any tag
@@ -1035,39 +1114,40 @@ func hasScopeBlocks(p *EntityPermission) bool {
 // comments).
 func validateGuards(workflowKey, scope string, guards []TransitionGuard, bucketKeySet map[string]struct{}) error {
 	for _, guard := range guards {
-		switch guard.Type {
-		case "blockers_in":
-			if len(guard.Buckets) == 0 {
-				return fmt.Errorf("workflows.%s %s guard blockers_in: buckets is required", workflowKey, scope)
-			}
-			for _, bKey := range guard.Buckets {
-				if _, ok := bucketKeySet[bKey]; !ok {
-					return fmt.Errorf("workflows.%s %s guard blockers_in: bucket key %q not found in workflow", workflowKey, scope, bKey)
-				}
-			}
-		case "comments_min":
-			if guard.Count < 1 {
-				return fmt.Errorf("workflows.%s %s guard comments_min: count must be >= 1", workflowKey, scope)
-			}
-		case "comments_tagged":
-			if strings.TrimSpace(guard.Tag) == "" {
-				return fmt.Errorf("workflows.%s %s guard comments_tagged: tag is required", workflowKey, scope)
-			}
-			if guard.Count < 1 {
-				return fmt.Errorf("workflows.%s %s guard comments_tagged: count must be >= 1", workflowKey, scope)
-			}
-		case "wave_gate":
-			// wave_gate has no extra fields — pending count is derived
-			// from the task's wave + plan and the workflow's final
-			// bucket. The hint string is optional and validated by the
-			// shared TransitionGuard shape, not here.
-		case "subtasks_complete":
-			// subtasks_complete has no extra fields either — the guard
-			// reads tasks.parent_id and the workflow's final bucket
-			// directly. Hint is optional like the others.
-		default:
-			return fmt.Errorf("workflows.%s %s: unknown guard type %q", workflowKey, scope, guard.Type)
+		if err := validateGuard(workflowKey, scope, guard, bucketKeySet); err != nil {
+			return err
 		}
+	}
+	return nil
+}
+
+func validateGuard(workflowKey, scope string, guard TransitionGuard, bucketKeySet map[string]struct{}) error {
+	switch guard.Type {
+	case "blockers_in":
+		if len(guard.Buckets) == 0 {
+			return fmt.Errorf("workflows.%s %s guard blockers_in: buckets is required", workflowKey, scope)
+		}
+		for _, bKey := range guard.Buckets {
+			if _, ok := bucketKeySet[bKey]; !ok {
+				return fmt.Errorf("workflows.%s %s guard blockers_in: bucket key %q not found in workflow", workflowKey, scope, bKey)
+			}
+		}
+	case "comments_min":
+		if guard.Count < 1 {
+			return fmt.Errorf("workflows.%s %s guard comments_min: count must be >= 1", workflowKey, scope)
+		}
+	case "comments_tagged":
+		if strings.TrimSpace(guard.Tag) == "" {
+			return fmt.Errorf("workflows.%s %s guard comments_tagged: tag is required", workflowKey, scope)
+		}
+		if guard.Count < 1 {
+			return fmt.Errorf("workflows.%s %s guard comments_tagged: count must be >= 1", workflowKey, scope)
+		}
+	case "wave_gate", "subtasks_complete":
+		// These guards have no additional fields; their runtime inputs are
+		// derived from the task, plan, and final workflow bucket.
+	default:
+		return fmt.Errorf("workflows.%s %s: unknown guard type %q", workflowKey, scope, guard.Type)
 	}
 	return nil
 }

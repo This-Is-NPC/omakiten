@@ -3,39 +3,10 @@ package tui
 import (
 	"fmt"
 
-	tea "github.com/charmbracelet/bubbletea"
-
-	"omakiten/internal/app"
-	"omakiten/internal/tui/components/picker"
+	"omakiten/internal/relationshipprojection"
+	"omakiten/internal/tui/screenhost"
+	"omakiten/internal/tui/screens/relationshippicker"
 )
-
-// defaultPickerOption is one row in the template default picker. Kind is
-// the default value to write; the binding is implicitly project-scoped to
-// the active project (the TUI always runs within one). Empty Kind is the
-// "(none)" row that clears the binding entirely.
-type defaultPickerOption struct {
-	Kind string
-}
-
-func (o defaultPickerOption) label() string {
-	if o.Kind == "" {
-		return "(none)"
-	}
-	return o.Kind
-}
-
-func (m *Model) openTemplateDefaultPickerForSelected() {
-	if m.entityCount(entityKindTemplate) == 0 {
-		m.status = m.t("tui.status.no_template_selected")
-		return
-	}
-	cursor := m.selectedEntityIndex(entityKindTemplate)
-	slug := m.entitySlugAt(entityKindTemplate, cursor)
-	if slug == "" {
-		return
-	}
-	m.openTemplateDefaultPicker(slug)
-}
 
 func (m *Model) openTemplateDefaultPicker(slug string) {
 	template, ok := m.findTemplateBySlug(slug)
@@ -47,129 +18,55 @@ func (m *Model) openTemplateDefaultPicker(slug string) {
 		m.status = m.t("tui.status.template_picker_needs_project")
 		return
 	}
-
-	options := buildTemplateDefaultOptions(m.repos.Editor)
-	cursor := selectedDefaultOptionIndex(options, template.Default, template.ProjectSlug, m.project.Slug)
-
-	m.entityScreen = entityScreenView
-	m.entityForm = entityForm{
-		kind: entityKindTemplate,
-		mode: entityScreenDefaultPicker,
-		slug: slug,
-	}
-	m.entityPicker = picker.New(picker.Single).WithCursor(cursor, len(options), 0)
+	options := buildTemplateDefaultOptions(m.repos.Editor, template.Default, template.ProjectSlug, m.project.Slug)
+	m.relationshipPickerGeneration++
+	m.templateDefaultScreen = relationshippicker.New(relationshippicker.TemplateDefault).Open(relationshippicker.Payload{
+		Kind: relationshippicker.TemplateDefault, EntitySlug: slug, ProjectSlug: m.project.Slug,
+		Generation: m.relationshipPickerGeneration, Options: options})
 	m.status = m.t("tui.status.default_picker")
+	m.pushScreen(screenhost.TemplateDefault)
 }
 
-// buildTemplateDefaultOptions enumerates the kinds the user can claim from
-// `config.template_defaults`, plus a trailing "(none)" row that clears the
-// binding. Project scope is implicit (current project) — the TUI is always
-// opened inside a project, so no global/project toggle is needed.
-func buildTemplateDefaultOptions(editor *app.BundleEditor) []defaultPickerOption {
-	// Validator guarantees template_defaults is non-empty in the
-	// loaded bundle. When the editor is nil (test contexts) we can't
-	// load — return empty kinds; callers handle the empty list.
+func buildTemplateDefaultOptions(editor BundleEditor, currentKind, currentProject, activeProject string) []relationshippicker.Option {
 	var kinds []string
 	if editor != nil {
 		if bundle, err := editor.Load(); err == nil {
 			kinds = bundle.Config.TemplateKinds()
 		}
 	}
-	options := make([]defaultPickerOption, 0, len(kinds)+1)
-	for _, kind := range kinds {
-		options = append(options, defaultPickerOption{Kind: kind})
-	}
-	options = append(options, defaultPickerOption{}) // (none)
-	return options
+	return relationshipprojection.TemplateDefaultOptions(kinds, currentKind, currentProject, activeProject)
 }
 
-// selectedDefaultOptionIndex picks the option that matches the template's
-// current binding, but only when the binding is actually project-scoped to
-// the active project. A global binding (project="") on a custom template is
-// unusual but not invalid — the picker treats it as no project override and
-// lands on (none).
-func selectedDefaultOptionIndex(options []defaultPickerOption, currentKind, currentProject, activeProject string) int {
-	if currentKind != "" && currentProject == activeProject {
-		for i, opt := range options {
-			if opt.Kind == currentKind {
-				return i
-			}
+func (m *Model) saveTemplateDefault(action screenhost.Action) {
+	screen := m.templateDefaultScreen
+	valid := false
+	for _, option := range screen.Options() {
+		if option.Value == action.Value && (action.Value != "" || option.None) {
+			valid = true
+			break
 		}
 	}
-	for i, opt := range options {
-		if opt.Kind == "" {
-			return i
-		}
+	if !valid {
+		return
 	}
-	return 0
-}
-
-func (m Model) updateTemplateDefaultPicker(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	if msg.String() == "ctrl+c" || msg.String() == "q" {
-		return m, tea.Quit
+	slug := screen.Payload().EntitySlug
+	svc, ok := m.requireOps()
+	if !ok {
+		return
 	}
-	options := buildTemplateDefaultOptions(m.repos.Editor)
-	rowCount := len(options)
-	var cmd tea.Cmd
-	m.entityPicker, cmd = m.entityPicker.Update(msg, rowCount, scrollDataRows(m.pickerViewportRows()))
-	switch m.entityPicker.LastEvent() {
-	case picker.EventCancel:
-		m.closeEntityScreen(m.t("tui.status.default_picker_cancelled"))
-	case picker.EventSelect:
-		if m.entityPicker.Cursor < 0 || m.entityPicker.Cursor >= rowCount {
-			return m, cmd
-		}
-		chosen := options[m.entityPicker.Cursor]
-		if err := m.applyTemplateDefault(m.entityForm.slug, chosen.Kind, m.project.Slug); err != nil {
-			m.status = err.Error()
-			return m, cmd
-		}
-		if err := m.refresh(); err != nil {
-			m.status = err.Error()
-			return m, cmd
-		}
-		if chosen.Kind == "" {
-			m.closeEntityScreen(fmt.Sprintf(m.t("tui.status.template_default_cleared_fmt"), m.entityForm.slug))
-		} else {
-			m.closeEntityScreen(fmt.Sprintf(m.t("tui.status.template_default_set_fmt"), m.entityForm.slug, chosen.Kind, m.project.Slug))
-		}
+	if err := svc.SetTemplateDefault(m.ctx, slug, action.Value, m.project.Slug); err != nil {
+		m.status = err.Error()
+		return
 	}
-	return m, cmd
-}
-
-func (m Model) renderTemplateDefaultPicker() string {
-	options := buildTemplateDefaultOptions(m.repos.Editor)
-
-	template, _ := m.findTemplateBySlug(m.entityForm.slug)
-	// Mark the option that matches the template's current binding for the
-	// active project. A global or different-project binding shows nothing
-	// marked — the picker is exclusively for the current project's scope.
-	currentKind := ""
-	if template.Default != "" && template.ProjectSlug == m.project.Slug {
-		currentKind = template.Default
+	if err := m.refresh(); err != nil {
+		m.status = err.Error()
+		return
 	}
-
-	rows := make([]string, 0, len(options))
-	for index, opt := range options {
-		marker := m.cursorMarker(m.entityPicker.Cursor == index)
-		dot := " "
-		if opt.Kind == currentKind {
-			dot = "•"
-		}
-		rows = append(rows, fmt.Sprintf("%s %s %s", marker, dot, opt.label()))
+	m.popScreen()
+	if action.Value == "" {
+		m.status = fmt.Sprintf(m.t("tui.status.template_default_cleared_fmt"), slug)
+	} else {
+		m.status = fmt.Sprintf(m.t("tui.status.template_default_set_fmt"), slug, action.Value, m.project.Slug)
 	}
-	header := []string{
-		m.styles.kicker(fmt.Sprintf(m.t("tui.kicker.default_kind_fmt"), m.entityForm.slug, m.project.Slug)),
-		m.styles.hint.Render(m.t("tui.picker.hint.template_default")),
-		"",
-	}
-	return m.renderPickerPanel(header, rows, m.entityPicker.Scroll, m.pickerViewportRows())
-}
-
-// applyTemplateDefault delegates to app.TemplateService, which owns the
-// file/wiring transactional sequence. Local rewriting helpers used to live
-// here; they were promoted into internal/app/template_service.go so the
-// behavior has its own test surface and the TUI stays free of bundle I/O.
-func (m *Model) applyTemplateDefault(slug, kind, projectSlug string) error {
-	return app.NewTemplateService(m.repos.activeSnapshot(), m.repos.Editor, m.repos.EntityFiles).SetDefault(m.ctx, slug, kind, projectSlug)
+	m.refreshStackedEntityDetail(entityKindTemplate)
 }

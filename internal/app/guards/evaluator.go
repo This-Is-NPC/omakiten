@@ -339,30 +339,28 @@ func (e *Evaluator) runGuardsWithSnapshot(ctx context.Context, projectID int64, 
 	}
 	for _, guard := range specs {
 		hint := e.resolveHintFrom(snap, guard.Hint)
-		switch guard.Type {
-		case "blockers_in":
-			if err := e.checkBlockersIn(ctx, projectID, task, guard.Buckets, hint, operation, target, snap); err != nil {
-				return err
-			}
-		case "comments_min":
-			if err := e.checkCommentsMin(ctx, projectID, task, guard.Count, hint, operation, target, snap); err != nil {
-				return err
-			}
-		case "comments_tagged":
-			if err := e.checkCommentsTagged(ctx, projectID, task, guard.Tag, guard.Count, hint, operation, target, snap); err != nil {
-				return err
-			}
-		case "wave_gate":
-			if err := e.checkWaveGate(ctx, projectID, task, hint, operation, target, snap); err != nil {
-				return err
-			}
-		case "subtasks_complete":
-			if err := e.checkSubtasksComplete(ctx, projectID, task, hint, operation, target, snap); err != nil {
-				return err
-			}
+		if err := e.runGuard(ctx, projectID, task, guard, hint, operation, target, snap); err != nil {
+			return err
 		}
 	}
 	return nil
+}
+
+func (e *Evaluator) runGuard(ctx context.Context, projectID int64, task domain.Task, guard domain.TransitionGuard, hint, operation string, target map[string]any, snap *config.Snapshot) error {
+	switch guard.Type {
+	case "blockers_in":
+		return e.checkBlockersIn(ctx, projectID, task, guard.Buckets, hint, operation, target, snap)
+	case "comments_min":
+		return e.checkCommentsMin(ctx, projectID, task, guard.Count, hint, operation, target, snap)
+	case "comments_tagged":
+		return e.checkCommentsTagged(ctx, projectID, task, guard.Tag, guard.Count, hint, operation, target, snap)
+	case "wave_gate":
+		return e.checkWaveGate(ctx, projectID, task, hint, operation, target, snap)
+	case "subtasks_complete":
+		return e.checkSubtasksComplete(ctx, projectID, task, hint, operation, target, snap)
+	default:
+		return nil
+	}
 }
 
 // resolveHintFrom expands `${{intl:KEY}}` tokens in guard hint strings via the

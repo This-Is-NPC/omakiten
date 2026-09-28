@@ -7,14 +7,14 @@ import (
 	"strings"
 	"testing"
 
-	"omakiten/internal/agent"
+	"omakiten/internal/operation"
 )
 
 // TestCLIPromptsListSurfacesTiers asserts the `okt mcp prompts --list`
 // command-surface listing (#379 AC#1): the CLI exposes the full v2 command
 // surface grouped by routing tier, with the granular tier sub-grouped by object
 // namespace, consistent with the MCP prompt surface. The listing must name
-// every command in agent.CommandNames() and reflect the tier/object structure
+// every command in operation.CommandNames() and reflect the tier/object structure
 // in its headings so a user can see the namespacing from the shell.
 func TestCLIPromptsListSurfacesTiers(t *testing.T) {
 	tmp := t.TempDir()
@@ -54,7 +54,7 @@ func TestCLIPromptsListSurfacesTiers(t *testing.T) {
 	// Every registered command appears in the listing, on its own row, with its
 	// prompts/list description — so the CLI surface stays in lockstep with the
 	// MCP prompt surface.
-	for _, name := range agent.CommandNames() {
+	for _, name := range operation.CommandNames() {
 		row := name + " "
 		if !strings.Contains(body, row) {
 			t.Fatalf("listing missing command %q:\n%s", name, body)

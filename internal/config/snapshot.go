@@ -238,6 +238,10 @@ type Snapshot struct {
 	registry *domain.EnumRegistry
 
 	settings Settings
+	// surfaces is the per-operation CLI/TUI/MCP exposure table copied
+	// from Bundle.Surfaces at BuildSnapshot. Empty on fixtures that
+	// skip LoadBundle — accessors treat that as unrestricted.
+	surfaces SurfaceTable
 	// settingsSources mirrors Bundle.Sources: per-leaf-path origin
 	// labels (SourceDefault / SourceProject / SourceEnv) used by the
 	// settings viewer column. Stored by value so the snapshot stays
@@ -255,7 +259,19 @@ type Snapshot struct {
 // that needs to read config. The Bundle argument is consumed by value —
 // the caller is free to mutate or discard it after the call.
 func BuildSnapshot(bundle Bundle) *Snapshot {
-	snap := &Snapshot{
+	snap := newSnapshot(bundle)
+	if bundle.SubtaskBundle != nil {
+		snap.subtaskKitSnapshot = BuildSnapshot(*bundle.SubtaskBundle)
+	}
+	populateSnapshotWorkflow(snap, bundle)
+	populateSnapshotEntities(snap, bundle)
+	populateSnapshotSettings(snap, bundle)
+	populateSnapshotLanguages(snap, bundle)
+	return snap
+}
+
+func newSnapshot(bundle Bundle) *Snapshot {
+	return &Snapshot{
 		kit:                bundle.Kit,
 		subtaskKitPath:     bundle.SubtaskKit,
 		bucketByID:         map[int64]domain.Bucket{},
@@ -270,48 +286,45 @@ func BuildSnapshot(bundle Bundle) *Snapshot {
 		mcpCommands:        map[string]MCPCommandSpec{},
 		languagesByCode:    map[string]int{},
 	}
-	if bundle.SubtaskBundle != nil {
-		snap.subtaskKitSnapshot = BuildSnapshot(*bundle.SubtaskBundle)
-	}
+}
 
-	if wf, ok := activeWorkflow(bundle); ok {
-		snap.workflow = toDomainWorkflow(wf)
-		var maxPos int
-		var maxID int64
-		for _, b := range snap.workflow.Buckets {
-			snap.bucketByID[b.ID] = b
-			snap.bucketByKey[b.Key] = b
-			if b.Position > maxPos {
-				maxPos = b.Position
-				maxID = b.ID
-			}
+func populateSnapshotWorkflow(snap *Snapshot, bundle Bundle) {
+	wf, ok := activeWorkflow(bundle)
+	if !ok {
+		return
+	}
+	snap.workflow = toDomainWorkflow(wf)
+	var maxPos int
+	for _, b := range snap.workflow.Buckets {
+		snap.bucketByID[b.ID] = b
+		snap.bucketByKey[b.Key] = b
+		if b.Position > maxPos {
+			maxPos = b.Position
+			snap.finalBucketID = b.ID
 		}
-		snap.finalBucketID = maxID
-		for _, tr := range wf.Transitions {
-			from, fromOK := snap.bucketByID[int64(tr.From)]
-			to, toOK := snap.bucketByID[int64(tr.To)]
-			if !fromOK || !toOK {
-				continue
-			}
+	}
+	for _, tr := range wf.Transitions {
+		from, fromOK := snap.bucketByID[int64(tr.From)]
+		to, toOK := snap.bucketByID[int64(tr.To)]
+		if fromOK && toOK {
 			snap.transitionsByPair[transitionKey{from: from.ID, to: to.ID}] = transitionEntry{guards: toDomainGuards(tr.Guards, nil)}
 		}
 	}
+}
 
+func populateSnapshotEntities(snap *Snapshot, bundle Bundle) {
 	snap.personas = append(snap.personas, bundle.Personas...)
 	for i, p := range snap.personas {
 		snap.personasBySlug[p.Slug] = i
 	}
-
 	snap.skills = append(snap.skills, bundle.Skills...)
 	for i, s := range snap.skills {
 		snap.skillsBySlug[s.Slug] = i
 	}
-
 	snap.laws = append(snap.laws, bundle.Laws...)
 	for i, l := range snap.laws {
 		snap.lawsBySlug[l.Slug] = i
 	}
-
 	snap.templates = append(snap.templates, bundle.Templates...)
 	for i, t := range snap.templates {
 		snap.templatesBySlug[t.Slug] = i
@@ -319,24 +332,28 @@ func BuildSnapshot(bundle Bundle) *Snapshot {
 			snap.templatesByDefault[templateDefaultKey{kind: t.Default, project: t.ProjectSlug}] = i
 		}
 	}
-
-	// Full catalog (active-flagged) for the Settings view. Stored alongside
-	// the active slices above; runtime resolution never reads these.
 	snap.allPersonas = append(snap.allPersonas, bundle.AllPersonas...)
 	snap.allSkills = append(snap.allSkills, bundle.AllSkills...)
 	snap.allLaws = append(snap.allLaws, bundle.AllLaws...)
 	snap.allTemplates = append(snap.allTemplates, bundle.AllTemplates...)
+}
 
+func populateSnapshotSettings(snap *Snapshot, bundle Bundle) {
 	for k, n := range bundle.Notifications {
 		snap.notifications[k] = n
 	}
 	for k, c := range bundle.MCPCommands {
 		snap.mcpCommands[k] = c
 	}
-
 	snap.priorities = append(snap.priorities, bundle.Config.Priorities...)
 	snap.severities = append(snap.severities, bundle.Config.Severities...)
 	snap.settings = bundle.Config
+	if len(bundle.Surfaces) > 0 {
+		snap.surfaces = make(SurfaceTable, len(bundle.Surfaces))
+		for k, v := range bundle.Surfaces {
+			snap.surfaces[k] = v
+		}
+	}
 	if len(bundle.Sources) > 0 {
 		snap.settingsSources = make(map[string]string, len(bundle.Sources))
 		for k, v := range bundle.Sources {
@@ -346,31 +363,24 @@ func BuildSnapshot(bundle Bundle) *Snapshot {
 	snap.registry = buildEnumRegistry(bundle)
 	snap.theme = cloneTheme(bundle.ActiveTheme)
 	snap.themeErr = bundle.ActiveThemeErr
+}
 
+func populateSnapshotLanguages(snap *Snapshot, bundle Bundle) {
 	snap.languages = append(snap.languages, bundle.Languages...)
 	for i, lang := range snap.languages {
 		snap.languagesByCode[lang.Code] = i
 	}
 	snap.warnings = append(snap.warnings, bundle.Warnings...)
-
 	eff := bundle.Config.EffectiveLanguages()
 	baseline := snap.lookupLanguage("en")
 	snap.catalogCLI = buildSurfaceCatalog(snap, eff.CLI, baseline)
 	snap.catalogTUI = buildSurfaceCatalog(snap, eff.TUI, baseline)
 	snap.agentOutputLang = eff.AgentOutput
+	trimInactiveLanguages(snap, eff)
+}
 
-	// RAM trim: every locale pack ships ~150 keys (long Hindi /
-	// Marathi packs ~1000+) which translates to ~7-50 KB of map
-	// overhead per pack. The picker only needs Code/Name/Native;
-	// the catalogs already captured their pointers into the
-	// active/baseline languages above. Drop Keys on every pack that
-	// is neither the active CLI / TUI / agent-output code nor the
-	// en baseline so the snapshot's residual footprint stays
-	// proportional to the surfaces in use, not the total locales
-	// shipped. The catalogs' pointers were taken on local copies
-	// (heap-escaped via the return) so the map drop here does not
-	// race-trim the catalogs.
-	keep := map[string]bool{}
+func trimInactiveLanguages(snap *Snapshot, eff LanguageSettings) {
+	keep := map[string]bool{"en": true}
 	if eff.CLI != "" {
 		keep[eff.CLI] = true
 	}
@@ -380,19 +390,11 @@ func BuildSnapshot(bundle Bundle) *Snapshot {
 	if eff.AgentOutput != "" {
 		keep[eff.AgentOutput] = true
 	}
-	keep["en"] = true
-	// languagesByCode now stores slice indexes (see the snapshot dedup
-	// refactor); trim Keys on the slice and the by-code lookup follows
-	// because the catalogs already captured local copies of the active
-	// + baseline languages before the trim ran.
 	for i, lang := range snap.languages {
-		if keep[lang.Code] {
-			continue
+		if !keep[lang.Code] {
+			snap.languages[i].Keys = nil
 		}
-		snap.languages[i].Keys = nil
 	}
-
-	return snap
 }
 
 // Kit returns the identity block for the kit that produced this snapshot.
@@ -545,6 +547,22 @@ func (s *Snapshot) TransitionAllowed(fromID, toID int64) bool {
 // the snapshot.
 func (s *Snapshot) Operations() domain.WorkflowOperations {
 	return s.workflow.Operations
+}
+
+// Surfaces returns the per-operation CLI/TUI/MCP exposure table.
+// Returned as a fresh map so callers cannot mutate the snapshot; bool
+// pointers inside each row are shared with the snapshot (treat them as
+// read-only). Nil snapshot or an empty table returns nil — operation
+// allow() treats that as unrestricted.
+func (s *Snapshot) Surfaces() SurfaceTable {
+	if s == nil || len(s.surfaces) == 0 {
+		return nil
+	}
+	out := make(SurfaceTable, len(s.surfaces))
+	for k, v := range s.surfaces {
+		out[k] = v
+	}
+	return out
 }
 
 // Personas returns the resolved persona catalog. The slice is a fresh
@@ -786,7 +804,7 @@ func (s *Snapshot) SeverityIDByLabel(label string) int {
 }
 
 // Settings returns the resolved Settings block. The value carries the
-// full configuration tree (mcp, context, sqlite, activity_log, events,
+// full configuration tree (mcp, context, sqlite, events,
 // search, hooks, …) so callers reading any process-scope or per-call
 // knob go through this single accessor.
 func (s *Snapshot) Settings() Settings {

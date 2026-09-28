@@ -70,28 +70,32 @@ func TestBackupLeaseValidatePinsEveryGeneratedRecoveryPath(t *testing.T) {
 	for name, mutate := range tests {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
-			dir := t.TempDir()
-			source := filepath.Join(dir, "source.db")
-			if err := os.WriteFile(source, []byte("source"), 0o600); err != nil {
-				t.Fatal(err)
-			}
-			svc := NewBackupService(BackupOptions{SourcePath: source, DestDir: filepath.Join(dir, "backups")})
-			if err := svc.WithLease(context.Background(), func(lease BackupLease) error {
-				path, err := lease.Write(context.Background())
-				if err != nil {
-					return err
-				}
-				if err := mutate(path); err != nil {
-					return err
-				}
-				if err := lease.Validate(); err == nil {
-					return errors.New("lease accepted changed generated recovery path")
-				}
-				return nil
-			}); err != nil {
-				t.Fatalf("WithLease: %v", err)
-			}
+			assertGeneratedRecoveryPathMutationRejected(t, mutate)
 		})
+	}
+}
+
+func assertGeneratedRecoveryPathMutationRejected(t *testing.T, mutate func(string) error) {
+	dir := t.TempDir()
+	source := filepath.Join(dir, "source.db")
+	if err := os.WriteFile(source, []byte("source"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	svc := NewBackupService(BackupOptions{SourcePath: source, DestDir: filepath.Join(dir, "backups")})
+	if err := svc.WithLease(context.Background(), func(lease BackupLease) error {
+		path, err := lease.Write(context.Background())
+		if err != nil {
+			return err
+		}
+		if err := mutate(path); err != nil {
+			return err
+		}
+		if err := lease.Validate(); err == nil {
+			return errors.New("lease accepted changed generated recovery path")
+		}
+		return nil
+	}); err != nil {
+		t.Fatalf("WithLease: %v", err)
 	}
 }
 

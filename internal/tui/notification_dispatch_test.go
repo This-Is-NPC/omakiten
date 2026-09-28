@@ -4,18 +4,17 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"unicode"
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"omakiten/internal/app"
 	"omakiten/internal/config"
 	"omakiten/internal/domain"
 	hookactions "omakiten/internal/hooks/actions"
-	"omakiten/internal/testfixtures"
 	"omakiten/internal/testfixtures/runtimecache"
 	"omakiten/internal/testfixtures/snapstore"
 	"omakiten/internal/token"
-	"omakiten/internal/tui/components/notification"
+	"omakiten/internal/tui/components/overlay"
 )
 
 func ptrBool(v bool) *bool { return &v }
@@ -58,9 +57,9 @@ func newNotificationTestModel(t *testing.T) Model {
 	binding := NotificationBinding{Notifications: map[string]config.Notification{bud.Name: bud}}
 
 	model, err := NewModel(ctx, domain.ProjectContext{}, Repositories{
-		Tasks:    store,
-		Projects: store,
-		Cache:    runtimecache.Install(0, store.Snapshot()), Workflow: app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot()),
+		Tasks:        store,
+		Projects:     store,
+		Cache:        runtimecache.InstallWithStore(0, store),
 		Comments:     store,
 		Dependencies: store,
 
@@ -93,7 +92,7 @@ func TestModelDispatchesShowMsg(t *testing.T) {
 	if !strings.Contains(view, "╭") {
 		t.Errorf("rendered view does not show the rounded border: %q", trim(view, 400))
 	}
-	if mn.notification.Position() != notification.Position(config.NotificationPositionCenter) {
+	if mn.notification.Position() != overlay.Position(config.NotificationPositionCenter) {
 		t.Errorf("position = %s, want center", mn.notification.Position())
 	}
 }
@@ -116,6 +115,54 @@ func TestModelDispatchesShowMsgWithDetailText(t *testing.T) {
 	}
 }
 
+func TestModelDispatchesHookNotificationWithoutTerminalControls(t *testing.T) {
+	model := newNotificationTestModel(t)
+	bud := model.notifications["guard-violation"]
+	const hostile = "hook \x1b[31mred\x1b]0;owned\a\x00\x9b31m\x9d0;owned\x07漢字"
+	next, _ := model.Update(hookactions.NotificationShowMsg{
+		Notification: bud,
+		Text:         hostile,
+		DetailText:   hostile,
+	})
+	m := next.(Model)
+	if strings.IndexFunc(strings.ReplaceAll(m.notification.View(), "\n", ""), unicode.IsControl) >= 0 {
+		t.Fatalf("hook notification retained a terminal control: %q", m.notification.View())
+	}
+	next, _ = m.Update(tea.KeyMsg(tea.Key{Type: tea.KeyTab}))
+	m = next.(Model)
+	view := m.notification.View()
+	if strings.IndexFunc(strings.ReplaceAll(view, "\n", ""), unicode.IsControl) >= 0 {
+		t.Fatalf("hook notification detail retained a terminal control: %q", view)
+	}
+	if !strings.Contains(view, "漢字") {
+		t.Fatalf("hook notification detail lost harmless Unicode: %q", view)
+	}
+}
+
+func TestModelDispatchesConfiguredHookNotificationWithoutTerminalConfigControls(t *testing.T) {
+	model := newNotificationTestModel(t)
+	bud := model.notifications["guard-violation"]
+	const hostile = "config \x1b[31mred\x1b]0;owned\a\x00\x9b31m\x9d0;owned\x07漢字"
+	bud.Style = config.NotificationStyleCustom
+	bud.FooterVisible = ptrBool(true)
+	bud.FooterPosition = config.NotificationFooterLeft
+	bud.CustomBorder = config.NotificationCustomBorder{
+		Top: hostile, Bottom: hostile, Left: hostile, Right: hostile,
+		TopLeft: hostile, TopRight: hostile, BottomLeft: hostile, BottomRight: hostile,
+	}
+	bud.Animation = []config.NotificationFrame{{Frame: 0, Value: hostile}}
+	bud.Actions = []config.NotificationAction{{Key: "a", ID: "apply", Label: hostile}}
+	next, _ := model.Update(hookactions.NotificationShowMsg{Notification: bud, Text: "hook", DetailText: "detail"})
+	m := next.(Model)
+	view := m.notification.View()
+	if strings.IndexFunc(strings.ReplaceAll(view, "\n", ""), unicode.IsControl) >= 0 {
+		t.Fatalf("configured hook notification retained a terminal control: %q", view)
+	}
+	if !strings.Contains(view, "漢字") {
+		t.Fatalf("configured hook notification lost harmless Unicode: %q", view)
+	}
+}
+
 func TestModel_notificationEscapeDismissesViaCmd(t *testing.T) {
 	model := newNotificationTestModel(t)
 	bud := model.notifications["guard-violation"]
@@ -133,7 +180,7 @@ func TestModel_notificationEscapeDismissesViaCmd(t *testing.T) {
 		t.Fatalf("esc on settled notification must return a cmd")
 	}
 	msg := cmd()
-	dm, ok := msg.(notification.DismissedMsg)
+	dm, ok := msg.(DismissedMsg)
 	if !ok {
 		t.Fatalf("cmd produced %T, want DismissedMsg", msg)
 	}
@@ -156,7 +203,7 @@ func TestModelDismissedMsgClearsNotification(t *testing.T) {
 	}
 	id := mn.notification.ID()
 
-	next, _ = mn.Update(notification.DismissedMsg{ID: id})
+	next, _ = mn.Update(DismissedMsg{ID: id})
 	mn = next.(Model)
 	if mn.notification != nil {
 		t.Fatalf("DismissedMsg did not clear notification")

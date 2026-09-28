@@ -293,42 +293,14 @@ func (s *PlanService) UnassignTask(ctx context.Context, project domain.ProjectCo
 	return
 }
 
-// PlanShow is the aggregated view PlanService.Show returns. The active
-// wave is the lowest-position wave whose tasks are not all in the
-// workflow's final bucket; ActiveWaveID is 0 when every wave is done
-// (or when the plan has no waves yet). Dependencies enumerates the
-// in-plan task→task edges (both endpoints belong to this plan) so the
-// network renderer can draw blocker markers without a follow-up query.
-type PlanShow struct {
-	Plan         domain.Plan             `json:"plan"`
-	Waves        []PlanWaveView          `json:"waves"`
-	DoneCount    int                     `json:"done_count"`
-	TotalCount   int                     `json:"total_count"`
-	ActiveWaveID int64                   `json:"active_wave_id,omitempty"`
-	Dependencies []domain.TaskDependency `json:"dependencies,omitempty"`
-}
-
-// PlanWaveView pairs a wave with its tasks and per-wave done/total
-// counts. Used by the TUI network diagram and by MCP plans.show.
-type PlanWaveView struct {
-	Wave       domain.PlanWave      `json:"wave"`
-	Tasks      []domain.PlanTaskRow `json:"tasks,omitempty"`
-	DoneCount  int                  `json:"done_count"`
-	TotalCount int                  `json:"total_count"`
-}
-
-// PlanRollup is the lightweight per-plan projection the TUI list view
-// consumes — slug/name/status from domain.Plan plus the aggregated
-// done/total counters and the active wave's display name. Waves and
-// per-task detail stay out of this projection so callers do not pay
-// the per-task scan cost for a one-line row.
-type PlanRollup struct {
-	Plan           domain.Plan `json:"plan"`
-	DoneCount      int         `json:"done_count"`
-	TotalCount     int         `json:"total_count"`
-	ActiveWaveID   int64       `json:"active_wave_id,omitempty"`
-	ActiveWaveName string      `json:"active_wave_name,omitempty"`
-}
+// PlanShow / PlanWaveView / PlanRollup live in domain so TUI screens can
+// render them without importing internal/app (D1 / D18). Aliases keep
+// existing app call sites compiling.
+type (
+	PlanShow     = domain.PlanShow
+	PlanWaveView = domain.PlanWaveView
+	PlanRollup   = domain.PlanRollup
+)
 
 // Show resolves a plan by slug and folds its waves + tasks into a single
 // projection ready for MCP / TUI rendering. ErrPlanNotFound bubbles when

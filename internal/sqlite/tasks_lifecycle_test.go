@@ -118,15 +118,7 @@ func TestDeleteEnforcesPolicyAndCascades(t *testing.T) {
 		t.Fatalf("CreateTask = %v", err)
 	}
 
-	// Default bucket=backlog disallows delete (task.delete=false).
-	if _, err := tasks.Delete(ctx, project, task.ID); err == nil {
-		t.Fatalf("Delete in backlog succeeded; expected policy violation")
-	} else {
-		var coded *domain.CodedError
-		if !errors.As(err, &coded) || coded.Code != domain.ErrGuardViolation {
-			t.Fatalf("Delete error = %v, want guard_violation", err)
-		}
-	}
+	assertDeleteBlockedInBacklog(t, ctx, tasks, project, task.ID)
 
 	// Move to done so policy permits delete.
 	if _, err := store.MoveTask(ctx, project.ID, task.ID, "dev", store.snap()); err != nil {
@@ -165,17 +157,33 @@ func TestDeleteEnforcesPolicyAndCascades(t *testing.T) {
 		t.Fatalf("Delete event type = %q, want task.removed", event.EventType)
 	}
 
-	// Cascade: comments and dependencies for the deleted task are gone.
-	comments, err := store.ListComments(ctx, project.ID, 0)
+	assertDeleteCascade(t, ctx, store.Store, project.ID, task.ID, other.ID)
+}
+
+func assertDeleteBlockedInBacklog(t *testing.T, ctx context.Context, tasks *app.TaskService, project domain.ProjectContext, taskID int64) {
+	t.Helper()
+	if _, err := tasks.Delete(ctx, project, taskID); err == nil {
+		t.Fatalf("Delete in backlog succeeded; expected policy violation")
+	} else {
+		var coded *domain.CodedError
+		if !errors.As(err, &coded) || coded.Code != domain.ErrGuardViolation {
+			t.Fatalf("Delete error = %v, want guard_violation", err)
+		}
+	}
+}
+
+func assertDeleteCascade(t *testing.T, ctx context.Context, store *Store, projectID, taskID, otherTaskID int64) {
+	t.Helper()
+	comments, err := store.ListComments(ctx, projectID, 0)
 	if err != nil {
 		t.Fatalf("ListComments = %v", err)
 	}
-	for _, c := range comments {
-		if c.TaskID == task.ID {
-			t.Fatalf("comment for deleted task survived: %+v", c)
+	for _, comment := range comments {
+		if comment.TaskID == taskID {
+			t.Fatalf("comment for deleted task survived: %+v", comment)
 		}
 	}
-	deps, err := store.ListTaskDependencies(ctx, project.ID, other.ID)
+	deps, err := store.ListTaskDependencies(ctx, projectID, otherTaskID)
 	if err != nil {
 		t.Fatalf("ListTaskDependencies = %v", err)
 	}

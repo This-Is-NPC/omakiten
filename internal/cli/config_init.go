@@ -28,49 +28,18 @@ func newConfigInitCommand(opts *runtimeOptions) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "init",
 		Short: opts.t("cli.config.init.short"),
-		Long: opts.t("cli.config.init.long"),
+		Long:  opts.t("cli.config.init.long"),
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			cliLangSet := cmd.Flags().Changed("cli-lang")
-			tuiLangSet := cmd.Flags().Changed("tui-lang")
-			agentLangSet := cmd.Flags().Changed("agent-lang")
-			return runJSON(cmd, func(context.Context) (any, error) {
-				root, err := resolveScopeRoot(opts, scopeFlag)
-				if err != nil {
-					return nil, err
-				}
-				res, err := config.SeedInstall(root, presetName, force)
-				if err != nil {
-					return nil, presetCLIError(opts, err)
-				}
-				langSummary, err := applyLanguageSelections(cmd, res.Path, languagePromptInputs{
-					CLILangSet:   cliLangSet,
-					CLILang:      cliLang,
-					TUILangSet:   tuiLangSet,
-					TUILang:      tuiLang,
-					AgentLangSet: agentLangSet,
-					AgentLang:    agentLang,
-				})
-				if err != nil {
-					return nil, err
-				}
-				payload := map[string]any{
-					"scope": scopeFlag,
-					"root":  root,
-					"preset": map[string]any{
-						"name": res.PresetName,
-						"path": res.Path,
-					},
-				}
-				if res.NoOp {
-					payload["no_op"] = true
-				}
-				if res.Refreshed {
-					payload["refreshed"] = true
-				}
-				if langSummary != nil {
-					payload["languages"] = langSummary
-				}
-				return payload, nil
+			return runConfigInit(cmd, opts, configInitInputs{
+				scope:      scopeFlag,
+				preset:     presetName,
+				force:      force,
+				cliLang:    cliLang,
+				tuiLang:    tuiLang,
+				agentLang:  agentLang,
+				cliLangSet: cmd.Flags().Changed("cli-lang"),
+				tuiLangSet: cmd.Flags().Changed("tui-lang"),
+				agentSet:   cmd.Flags().Changed("agent-lang"),
 			})
 		},
 	}
@@ -83,6 +52,64 @@ func newConfigInitCommand(opts *runtimeOptions) *cobra.Command {
 	_ = cmd.MarkFlagRequired("scope")
 	_ = cmd.MarkFlagRequired("preset")
 	return cmd
+}
+
+type configInitInputs struct {
+	scope      string
+	preset     string
+	force      bool
+	cliLang    string
+	tuiLang    string
+	agentLang  string
+	cliLangSet bool
+	tuiLangSet bool
+	agentSet   bool
+}
+
+func runConfigInit(cmd *cobra.Command, opts *runtimeOptions, inputs configInitInputs) error {
+	return runJSON(cmd, func(context.Context) (any, error) {
+		root, err := resolveScopeRoot(opts, inputs.scope)
+		if err != nil {
+			return nil, err
+		}
+		res, err := config.SeedInstall(root, inputs.preset, inputs.force)
+		if err != nil {
+			return nil, presetCLIError(opts, err)
+		}
+		langSummary, err := applyLanguageSelections(cmd, res.Path, languagePromptInputs{
+			CLILangSet:   inputs.cliLangSet,
+			CLILang:      inputs.cliLang,
+			TUILangSet:   inputs.tuiLangSet,
+			TUILang:      inputs.tuiLang,
+			AgentLangSet: inputs.agentSet,
+			AgentLang:    inputs.agentLang,
+		})
+		if err != nil {
+			return nil, err
+		}
+		return configInitPayload(inputs.scope, root, res, langSummary), nil
+	})
+}
+
+func configInitPayload(scope, root string, res config.SeedResult, langSummary map[string]any) map[string]any {
+	payload := map[string]any{
+		"scope": scope,
+		"root":  root,
+		"preset": map[string]any{
+			"name": res.PresetName,
+			"path": res.Path,
+		},
+	}
+	if res.NoOp {
+		payload["no_op"] = true
+	}
+	if res.Refreshed {
+		payload["refreshed"] = true
+	}
+	if langSummary != nil {
+		payload["languages"] = langSummary
+	}
+	return payload
 }
 
 // languagePromptInputs carries the flag values the init RunE collected
@@ -114,34 +141,9 @@ func applyLanguageSelections(cmd *cobra.Command, configPath string, inputs langu
 	}
 	available := availableLanguageCodes(bundle.Languages)
 	defaults := bundle.Config.Languages
-	next := defaults
-
-	if inputs.CLILangSet {
-		next.CLI = strings.TrimSpace(inputs.CLILang)
-	} else if isInteractive(cmd) {
-		choice, err := promptLanguageCode(cmd, t("cli.print.prompt_label.cli"), available, defaults.CLI)
-		if err != nil {
-			return nil, err
-		}
-		next.CLI = choice
-	}
-	if inputs.TUILangSet {
-		next.TUI = strings.TrimSpace(inputs.TUILang)
-	} else if isInteractive(cmd) {
-		choice, err := promptLanguageCode(cmd, t("cli.print.prompt_label.tui"), available, defaults.TUI)
-		if err != nil {
-			return nil, err
-		}
-		next.TUI = choice
-	}
-	if inputs.AgentLangSet {
-		next.AgentOutput = strings.TrimSpace(inputs.AgentLang)
-	} else if isInteractive(cmd) {
-		choice, err := promptFreeForm(cmd, t("cli.print.prompt_label.agent"), defaults.AgentOutput)
-		if err != nil {
-			return nil, err
-		}
-		next.AgentOutput = choice
+	next, err := resolveInitLanguages(cmd, inputs, available, defaults)
+	if err != nil {
+		return nil, err
 	}
 
 	if next == defaults {
@@ -163,6 +165,44 @@ func applyLanguageSelections(cmd *cobra.Command, configPath string, inputs langu
 		"tui":          next.TUI,
 		"agent_output": next.AgentOutput,
 	}, nil
+}
+
+func resolveInitLanguages(cmd *cobra.Command, inputs languagePromptInputs, available []string, defaults config.LanguageSettings) (config.LanguageSettings, error) {
+	next := defaults
+	var err error
+	next.CLI, err = resolveLanguageCode(cmd, inputs.CLILangSet, inputs.CLILang, defaults.CLI, available, "cli")
+	if err != nil {
+		return config.LanguageSettings{}, err
+	}
+	next.TUI, err = resolveLanguageCode(cmd, inputs.TUILangSet, inputs.TUILang, defaults.TUI, available, "tui")
+	if err != nil {
+		return config.LanguageSettings{}, err
+	}
+	next.AgentOutput, err = resolveAgentLanguage(cmd, inputs.AgentLangSet, inputs.AgentLang, defaults.AgentOutput)
+	if err != nil {
+		return config.LanguageSettings{}, err
+	}
+	return next, nil
+}
+
+func resolveLanguageCode(cmd *cobra.Command, set bool, value, fallback string, available []string, surface string) (string, error) {
+	if set {
+		return strings.TrimSpace(value), nil
+	}
+	if !isInteractive(cmd) {
+		return fallback, nil
+	}
+	return promptLanguageCode(cmd, t("cli.print.prompt_label."+surface), available, fallback)
+}
+
+func resolveAgentLanguage(cmd *cobra.Command, set bool, value, fallback string) (string, error) {
+	if set {
+		return strings.TrimSpace(value), nil
+	}
+	if !isInteractive(cmd) {
+		return fallback, nil
+	}
+	return promptFreeForm(cmd, t("cli.print.prompt_label.agent"), fallback)
 }
 
 func availableLanguageCodes(langs []config.Language) []string {
@@ -278,9 +318,12 @@ func resolveScopeRoot(opts *runtimeOptions, scope string) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		return filepath.Join(cwd, config.RepoLocalDirName), nil
+		root := filepath.Join(cwd, config.RepoLocalDirName)
+		if err := config.ValidateRepoLocalRoot(root); err != nil {
+			return "", err
+		}
+		return root, nil
 	default:
 		return "", domain.NewError(domain.ErrValidation, t("cli.err.invalid_scope"), map[string]any{"scope": scope})
 	}
 }
-

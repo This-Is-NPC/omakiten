@@ -9,6 +9,7 @@
 - [Global flags](#global-flags)
 - [Environment variables](#environment-variables)
 - [`okt setup` — post-install picker](#okt-setup--post-install-picker)
+- [Bootstrap installers — `install.sh` / `install.ps1`](#bootstrap-installers--installsh--installps1)
 - [`okt update` — fetch latest release and swap the binary](#okt-update--fetch-latest-release-and-swap-the-binary)
 - [`okt uninstall` — remove the binary and shell-rc wrapper](#okt-uninstall--remove-the-binary-and-shell-rc-wrapper)
 - [`okt init` — register the current project](#okt-init--register-the-current-project)
@@ -80,17 +81,57 @@ OKT_CLI_LANG=pt-br OKT_TUI_LANG=pt-br OKT_PRESET=omakase OKT_HARNESSES=0 \
 
 ---
 
+## Bootstrap installers — `install.sh` / `install.ps1`
+
+The two bootstrap scripts fetch a release, verify it, place `okt` in `INSTALL_DIR`, and hand off to `okt setup`. They select their verification depth from `OKT_VERIFY_MODE`.
+
+| Env var | Applies to | Meaning |
+| --- | --- | --- |
+| `OKT_VERIFY_MODE` | both modes | `checksum` (default) or `strict`. Any other value aborts. |
+| `OKT_COSIGN` | strict | Full path to the Cosign binary when it is not on `PATH`. |
+| `INSTALL_DIR` | both | Install target. Defaults to `~/.local/bin` / `%LOCALAPPDATA%\Programs\okt`. |
+| `VERSION` | both | Pin a release instead of resolving `releases/latest`. |
+| `GITHUB_API_BASE`, `GITHUB_DL_BASE` | both | Release lookup and artifact hosts. Mirrorable. |
+| `OKT_ALLOW_MIRROR_CHECKSUM`, `OKT_CHECKSUM_BASE` | **checksum only** | Move the checksum trust root to a mirror. Inert in strict mode, where trust comes from the signature rather than from the host. |
+
+### Convenience mode (`OKT_VERIFY_MODE=checksum`, default)
+
+The `curl … | bash` and `irm … | iex` one-liners stay available and unchanged. This mode downloads the archive and compares its SHA-256 against the `checksums.txt` served alongside it before extracting. **It trusts the installer script you fetched and it trusts GitHub's TLS; it is not end-to-end verified.** Both installers now say so out loud before they download anything, and point at strict mode. A mismatch still aborts non-zero with no binary written.
+
+### Bootstrap trust model
+
+`OKT_VERIFY_MODE=strict` is the verified bootstrap path, and it is the installer-side twin of the [update trust model](#update-trust-model). It performs the same trust decisions in the same order as `internal/releaseverify`, and it pins the same values (`internal/installscript` asserts the two stay in step).
+
+**Cosign is a prerequisite, never a download.** Strict mode resolves a Cosign you installed yourself — from `OKT_COSIGN`, else from `PATH` — and requires `v3.0.0` or newer, which is the first release that writes the Sigstore bundle format these releases publish. `install.sh` also requires `jq` so it can decode authenticated JSON without a heuristic parser; PowerShell has native JSON and base64 support. The installers never fetch, unpack, or implicitly execute either verifier. All prerequisite and signed-cutoff checks run **before the first release byte is downloaded**.
+
+For the resolved tag the installer downloads the platform archive plus `release-manifest-<tag>.json`, `release-manifest-<tag>.sigstore.json`, `checksums.txt`, `checksums-<tag>.sigstore.json`, and `release-provenance-<tag>.sigstore.json`, then:
+
+1. Verifies the bundle over the manifest bytes, and the bundle over the `checksums.txt` bytes, with `cosign verify-blob` against an exact-string OIDC issuer and an exact-string release-workflow SAN. No `--certificate-identity-regexp`, no `--certificate-oidc-issuer-regexp`, and no `--insecure-ignore-tlog` / `--insecure-ignore-sct` is ever passed, so Cosign's Rekor transparency-log and Fulcio SCT requirements stay in force.
+2. Only then parses the manifest and requires schema version 1, repository `This-Is-NPC/omakiten`, the exact requested tag, a well-formed source commit, and exactly one entry for each of the six archives plus `checksums.txt`. It likewise requires `checksums.txt` to contain exactly the six archive rows, rejects duplicate/missing/extra entries, compares every archive digest across both files, and binds the manifest to the SHA-256 of the complete authenticated `checksums.txt` bytes.
+3. Verifies the SLSA provenance with `cosign verify-blob-attestation --type slsaprovenance1` against the downloaded archive, then decodes that authenticated DSSE payload. The statement must bind the exact repository, tag, manifest source commit, release-workflow build type and builder, one exact tagged-git resolved dependency, and exactly the six manifest archive subjects with no duplicate, missing, extra, or mismatched digest.
+4. Compares the selected archive bytes with the already cross-bound manifest/checksum/provenance digest before anything is extracted.
+
+Only after all four steps pass is the archive extracted and the binary placed. Any failure exits non-zero **before a binary reaches `INSTALL_DIR`**: a missing or too-old Cosign, a missing or invalid bundle, a certificate identity or issuer that is not the pinned pair, a manifest replayed from another tag, a modified manifest, or a digest disagreement.
+
+**No unsigned fallback, mirrors included.** There is no `--skip-verify`, no "warn and continue", and no path on which strict mode falls back to the checksum comparison. A mirror configured through `GITHUB_DL_BASE` must serve the matching authenticated metadata; a mirror that omits or strips it fails the install rather than degrading it, and `OKT_ALLOW_MIRROR_CHECKSUM` cannot open a door because strict mode never consults the checksum trust root at all.
+
+**Old releases are unsupported by strict mode.** `v0.30.0` and everything before it were published without signed metadata and can never be authenticated after the fact, so the installer refuses them outright with the cutoff named in the error. The one-time `v0.30.0` updater transition is a separate historical handshake: the staged current binary accepts the hidden `config validate --migrate --config <root>/config/<preset>.yaml` invocation only for an exact v0.30.0 database and an official managed preset path. This probe does not parse or rewrite the legacy config, and legacy-config preservation is not promised.
+
+**Unsupported verifier/platform combinations fail with explicit guidance.** Sigstore publishes no native `windows/arm64` Cosign build; the supported arrangement is the signed `cosign-windows-amd64.exe` under Windows-on-ARM x64 emulation, pointed at with `OKT_COSIGN`. `install.ps1` prints exactly that arrangement when no verifier is found, rather than a bare "not found". Copyable per-platform commands for Linux, macOS, Windows amd64, and Windows arm64 live in the [README install section](../README.md#verified-install-strict-mode).
+
+---
+
 ## `okt update` — fetch latest release and swap the binary
 
-`internal/cli/update.go`. The in-binary counterpart of the curl|bash refresh path. Resolves the running binary via `os.Executable`, queries `https://api.github.com/repos/This-Is-NPC/omakiten/releases/latest`, downloads the matching asset (`okt_<OS>_<arch>.tar.gz` on POSIX, `.zip` on Windows), verifies its SHA256 against `checksums.txt` from the same release, extracts the `okt` entry from the archive, atomically replaces the binary with a sibling temp file + rename, then runs the new binary's `okt config refresh-defaults` so shipped defaults match the installed release.
+`internal/cli/update.go`. The in-binary counterpart of the curl|bash refresh path. Resolves the running binary via `os.Executable`, queries `https://api.github.com/repos/This-Is-NPC/omakiten/releases/latest`, downloads the matching asset (`okt_<OS>_<arch>.tar.gz` on POSIX, `.zip` on Windows) together with the release's signed metadata, **authenticates the release before parsing any checksum or extracting anything** (see [Update trust model](#update-trust-model)), extracts the `okt` entry from the archive, atomically replaces the binary with a sibling temp file + rename, then runs the new binary's `okt config refresh-defaults` so shipped defaults match the installed release.
 
 Flags: `--check` is a dry-run that prints `current=<v> latest=<v> action=<noop|upgrade>` and exits without swapping the binary or refreshing defaults; `--yes` / `-y` skips the confirmation prompt for non-interactive callers; `--skip-defaults` swaps only the binary and skips the shipped-default refresh.
 
 JSON envelope codes (under `data.code`):
 - `update_available` — `--check` saw a newer tag; nothing written.
 - `update_not_required` — current matches latest (both `--check` and apply paths).
-- `update_completed` — swap applied successfully.
-- `update_failed` — any failure across fetch / checksum / download / extract / swap, or a post-swap defaults refresh failure. When refresh fails after the binary swap, the error details include `applied:true` and a `manual_command` repair command, including `--config <path>` when the update resolved a specific config path.
+- `update_completed` — swap applied successfully. The payload also carries `signature_verified:true` and the `source_commit` recorded in the authenticated manifest.
+- `update_failed` — any failure across fetch / signature verification / checksum / download / extract / swap, or a post-swap defaults refresh failure. Signature failures carry `reason:"release_verification_failed"` plus the underlying `cause`. When refresh fails after the binary swap, the error details include `applied:true` and a `manual_command` repair command, including `--config <path>` when the update resolved a specific config path.
 - `validation_error` — dev build (no version baked in), no TTY without `--yes`, or user declined the confirmation prompt.
 
 ```sh
@@ -101,6 +142,73 @@ okt update                          # interactive y/n confirmation (needs a TTY)
 ```
 
 Windows holds the EXE handle for any process running the binary, so the atomic swap can't replace it in place during a self-update. The current cut targets POSIX user-local installs (`$HOME/.local/bin/okt`); Windows callers should grab the new tarball manually until the `.exe.old` swap-on-exit lands in a follow-up.
+
+### Update trust model
+
+`internal/releaseverify`. `okt update` is a **strict consumer**: it authenticates the release with `sigstore-go` and fails closed. There is no `--skip-verify`, no unsigned mode, and no "warn and continue" — a release that cannot be authenticated is simply not installed, and the running binary is left byte-identical.
+
+For the resolved target tag the updater downloads, under the shared per-asset size cap, the platform archive plus `checksums.txt`, `release-manifest-<tag>.json`, `release-manifest-<tag>.sigstore.json`, `checksums-<tag>.sigstore.json`, and `release-provenance-<tag>.sigstore.json` — exactly the set the release workflow publishes. It then, in this order:
+
+1. Verifies the Sigstore bundle over the manifest bytes, and the bundle over the `checksums.txt` bytes. Every bundle must present a Fulcio certificate with an embedded SCT, a Rekor transparency-log entry **with an inclusion proof** (an inclusion promise alone is refused), and an observer timestamp.
+2. Matches the certificate against an exact-string OIDC issuer and an exact-string workflow SAN. Both regex matchers stay empty by construction — the package exposes no way to configure a regex identity or to disable the artifact/identity policy.
+3. Only then parses the manifest, and requires it to name this repository and this tag; the source commit is read from the authenticated manifest.
+4. Verifies the provenance attestation against the downloaded archive's SHA-256, so the archive must appear as a digest-bound subject of the signed SLSA v1 statement, and checks the statement's build type, builder id, resolved source, and subject digests against the manifest.
+5. Cross-binds the three authenticated views of the archive digest — signed manifest, signed `checksums.txt`, and the bytes on disk — before the archive is opened. The original SHA-256 archive check is retained on top, now compared against the authenticated expectation instead of against whatever the release API served.
+
+Two version gates run before anything is downloaded, so both leave the installed binary untouched:
+
+- **Downgrade and replay**: the target must be strictly newer than the running version.
+- **Signed cutoff**: the target must be strictly after `v0.30.0`. `v0.30.0` and older are legacy checksum-only releases with no authenticated metadata, so `okt update` refuses them outright.
+
+**Transition from a `v0.30.0` binary.** The old updater's exact historical handshake is supported once and fails before the binary swap for any non-exact database, custom/outside config path, or legacy config layout that is not an official managed preset path. That hidden `--migrate` probe is distinct from the post-download staged validator, which receives exactly `config validate --config <path>`; `--skip-defaults` is not forwarded to it. The immutable old updater cannot enforce that flag's post-swap behavior. If the install root still exists and the managed config path is usable, run `okt config refresh-defaults`; if the config or root is missing or unusable, run `okt setup` instead. Neither recovery path promises to preserve an invalid legacy config. From the first current release onward, `okt update` uses the normal current-only validator and verifies every subsequent release on its own.
+
+Trust anchors come from the Sigstore public-good TUF repository and are staged under `<state-dir>/sigstore` (`~/.local/state/omakiten/sigstore` by default), created `0700`. If the root cannot be refreshed — offline host, unreachable mirror, expired metadata — the update aborts with an error; a root-refresh failure never enables an unsigned path.
+
+Windows self-update stays unsupported, and Linux/Darwin `amd64`/`arm64` behaviour is otherwise unchanged.
+
+### Release authenticity policy
+
+The release workflow creates each GitHub release as a draft, builds the six Linux, Darwin, and Windows amd64/arm64 archives without publishing them, then uses keyless Cosign in the isolated `sign-and-attest` job. Publication happens only after that job has produced and verified:
+
+- `release-manifest-<tag>.json`, binding repository `This-Is-NPC/omakiten`, the exact tag, source commit, and SHA-256 for all six archives plus `checksums.txt`.
+- `release-manifest-<tag>.sigstore.json` and `checksums-<tag>.sigstore.json`, which sign the exact bytes of those two files.
+- `release-provenance-<tag>.sigstore.json`, a signed in-toto statement with a SLSA provenance v1 predicate and all six archives as digest-bound subjects.
+
+Strict consumers pin both certificate claims exactly; do not replace either value with a broad regular expression:
+
+```text
+OIDC issuer:          https://token.actions.githubusercontent.com
+certificate identity: https://github.com/This-Is-NPC/omakiten/.github/workflows/release.yml@refs/heads/master
+```
+
+Install Cosign independently from the official Sigstore distribution before using it as the bootstrap verifier; `OKT_VERIFY_MODE=strict` runs exactly these checks for you (see [Bootstrap trust model](#bootstrap-trust-model)). For a downloaded release, verify the exact manifest and checksum bytes, then verify every archive against the provenance bundle:
+
+```sh
+tag=v0.31.0 # replace with the release being checked
+identity='https://github.com/This-Is-NPC/omakiten/.github/workflows/release.yml@refs/heads/master'
+issuer='https://token.actions.githubusercontent.com'
+
+cosign verify-blob \
+  --bundle "release-manifest-${tag}.sigstore.json" \
+  --certificate-identity "$identity" \
+  --certificate-oidc-issuer "$issuer" \
+  "release-manifest-${tag}.json"
+cosign verify-blob \
+  --bundle "checksums-${tag}.sigstore.json" \
+  --certificate-identity "$identity" \
+  --certificate-oidc-issuer "$issuer" \
+  checksums.txt
+for archive in okt_*.tar.gz okt_*.zip; do
+  cosign verify-blob-attestation \
+    --bundle "release-provenance-${tag}.sigstore.json" \
+    --certificate-identity "$identity" \
+    --certificate-oidc-issuer "$issuer" \
+    --type slsaprovenance1 \
+    "$archive"
+done
+```
+
+The signing job performs this certificate inspection before the first signed draft can be published; an issuer or identity mismatch leaves the release unpublished for owner review. The signed-release boundary is the first release after `v0.30.0`; `v0.30.0` and all older releases are legacy checksum-only releases and are not claimed to have original build provenance. Do not backfill a new attestation over an old binary and represent it as provenance from the original build.
 
 ---
 
@@ -414,11 +522,7 @@ okt config validate
 okt config validate ./omakase.yaml
 ```
 
-`--migrate` runs `config.MigrateLayout` + `config.EnsureDefaultFiles` **before** the load, so additive schema backfills and previously missing shipped files land in the same report. Both steps are idempotent and non-destructive on user-owned files (`migrateSchemaDefaults` is additive; `EnsureDefaultFiles` skips paths that already exist), and the `custom/` subtree is never touched. `--migrate` does not overwrite existing shipped files or repair embedded-default drift. On failure the envelope carries a structured shape — `{errors:[{kind, path, message, suggested_command, hint}], warnings:[…]}` — so each error can name a reviewable `suggested_command`. This is the path the TUI boot guard points users at when a config health check fails: run bare `okt config validate` to investigate the cause, run `okt config validate --migrate` to backfill additive schema/default-file gaps, then review any remaining `suggested_command` before applying it.
-
-```sh
-okt config validate --migrate
-```
+The loader accepts only the current `config/` layout and schema. Legacy layouts, schema versions, and removed compatibility keys fail validation without rewriting the input.
 
 ### `okt config refresh-defaults`
 
@@ -655,7 +759,7 @@ Runs the JSON-RPC 2.0 stdio server (`internal/mcp/server.go:Serve`). No flags. S
 
 ### `okt mcp setup`
 
-Writes the `omakiten` MCP server entry into a harness config file (`internal/agentsetup/setup.go`). Mirrors the `--mcp-*` flags exposed by `okt init` but as standalone subcommand flags (`--harness`, `--config-path`, `--command`, `--dry-run`, `--force`). Supported harnesses: `claude-code` (default), `claude-desktop`, `opencode`, `crush`, `github-copilot`, `codex`, `cursor` (`internal/agentsetup/setup.go::SupportedHarnesses`). Run `okt mcp setup --help` for defaults.
+Writes the `omakiten` MCP server entry into a harness config file (`internal/agentsetup/setup.go`). Mirrors the `--mcp-*` flags exposed by `okt init` but as standalone subcommand flags (`--harness`, `--config-path`, `--command`, `--dry-run`, `--force`). Supported harnesses: `claude-code` (default; project-scope `<cwd>/.mcp.json` with `mcpServers.omakiten`), `claude-desktop`, `opencode`, `crush`, `github-copilot`, `codex`, `cursor` (`internal/agentsetup/setup.go::SupportedHarnesses`). Run `okt mcp setup --help` for defaults. An orphan `~/.claude/.mcp.json` from the previous broken Claude Code setup can be deleted.
 
 Security note: `--command` is persisted as the executable command the AI harness will run. Use a trusted absolute binary path, prefer the harness default `--config-path` plus `--dry-run`, avoid privileged or system config paths, and treat `--force` as replacing existing executable harness configuration.
 
@@ -869,7 +973,6 @@ Validate an omakiten.yaml file
 
 | Flag | Short | Type | Description |
 |---|---|---|---|
-| `--migrate` |  |  | run MigrateLayout + EnsureDefaultFiles before LoadBundle/ValidateBundle so schema backfills land in the report |
 
 ### `okt config why`
 

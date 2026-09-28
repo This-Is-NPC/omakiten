@@ -55,10 +55,14 @@ func TestEffectiveTuples_OrderAndCoercion(t *testing.T) {
 		t.Fatal("EffectiveTuples returned no rows for a populated Settings")
 	}
 
-	// Order leg 1: top-level section order matches the Settings struct
-	// field order (Output → Context → Workflow → Theme → …). Pull the
-	// first occurrence of each section and compare against the prefix
-	// of the field-name list.
+	assertEffectiveTupleOrder(t, tuples)
+
+	// Coercion: booleans, numerics, strings carry canonical literals.
+	assertEffectiveTupleCoercion(t, tuples)
+}
+
+func assertEffectiveTupleOrder(t *testing.T, tuples []EffectiveTuple) {
+	t.Helper()
 	sectionOrder := []string{}
 	seen := map[string]bool{}
 	for _, tup := range tuples {
@@ -68,8 +72,6 @@ func TestEffectiveTuples_OrderAndCoercion(t *testing.T) {
 		seen[tup.Section] = true
 		sectionOrder = append(sectionOrder, tup.Section)
 	}
-	// Settings field order (yaml tags lowercased / under_scored). Only
-	// the sections actually populated above appear in the output.
 	wantPrefix := []string{
 		"output",
 		"workflow",
@@ -84,7 +86,6 @@ func TestEffectiveTuples_OrderAndCoercion(t *testing.T) {
 		t.Fatalf("section order mismatch (-want +got):\n%s", diff)
 	}
 
-	// Order leg 2: within a section, dot-path keys ascend.
 	for sectionStart := 0; sectionStart < len(tuples); {
 		section := tuples[sectionStart].Section
 		end := sectionStart
@@ -101,25 +102,27 @@ func TestEffectiveTuples_OrderAndCoercion(t *testing.T) {
 		}
 		sectionStart = end
 	}
+}
 
-	// Coercion: booleans, numerics, strings carry canonical literals.
+func assertEffectiveTupleCoercion(t *testing.T, tuples []EffectiveTuple) {
+	t.Helper()
 	want := map[string]string{
-		"output.json_minified":               "false",
-		"output.omit_empty":                  "true",
-		"theme.active":                       "omacon",
-		"mcp.recent_comment_limit":           "5",
-		"mcp.cache_prompts":                  "true",
-		"mcp.include_workflow_in_continue":   "false",
-		"priorities[0].id":                   "1",
-		"priorities[0].value":                "low",
-		"priorities[1].default":              "true",
-		"priorities[1].value":                "normal",
-		"tag_synonyms.bugfix":                "bug",
-		"tag_synonyms.feat":                  "feature",
-		"template_defaults[0]":               "feature",
-		"template_defaults[1]":               "bug",
-		"languages.cli":                      "en",
-		"languages.tui":                      "pt-br",
+		"output.json_minified":             "false",
+		"output.omit_empty":                "true",
+		"theme.active":                     "omacon",
+		"mcp.recent_comment_limit":         "5",
+		"mcp.cache_prompts":                "true",
+		"mcp.include_workflow_in_continue": "false",
+		"priorities[0].id":                 "1",
+		"priorities[0].value":              "low",
+		"priorities[1].default":            "true",
+		"priorities[1].value":              "normal",
+		"tag_synonyms.bugfix":              "bug",
+		"tag_synonyms.feat":                "feature",
+		"template_defaults[0]":             "feature",
+		"template_defaults[1]":             "bug",
+		"languages.cli":                    "en",
+		"languages.tui":                    "pt-br",
 	}
 	got := map[string]string{}
 	for _, tup := range tuples {
@@ -347,71 +350,79 @@ func sortedAllowed(m map[string]bool) []string {
 // blind the test to drift.
 func walkScalarPaths(v reflect.Value, sectionPrefix, keyPrefix string) []string {
 	switch v.Kind() {
-	case reflect.Pointer:
-		if v.IsNil() {
-			return nil
-		}
-		return walkScalarPaths(v.Elem(), sectionPrefix, keyPrefix)
-	case reflect.Interface:
-		if v.IsNil() {
-			return nil
-		}
-		return walkScalarPaths(v.Elem(), sectionPrefix, keyPrefix)
+	case reflect.Pointer, reflect.Interface:
+		return walkIndirectPaths(v, sectionPrefix, keyPrefix)
 	case reflect.Struct:
-		out := []string{}
-		typ := v.Type()
-		for i := 0; i < v.NumField(); i++ {
-			field := typ.Field(i)
-			if !field.IsExported() {
-				continue
-			}
-			tag, omitempty := parseYAMLTag(field.Tag.Get("yaml"))
-			if tag == "-" {
-				continue
-			}
-			if tag == "" {
-				tag = strings.ToLower(field.Name)
-			}
-			fv := v.Field(i)
-			if omitempty && fv.IsZero() {
-				continue
-			}
-			// Top-level invocation: sectionPrefix is empty, so this
-			// field's tag becomes the section. Nested invocation:
-			// append onto the key path.
-			if sectionPrefix == "" {
-				out = append(out, walkScalarPaths(fv, tag, "")...)
-			} else {
-				out = append(out, walkScalarPaths(fv, sectionPrefix, joinKey(keyPrefix, tag))...)
-			}
-		}
-		return out
+		return walkStructPaths(v, sectionPrefix, keyPrefix)
 	case reflect.Map:
-		if v.Len() == 0 {
-			return []string{leafPath(sectionPrefix, keyPrefix)}
-		}
-		out := []string{}
-		keys := v.MapKeys()
-		sort.Slice(keys, func(a, b int) bool {
-			return keys[a].String() < keys[b].String()
-		})
-		for _, k := range keys {
-			out = append(out, walkScalarPaths(v.MapIndex(k), sectionPrefix, joinKey(keyPrefix, k.String()))...)
-		}
-		return out
+		return walkMapPaths(v, sectionPrefix, keyPrefix)
 	case reflect.Slice, reflect.Array:
-		if v.Len() == 0 {
-			return []string{leafPath(sectionPrefix, keyPrefix)}
-		}
-		out := []string{}
-		for i := 0; i < v.Len(); i++ {
-			idx := joinPath(keyPrefix, "["+itoa(i)+"]")
-			out = append(out, walkScalarPaths(v.Index(i), sectionPrefix, idx)...)
-		}
-		return out
+		return walkSequencePaths(v, sectionPrefix, keyPrefix)
 	default:
 		return []string{leafPath(sectionPrefix, keyPrefix)}
 	}
+}
+
+func walkIndirectPaths(v reflect.Value, sectionPrefix, keyPrefix string) []string {
+	if v.IsNil() {
+		return nil
+	}
+	return walkScalarPaths(v.Elem(), sectionPrefix, keyPrefix)
+}
+
+func walkStructPaths(v reflect.Value, sectionPrefix, keyPrefix string) []string {
+	out := []string{}
+	typ := v.Type()
+	for i := 0; i < v.NumField(); i++ {
+		field := typ.Field(i)
+		if !field.IsExported() {
+			continue
+		}
+		tag, omitempty := parseYAMLTag(field.Tag.Get("yaml"))
+		if tag == "-" {
+			continue
+		}
+		if tag == "" {
+			tag = strings.ToLower(field.Name)
+		}
+		fv := v.Field(i)
+		if omitempty && fv.IsZero() {
+			continue
+		}
+		if sectionPrefix == "" {
+			out = append(out, walkScalarPaths(fv, tag, "")...)
+		} else {
+			out = append(out, walkScalarPaths(fv, sectionPrefix, joinKey(keyPrefix, tag))...)
+		}
+	}
+	return out
+}
+
+func walkMapPaths(v reflect.Value, sectionPrefix, keyPrefix string) []string {
+	if v.Len() == 0 {
+		return []string{leafPath(sectionPrefix, keyPrefix)}
+	}
+	out := []string{}
+	keys := v.MapKeys()
+	sort.Slice(keys, func(a, b int) bool {
+		return keys[a].String() < keys[b].String()
+	})
+	for _, k := range keys {
+		out = append(out, walkScalarPaths(v.MapIndex(k), sectionPrefix, joinKey(keyPrefix, k.String()))...)
+	}
+	return out
+}
+
+func walkSequencePaths(v reflect.Value, sectionPrefix, keyPrefix string) []string {
+	if v.Len() == 0 {
+		return []string{leafPath(sectionPrefix, keyPrefix)}
+	}
+	out := []string{}
+	for i := 0; i < v.Len(); i++ {
+		idx := joinPath(keyPrefix, "["+itoa(i)+"]")
+		out = append(out, walkScalarPaths(v.Index(i), sectionPrefix, idx)...)
+	}
+	return out
 }
 
 func parseYAMLTag(tag string) (name string, omitempty bool) {

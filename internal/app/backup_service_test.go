@@ -377,34 +377,38 @@ func TestBackupService_PruneNoOpWhenRetentionDisabled(t *testing.T) {
 	for _, retention := range []int{0, -1} {
 		retention := retention
 		t.Run("retention="+itoa(retention), func(t *testing.T) {
-			tmp := t.TempDir()
-			srcPath := filepath.Join(tmp, "omakiten.db")
-			if err := os.WriteFile(srcPath, []byte("body"), 0o600); err != nil {
-				t.Fatalf("write source: %v", err)
-			}
-			destDir := filepath.Join(tmp, "backups")
-			base := time.Date(2026, 5, 21, 10, 0, 0, 0, time.UTC)
-			for i := 0; i < 4; i++ {
-				i := i
-				svc := NewBackupService(BackupOptions{
-					SourcePath: srcPath,
-					DestDir:    destDir,
-					Retention:  retention,
-					Now:        func() time.Time { return base.Add(time.Duration(i) * time.Minute) },
-				})
-				if _, err := svc.Run(context.Background()); err != nil {
-					t.Fatalf("Run() #%d error = %v", i, err)
-				}
-			}
-			entries, err := os.ReadDir(destDir)
-			if err != nil {
-				t.Fatalf("list dest: %v", err)
-			}
-			entries = matchingBackupEntries(entries)
-			if len(entries) != 4 {
-				t.Fatalf("dest entries = %d, want 4 (retention=%d disables prune)", len(entries), retention)
-			}
+			assertRetentionDisabledPruneIsNoOp(t, retention)
 		})
+	}
+}
+
+func assertRetentionDisabledPruneIsNoOp(t *testing.T, retention int) {
+	tmp := t.TempDir()
+	srcPath := filepath.Join(tmp, "omakiten.db")
+	if err := os.WriteFile(srcPath, []byte("body"), 0o600); err != nil {
+		t.Fatalf("write source: %v", err)
+	}
+	destDir := filepath.Join(tmp, "backups")
+	base := time.Date(2026, 5, 21, 10, 0, 0, 0, time.UTC)
+	for i := 0; i < 4; i++ {
+		i := i
+		svc := NewBackupService(BackupOptions{
+			SourcePath: srcPath,
+			DestDir:    destDir,
+			Retention:  retention,
+			Now:        func() time.Time { return base.Add(time.Duration(i) * time.Minute) },
+		})
+		if _, err := svc.Run(context.Background()); err != nil {
+			t.Fatalf("Run() #%d error = %v", i, err)
+		}
+	}
+	entries, err := os.ReadDir(destDir)
+	if err != nil {
+		t.Fatalf("list dest: %v", err)
+	}
+	entries = matchingBackupEntries(entries)
+	if len(entries) != 4 {
+		t.Fatalf("dest entries = %d, want 4 (retention=%d disables prune)", len(entries), retention)
 	}
 }
 

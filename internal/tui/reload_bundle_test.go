@@ -8,13 +8,14 @@ import (
 	"time"
 
 	"omakiten/internal/agentruntime"
-	"omakiten/internal/app"
 	"omakiten/internal/config"
 	"omakiten/internal/configstore"
+	"omakiten/internal/domain"
 	"omakiten/internal/events"
-	"omakiten/internal/testfixtures"
+	"omakiten/internal/testfixtures/bundleeditor"
 	"omakiten/internal/testfixtures/snapstore"
 	"omakiten/internal/token"
+	"omakiten/internal/tui/screens/studio"
 )
 
 // TestReloadBundleUsesCacheWhenWired asserts the Phase 3e routing: when
@@ -25,33 +26,9 @@ import (
 // silently falls back to ConfigService.Import would either keep the
 // cache pointer or skip the rotated bundle entirely.
 func TestReloadBundleUsesCacheWhenWired(t *testing.T) {
-	ctx := context.Background()
-	tmp := t.TempDir()
-	configPath := filepath.Join(tmp, "config", "omakase.yaml")
-	dbPath := filepath.Join(tmp, "omakiten.db")
-
-	if err := config.SaveFullBundle(configPath, tuiTestBundle(t)); err != nil {
-		t.Fatalf("SaveFullBundle: %v", err)
-	}
-	writeThemeFile(t, filepath.Join(tmp, "themes", "catppuccin.yaml"), "catppuccin", "Catppuccin")
-
-	store := snapstore.Open(t, dbPath)
-
-	files := configstore.New()
-	editor := app.NewBundleEditor(files, configPath)
-	if _, err := editor.Apply(ctx, nil); err != nil {
-		t.Fatalf("editor.Apply: %v", err)
-	}
-	project, err := store.UpsertProject(ctx, "Project", "project", "/work/project")
-	if err != nil {
-		t.Fatalf("UpsertProject: %v", err)
-	}
-
-	bus := events.NewInProcessBus(config.EventsSettings{})
-	cache := agentruntime.NewBundleCache(store.Store, bus, files)
-	if _, err := cache.Resolve(ctx, project.ID, configPath); err != nil {
-		t.Fatalf("cache.Resolve initial: %v", err)
-	}
+	fixture := newReloadBundleFixture(t)
+	ctx, configPath, store, files := fixture.ctx, fixture.configPath, fixture.store, fixture.files
+	project, editor, cache := fixture.project, fixture.editor, fixture.cache
 	firstEntry := cache.Get(project.ID)
 	if firstEntry == nil {
 		t.Fatal("cache.Get(project.ID) nil after Resolve")
@@ -59,14 +36,11 @@ func TestReloadBundleUsesCacheWhenWired(t *testing.T) {
 
 	model, err := NewModel(ctx, project.Context(), Repositories{
 		Tasks:        store,
-		Workflow:     app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot()),
 		Comments:     store,
 		Dependencies: store,
 
 		Editor:      editor,
 		BundleStore: files,
-		EntityFiles: files,
-		Slugger:     files,
 		Events:      store,
 		Orphans:     store,
 		Cache:       cache,
@@ -75,6 +49,8 @@ func TestReloadBundleUsesCacheWhenWired(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewModel: %v", err)
 	}
+	draft := dirtyStudioDraft(t, editor, "dirty before reload")
+	model.studioScreen = model.studioScreen.WithState(studio.State{Draft: draft, ApplyArmed: true, ApplyConfirmation: "confirmed-before-reload"})
 
 	// Bump mtime so cache.Reload sees a change to confirm it rebuilt
 	// (Reload bypasses mtime, but advancing it also catches a regression
@@ -86,6 +62,9 @@ func TestReloadBundleUsesCacheWhenWired(t *testing.T) {
 
 	if err := model.reloadBundle(configPath); err != nil {
 		t.Fatalf("reloadBundle: %v", err)
+	}
+	if state := model.studioScreen.State(); state.Draft != nil || state.ApplyArmed || state.ApplyConfirmation != "" {
+		t.Fatalf("reloadBundle retained Studio state: %+v", state)
 	}
 
 	secondEntry := cache.Get(project.ID)
@@ -105,43 +84,17 @@ func TestReloadBundleUsesCacheWhenWired(t *testing.T) {
 }
 
 func TestReloadBundleIfChangedAppliesMtimeReload(t *testing.T) {
-	ctx := context.Background()
-	tmp := t.TempDir()
-	configPath := filepath.Join(tmp, "config", "omakase.yaml")
-	dbPath := filepath.Join(tmp, "omakiten.db")
-
-	if err := config.SaveFullBundle(configPath, tuiTestBundle(t)); err != nil {
-		t.Fatalf("SaveFullBundle: %v", err)
-	}
-	writeThemeFile(t, filepath.Join(tmp, "themes", "catppuccin.yaml"), "catppuccin", "Catppuccin")
-
-	store := snapstore.Open(t, dbPath)
-	files := configstore.New()
-	editor := app.NewBundleEditor(files, configPath)
-	if _, err := editor.Apply(ctx, nil); err != nil {
-		t.Fatalf("editor.Apply: %v", err)
-	}
-	project, err := store.UpsertProject(ctx, "Project", "project", "/work/project")
-	if err != nil {
-		t.Fatalf("UpsertProject: %v", err)
-	}
-
-	bus := events.NewInProcessBus(config.EventsSettings{})
-	cache := agentruntime.NewBundleCache(store.Store, bus, files)
-	if _, err := cache.Resolve(ctx, project.ID, configPath); err != nil {
-		t.Fatalf("cache.Resolve initial: %v", err)
-	}
+	fixture := newReloadBundleFixture(t)
+	ctx, configPath, store, files := fixture.ctx, fixture.configPath, fixture.store, fixture.files
+	project, editor, cache := fixture.project, fixture.editor, fixture.cache
 	firstEntry := cache.Get(project.ID)
 
 	model, err := NewModel(ctx, project.Context(), Repositories{
 		Tasks:        store,
-		Workflow:     app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot()),
 		Comments:     store,
 		Dependencies: store,
 		Editor:       editor,
 		BundleStore:  files,
-		EntityFiles:  files,
-		Slugger:      files,
 		Cache:        cache,
 		ProjectID:    project.ID,
 		ConfigPath:   configPath,
@@ -149,6 +102,8 @@ func TestReloadBundleIfChangedAppliesMtimeReload(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewModel: %v", err)
 	}
+	draft := dirtyStudioDraft(t, editor, "dirty before hot reload")
+	model.studioScreen = model.studioScreen.WithState(studio.State{Draft: draft, ApplyArmed: true, ApplyConfirmation: "confirmed-before-hot-reload"})
 	if model.languages.AgentOutput != "" {
 		t.Fatalf("initial AgentOutput = %q, want empty", model.languages.AgentOutput)
 	}
@@ -179,4 +134,53 @@ func TestReloadBundleIfChangedAppliesMtimeReload(t *testing.T) {
 	if model.languages.AgentOutput != "Português (Brasil)" {
 		t.Fatalf("model AgentOutput = %q, want Português (Brasil)", model.languages.AgentOutput)
 	}
+	if state := model.studioScreen.State(); state.Draft != nil || state.ApplyArmed || state.ApplyConfirmation != "" {
+		t.Fatalf("hot reload retained Studio state: %+v", state)
+	}
+}
+
+func dirtyStudioDraft(t *testing.T, editor BundleEditor, name string) StudioDraft {
+	t.Helper()
+	draft, err := NewStudioDraft(editor)
+	if err != nil {
+		t.Fatalf("NewStudioDraft: %v", err)
+	}
+	draft.RenameBucket(1, name)
+	return draft
+}
+
+type reloadBundleFixture struct {
+	ctx        context.Context
+	configPath string
+	store      *snapstore.Store
+	files      *configstore.Adapter
+	editor     BundleEditor
+	project    domain.Project
+	cache      *agentruntime.BundleCache
+}
+
+func newReloadBundleFixture(t *testing.T) reloadBundleFixture {
+	t.Helper()
+	ctx := context.Background()
+	tmp := t.TempDir()
+	configPath := filepath.Join(tmp, "config", "omakase.yaml")
+	if err := config.SaveFullBundle(configPath, tuiTestBundle(t)); err != nil {
+		t.Fatalf("SaveFullBundle: %v", err)
+	}
+	writeThemeFile(t, filepath.Join(tmp, "themes", "catppuccin.yaml"), "catppuccin", "Catppuccin")
+	store := snapstore.Open(t, filepath.Join(tmp, "omakiten.db"))
+	files := configstore.New()
+	editor := bundleeditor.New(files, configPath)
+	if _, err := applyBundleEditor(ctx, editor, nil); err != nil {
+		t.Fatalf("editor.Apply: %v", err)
+	}
+	project, err := store.UpsertProject(ctx, "Project", "project", "/work/project")
+	if err != nil {
+		t.Fatalf("UpsertProject: %v", err)
+	}
+	cache := agentruntime.NewBundleCache(store.Store, events.NewInProcessBus(config.EventsSettings{}), files)
+	if _, err := cache.Resolve(ctx, project.ID, configPath); err != nil {
+		t.Fatalf("cache.Resolve initial: %v", err)
+	}
+	return reloadBundleFixture{ctx: ctx, configPath: configPath, store: store, files: files, editor: editor, project: project, cache: cache}
 }

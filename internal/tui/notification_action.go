@@ -7,7 +7,6 @@ import (
 
 	"omakiten/internal/domain"
 	"omakiten/internal/output"
-	"omakiten/internal/tui/components/notification"
 )
 
 // handleNotificationAction executes the cobra command an action declared (if
@@ -18,7 +17,7 @@ import (
 // Audit: a non-empty Command emits a confirmation.granted event keyed by the
 // active project before the dispatch fires, so the activity log captures the
 // human keystroke that authorised the run.
-func (m *Model) handleNotificationAction(action notification.ActionMsg) {
+func (m *Model) handleNotificationAction(action ActionMsg) {
 	if len(action.Command) == 0 {
 		m.status = fmt.Sprintf(m.t("tui.status.notification_fmt"), action.Slug, action.ActionID)
 		return
@@ -61,7 +60,7 @@ func (m *Model) handleNotificationAction(action notification.ActionMsg) {
 // emitConfirmationGranted records that the human user pressed an action key
 // and the corresponding command is about to run. Failure to record is
 // swallowed so audit gaps do not block the user-visible side effect.
-func (m *Model) emitConfirmationGranted(action notification.ActionMsg) {
+func (m *Model) emitConfirmationGranted(action ActionMsg) {
 	if m.project.ID == 0 || m.repos.Events == nil {
 		return
 	}
@@ -105,7 +104,7 @@ func parseLastEnvelope(raw []byte) (output.Envelope, error) {
 // notificationActionStatus picks the user-facing status line for a successful
 // action. Falls back to a generic summary when the command's envelope data
 // does not surface a friendly message field.
-func (m Model) notificationActionStatus(action notification.ActionMsg, envelope output.Envelope) string {
+func (m Model) notificationActionStatus(action ActionMsg, envelope output.Envelope) string {
 	if msg, ok := m.envelopeMessage(envelope); ok {
 		return msg
 	}

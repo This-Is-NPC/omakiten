@@ -43,6 +43,32 @@ const refKit = "omakase"
 // runtime uses, so a regression in either the YAML, the loader, or the
 // embed packaging surfaces here before it reaches a user.
 func TestEventRegistryYAMLParity(t *testing.T) {
+	kits := loadEventRegistryKits(t)
+	knownSet := hydrateKnownEventTypes(t)
+
+	t.Run("const_yaml_key_parity", func(t *testing.T) {
+		for _, key := range kitKeys {
+			t.Run(key, func(t *testing.T) {
+				assertEventRegistryKeys(t, key, kits[key], knownSet)
+			})
+		}
+	})
+
+	t.Run("formatter_id_resolves", func(t *testing.T) {
+		for _, key := range kitKeys {
+			t.Run(key, func(t *testing.T) {
+				assertFormatterIDsResolve(t, key, kits[key])
+			})
+		}
+	})
+
+	t.Run("cross_kit_identity", func(t *testing.T) {
+		assertCrossKitIdentity(t, kits)
+	})
+}
+
+func loadEventRegistryKits(t *testing.T) map[string]map[string]config.EventDefinitionSettings {
+	t.Helper()
 	kits := make(map[string]map[string]config.EventDefinitionSettings, len(kitKeys))
 	for _, key := range kitKeys {
 		cfg, err := config.LoadKitConfigByKey(key)
@@ -54,112 +80,94 @@ func TestEventRegistryYAMLParity(t *testing.T) {
 		}
 		kits[key] = cfg.Events.Definitions
 	}
+	return kits
+}
 
-	// Hydrate the domain registry from refKit so
-	// domain.KnownEventTypes is populated. Phase 1 dropped the
-	// hand-maintained Go literal in favour of a loader-fed slice; tests
-	// that walk domain.KnownEventTypes must therefore prime the loader
-	// first, exactly as boot does at runtime.
+func hydrateKnownEventTypes(t *testing.T) map[string]struct{} {
+	t.Helper()
 	if err := config.LoadDomainEventRegistry(kitEvents(t, refKit)); err != nil {
 		t.Fatalf("LoadDomainEventRegistry(%q): %v", refKit, err)
 	}
 	knownSet := make(map[string]struct{}, len(domain.KnownEventTypes))
-	for _, k := range domain.KnownEventTypes {
-		knownSet[k] = struct{}{}
+	for _, key := range domain.KnownEventTypes {
+		knownSet[key] = struct{}{}
 	}
+	return knownSet
+}
 
-	t.Run("const_yaml_key_parity", func(t *testing.T) {
-		for _, key := range kitKeys {
-			key := key
-			t.Run(key, func(t *testing.T) {
-				defs := kits[key]
-				var missingInYAML []string
-				for _, known := range domain.KnownEventTypes {
-					if _, ok := defs[known]; !ok {
-						missingInYAML = append(missingInYAML, known)
-					}
-				}
-				var unknownInYAML []string
-				for k := range defs {
-					if _, ok := knownSet[k]; !ok {
-						unknownInYAML = append(unknownInYAML, k)
-					}
-				}
-				sort.Strings(missingInYAML)
-				sort.Strings(unknownInYAML)
-				if len(missingInYAML) > 0 {
-					t.Errorf("kit %q: missing in YAML definitions: %v", key, missingInYAML)
-				}
-				if len(unknownInYAML) > 0 {
-					t.Errorf("kit %q: YAML keys not in domain.KnownEventTypes: %v", key, unknownInYAML)
-				}
-			})
+func assertEventRegistryKeys(t *testing.T, key string, defs map[string]config.EventDefinitionSettings, knownSet map[string]struct{}) {
+	t.Helper()
+	var missingInYAML []string
+	for _, known := range domain.KnownEventTypes {
+		if _, ok := defs[known]; !ok {
+			missingInYAML = append(missingInYAML, known)
 		}
-	})
+	}
+	var unknownInYAML []string
+	for yamlKey := range defs {
+		if _, ok := knownSet[yamlKey]; !ok {
+			unknownInYAML = append(unknownInYAML, yamlKey)
+		}
+	}
+	sort.Strings(missingInYAML)
+	sort.Strings(unknownInYAML)
+	if len(missingInYAML) > 0 {
+		t.Errorf("kit %q: missing in YAML definitions: %v", key, missingInYAML)
+	}
+	if len(unknownInYAML) > 0 {
+		t.Errorf("kit %q: YAML keys not in domain.KnownEventTypes: %v", key, unknownInYAML)
+	}
+}
 
-	t.Run("formatter_id_resolves", func(t *testing.T) {
-		for _, key := range kitKeys {
-			key := key
-			t.Run(key, func(t *testing.T) {
-				defs := kits[key]
-				// Iterate in sorted key order so failures are stable across runs.
-				ordered := make([]string, 0, len(defs))
-				for k := range defs {
-					ordered = append(ordered, k)
-				}
-				sort.Strings(ordered)
-				for _, k := range ordered {
-					def := defs[k]
-					if def.Formatter == "" {
-						t.Errorf("kit %q: definition %q missing formatter id", key, k)
-						continue
-					}
-					if _, ok := domain.ResolveFormatter(domain.FormatterID(def.Formatter)); !ok {
-						t.Errorf("kit %q: definition %q formatter id %q not registered in domain.formatterRegistry",
-							key, k, def.Formatter)
-					}
-				}
-			})
+func assertFormatterIDsResolve(t *testing.T, key string, defs map[string]config.EventDefinitionSettings) {
+	t.Helper()
+	ordered := keysOf(defs)
+	for _, definitionKey := range ordered {
+		def := defs[definitionKey]
+		if def.Formatter == "" {
+			t.Errorf("kit %q: definition %q missing formatter id", key, definitionKey)
+			continue
 		}
-	})
+		if _, ok := domain.ResolveFormatter(domain.FormatterID(def.Formatter)); !ok {
+			t.Errorf("kit %q: definition %q formatter id %q not registered in domain.formatterRegistry",
+				key, definitionKey, def.Formatter)
+		}
+	}
+}
 
-	t.Run("cross_kit_identity", func(t *testing.T) {
-		// Compare every other kit against refKit so the registry is
-		// canonical across kits. A divergence reports the offending kit
-		// + key + field so authors can fix the drift at its source
-		// rather than chase a synthesized diff.
-		refDefs := kits[refKit]
-		for _, key := range kitKeys {
-			if key == refKit {
-				continue
-			}
-			key := key
-			t.Run(refKit+"_vs_"+key, func(t *testing.T) {
-				other := kits[key]
-				if reflect.DeepEqual(refDefs, other) {
-					return
-				}
-				// Surface the smallest actionable diff — list keys
-				// missing in either map, then per-field deltas for the
-				// shared keys.
-				refKeys := keysOf(refDefs)
-				otherKeys := keysOf(other)
-				if missing := diff(refKeys, otherKeys); len(missing) > 0 {
-					t.Errorf("kit %q missing keys present in %q: %v", key, refKit, missing)
-				}
-				if extra := diff(otherKeys, refKeys); len(extra) > 0 {
-					t.Errorf("kit %q has keys absent from %q: %v", key, refKit, extra)
-				}
-				for _, k := range refKeys {
-					o, ok := other[k]
-					if !ok {
-						continue
-					}
-					reportFieldDiffs(t, refKit, key, k, refDefs[k], o)
-				}
-			})
+func assertCrossKitIdentity(t *testing.T, kits map[string]map[string]config.EventDefinitionSettings) {
+	t.Helper()
+	refDefs := kits[refKit]
+	for _, key := range kitKeys {
+		if key == refKit {
+			continue
 		}
-	})
+		t.Run(refKit+"_vs_"+key, func(t *testing.T) {
+			assertKitIdentity(t, key, refDefs, kits[key])
+		})
+	}
+}
+
+func assertKitIdentity(t *testing.T, key string, refDefs, other map[string]config.EventDefinitionSettings) {
+	t.Helper()
+	if reflect.DeepEqual(refDefs, other) {
+		return
+	}
+	refKeys := keysOf(refDefs)
+	otherKeys := keysOf(other)
+	if missing := diff(refKeys, otherKeys); len(missing) > 0 {
+		t.Errorf("kit %q missing keys present in %q: %v", key, refKit, missing)
+	}
+	if extra := diff(otherKeys, refKeys); len(extra) > 0 {
+		t.Errorf("kit %q has keys absent from %q: %v", key, refKit, extra)
+	}
+	for _, definitionKey := range refKeys {
+		otherDef, ok := other[definitionKey]
+		if !ok {
+			continue
+		}
+		reportFieldDiffs(t, refKit, key, definitionKey, refDefs[definitionKey], otherDef)
+	}
 }
 
 // kitEvents loads a kit by key and returns its EventsSettings so the

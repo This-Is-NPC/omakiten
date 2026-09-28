@@ -6,6 +6,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"omakiten/internal/domain"
+	"omakiten/internal/operation"
 )
 
 func newSkillCommand(opts *runtimeOptions) *cobra.Command {
@@ -34,12 +35,7 @@ func newSkillListCommand(opts *runtimeOptions) *cobra.Command {
 				}
 				defer rt.close()
 
-				service := rt.skillService()
-				skills, err := service.List(ctx)
-				if err != nil {
-					return nil, err
-				}
-				return map[string]any{"skills": skills}, nil
+				return rt.operationService().ListSkills(ctx, operation.ListSkillsInput{})
 			})
 		},
 	}
@@ -58,11 +54,7 @@ func newSkillShowCommand(opts *runtimeOptions) *cobra.Command {
 				}
 				defer rt.close()
 
-				skill, err := rt.skillService().Show(ctx, args[0])
-				if err != nil {
-					return nil, err
-				}
-				return map[string]any{"skill": skill}, nil
+				return rt.operationService().ShowSkill(ctx, operation.ShowSkillInput{Slug: args[0]})
 			})
 		},
 	}
@@ -81,22 +73,7 @@ func newSkillAddCommand(opts *runtimeOptions) *cobra.Command {
 					return nil, err
 				}
 				defer rt.close()
-
-				service := rt.skillService()
-				skill, err := service.Add(ctx, domain.SkillInput{Key: key, Name: name, Description: description})
-				if err != nil {
-					return nil, err
-				}
-				if !noEdit {
-					if err := openEditorAndReimport(ctx, rt, skill.SourcePath); err != nil {
-						return nil, err
-					}
-					skill, err = service.Show(ctx, skill.Key)
-					if err != nil {
-						return nil, err
-					}
-				}
-				return map[string]any{"skill": skill}, nil
+				return runSkillAdd(ctx, rt, key, name, description, noEdit)
 			})
 		},
 	}
@@ -122,38 +99,7 @@ func newSkillEditCommand(opts *runtimeOptions) *cobra.Command {
 					return nil, err
 				}
 				defer rt.close()
-
-				service := rt.skillService()
-				slug, err := resolveSkillSlug(ctx, service, args[0])
-				if err != nil {
-					return nil, err
-				}
-				if cmd.Flags().Changed("name") || cmd.Flags().Changed("description") {
-					update := domain.SkillUpdate{}
-					if cmd.Flags().Changed("name") {
-						update.Name = &name
-					}
-					if cmd.Flags().Changed("description") {
-						update.Description = &description
-					}
-					if _, err := service.Edit(ctx, slug, update); err != nil {
-						return nil, err
-					}
-				}
-				skill, err := service.Show(ctx, slug)
-				if err != nil {
-					return nil, err
-				}
-				if !noEdit {
-					if err := openEditorAndReimport(ctx, rt, skill.SourcePath); err != nil {
-						return nil, err
-					}
-					skill, err = service.Show(ctx, slug)
-					if err != nil {
-						return nil, err
-					}
-				}
-				return map[string]any{"skill": skill}, nil
+				return runSkillEdit(ctx, cmd, rt, args[0], name, description, noEdit)
 			})
 		},
 	}
@@ -161,6 +107,61 @@ func newSkillEditCommand(opts *runtimeOptions) *cobra.Command {
 	cmd.Flags().StringVarP(&description, "description", "d", "", opts.t("cli.skill.edit.flag.description"))
 	cmd.Flags().BoolVar(&noEdit, "no-edit", false, opts.t("cli.skill.edit.flag.no-edit"))
 	return cmd
+}
+
+func runSkillAdd(ctx context.Context, rt *runtime, key, name, description string, noEdit bool) (any, error) {
+	service := rt.operationService()
+	skill, err := service.AddSkill(ctx, domain.SkillInput{Key: key, Name: name, Description: description})
+	if err != nil {
+		return nil, err
+	}
+	if !noEdit {
+		if err := openEditorAndReimport(ctx, rt, skill.SourcePath); err != nil {
+			return nil, err
+		}
+		skill, err = service.SkillEntity(ctx, skill.Key)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return map[string]any{"skill": skill}, nil
+}
+
+func runSkillEdit(ctx context.Context, cmd *cobra.Command, rt *runtime, slug, name, description string, noEdit bool) (any, error) {
+	service := rt.operationService()
+	if update, ok := skillEditUpdate(cmd, name, description); ok {
+		if _, err := service.EditSkill(ctx, slug, update); err != nil {
+			return nil, err
+		}
+	}
+	skill, err := service.SkillEntity(ctx, slug)
+	if err != nil {
+		return nil, err
+	}
+	if !noEdit {
+		if err := openEditorAndReimport(ctx, rt, skill.SourcePath); err != nil {
+			return nil, err
+		}
+		skill, err = service.SkillEntity(ctx, slug)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return map[string]any{"skill": skill}, nil
+}
+
+func skillEditUpdate(cmd *cobra.Command, name, description string) (domain.SkillUpdate, bool) {
+	if !cmd.Flags().Changed("name") && !cmd.Flags().Changed("description") {
+		return domain.SkillUpdate{}, false
+	}
+	update := domain.SkillUpdate{}
+	if cmd.Flags().Changed("name") {
+		update.Name = &name
+	}
+	if cmd.Flags().Changed("description") {
+		update.Description = &description
+	}
+	return update, true
 }
 
 func newSkillRemoveCommand(opts *runtimeOptions) *cobra.Command {
@@ -176,12 +177,9 @@ func newSkillRemoveCommand(opts *runtimeOptions) *cobra.Command {
 				}
 				defer rt.close()
 
-				service := rt.skillService()
-				slug, err := resolveSkillSlug(ctx, service, args[0])
+				service := rt.operationService()
+				slug, err := service.RemoveSkill(ctx, args[0])
 				if err != nil {
-					return nil, err
-				}
-				if err := service.Remove(ctx, slug); err != nil {
 					return nil, err
 				}
 				return map[string]any{"removed": true, "slug": slug}, nil

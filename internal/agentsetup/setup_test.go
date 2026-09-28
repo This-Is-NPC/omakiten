@@ -56,8 +56,12 @@ func TestSetupPreservesExistingConfigAndRefusesSilentOverwrite(t *testing.T) {
 	if _, ok := written["other"]; !ok {
 		t.Fatalf("other missing after setup: %#v", written)
 	}
-	if _, ok := written["omakiten"]; !ok {
-		t.Fatalf("omakiten missing after setup: %#v", written)
+	servers, ok := written["mcpServers"].(map[string]any)
+	if !ok {
+		t.Fatalf("mcpServers missing or wrong type: %#v", written)
+	}
+	if _, ok := servers["omakiten"]; !ok {
+		t.Fatalf("mcpServers.omakiten missing after setup: %#v", servers)
 	}
 
 	_, err = Setup(Options{ConfigPath: configPath, Command: "okt"})
@@ -67,7 +71,7 @@ func TestSetupPreservesExistingConfigAndRefusesSilentOverwrite(t *testing.T) {
 func TestSetupForceOverwrite(t *testing.T) {
 	tmp := t.TempDir()
 	configPath := filepath.Join(tmp, "config.json")
-	if err := os.WriteFile(configPath, []byte(`{"omakiten":{"command":"old"}}`), 0o644); err != nil {
+	if err := os.WriteFile(configPath, []byte(`{"mcpServers":{"omakiten":{"command":"old","args":["mcp","serve"]}}}`), 0o644); err != nil {
 		t.Fatalf("WriteFile() error = %v", err)
 	}
 
@@ -84,7 +88,7 @@ func TestSetupForceOverwrite(t *testing.T) {
 	if err := json.Unmarshal(data, &written); err != nil {
 		t.Fatalf("json.Unmarshal() error = %v", err)
 	}
-	omakiten := written["omakiten"].(map[string]any)
+	omakiten := written["mcpServers"].(map[string]any)["omakiten"].(map[string]any)
 	if omakiten["command"] != "new-okt" {
 		t.Fatalf("command = %v, want new-okt", omakiten["command"])
 	}
@@ -298,8 +302,8 @@ func TestSetupOpenCodeCreatedStatus(t *testing.T) {
 }
 
 func TestSetupClaudeCodeDefaultConfigPath(t *testing.T) {
-	home := t.TempDir()
-	t.Setenv("HOME", home)
+	tmp := t.TempDir()
+	t.Chdir(tmp)
 
 	result, err := Setup(Options{Harness: ClaudeCodeHarness, Command: "okt"})
 	if err != nil {
@@ -308,7 +312,7 @@ func TestSetupClaudeCodeDefaultConfigPath(t *testing.T) {
 	if result.Harness != ClaudeCodeHarness {
 		t.Fatalf("Harness = %q, want %q", result.Harness, ClaudeCodeHarness)
 	}
-	expected := filepath.Join(home, ".claude", ".mcp.json")
+	expected := filepath.Join(tmp, ".mcp.json")
 	if result.ConfigPath != expected {
 		t.Fatalf("ConfigPath = %q, want %q", result.ConfigPath, expected)
 	}
@@ -321,8 +325,15 @@ func TestSetupClaudeCodeDefaultConfigPath(t *testing.T) {
 	if err := json.Unmarshal(data, &written); err != nil {
 		t.Fatalf("json.Unmarshal() error = %v", err)
 	}
-	if _, ok := written["omakiten"]; !ok {
-		t.Fatalf("omakiten missing: %#v", written)
+	servers, ok := written["mcpServers"].(map[string]any)
+	if !ok {
+		t.Fatalf("mcpServers missing or wrong type: %#v", written)
+	}
+	if _, ok := servers["omakiten"]; !ok {
+		t.Fatalf("mcpServers.omakiten missing: %#v", servers)
+	}
+	if _, ok := written["omakiten"]; ok {
+		t.Fatalf("root-level omakiten must not be written: %#v", written)
 	}
 }
 
@@ -803,5 +814,119 @@ func TestSetupCursorCreatedStatus(t *testing.T) {
 	}
 	if _, err := os.Stat(configPath); err != nil {
 		t.Fatalf("config file missing: %v", err)
+	}
+}
+
+func TestSetupClaudeCodePreservesExistingConfigAndRefusesSilentOverwrite(t *testing.T) {
+	tmp := t.TempDir()
+	configPath := filepath.Join(tmp, ".mcp.json")
+	existing := []byte(`{"mcpServers":{"other":{"command":"other","args":[]}}}`)
+	if err := os.WriteFile(configPath, existing, 0o644); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	result, err := Setup(Options{Harness: ClaudeCodeHarness, ConfigPath: configPath, Command: "okt"})
+	if err != nil {
+		t.Fatalf("Setup() error = %v", err)
+	}
+	if result.Status != "updated" || !result.Changed {
+		t.Fatalf("Setup() = %#v, want updated changed", result)
+	}
+
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatalf("ReadFile() error = %v", err)
+	}
+	var written map[string]any
+	if err := json.Unmarshal(data, &written); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v", err)
+	}
+	servers := written["mcpServers"].(map[string]any)
+	if _, ok := servers["other"]; !ok {
+		t.Fatalf("mcpServers.other missing after setup: %#v", servers)
+	}
+	if _, ok := servers["omakiten"]; !ok {
+		t.Fatalf("mcpServers.omakiten missing after setup: %#v", servers)
+	}
+
+	_, err = Setup(Options{Harness: ClaudeCodeHarness, ConfigPath: configPath, Command: "okt"})
+	assertSetupCode(t, err, domain.ErrValidation)
+}
+
+func TestSetupClaudeCodeForceOverwrite(t *testing.T) {
+	tmp := t.TempDir()
+	configPath := filepath.Join(tmp, ".mcp.json")
+	if err := os.WriteFile(configPath, []byte(`{"mcpServers":{"omakiten":{"command":"old","args":["mcp","serve"]}}}`), 0o644); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	result, err := Setup(Options{Harness: ClaudeCodeHarness, ConfigPath: configPath, Command: "new-okt", Force: true})
+	if err != nil {
+		t.Fatalf("Setup(force) error = %v", err)
+	}
+	if result.Status != "updated" || !result.Changed {
+		t.Fatalf("Setup(force) = %#v, want updated changed", result)
+	}
+
+	data, _ := os.ReadFile(configPath)
+	var written map[string]any
+	if err := json.Unmarshal(data, &written); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v", err)
+	}
+	omakiten := written["mcpServers"].(map[string]any)["omakiten"].(map[string]any)
+	if omakiten["command"] != "new-okt" {
+		t.Fatalf("command = %v, want new-okt", omakiten["command"])
+	}
+}
+
+func TestSetupClaudeCodeCreatedStatus(t *testing.T) {
+	configPath := filepath.Join(t.TempDir(), ".mcp.json")
+
+	result, err := Setup(Options{Harness: ClaudeCodeHarness, ConfigPath: configPath, Command: "okt"})
+	if err != nil {
+		t.Fatalf("Setup() error = %v", err)
+	}
+	if result.Status != "created" || !result.Changed {
+		t.Fatalf("Setup() = %#v, want created changed", result)
+	}
+	if _, err := os.Stat(configPath); err != nil {
+		t.Fatalf("config file missing: %v", err)
+	}
+}
+
+func TestEnvelopeHarnessesNeverWriteRootLevelOmakiten(t *testing.T) {
+	harnesses := []string{ClaudeCodeHarness, ClaudeDesktopHarness, CursorHarness}
+	for _, harness := range harnesses {
+		t.Run(harness, func(t *testing.T) {
+			assertEnvelopeOmakitenUnderMCPServers(t, harness)
+		})
+	}
+}
+
+// assertEnvelopeOmakitenUnderMCPServers runs Setup for the given harness and
+// checks the omakiten entry lands under mcpServers, never at the config root.
+func assertEnvelopeOmakitenUnderMCPServers(t *testing.T, harness string) {
+	t.Helper()
+	configPath := filepath.Join(t.TempDir(), "mcp.json")
+	if _, err := Setup(Options{Harness: harness, ConfigPath: configPath, Command: "okt"}); err != nil {
+		t.Fatalf("Setup() error = %v", err)
+	}
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatalf("ReadFile() error = %v", err)
+	}
+	var written map[string]any
+	if err := json.Unmarshal(data, &written); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v", err)
+	}
+	if _, ok := written["omakiten"]; ok {
+		t.Fatalf("root-level omakiten must not be written for %s: %#v", harness, written)
+	}
+	servers, ok := written["mcpServers"].(map[string]any)
+	if !ok {
+		t.Fatalf("mcpServers missing for %s: %#v", harness, written)
+	}
+	if _, ok := servers["omakiten"]; !ok {
+		t.Fatalf("mcpServers.omakiten missing for %s: %#v", harness, servers)
 	}
 }

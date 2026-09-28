@@ -33,10 +33,10 @@ var defaultStuckBuckets = []int64{2, 3}
 // stuckBuckets is tri-state, so a caller that resolved its workflow to an
 // EMPTY in-flight set is not silently handed the canonical fallback:
 //   - nil            → caller could not resolve a workflow: fall back to the
-//                      canonical dev/review ids (legacy/headless callers).
+//     canonical dev/review ids (legacy/headless callers).
 //   - non-nil, empty → workflow known, no in-flight stage exists (1-/2-bucket
-//                      preset): the stuck scan matches nothing, not the
-//                      fallback.
+//     preset): the stuck scan matches nothing, not the
+//     fallback.
 //   - non-nil, filled → scan exactly these bucket ids.
 //
 // Every sub-insight is built so an empty history yields HasData=false rather
@@ -448,7 +448,7 @@ ORDER BY guard_violations DESC, avg_dwell_days DESC, s.agent_model`, args
 // insightPerModel — INSIGHT 6. Per agent_model: cycle time (avg LAG-based
 // dwell over the all-moves stream, attributed to the leaving model) and
 // guard violations per task (raw count + a per-task rate). Non-agent rows
-// (agent_model='') — including every pre-stamp event — are excluded from
+// (agent_model="") — including every pre-stamp event — are excluded from
 // the roster and the dwell attribution via sqlutil.AgentAttributedFilter so
 // human/system/pre-stamp traffic never earns a per-model row.
 //

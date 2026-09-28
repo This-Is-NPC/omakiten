@@ -26,11 +26,15 @@ type Bundle struct {
 	// Runtime resolution uses the picked Skills/Personas/Laws/Templates
 	// above; only the Settings catalog view reads All* so the user sees
 	// the complete pool with an active marker, not just the active subset.
-	AllSkills     []Skill                   `yaml:"-" json:"-"`
-	AllPersonas   []Persona                 `yaml:"-" json:"-"`
-	AllLaws       []Law                     `yaml:"-" json:"-"`
-	AllTemplates  []TaskTemplate            `yaml:"-" json:"-"`
-	Workflows     []Workflow                `yaml:"workflows" json:"workflows,omitempty"`
+	AllSkills    []Skill        `yaml:"-" json:"-"`
+	AllPersonas  []Persona      `yaml:"-" json:"-"`
+	AllLaws      []Law          `yaml:"-" json:"-"`
+	AllTemplates []TaskTemplate `yaml:"-" json:"-"`
+	Workflows    []Workflow     `yaml:"workflows" json:"workflows,omitempty"`
+	// Surfaces is the per-operation CLI/TUI/MCP exposure table. It is a
+	// sibling of workflows:, not nested under workflow.operations (those
+	// are domain guards). LoadBundle rejects an incomplete table.
+	Surfaces      SurfaceTable              `yaml:"surfaces,omitempty" json:"surfaces,omitempty"`
 	Projects      []Project                 `yaml:"-" json:"projects,omitempty"`
 	MCPCommands   map[string]MCPCommandSpec `yaml:"-" json:"mcp_commands,omitempty"`
 	Notifications map[string]Notification   `yaml:"-" json:"notifications,omitempty"`
@@ -91,6 +95,7 @@ type wiring struct {
 	SubtaskKit  string                    `yaml:"subtask_kit,omitempty"`
 	Config      Settings                  `yaml:"config"`
 	Workflows   []Workflow                `yaml:"workflows"`
+	Surfaces    SurfaceTable              `yaml:"surfaces,omitempty"`
 	Skills      []string                  `yaml:"skills,omitempty"`
 	Laws        []string                  `yaml:"laws,omitempty"`
 	Templates   []string                  `yaml:"templates,omitempty"`
@@ -128,16 +133,8 @@ const MCPCommandsGlobalKey = "global"
 // (description, free-form notes) lives in personas/<slug>.md; this struct only
 // holds the relationships managed by the system.
 type PersonaWiring struct {
-	Slug string `yaml:"slug"`
-	// SchemaVersion marks the persona wiring as schema v2 (skill_repertoire
-	// model). Absent / 0 means a legacy v1 entry that the migrator upgrades.
-	SchemaVersion int `yaml:"schema_version,omitempty"`
-	// Skills is the legacy v1 field: the persona's directly-wired skills.
-	// In v2 it is superseded by SkillRepertoire; the migrator hoists the
-	// union of per-command skills into SkillRepertoire.
-	Skills []string `yaml:"skills,omitempty"`
-	// SkillRepertoire (schema v2) is the full pool of skills the persona is
-	// equipped with. mcp_commands may only select a subset of this pool.
+	Slug            string   `yaml:"slug"`
+	SchemaVersion   int      `yaml:"schema_version"`
 	SkillRepertoire []string `yaml:"skill_repertoire,omitempty"`
 	Laws            []string `yaml:"laws,omitempty"`
 }
@@ -157,24 +154,21 @@ type Kit struct {
 }
 
 type Settings struct {
-	Output           OutputSettings      `yaml:"output" json:"output"`
-	Workflow         WorkflowSettings    `yaml:"workflow" json:"workflow"`
-	Theme            ThemeSettings       `yaml:"theme" json:"theme"`
-	TemplateDefaults []string            `yaml:"template_defaults,omitempty" json:"template_defaults,omitempty"`
-	Views            ViewSettings        `yaml:"views,omitempty" json:"views,omitempty"`
-	MCP              MCPSettings         `yaml:"mcp,omitempty" json:"mcp,omitempty"`
-	TUI              TUISettings         `yaml:"tui,omitempty" json:"tui,omitempty"`
-	SQLite           SQLiteSettings      `yaml:"sqlite,omitempty" json:"sqlite,omitempty"`
-	// ActivityLog is deprecated — use config.events.retention.by_category.tool_call.
-	// Still unmarshaled so legacy bundles migrate via NormalizeEventsRetention.
-	ActivityLog ActivityLogSettings `yaml:"activity_log,omitempty" json:"activity_log,omitempty"`
-	Solutions        SolutionsSettings   `yaml:"solutions,omitempty" json:"solutions,omitempty"`
-	Backup           BackupSettings      `yaml:"backup,omitempty" json:"backup,omitempty"`
-	Events           EventsSettings      `yaml:"events,omitempty" json:"events,omitempty"`
-	Search           SearchSettings      `yaml:"search,omitempty" json:"search,omitempty"`
-	Hooks            []HookSpec          `yaml:"hooks,omitempty" json:"hooks,omitempty"`
-	Tricks           TricksSettings      `yaml:"tricks,omitempty" json:"tricks,omitempty"`
-	TagSynonyms      map[string]string   `yaml:"tag_synonyms,omitempty" json:"tag_synonyms,omitempty"`
+	Output           OutputSettings    `yaml:"output" json:"output"`
+	Workflow         WorkflowSettings  `yaml:"workflow" json:"workflow"`
+	Theme            ThemeSettings     `yaml:"theme" json:"theme"`
+	TemplateDefaults []string          `yaml:"template_defaults,omitempty" json:"template_defaults,omitempty"`
+	Views            ViewSettings      `yaml:"views,omitempty" json:"views,omitempty"`
+	MCP              MCPSettings       `yaml:"mcp,omitempty" json:"mcp,omitempty"`
+	TUI              TUISettings       `yaml:"tui,omitempty" json:"tui,omitempty"`
+	SQLite           SQLiteSettings    `yaml:"sqlite,omitempty" json:"sqlite,omitempty"`
+	Solutions        SolutionsSettings `yaml:"solutions,omitempty" json:"solutions,omitempty"`
+	Backup           BackupSettings    `yaml:"backup,omitempty" json:"backup,omitempty"`
+	Events           EventsSettings    `yaml:"events,omitempty" json:"events,omitempty"`
+	Search           SearchSettings    `yaml:"search,omitempty" json:"search,omitempty"`
+	Hooks            []HookSpec        `yaml:"hooks,omitempty" json:"hooks,omitempty"`
+	Tricks           TricksSettings    `yaml:"tricks,omitempty" json:"tricks,omitempty"`
+	TagSynonyms      map[string]string `yaml:"tag_synonyms,omitempty" json:"tag_synonyms,omitempty"`
 	// Priorities is the configurable id↔value table for task priorities.
 	// Code references the id (opaque); renderers resolve the value via
 	// lookup. Authors who want to rename, add, or reorder priority labels
@@ -400,19 +394,6 @@ type SQLiteSettings struct {
 	MmapSizeBytes int `yaml:"mmap_size_bytes" json:"mmap_size_bytes"`
 }
 
-// ActivityLogSettings declares the retention window for the per-call
-// `operation` event log used by the activity feed. Required block — the
-// kit ships the canonical values; users with longer support windows
-// can raise MaxAgeDays without a code change.
-type ActivityLogSettings struct {
-	// MaxRows caps how many `operation` rows survive after a prune
-	// pass. Older rows are deleted in id-DESC order. Required; > 0.
-	MaxRows int `yaml:"max_rows" json:"max_rows"`
-	// MaxAgeDays prunes `operation` rows older than this many days.
-	// Required; > 0.
-	MaxAgeDays int `yaml:"max_age_days" json:"max_age_days"`
-}
-
 // SolutionsSettings caps the `solutions.list_top` MCP response shape.
 // DefaultTopLimit applies when a caller passes <=0; MaxTopLimit clamps
 // caller-supplied limits so MCP responses stay bounded regardless of
@@ -503,6 +484,11 @@ type EventsSettings struct {
 	// Retention governs how long persisted event rows survive in SQLite.
 	// Distinct from views.logs.window_days, which only scopes reads.
 	Retention EventsRetentionBlock `yaml:"retention" json:"retention"`
+	// OrphanSweep bounds the reconciliation pass that removes event rows
+	// whose positive project_id no longer resolves to a projects row.
+	// Optional block — omitted leaves inherit the active kit and then the
+	// canonical floor. See events_orphan_sweep.go.
+	OrphanSweep EventsOrphanSweepSettings `yaml:"orphan_sweep,omitempty" json:"orphan_sweep,omitempty"`
 	// DefaultRecentLimit is the fallback row count applied when the
 	// caller passes <=0. Required; > 0.
 	DefaultRecentLimit int `yaml:"default_recent_limit" json:"default_recent_limit"`
@@ -649,20 +635,6 @@ type TableFilterSettings struct {
 	Bucket   []string `yaml:"bucket,omitempty" json:"bucket,omitempty"`
 }
 
-// LogsFilterSettings is retained ONLY as a parse sink for the legacy
-// `views.logs.filter.source` key (pre-event-inspector). The field is no
-// longer consumed by anything — the new Logs inspector filters via
-// EventCategory in EventFilter.Categories, not by source. Existing
-// omakiten.yaml files in the wild still ship `filter: {source: [...]}`;
-// the strict YAML loader (KnownFields=true) would reject the unknown
-// key without this shim. Validator no longer enforces a value set; the
-// field is silently accepted and discarded.
-//
-// Do not add new fields here. New logs filters belong on EventFilter.
-type LogsFilterSettings struct {
-	Source []string `yaml:"source,omitempty" json:"-"`
-}
-
 type BoardViewSettings struct {
 	Sort   SortSettings        `yaml:"sort,omitempty" json:"sort,omitempty"`
 	Filter BoardFilterSettings `yaml:"filter,omitempty" json:"filter,omitempty"`
@@ -688,10 +660,6 @@ type LogsViewSettings struct {
 	// time.Duration (days * 24h) so call sites can do
 	// `time.Now().Add(-d)` without re-doing the math.
 	WindowDays int `yaml:"window_days,omitempty" json:"window_days,omitempty"`
-	// Filter is retained for backwards compatibility with configs that
-	// still ship `filter.source`. The value is parsed and discarded; no
-	// production code reads it. See LogsFilterSettings doc.
-	Filter LogsFilterSettings `yaml:"filter,omitempty" json:"-"`
 }
 
 type TaskActivityViewSettings struct {
@@ -739,10 +707,9 @@ type Persona struct {
 	Name        string `json:"name"`
 	Description string `json:"description,omitempty"`
 	Body        string `json:"body,omitempty"`
-	// SchemaVersion marks a schema-v2 persona (carries skill_repertoire).
-	SchemaVersion int      `json:"schema_version,omitempty"`
-	Skills        []string `json:"skills,omitempty"`
-	// SkillRepertoire (schema v2) is the persona's full skill pool;
+	// SchemaVersion marks the current persona schema.
+	SchemaVersion int `json:"schema_version,omitempty"`
+	// SkillRepertoire is the persona's full skill pool;
 	// mcp_commands may only select a subset of it.
 	SkillRepertoire []string `json:"skill_repertoire,omitempty"`
 	Laws            []string `json:"laws,omitempty"`
@@ -926,6 +893,23 @@ func (p *CommentOpPolicy) UnmarshalYAML(value *yaml.Node) error {
 	default:
 		return fmt.Errorf("comment permission must be a bool or a rule object, got yaml kind %d", value.Kind)
 	}
+}
+
+// SurfaceTable is the top-level `surfaces:` mapping: one row per
+// operation.Service method (70 census slugs). Pointer bools distinguish
+// an omitted key from an explicit false — omitting mcp is a load error,
+// not an implicit true.
+type SurfaceTable map[string]SurfacePolicy
+
+// SurfacePolicy is one row of the surfaces table. CLI/TUI/MCP are
+// pointers so ValidateBundle can reject a row that skipped a key.
+// Reason is required when any of the three is false; `${{intl:...}}`
+// tokens are stored as-is and resolved by the catalog at display time.
+type SurfacePolicy struct {
+	CLI    *bool  `yaml:"cli" json:"cli"`
+	TUI    *bool  `yaml:"tui" json:"tui"`
+	MCP    *bool  `yaml:"mcp" json:"mcp"`
+	Reason string `yaml:"reason,omitempty" json:"reason,omitempty"`
 }
 
 // WorkflowOperations declares the guards that gate non-flow operations

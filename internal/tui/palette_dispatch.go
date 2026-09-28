@@ -9,32 +9,9 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"omakiten/internal/domain"
-	"omakiten/internal/tui/components/detailscreen"
 	"omakiten/internal/tui/palette"
+	"omakiten/internal/tui/screens/taskdetail"
 )
-
-// routeBindings maps a palette.Route slug back to the (top, sub)
-// pair the TUI navigation state machine uses. Source of truth is
-// state.go's topID/subID enums plus the palette.Route constants
-// in internal/tui/palette/registry.go — adding a screen means
-// landing the route in both halves of this map so the registry
-// enumeration test and a `nav:<code>` keypress agree on the
-// destination.
-var routeBindings = map[palette.Route]navState{
-	palette.RouteTasksBoard:        {top: topTasks, sub: subBoard},
-	palette.RouteTasksTable:        {top: topTasks, sub: subTable},
-	palette.RouteTasksGraph:        {top: topTasks, sub: subGraph},
-	palette.RouteTasksPlans:        {top: topTasks, sub: subPlans},
-	palette.RouteStatsGeneral:      {top: topStats, sub: subStatsGeneral},
-	palette.RouteStatsLogs:         {top: topStats, sub: subStatsLogs},
-	palette.RouteSettingsGeneral:   {top: topSettings, sub: subSettingsGeneral},
-	palette.RouteSettingsLaws:      {top: topSettings, sub: subSettingsLaws},
-	palette.RouteSettingsPersonas:  {top: topSettings, sub: subSettingsPersonas},
-	palette.RouteSettingsSkills:    {top: topSettings, sub: subSettingsSkills},
-	palette.RouteSettingsTemplates: {top: topSettings, sub: subSettingsTemplates},
-	palette.RouteSettingsTags:      {top: topSettings, sub: subSettingsTags},
-	palette.RouteSettingsGuards:    {top: topSettings, sub: subSettingsGuards},
-}
 
 // dispatchTrick is the built-in palette dispatch path. Every
 // submission first emits the `trick.executed` event so user hooks
@@ -105,8 +82,7 @@ func (m *Model) emitTrickEvent(token palette.Token) {
 	payload := map[string]string{
 		"verb":    token.Verb,
 		"operand": token.Operand,
-		"raw":     token.Raw,
-	}
+		"raw":     token.Raw}
 	raw, err := json.Marshal(payload)
 	if err != nil {
 		return
@@ -114,21 +90,21 @@ func (m *Model) emitTrickEvent(token palette.Token) {
 	_ = m.repos.Events.RecordEntityEvent(m.ctx, domain.EventEntitySystem, 0, m.project.ID, domain.EventTypeTrickExecuted, string(raw))
 }
 
-// jumpToRoute is the navigation equivalent of jumpTop+jumpSub:
-// resolves a palette.Route to its (top, sub) binding and rotates
-// the model state through the same syncEntityKindFromSub path so
-// downstream renderers (settings, entity lists) refresh in step
-// with the nav change. Unknown routes return an error so the
-// caller can render an inline status.
+// jumpToRoute resolves palette navigation through the authoritative screen
+// descriptor and rotates the legacy root state through the established entity
+// sync path. Unknown routes remain an inline palette error.
 func (m *Model) jumpToRoute(route palette.Route) error {
-	target, ok := routeBindings[route]
+	descriptor, ok := screenRegistry.ByPaletteRoute(string(route))
 	if !ok {
 		return fmt.Errorf("palette: route %q has no binding", route)
+	}
+	target, ok := legacyNavForScreen(descriptor.ID)
+	if !ok {
+		return fmt.Errorf("palette: route %q has no legacy binding", route)
 	}
 	m.pushHistory()
 	m.top = target.top
 	m.sub = target.sub
-	m.syncEntityKindFromSub()
 	return nil
 }
 
@@ -147,7 +123,7 @@ func buildPaletteRegistry(repos Repositories) (*palette.Registry, error) {
 			overrides[code] = palette.Route(route)
 		}
 	}
-	reg, _, err := palette.New(palette.DefaultScreens(), overrides)
+	reg, _, err := palette.New(paletteScreenDescriptors(), overrides)
 	return reg, err
 }
 
@@ -156,9 +132,14 @@ func buildPaletteRegistry(repos Repositories) (*palette.Registry, error) {
 // empty results) so the palette renders a navigable list — the
 // per-hit rendering lives in palette.Model.View, not here.
 type paletteSearchResultMsg struct {
-	query  string
-	hits   []domain.SearchHit
-	status string
+	query                   string
+	hits                    []domain.SearchHit
+	status                  string
+	projectID               int64
+	projectGeneration       uint64
+	runtimeGeneration       uint64
+	paletteOpenGeneration   uint64
+	paletteSearchGeneration uint64
 }
 
 // dispatchPaletteSearch returns a tea.Cmd that runs the FTS5 query
@@ -169,24 +150,49 @@ type paletteSearchResultMsg struct {
 // palette's navigable result list (success path) or surfaces an
 // inline status (error / empty-result path).
 func (m *Model) dispatchPaletteSearch(query string) tea.Cmd {
-	if m.repos.Search == nil {
+	if m.project.ID == 0 {
+		m.palette.SetStatus("search requires an active project")
+		return nil
+	}
+	if m.tuiSurfaceDenied("search") {
+		m.palette.SetStatus(m.surfaceDeniedMessage("search"))
+		return nil
+	}
+	search := m.searchPort()
+	if search == nil {
 		m.palette.SetStatus("search not wired in this build")
 		return nil
 	}
 	m.palette.ClearResults()
 	m.palette.SetStatus(fmt.Sprintf("searching %q…", query))
-	search := m.repos.Search
 	ctx := m.ctx
 	project := m.project
+	projectID := project.ID
+	projectGeneration := m.projectGeneration
+	runtimeGeneration := m.studioRuntimeGeneration
+	m.paletteSearchGeneration++
+	paletteOpenGeneration := m.paletteOpenGeneration
+	paletteSearchGeneration := m.paletteSearchGeneration
 	return func() tea.Msg {
+		result := paletteSearchResultMsg{
+			query:                   query,
+			projectID:               projectID,
+			projectGeneration:       projectGeneration,
+			runtimeGeneration:       runtimeGeneration,
+			paletteOpenGeneration:   paletteOpenGeneration,
+			paletteSearchGeneration: paletteSearchGeneration,
+		}
 		hits, err := search.Search(ctx, project, query, nil)
 		if err != nil {
-			return paletteSearchResultMsg{query: query, status: "search failed: " + err.Error()}
+			result.status = "search failed: " + err.Error()
+			return result
 		}
 		if len(hits) == 0 {
-			return paletteSearchResultMsg{query: query, status: fmt.Sprintf("no results for %q", query)}
+			result.status = fmt.Sprintf("no results for %q", query)
+			return result
 		}
-		return paletteSearchResultMsg{query: query, hits: hits}
+		result.hits = hits
+		return result
 	}
 }
 
@@ -250,12 +256,10 @@ func (m *Model) openCommentByID(commentID int64) error {
 	}
 	for i, ev := range events {
 		if ev.EventType == domain.EventTypeComment && ev.ID == commentID {
-			m.activityCursor = i
+			m.taskDetailScreen = m.taskDetailScreen.WithFocus(taskdetail.FocusActivity).WithActivityCursor(i)
 			break
 		}
 	}
-	m.commentScreenOpen = true
-	m.commentScreenID = commentID
-	m.commentScreen = detailscreen.New(0)
+	m.openCommentScreen(comment, false)
 	return nil
 }

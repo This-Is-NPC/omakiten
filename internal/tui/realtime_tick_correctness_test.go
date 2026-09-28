@@ -10,12 +10,12 @@ import (
 	"time"
 
 	"omakiten/internal/agentruntime"
-	"omakiten/internal/app"
 	"omakiten/internal/config"
 	"omakiten/internal/configstore"
 	"omakiten/internal/domain"
 	"omakiten/internal/events"
-	"omakiten/internal/testfixtures"
+	"omakiten/internal/operation"
+	"omakiten/internal/testfixtures/bundleeditor"
 	"omakiten/internal/testfixtures/runtimecache"
 	"omakiten/internal/testfixtures/snapstore"
 	"omakiten/internal/token"
@@ -25,7 +25,7 @@ import (
 // ListTasks call after arm() return an error, then succeeds. It models a board
 // reload whose heavy DB query fails transiently — the F2 regression scenario.
 type failingOnceTaskRepo struct {
-	app.TaskRepository
+	*snapstore.Store
 	failNext atomic.Bool
 	calls    atomic.Int64
 }
@@ -35,7 +35,7 @@ func (r *failingOnceTaskRepo) ListTasks(ctx context.Context, projectID int64, fi
 	if r.failNext.CompareAndSwap(true, false) {
 		return nil, errors.New("transient board query failure")
 	}
-	return r.TaskRepository.ListTasks(ctx, projectID, filter, buckets)
+	return r.Store.ListTasks(ctx, projectID, filter, buckets)
 }
 
 // TestRealtimeTickConfigReloadIndependentOfWatermark proves F1: a config-file
@@ -50,15 +50,12 @@ func TestRealtimeTickConfigReloadIndependentOfWatermark(t *testing.T) {
 	configPath := filepath.Join(tmp, "config", "omakase.yaml")
 	dbPath := filepath.Join(tmp, "omakiten.db")
 
-	if err := config.SaveFullBundle(configPath, tuiTestBundle(t)); err != nil {
-		t.Fatalf("SaveFullBundle: %v", err)
-	}
-	writeThemeFile(t, filepath.Join(tmp, "themes", "catppuccin.yaml"), "catppuccin", "Catppuccin")
+	writeRealtimeConfigFixture(t, tmp, configPath)
 
 	store := snapstore.Open(t, dbPath)
 	files := configstore.New()
-	editor := app.NewBundleEditor(files, configPath)
-	if _, err := editor.Apply(ctx, nil); err != nil {
+	editor := bundleeditor.New(files, configPath)
+	if _, err := applyBundleEditor(ctx, editor, nil); err != nil {
 		t.Fatalf("editor.Apply: %v", err)
 	}
 	project, err := store.UpsertProject(ctx, "Project", "project", "/work/project")
@@ -78,13 +75,10 @@ func TestRealtimeTickConfigReloadIndependentOfWatermark(t *testing.T) {
 
 	model, err := NewModel(ctx, project.Context(), Repositories{
 		Tasks:        store,
-		Workflow:     app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot()),
 		Comments:     store,
 		Dependencies: store,
 		Editor:       editor,
 		BundleStore:  files,
-		EntityFiles:  files,
-		Slugger:      files,
 		Watermark:    watermark,
 		Cache:        cache,
 		ProjectID:    project.ID,
@@ -127,6 +121,14 @@ func TestRealtimeTickConfigReloadIndependentOfWatermark(t *testing.T) {
 	}
 }
 
+func writeRealtimeConfigFixture(t *testing.T, tmp, configPath string) {
+	t.Helper()
+	if err := config.SaveFullBundle(configPath, tuiTestBundle(t)); err != nil {
+		t.Fatalf("SaveFullBundle: %v", err)
+	}
+	writeThemeFile(t, filepath.Join(tmp, "themes", "catppuccin.yaml"), "catppuccin", "Catppuccin")
+}
+
 // TestRealtimeTickFailedReloadRetainsWatermark proves F2: a failing bundle
 // reload must leave its baseline unadvanced so the next tick re-observes the
 // same external write and retries it. Before the fix dataVersionChanged
@@ -147,7 +149,7 @@ func TestRealtimeTickFailedReloadRetainsWatermark(t *testing.T) {
 		t.Fatalf("CreateTask: %v", err)
 	}
 
-	tasks := &failingOnceTaskRepo{TaskRepository: store}
+	tasks := &failingOnceTaskRepo{Store: store}
 	watermark := &stubWatermark{version: 1}
 	model, err := NewModel(ctx, project.Context(), Repositories{
 		Tasks:        tasks,
@@ -155,8 +157,7 @@ func TestRealtimeTickFailedReloadRetainsWatermark(t *testing.T) {
 		Dependencies: store,
 		Events:       store,
 		Watermark:    watermark,
-		Cache:        runtimecache.Install(0, store.Snapshot()),
-		Workflow:     app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot()),
+		Cache:        runtimecache.InstallWithStore(0, tasks),
 	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
 	if err != nil {
 		t.Fatalf("NewModel: %v", err)
@@ -205,7 +206,7 @@ func TestApplyRealtimeReloadDropsStaleGeneration(t *testing.T) {
 		gen:              2,
 		dataVersion:      20,
 		dataVersionValid: true,
-		snap:             app.TUISnapshot{Tasks: []domain.Task{{ID: 1, Title: "a"}, {ID: 2, Title: "b"}}},
+		snap:             operation.BoardSnapshot{Tasks: []domain.Task{{ID: 1, Title: "a"}, {ID: 2, Title: "b"}}},
 		snapValid:        true,
 	}
 	older := realtimeReloadMsg{
@@ -213,7 +214,7 @@ func TestApplyRealtimeReloadDropsStaleGeneration(t *testing.T) {
 		gen:              1,
 		dataVersion:      10,
 		dataVersionValid: true,
-		snap:             app.TUISnapshot{Tasks: []domain.Task{{ID: 1, Title: "a"}}},
+		snap:             operation.BoardSnapshot{Tasks: []domain.Task{{ID: 1, Title: "a"}}},
 		snapValid:        true,
 	}
 
@@ -262,7 +263,7 @@ func TestApplyRealtimeReloadGenerationGuardIsPerDomain(t *testing.T) {
 		gen:              1,
 		dataVersion:      10,
 		dataVersionValid: true,
-		snap:             app.TUISnapshot{Tasks: []domain.Task{{ID: 1, Title: "bundle-task"}}},
+		snap:             operation.BoardSnapshot{Tasks: []domain.Task{{ID: 1, Title: "bundle-task"}}},
 		snapValid:        true,
 	}
 

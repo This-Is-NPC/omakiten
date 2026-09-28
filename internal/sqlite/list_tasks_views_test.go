@@ -28,9 +28,9 @@ func TestListTasksHonorsSortField(t *testing.T) {
 	}
 
 	cases := []struct {
-		name  string
-		sort  domain.TaskSort
-		want  []string
+		name string
+		sort domain.TaskSort
+		want []string
 	}{
 		{"id asc", domain.TaskSort{Field: "id", Order: "asc"}, []string{"charlie", "alpha", "bravo"}},
 		{"id desc", domain.TaskSort{Field: "id", Order: "desc"}, []string{"bravo", "alpha", "charlie"}},

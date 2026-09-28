@@ -6,10 +6,12 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"sort"
+	"strings"
 	"sync"
 	"time"
 
-	"omakiten/internal/agent"
+	"omakiten/internal/activity"
 	"omakiten/internal/app"
 	"omakiten/internal/config"
 	"omakiten/internal/configstore"
@@ -17,6 +19,7 @@ import (
 	"omakiten/internal/events"
 	"omakiten/internal/hooks"
 	"omakiten/internal/hooks/actions"
+	"omakiten/internal/operation"
 	"omakiten/internal/sqlite"
 )
 
@@ -38,9 +41,9 @@ type ProjectRuntime struct {
 	// Service is the agent service wired against the bundle's
 	// catalogs, lookups, and settings. Stateless aside from the
 	// snapshots it captures at construction.
-	Service *agent.Service
-	// HooksEngine is the running engine subscribed to the bus. Stopped
-	// on Reload before the new engine starts.
+	Service *operation.Service
+	// HooksEngine is the runtime-owned engine. BundleCache starts it only
+	// after the previous engine has quiesced successfully.
 	HooksEngine *hooks.Engine
 	// ActionRegistry is the hooks action registry the engine resolves
 	// `do:` names against. Held on the runtime so external callers
@@ -98,17 +101,31 @@ type ProjectRuntime struct {
 	// mutating it through a setter — the immutability invariant the
 	// Phase 2-bis Round-2 spec requires.
 	Workflow *app.WorkflowService
+	// Editor is the bundle editor wired against this runtime's config
+	// path. The TUI host copies it onto Repositories.Editor so it does
+	// not construct app.BundleEditor itself (D20).
+	Editor *app.BundleEditor
+	// BundleImportedPayload is committed by the cache only after a consumer
+	// accepts the runtime. Keeping it on the inactive runtime prevents a
+	// failed consumer rebind from leaving an audit row for a runtime that was
+	// never made live.
+	BundleImportedPayload string
+	// StoreConfig is prepared with the runtime and committed only after the
+	// consumer accepts the candidate. Keeping it here prevents bundle parsing
+	// from changing the live Store or event bus.
+	StoreConfig sqlite.ConfigKnobs
 }
 
 // BundleCache is the per-project ProjectRuntime registry. Phase 3a
 // keeps the cache size at 1 (the default project) — the type is shaped
 // for the multi-project future where each project's bundle lives in
-// its own entry. Reads take RLock; rebuilds take Lock; the swap is
-// pointer-only so concurrent Resolves on other project ids never block
-// a rebuild in progress for a different id.
+// its own entry. Reads take RLock; lifecycle rebuilds are serialized so
+// old and replacement hook engines cannot overlap; publication is a
+// pointer-only swap after the old engine drains.
 type BundleCache struct {
-	mu      sync.RWMutex
-	entries map[int64]*ProjectRuntime
+	mu        sync.RWMutex
+	entries   map[int64]*ProjectRuntime
+	rebuildMu sync.Mutex
 
 	// Dependencies the cache needs to build a runtime. Stored on the
 	// cache so Resolve does not require the caller to thread them in.
@@ -126,7 +143,10 @@ type BundleCache struct {
 	// mtime-driven rebuild does not lose the boot-resolved
 	// project/CWD. Zero value when no selector was installed (rare
 	// boot shapes that resolve project per call).
-	selector agent.ProjectSelector
+	selector operation.ProjectSelector
+
+	notifyMu          sync.RWMutex
+	onSurfacesChanged func()
 }
 
 // NewBundleCache constructs an empty cache. Open seeds the first entry
@@ -142,22 +162,91 @@ func NewBundleCache(store *sqlite.Store, bus events.Bus, cs *configstore.Adapter
 
 // SetProjectSelector installs the project selector every subsequent
 // build (Resolve on miss, Reload, rebuild on mtime change) applies to
-// the constructed agent.Service. Without this, a mtime-triggered
+// the constructed operation.Service. Without this, a mtime-triggered
 // rebuild rotates to a service with an empty selector and calls that
 // rely on the boot-resolved project / CWD silently lose context. The
 // composition root calls this once after Open resolves the runtime
 // project; tests that drive the cache directly may leave it unset and
 // build services with a zero selector.
-func (c *BundleCache) SetProjectSelector(selector agent.ProjectSelector) {
+func (c *BundleCache) SetProjectSelector(selector operation.ProjectSelector) {
 	c.selectorMu.Lock()
 	c.selector = selector
 	c.selectorMu.Unlock()
 }
 
-func (c *BundleCache) projectSelector() agent.ProjectSelector {
+func (c *BundleCache) projectSelector() operation.ProjectSelector {
 	c.selectorMu.RLock()
 	defer c.selectorMu.RUnlock()
 	return c.selector
+}
+
+// SetSurfacesChangedNotify installs a hook fired after a successful
+// rebuild when the surfaces: fingerprint changes. The callback must
+// not block — Reload returns as soon as it returns. Typical wiring is
+// a non-blocking send on a buffered channel that mcp.ServeNotify reads.
+func (c *BundleCache) SetSurfacesChangedNotify(fn func()) {
+	c.notifyMu.Lock()
+	c.onSurfacesChanged = fn
+	c.notifyMu.Unlock()
+}
+
+func (c *BundleCache) fireSurfacesChanged() {
+	c.notifyMu.RLock()
+	fn := c.onSurfacesChanged
+	c.notifyMu.RUnlock()
+	if fn != nil {
+		fn()
+	}
+}
+
+func (c *BundleCache) maybeNotifySurfacesChanged(old, next *ProjectRuntime) {
+	if old == nil || next == nil {
+		return
+	}
+	if surfacesFingerprint(old.Snapshot) == surfacesFingerprint(next.Snapshot) {
+		return
+	}
+	c.fireSurfacesChanged()
+}
+
+func surfacesFingerprint(snap *config.Snapshot) string {
+	if snap == nil {
+		return ""
+	}
+	table := snap.Surfaces()
+	if len(table) == 0 {
+		return ""
+	}
+	slugs := make([]string, 0, len(table))
+	for slug := range table {
+		slugs = append(slugs, slug)
+	}
+	sort.Strings(slugs)
+	var b strings.Builder
+	for _, slug := range slugs {
+		row := table[slug]
+		b.WriteString(slug)
+		b.WriteByte('=')
+		writeSurfaceBit(&b, row.CLI)
+		writeSurfaceBit(&b, row.TUI)
+		writeSurfaceBit(&b, row.MCP)
+		b.WriteByte('|')
+		b.WriteString(row.Reason)
+		b.WriteByte(';')
+	}
+	return b.String()
+}
+
+func writeSurfaceBit(b *strings.Builder, p *bool) {
+	if p == nil {
+		b.WriteByte('?')
+		return
+	}
+	if *p {
+		b.WriteByte('1')
+		return
+	}
+	b.WriteByte('0')
 }
 
 // Get returns the cached runtime for projectID without consulting the
@@ -203,6 +292,46 @@ func (c *BundleCache) Resolve(ctx context.Context, projectID int64, configPath s
 	}
 
 	return c.rebuild(ctx, projectID, configPath)
+}
+
+// ResolveApply is Resolve with a consumer acceptance callback. A changed
+// source is rebuilt transactionally and remains unpublished to audit/notice
+// consumers until accept returns nil.
+func (c *BundleCache) ResolveApply(ctx context.Context, projectID int64, configPath string, accept func(*ProjectRuntime) error) (*ProjectRuntime, bool, error) {
+	return c.ResolveApplyWithCommit(ctx, projectID, configPath, func(runtime *ProjectRuntime) (func() error, error) {
+		if accept != nil {
+			if err := accept(runtime); err != nil {
+				return nil, err
+			}
+		}
+		return nil, nil
+	})
+}
+
+// ResolveApplyWithCommit is ResolveApply with a staged consumer commit.
+func (c *BundleCache) ResolveApplyWithCommit(ctx context.Context, projectID int64, configPath string, accept func(*ProjectRuntime) (func() error, error)) (*ProjectRuntime, bool, error) {
+	c.rebuildMu.Lock()
+	defer c.rebuildMu.Unlock()
+	c.mu.RLock()
+	entry := c.entries[projectID]
+	c.mu.RUnlock()
+	if entry == nil {
+		runtime, err := c.applyLocked(ctx, projectID, configPath, accept)
+		return runtime, err == nil, err
+	}
+	path := entry.SourcePath
+	if path == "" {
+		path = configPath
+	}
+	if path == "" {
+		return entry, false, nil
+	}
+	changed, ok := watchedSourceChanged(entry, path)
+	if !ok || !changed {
+		return entry, false, nil
+	}
+	runtime, err := c.applyLocked(ctx, projectID, path, accept)
+	return runtime, err == nil, err
 }
 
 func watchedSourceChanged(entry *ProjectRuntime, fallbackPath string) (changed bool, ok bool) {
@@ -261,22 +390,45 @@ func (c *BundleCache) Reload(ctx context.Context, projectID int64, configPath st
 	return c.rebuild(ctx, projectID, configPath)
 }
 
+// Apply builds a candidate runtime, lets the consumer validate it, and commits
+// Store settings and runtime lifecycle only when validation succeeds. The
+// consumer callback must not mutate live consumer state; use ApplyWithCommit
+// when a consumer needs to stage and publish state atomically.
+func (c *BundleCache) Apply(ctx context.Context, projectID int64, configPath string, accept func(*ProjectRuntime) error) (*ProjectRuntime, error) {
+	return c.ApplyWithCommit(ctx, projectID, configPath, func(runtime *ProjectRuntime) (func() error, error) {
+		if accept != nil {
+			if err := accept(runtime); err != nil {
+				return nil, err
+			}
+		}
+		return nil, nil
+	})
+}
+
+// ApplyWithCommit implements candidate application as prepare, accept, and
+// commit. Preparation has no Store or event-bus side effects. The accept
+// callback may build staged consumer state and returns a commit callback that
+// is run only after Store settings and runtime lifecycle have committed.
+//
+// The commit callback must be infallible once returned. TUI callers satisfy
+// this by preparing a complete Model value and swapping it in one assignment.
+func (c *BundleCache) ApplyWithCommit(ctx context.Context, projectID int64, configPath string, accept func(*ProjectRuntime) (func() error, error)) (*ProjectRuntime, error) {
+	c.rebuildMu.Lock()
+	defer c.rebuildMu.Unlock()
+	return c.applyLocked(ctx, projectID, configPath, accept)
+}
+
 // Install seeds the cache with a runtime that was built outside the
 // cache (e.g. by Open during boot). The Mtime is captured here so the
 // next Resolve can stat-detect changes against the right baseline.
 //
-// Engine.Stop runs after the swap and OUTSIDE the cache mutex —
-// mirrors rebuild's pattern so a slow drain (wg.Wait in Stop) cannot
-// deadlock concurrent Resolves.
-func (c *BundleCache) Install(projectID int64, runtime *ProjectRuntime) {
-	c.mu.Lock()
-	old := c.entries[projectID]
-	c.entries[projectID] = runtime
-	c.mu.Unlock()
-
-	if old != nil && old.HooksEngine != nil && old != runtime {
-		old.HooksEngine.Stop()
-	}
+// Replacement is serialized with rebuilds. The previous engine is drained
+// before the supplied runtime starts and becomes visible; an error leaves the
+// previous (now quiescing or stopped) entry installed.
+func (c *BundleCache) Install(projectID int64, runtime *ProjectRuntime) error {
+	c.rebuildMu.Lock()
+	defer c.rebuildMu.Unlock()
+	return c.replaceRuntime(context.Background(), projectID, runtime)
 }
 
 // Size reports the number of cached entries. Exposed primarily for
@@ -287,11 +439,19 @@ func (c *BundleCache) Size() int {
 	return len(c.entries)
 }
 
-// rebuild parses the bundle at configPath, builds a fresh
-// ProjectRuntime, swaps the cache entry, and stops the previous
-// runtime's hooks engine. The lock is held only across the swap to
-// keep concurrent Resolves on other ids unblocked.
+// rebuild parses the bundle at configPath and builds a fresh inactive
+// ProjectRuntime. Rebuilds are serialized so two concurrent reloads cannot
+// publish overlapping engines. Once construction succeeds, the previous
+// engine closes admission and drains; only then does the replacement subscribe
+// and become visible in the cache.
 func (c *BundleCache) rebuild(ctx context.Context, projectID int64, configPath string) (*ProjectRuntime, error) {
+	c.rebuildMu.Lock()
+	defer c.rebuildMu.Unlock()
+	return c.applyLocked(ctx, projectID, configPath, nil)
+}
+
+func (c *BundleCache) applyLocked(ctx context.Context, projectID int64, configPath string, accept func(*ProjectRuntime) (func() error, error)) (*ProjectRuntime, error) {
+
 	if c.store == nil {
 		return nil, fmt.Errorf("bundle cache: store is required")
 	}
@@ -301,14 +461,14 @@ func (c *BundleCache) rebuild(ctx context.Context, projectID int64, configPath s
 	if configPath == "" {
 		return nil, fmt.Errorf("bundle cache: configPath is required for project %d", projectID)
 	}
-
 	runtime, err := buildProjectRuntime(ctx, c.store, c.cs, c.bus, configPath, projectID, c.projectSelector())
 	if err != nil {
 		return nil, err
 	}
 
-	c.mu.Lock()
+	c.mu.RLock()
 	old := c.entries[projectID]
+	c.mu.RUnlock()
 	// Carry the prior snapshot forward so the orphan flow can resolve
 	// task.bucket_id → previous key across the rebuild. Skip the
 	// carry on the very first build (old == nil) — there is no
@@ -328,16 +488,91 @@ func (c *BundleCache) rebuild(ctx context.Context, projectID int64, configPath s
 		orphan.SetMigrateConsumer(func() { c.releasePreviousSnapshot(projectID) })
 		runtime.Service.SetOrphanService(orphan)
 	}
-	c.entries[projectID] = runtime
-	c.mu.Unlock()
+	var commitConsumer func() error
+	if accept != nil {
+		var err error
+		commitConsumer, err = accept(runtime)
+		if err != nil {
+			return nil, err
+		}
+	}
+	if err := c.commitRuntime(ctx, projectID, old, runtime); err != nil {
+		return nil, err
+	}
+	c.commitReload(ctx, projectID, old, runtime)
+	if commitConsumer != nil {
+		if err := commitConsumer(); err != nil {
+			return nil, fmt.Errorf("bundle cache: commit consumer: %w", err)
+		}
+	}
+	return runtime, nil
+}
 
-	if old != nil && old.HooksEngine != nil {
-		old.HooksEngine.Stop()
+func (c *BundleCache) commitReload(ctx context.Context, projectID int64, old, runtime *ProjectRuntime) {
+	if runtime != nil && runtime.BundleImportedPayload != "" && c.store != nil {
+		// bundle.imported is a lifecycle event for the runtime that imported
+		// the bundle. It uses entity_type=system, but that does not make its
+		// project scope global. Zero remains reserved for an explicitly
+		// global/bootstrap runtime; a project runtime must pass its own id.
+		_ = c.store.RecordEntityEvent(ctx, domain.EventEntitySystem, 0, projectID, domain.EventTypeBundleImported, runtime.BundleImportedPayload)
 	}
 	if old != nil {
 		c.maybeEmitSubtaskKitNotice(ctx, projectID, old.Snapshot, runtime.Snapshot)
+		c.maybeNotifySurfacesChanged(old, runtime)
 	}
-	return runtime, nil
+}
+
+func (c *BundleCache) commitRuntime(ctx context.Context, projectID int64, old, runtime *ProjectRuntime) error {
+	if old != nil && old.HooksEngine != nil {
+		shutdownCtx, cancel := context.WithTimeout(ctx, hooks.DefaultShutdownTimeout)
+		err := old.HooksEngine.Shutdown(shutdownCtx)
+		cancel()
+		if err != nil {
+			return fmt.Errorf("bundle cache: quiesce previous hooks engine: %w", err)
+		}
+	}
+	if err := c.store.ApplyConfig(ctx, runtime.StoreConfig); err != nil {
+		return fmt.Errorf("bundle cache: commit Store settings: %w", err)
+	}
+	if _, err := c.store.BackfillTaskCompletedAt(ctx, projectID, runtime.Snapshot); err != nil {
+		// This is idempotent maintenance. A failed backfill must not make a
+		// fully accepted runtime unavailable.
+		slog.Warn("bundle cache: completion timestamp backfill failed", "project_id", projectID, "err", err)
+	}
+	if runtime.HooksEngine != nil && c.bus != nil {
+		runtime.HooksEngine.Start(c.bus)
+	}
+	c.mu.Lock()
+	c.entries[projectID] = runtime
+	c.mu.Unlock()
+	return nil
+}
+
+// replaceRuntime performs the reload handoff. Callers serialize invocations
+// with rebuildMu. On a drain timeout the replacement remains inactive and
+// unpublished, while the old entry remains installed with admission closed;
+// retrying after the old action returns completes the handoff safely.
+func (c *BundleCache) replaceRuntime(ctx context.Context, projectID int64, runtime *ProjectRuntime) error {
+	c.mu.RLock()
+	old := c.entries[projectID]
+	c.mu.RUnlock()
+
+	if old != nil && old != runtime && old.HooksEngine != nil {
+		shutdownCtx, cancel := context.WithTimeout(ctx, hooks.DefaultShutdownTimeout)
+		err := old.HooksEngine.Shutdown(shutdownCtx)
+		cancel()
+		if err != nil {
+			return fmt.Errorf("bundle cache: quiesce previous hooks engine: %w", err)
+		}
+	}
+	if runtime != nil && runtime.HooksEngine != nil && c.bus != nil {
+		runtime.HooksEngine.Start(c.bus)
+	}
+
+	c.mu.Lock()
+	c.entries[projectID] = runtime
+	c.mu.Unlock()
+	return nil
 }
 
 // maybeEmitSubtaskKitNotice records the one-shot transparency notice
@@ -435,27 +670,35 @@ func (c *BundleCache) releasePreviousSnapshot(projectID int64) {
 // produces identical runtimes everywhere — drift between boot and
 // reload was the bug that motivated the Phase 3a refactor.
 //
-// selector flows into the constructed agent.Service so calls without
+// selector flows into the constructed operation.Service so calls without
 // explicit project arguments still see the boot-resolved project /
 // CWD; pass a zero value when callers always provide selectors per
 // call.
-func BuildProjectRuntime(ctx context.Context, store *sqlite.Store, cs *configstore.Adapter, bus events.Bus, configPath string, projectID int64, selector agent.ProjectSelector) (*ProjectRuntime, error) {
-	return buildProjectRuntime(ctx, store, cs, bus, configPath, projectID, selector)
-}
-
-func buildProjectRuntime(ctx context.Context, store *sqlite.Store, cs *configstore.Adapter, bus events.Bus, configPath string, projectID int64, selector agent.ProjectSelector) (*ProjectRuntime, error) {
-	bundle, bundleHash, enumRegistry, err := app.NewConfigService(cs).Import(ctx, configPath)
+func BuildProjectRuntime(ctx context.Context, store *sqlite.Store, cs *configstore.Adapter, bus events.Bus, configPath string, projectID int64, selector operation.ProjectSelector) (*ProjectRuntime, error) {
+	runtime, err := buildProjectRuntime(ctx, store, cs, bus, configPath, projectID, selector)
 	if err != nil {
 		return nil, err
 	}
-	// Emit the bundle.imported audit event so hooks subscribed to
-	// configuration content changes continue to fire after Round-2
-	// retired Store.ImportBundle. Payload is composed here at the
-	// composition root because the SQL adapter must remain free of
-	// config.Bundle references (Phase 2-bis gate 2). Failure to
-	// record the audit row is non-fatal — the snapshot still loads
-	// and the runtime still boots — so callers proceed even when
-	// telemetry gating drops the event.
+	if err := store.ApplyConfig(ctx, runtime.StoreConfig); err != nil {
+		return nil, err
+	}
+	if _, err := store.BackfillTaskCompletedAt(ctx, projectID, runtime.Snapshot); err != nil {
+		slog.Warn("build project runtime: completion timestamp backfill failed", "project_id", projectID, "err", err)
+	}
+	if bus != nil {
+		runtime.HooksEngine.Start(bus)
+	}
+	return runtime, nil
+}
+
+func buildProjectRuntime(ctx context.Context, store *sqlite.Store, cs *configstore.Adapter, bus events.Bus, configPath string, projectID int64, selector operation.ProjectSelector) (*ProjectRuntime, error) {
+	bundle, bundleHash, enumRegistry, err := app.NewConfigService(cs).Import(activity.WithoutTracking(ctx), configPath)
+	if err != nil {
+		return nil, err
+	}
+	// Compose the bundle.imported audit payload here, but commit it only after
+	// cache publication and consumer rebind succeed. Recording it during build
+	// would make a failed candidate appear in the live audit stream.
 	workflowKey := bundle.Config.Workflow.Active
 	if workflowKey == "" && len(bundle.Workflows) > 0 {
 		workflowKey = bundle.Workflows[0].Key
@@ -470,7 +713,6 @@ func buildProjectRuntime(ctx context.Context, store *sqlite.Store, cs *configsto
 		"law_count":      len(bundle.Laws),
 		"template_count": len(bundle.Templates),
 	})
-	_ = store.RecordEntityEvent(ctx, domain.EventEntitySystem, 0, 0, domain.EventTypeBundleImported, string(auditPayload))
 
 	// Build the per-project Snapshot up front so every downstream wire —
 	// notification catalog, hooks engine, agent service — reads from the
@@ -507,21 +749,20 @@ func buildProjectRuntime(ctx context.Context, store *sqlite.Store, cs *configsto
 		}
 	}
 
-	if err := store.ApplyConfig(ctx, sqlite.ConfigKnobs{
+	storeConfig := sqlite.ConfigKnobs{
 		BusyTimeoutMs:            bundle.Config.SQLite.BusyTimeoutMs,
 		CacheSizeKB:              bundle.Config.SQLite.CacheSizeKB,
 		MmapSizeBytes:            bundle.Config.SQLite.MmapSizeBytes,
 		EventsDefaultRecentLimit: bundle.Config.Events.DefaultRecentLimit,
 		EventsPolicy:             bundle.Config.Events,
 		EventBus:                 bus,
-	}); err != nil {
-		return nil, err
 	}
 	hookEntries := buildDepthAwareHookEntries(snapshot)
 	engine := hooks.NewEngine(hookEntries, registry, snapshot.Events(), store)
-	engine.SetProjectID(projectID)
-	if bus != nil {
-		engine.Start(bus)
+	if projectID == hooks.GlobalProjectID {
+		engine.SetGlobal()
+	} else {
+		engine.SetProjectID(projectID)
 	}
 
 	// snapshot is built above before the hooks engine — both surfaces
@@ -529,7 +770,7 @@ func buildProjectRuntime(ctx context.Context, store *sqlite.Store, cs *configsto
 	// produces a fresh pointer; in-flight callers that captured the
 	// previous pointer continue reading from it until they return.
 
-	svc := agent.NewService(store, selector)
+	svc := operation.NewService(store, selector)
 	// SetSnapshot is the single wiring entry point: the agent service
 	// derives the catalog closures, synonym table, stopword set, and
 	// bundle-scoped EnumRegistry from the per-project Snapshot in one
@@ -537,6 +778,8 @@ func buildProjectRuntime(ctx context.Context, store *sqlite.Store, cs *configsto
 	// catalog views; hot-reload rotates the pointer atomically through
 	// cache.Reload.
 	svc.SetSnapshot(snapshot)
+	editor := app.NewBundleEditor(cs, configPath)
+	svc.SetEntityRepos(editor, cs, cs)
 	// Inject the orphan service with prev=nil — the cache rotation
 	// overrides this with a rebind-capable view (current+previous
 	// snapshots) when the runtime is replacing an earlier entry.
@@ -545,8 +788,7 @@ func buildProjectRuntime(ctx context.Context, store *sqlite.Store, cs *configsto
 	// done-bucket rows missing the timestamp. Idempotent — subsequent
 	// builds find no rows to update. Errors are swallowed so a hot
 	// transient (FK lock, etc.) cannot block runtime composition.
-	_, _ = store.BackfillTaskCompletedAt(ctx, projectID, snapshot)
-	svc.SetSettings(agent.ServiceSettings{
+	svc.SetSettings(operation.ServiceSettings{
 		RecentCommentLimit:       bundle.Config.MCP.RecentCommentLimit,
 		MaxCommentChars:          bundle.Config.MCP.MaxCommentChars,
 		IncludeWorkflow:          *bundle.Config.MCP.IncludeWorkflowInContinue,
@@ -564,19 +806,22 @@ func buildProjectRuntime(ctx context.Context, store *sqlite.Store, cs *configsto
 	sourceMtimes, mtime := statSourceMtimes(sourcePaths, configPath)
 
 	return &ProjectRuntime{
-		Service:              svc,
-		HooksEngine:          engine,
-		ActionRegistry:       registry,
-		NotificationAction:   notificationAction,
-		EnumRegistry:         enumRegistry,
-		NotificationSnapshot: notifSnapshot,
-		SourcePath:           configPath,
-		SourcePaths:          append([]string(nil), sourcePaths...),
-		LoadedAt:             time.Now(),
-		Mtime:                mtime,
-		SourceMtimes:         sourceMtimes,
-		Snapshot:             snapshot,
-		Workflow:             app.NewWorkflowServiceFromStore(store, snapshot.Registry(), snapshot),
+		Service:               svc,
+		HooksEngine:           engine,
+		ActionRegistry:        registry,
+		NotificationAction:    notificationAction,
+		EnumRegistry:          enumRegistry,
+		NotificationSnapshot:  notifSnapshot,
+		SourcePath:            configPath,
+		SourcePaths:           append([]string(nil), sourcePaths...),
+		LoadedAt:              time.Now(),
+		Mtime:                 mtime,
+		SourceMtimes:          sourceMtimes,
+		Snapshot:              snapshot,
+		Workflow:              app.NewWorkflowServiceFromStore(store, snapshot.Registry(), snapshot),
+		Editor:                editor,
+		BundleImportedPayload: string(auditPayload),
+		StoreConfig:           storeConfig,
 		// PreviousSnapshot is populated by the cache on rotation —
 		// buildProjectRuntime has no access to the prior entry.
 	}, nil

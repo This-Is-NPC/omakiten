@@ -1,8 +1,8 @@
 package agentruntime
 
-import "omakiten/internal/agent"
+import "omakiten/internal/operation"
 
-func lawPresent(laws []agent.LawInfo, slug string) bool {
+func lawPresent(laws []operation.LawInfo, slug string) bool {
 	for _, l := range laws {
 		if l.Slug == slug {
 			return true
@@ -11,7 +11,7 @@ func lawPresent(laws []agent.LawInfo, slug string) bool {
 	return false
 }
 
-func lawSlugs(laws []agent.LawInfo) []string {
+func lawSlugs(laws []operation.LawInfo) []string {
 	out := make([]string, 0, len(laws))
 	for _, l := range laws {
 		out = append(out, l.Slug)
@@ -19,7 +19,7 @@ func lawSlugs(laws []agent.LawInfo) []string {
 	return out
 }
 
-func skillSlugs(skills []agent.SkillInfo) []string {
+func skillSlugs(skills []operation.SkillInfo) []string {
 	out := make([]string, 0, len(skills))
 	for _, s := range skills {
 		out = append(out, s.Slug)

@@ -11,9 +11,9 @@ import (
 func writeNewLayoutFixture(t *testing.T, root string) {
 	t.Helper()
 	writeFile(t, filepath.Join(root, "config", "omakase.yaml"), baseConfigHeader)
-	writeFile(t, filepath.Join(root, "skills", "go.md"), "---\nname: Go\n---\ndefault body\n")
+	writeFile(t, filepath.Join(root, "skills", "go.md"), "---\nname: Go\nschema_version: 2\n---\ndefault body\n")
 	writeFile(t, filepath.Join(root, "laws", "scope.md"), "---\nseverity: error\n---\nstay in scope\n")
-	writeFile(t, filepath.Join(root, "personas", "agent.md"), "---\nname: Agent\n---\ndefault persona\n")
+	writeFile(t, filepath.Join(root, "personas", "agent.md"), "---\nname: Agent\nschema_version: 2\nskill_repertoire: []\n---\ndefault persona\n")
 	writeFile(t, filepath.Join(root, "templates", "user-story.md"), "---\nname: Default Template\n---\nbody\n")
 }
 
@@ -22,7 +22,7 @@ func TestCustomFileOverridesDefaultBySlug(t *testing.T) {
 	writeNewLayoutFixture(t, root)
 	// Same slug `go` in custom/ — user override.
 	writeFile(t, filepath.Join(root, "skills", "custom", "go.md"),
-		"---\nname: Go (custom)\n---\noverride body\n")
+		"---\nname: Go (custom)\nschema_version: 2\n---\noverride body\n")
 
 	bundle, err := LoadBundle(filepath.Join(root, "config", "omakase.yaml"))
 	if err != nil {
@@ -49,7 +49,7 @@ func TestCustomOnlyEntityIsLoaded(t *testing.T) {
 	writeFile(t, filepath.Join(root, "config", "omakase.yaml"), baseConfigHeader)
 	// No defaults at root, only customs.
 	writeFile(t, filepath.Join(root, "skills", "custom", "mine.md"),
-		"---\nname: Mine\n---\nmy body\n")
+		"---\nname: Mine\nschema_version: 2\n---\nmy body\n")
 	writeFile(t, filepath.Join(root, "laws", "custom", "mine.md"),
 		"---\nseverity: warning\n---\nmy law body\n")
 
@@ -70,7 +70,7 @@ func TestDefaultIsCustomFalseLoadsAtRoot(t *testing.T) {
 	root := t.TempDir()
 	writeFile(t, filepath.Join(root, "config", "omakase.yaml"), baseConfigHeader)
 	writeFile(t, filepath.Join(root, "skills", "go.md"),
-		"---\nname: Go\n---\ndefault\n")
+		"---\nname: Go\nschema_version: 2\n---\ndefault\n")
 
 	bundle, err := LoadBundle(filepath.Join(root, "config", "omakase.yaml"))
 	if err != nil {

@@ -6,6 +6,21 @@ package domain
 // still applies it defensively when handed stuckDays <= 0.
 const DefaultStuckDays = 7
 
+// StuckBucketIDs resolves the authoritative in-flight bucket roster for the
+// insights query. A nil result means the workflow was not resolved and lets
+// the repository apply its compatibility fallback; a non-nil empty result is
+// authoritative and means the known workflow has no in-flight stage.
+func StuckBucketIDs(wf Workflow) []int64 {
+	ids, ok := wf.InFlightBucketIDs()
+	if !ok {
+		return nil
+	}
+	if ids == nil {
+		return []int64{}
+	}
+	return ids
+}
+
 // Insights bundles the six "today-computable" intelligence-layer readings
 // the InsightsService derives on demand (no cache) from the unified events
 // log plus the errors/solutions tables. Each sub-report carries an explicit
@@ -157,7 +172,7 @@ const MinModelSampleSize = 5
 // PerModelInsight — INSIGHT 6: per-agent-model contrast, partial-state gated
 // (task 1353).
 //
-// Source: events filtered to agent_model<>” (via sqlutil.AgentAttributedFilter)
+// Source: events filtered to a non-empty agent_model (via sqlutil.AgentAttributedFilter)
 // — ONLY stamped rows; pre-stamp / blank-model events are excluded so they can
 // never pollute a model bucket. AvgDwellDays is the same LAG-based dwell as
 // insight 2 grouped by agent_model; GuardsPerTask is guard violations divided

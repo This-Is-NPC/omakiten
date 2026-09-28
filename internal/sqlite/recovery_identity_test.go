@@ -41,56 +41,66 @@ func TestReindexWithBackupRejectsRecoveryPathChangesAtDestructiveBoundaries(t *t
 	}
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
-			ctx := context.Background()
-			dir := t.TempDir()
-			dbPath := filepath.Join(dir, "maintenance.db")
-			setup := openStoreFixture(t, dbPath)
-			execIntegritySQL(t, ctx, setup, `INSERT INTO search_index(content, entity_type, entity_id, project_id) VALUES ('recovery identity evidence', 'retired_private_type', 501, 0)`)
-			if err := setup.Close(); err != nil {
-				t.Fatalf("close setup: %v", err)
-			}
-			maintenance, err := OpenSearchMaintenance(ctx, dbPath)
-			if err != nil {
-				t.Fatalf("OpenSearchMaintenance: %v", err)
-			}
-			defer func() { _ = maintenance.Close() }()
-			backup := app.NewBackupService(app.BackupOptions{SourcePath: dbPath, DestDir: filepath.Join(dir, "backups")})
-			var backupPath string
-			var mutationErr error
-			hooks := reindexBackupHooks{}
-			test.install(&hooks, func() {
-				if mutationErr == nil {
-					mutationErr = test.mutate(backupPath)
-				}
-			})
-			var resultErr error
-			err = backup.WithLease(ctx, func(lease app.BackupLease) error {
-				create := func(ctx context.Context, write func(string) error) (string, error) {
-					path, err := lease.WriteSnapshot(ctx, write)
-					backupPath = path
-					return path, err
-				}
-				_, _, resultErr = maintenance.reindexSearchConfirmedWithBackup(ctx, create, lease.Discard, lease.Validate, hooks)
-				return resultErr
-			})
-			if mutationErr != nil {
-				t.Fatalf("mutate recovery path: %v", mutationErr)
-			}
-			if resultErr == nil || err == nil {
-				t.Fatal("reindex committed with a changed recovery pathname")
-			}
-			report, checkErr := maintenance.CheckSearchIndex(ctx)
-			if checkErr != nil {
-				t.Fatalf("CheckSearchIndex after abort: %v", checkErr)
-			}
-			var evidence int64
-			for _, typeReport := range report.Types {
-				evidence += typeReport.Unsupported.Count
-			}
-			if evidence != 1 {
-				t.Fatalf("reindex changed pre-repair evidence after recovery-path abort: %+v", report)
-			}
+			runRecoveryPathChangeCase(t, test.install, test.mutate)
 		})
+	}
+}
+
+func runRecoveryPathChangeCase(t *testing.T, install func(*reindexBackupHooks, func()), mutate func(string) error) {
+	t.Helper()
+	ctx := context.Background()
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "maintenance.db")
+	setup := openStoreFixture(t, dbPath)
+	execIntegritySQL(t, ctx, setup, `INSERT INTO search_index(content, entity_type, entity_id, project_id) VALUES ('recovery identity evidence', 'retired_private_type', 501, 0)`)
+	if err := setup.Close(); err != nil {
+		t.Fatalf("close setup: %v", err)
+	}
+	maintenance, err := OpenSearchMaintenance(ctx, dbPath)
+	if err != nil {
+		t.Fatalf("OpenSearchMaintenance: %v", err)
+	}
+	defer func() { _ = maintenance.Close() }()
+	backup := app.NewBackupService(app.BackupOptions{SourcePath: dbPath, DestDir: filepath.Join(dir, "backups")})
+	var backupPath string
+	var mutationErr error
+	hooks := reindexBackupHooks{}
+	install(&hooks, func() {
+		if mutationErr == nil {
+			mutationErr = mutate(backupPath)
+		}
+	})
+	var resultErr error
+	err = backup.WithLease(ctx, func(lease app.BackupLease) error {
+		create := func(ctx context.Context, write func(string) error) (string, error) {
+			path, err := lease.WriteSnapshot(ctx, write)
+			backupPath = path
+			return path, err
+		}
+		_, _, resultErr = maintenance.reindexSearchConfirmedWithBackup(ctx, create, lease.Discard, lease.Validate, hooks)
+		return resultErr
+	})
+	if mutationErr != nil {
+		t.Fatalf("mutate recovery path: %v", mutationErr)
+	}
+	if resultErr == nil || err == nil {
+		t.Fatal("reindex committed with a changed recovery pathname")
+	}
+	assertRecoveryEvidenceUnchanged(t, ctx, maintenance)
+}
+
+func assertRecoveryEvidenceUnchanged(t *testing.T, ctx context.Context, maintenance *Store) {
+	t.Helper()
+	report, err := maintenance.CheckSearchIndex(ctx)
+	if err != nil {
+		t.Fatalf("CheckSearchIndex after abort: %v", err)
+	}
+	var evidence int64
+	for _, typeReport := range report.Types {
+		evidence += typeReport.Unsupported.Count
+	}
+	if evidence != 1 {
+		t.Fatalf("reindex changed pre-repair evidence after recovery-path abort: %+v", report)
 	}
 }
 

@@ -11,70 +11,8 @@ import (
 )
 
 func TestSnapshotDatabaseIncludesCommittedWALFramesWithPinnedReader(t *testing.T) {
-	ctx := context.Background()
-	dir := t.TempDir()
-	sourcePath := filepath.Join(dir, "source.db")
-	db, err := sql.Open("sqlite", sourcePath)
-	if err != nil {
-		t.Fatalf("sql.Open: %v", err)
-	}
-	t.Cleanup(func() { _ = db.Close() })
-	db.SetMaxOpenConns(3)
-	if _, err := db.ExecContext(ctx, `PRAGMA journal_mode = WAL`); err != nil {
-		t.Fatalf("enable WAL: %v", err)
-	}
-	if _, err := db.ExecContext(ctx, `PRAGMA wal_autocheckpoint = 0`); err != nil {
-		t.Fatalf("disable autocheckpoint: %v", err)
-	}
-	if _, err := db.ExecContext(ctx, `CREATE TABLE snapshot_rows(id INTEGER PRIMARY KEY, value TEXT NOT NULL)`); err != nil {
-		t.Fatalf("create table: %v", err)
-	}
-	if _, err := db.ExecContext(ctx, `PRAGMA wal_checkpoint(TRUNCATE)`); err != nil {
-		t.Fatalf("baseline checkpoint: %v", err)
-	}
-
-	reader, err := db.Conn(ctx)
-	if err != nil {
-		t.Fatalf("reader conn: %v", err)
-	}
-	defer func() { _ = reader.Close() }()
-	if _, err := reader.ExecContext(ctx, `BEGIN`); err != nil {
-		t.Fatalf("reader BEGIN: %v", err)
-	}
-	defer func() { _, _ = reader.ExecContext(context.Background(), `ROLLBACK`) }()
-	var initial int
-	if err := reader.QueryRowContext(ctx, `SELECT COUNT(*) FROM snapshot_rows`).Scan(&initial); err != nil || initial != 0 {
-		t.Fatalf("reader baseline = %d, %v", initial, err)
-	}
-	if _, err := db.ExecContext(ctx, `INSERT INTO snapshot_rows(value) VALUES ('committed in wal')`); err != nil {
-		t.Fatalf("committed WAL insert: %v", err)
-	}
-
-	plainPath := filepath.Join(dir, "plain-main-file.db")
-	mainBytes, err := os.ReadFile(sourcePath)
-	if err != nil {
-		t.Fatalf("read main database: %v", err)
-	}
-	if err := os.WriteFile(plainPath, mainBytes, 0o600); err != nil {
-		t.Fatalf("write plain main-file copy: %v", err)
-	}
-	plain, err := sql.Open("sqlite", plainPath)
-	if err != nil {
-		t.Fatalf("open plain copy: %v", err)
-	}
-	var plainCount int
-	if err := plain.QueryRowContext(ctx, `SELECT COUNT(*) FROM snapshot_rows`).Scan(&plainCount); err != nil {
-		_ = plain.Close()
-		t.Fatalf("query plain copy: %v", err)
-	}
-	_ = plain.Close()
-	if plainCount != 0 {
-		t.Fatalf("plain main-file copy contains %d rows; fixture did not prove a WAL/main gap", plainCount)
-	}
-	walBefore, err := os.Stat(sourcePath + "-wal")
-	if err != nil {
-		t.Fatalf("stat source WAL before snapshot: %v", err)
-	}
+	fixture := newPinnedWALSnapshotFixture(t)
+	ctx, dir, sourcePath, db, reader, walBefore := fixture.ctx, fixture.dir, fixture.sourcePath, fixture.db, fixture.reader, fixture.walBefore
 
 	snapshotPath := filepath.Join(dir, "snapshot.db")
 	if err := SnapshotDatabase(ctx, sourcePath, snapshotPath); err != nil {
@@ -118,6 +56,85 @@ func TestSnapshotDatabaseIncludesCommittedWALFramesWithPinnedReader(t *testing.T
 	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM snapshot_rows`).Scan(&sourceCount); err != nil || sourceCount != 1 {
 		t.Fatalf("source rows after snapshot = %d, %v", sourceCount, err)
 	}
+}
+
+type pinnedWALSnapshotFixture struct {
+	ctx             context.Context
+	dir, sourcePath string
+	db              *sql.DB
+	reader          *sql.Conn
+	walBefore       os.FileInfo
+}
+
+func newPinnedWALSnapshotFixture(t *testing.T) pinnedWALSnapshotFixture {
+	t.Helper()
+	ctx := context.Background()
+	dir := t.TempDir()
+	sourcePath := filepath.Join(dir, "source.db")
+	db, err := sql.Open("sqlite", sourcePath)
+	if err != nil {
+		t.Fatalf("sql.Open: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	db.SetMaxOpenConns(3)
+	for _, statement := range []struct{ sql, failure string }{
+		{`PRAGMA journal_mode = WAL`, "enable WAL"},
+		{`PRAGMA wal_autocheckpoint = 0`, "disable autocheckpoint"},
+		{`CREATE TABLE snapshot_rows(id INTEGER PRIMARY KEY, value TEXT NOT NULL)`, "create table"},
+		{`PRAGMA wal_checkpoint(TRUNCATE)`, "baseline checkpoint"},
+	} {
+		if _, err := db.ExecContext(ctx, statement.sql); err != nil {
+			t.Fatalf("%s: %v", statement.failure, err)
+		}
+	}
+	reader, err := db.Conn(ctx)
+	if err != nil {
+		t.Fatalf("reader conn: %v", err)
+	}
+	t.Cleanup(func() { _ = reader.Close() })
+	if _, err := reader.ExecContext(ctx, `BEGIN`); err != nil {
+		t.Fatalf("reader BEGIN: %v", err)
+	}
+	t.Cleanup(func() { _, _ = reader.ExecContext(context.Background(), `ROLLBACK`) })
+	var initial int
+	if err := reader.QueryRowContext(ctx, `SELECT COUNT(*) FROM snapshot_rows`).Scan(&initial); err != nil || initial != 0 {
+		t.Fatalf("reader baseline = %d, %v", initial, err)
+	}
+	if _, err := db.ExecContext(ctx, `INSERT INTO snapshot_rows(value) VALUES ('committed in wal')`); err != nil {
+		t.Fatalf("committed WAL insert: %v", err)
+	}
+	walBefore := assertWALMainFileGap(t, ctx, dir, sourcePath)
+	return pinnedWALSnapshotFixture{ctx: ctx, dir: dir, sourcePath: sourcePath, db: db, reader: reader, walBefore: walBefore}
+}
+
+func assertWALMainFileGap(t *testing.T, ctx context.Context, dir, sourcePath string) os.FileInfo {
+	t.Helper()
+	plainPath := filepath.Join(dir, "plain-main-file.db")
+	mainBytes, err := os.ReadFile(sourcePath)
+	if err != nil {
+		t.Fatalf("read main database: %v", err)
+	}
+	if err := os.WriteFile(plainPath, mainBytes, 0o600); err != nil {
+		t.Fatalf("write plain main-file copy: %v", err)
+	}
+	plain, err := sql.Open("sqlite", plainPath)
+	if err != nil {
+		t.Fatalf("open plain copy: %v", err)
+	}
+	var plainCount int
+	if err := plain.QueryRowContext(ctx, `SELECT COUNT(*) FROM snapshot_rows`).Scan(&plainCount); err != nil {
+		_ = plain.Close()
+		t.Fatalf("query plain copy: %v", err)
+	}
+	_ = plain.Close()
+	if plainCount != 0 {
+		t.Fatalf("plain main-file copy contains %d rows; fixture did not prove a WAL/main gap", plainCount)
+	}
+	walBefore, err := os.Stat(sourcePath + "-wal")
+	if err != nil {
+		t.Fatalf("stat source WAL before snapshot: %v", err)
+	}
+	return walBefore
 }
 
 func TestSnapshotDatabaseCancellationAndFailureCleanTemporaryFile(t *testing.T) {
@@ -185,17 +202,7 @@ func TestSnapshotDatabaseUsesPrivateRandomizedStagingAndPreservesCallerTemp(t *t
 	err = snapshotDatabaseWithOptions(ctx, sourcePath, destinationPath, false, snapshotHooks{
 		AfterStageCreated: func(dirPath, filePath string) {
 			stagingDir = dirPath
-			dirInfo, statErr := os.Stat(dirPath)
-			if statErr != nil || dirInfo.Mode().Perm() != 0o700 {
-				t.Fatalf("staging directory mode = %v, %v; want 0700", dirInfo, statErr)
-			}
-			fileInfo, statErr := os.Stat(filePath)
-			if statErr != nil || fileInfo.Mode().Perm() != 0o600 {
-				t.Fatalf("staging file mode = %v, %v; want 0600", fileInfo, statErr)
-			}
-			if filepath.Dir(dirPath) != dir || filepath.Base(dirPath) == filepath.Base(destinationPath)+".tmp" {
-				t.Fatalf("staging directory is not randomized under destination parent: %q", dirPath)
-			}
+			assertPrivateSnapshotStage(t, dir, destinationPath, dirPath, filePath)
 		},
 	})
 	if err != nil {
@@ -206,6 +213,21 @@ func TestSnapshotDatabaseUsesPrivateRandomizedStagingAndPreservesCallerTemp(t *t
 	}
 	if _, err := os.Stat(stagingDir); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("staging directory survived success: %v", err)
+	}
+}
+
+func assertPrivateSnapshotStage(t *testing.T, parent, destinationPath, dirPath, filePath string) {
+	t.Helper()
+	dirInfo, err := os.Stat(dirPath)
+	if err != nil || dirInfo.Mode().Perm() != 0o700 {
+		t.Fatalf("staging directory mode = %v, %v; want 0700", dirInfo, err)
+	}
+	fileInfo, err := os.Stat(filePath)
+	if err != nil || fileInfo.Mode().Perm() != 0o600 {
+		t.Fatalf("staging file mode = %v, %v; want 0600", fileInfo, err)
+	}
+	if filepath.Dir(dirPath) != parent || filepath.Base(dirPath) == filepath.Base(destinationPath)+".tmp" {
+		t.Fatalf("staging directory is not randomized under destination parent: %q", dirPath)
 	}
 }
 
@@ -222,132 +244,146 @@ func TestSnapshotDatabasePublicationRejectsRacesAndSymlinks(t *testing.T) {
 		t.Fatalf("create source: %v", err)
 	}
 	_ = db.Close()
+	t.Run("destination appears during vacuum", func(t *testing.T) { testDestinationAppearsDuringVacuum(t, ctx, dir, sourcePath) })
+	t.Run("parent symlink", func(t *testing.T) { testParentSymlink(t, ctx, dir, sourcePath) })
+	t.Run("parent replaced during vacuum", func(t *testing.T) { testParentReplacementDuringVacuum(t, ctx, dir, sourcePath) })
+	t.Run("direct symlink", func(t *testing.T) { testDirectDestinationSymlink(t, ctx, dir, sourcePath) })
+	t.Run("force destination becomes symlink during vacuum", func(t *testing.T) { testRacingDestinationSymlink(t, ctx, dir, sourcePath) })
+}
 
-	t.Run("destination appears during vacuum", func(t *testing.T) {
-		destinationPath := filepath.Join(dir, "appeared.db")
-		err := snapshotDatabaseWithOptions(ctx, sourcePath, destinationPath, false, snapshotHooks{
-			AfterVacuum: func() {
-				if writeErr := os.WriteFile(destinationPath, []byte("racer"), 0o600); writeErr != nil {
-					t.Fatalf("write racing destination: %v", writeErr)
-				}
-			},
-		})
-		if err == nil {
-			t.Fatal("no-replace snapshot overwrote racing destination")
+func testDestinationAppearsDuringVacuum(t *testing.T, ctx context.Context, dir, sourcePath string) {
+	t.Helper()
+	destinationPath := filepath.Join(dir, "appeared.db")
+	err := snapshotDatabaseWithOptions(ctx, sourcePath, destinationPath, false, snapshotHooks{AfterVacuum: func() {
+		if writeErr := os.WriteFile(destinationPath, []byte("racer"), 0o600); writeErr != nil {
+			t.Fatalf("write racing destination: %v", writeErr)
 		}
-		if body, readErr := os.ReadFile(destinationPath); readErr != nil || string(body) != "racer" {
-			t.Fatalf("racing destination changed = %q, %v", body, readErr)
-		}
-	})
+	}})
+	if err == nil {
+		t.Fatal("no-replace snapshot overwrote racing destination")
+	}
+	if body, readErr := os.ReadFile(destinationPath); readErr != nil || string(body) != "racer" {
+		t.Fatalf("racing destination changed = %q, %v", body, readErr)
+	}
+}
 
-	t.Run("parent symlink", func(t *testing.T) {
-		realParent := filepath.Join(dir, "real-parent")
-		if err := os.Mkdir(realParent, 0o700); err != nil {
-			t.Fatalf("Mkdir: %v", err)
-		}
-		linkedParent := filepath.Join(dir, "linked-parent")
-		if err := os.Symlink(realParent, linkedParent); err != nil {
-			t.Fatalf("Symlink: %v", err)
-		}
-		if err := SnapshotDatabase(ctx, sourcePath, filepath.Join(linkedParent, "snapshot.db")); err == nil {
-			t.Fatal("snapshot accepted symlinked destination parent")
-		}
-	})
+func testParentSymlink(t *testing.T, ctx context.Context, dir, sourcePath string) {
+	t.Helper()
+	realParent := filepath.Join(dir, "real-parent")
+	if err := os.Mkdir(realParent, 0o700); err != nil {
+		t.Fatalf("Mkdir: %v", err)
+	}
+	linkedParent := filepath.Join(dir, "linked-parent")
+	if err := os.Symlink(realParent, linkedParent); err != nil {
+		t.Fatalf("Symlink: %v", err)
+	}
+	if err := SnapshotDatabase(ctx, sourcePath, filepath.Join(linkedParent, "snapshot.db")); err == nil {
+		t.Fatal("snapshot accepted symlinked destination parent")
+	}
+}
 
-	t.Run("parent replaced during vacuum", func(t *testing.T) {
-		parent := filepath.Join(dir, "racing-parent")
-		attacker := filepath.Join(dir, "attacker-parent")
-		if err := os.Mkdir(parent, 0o700); err != nil {
-			t.Fatalf("Mkdir parent: %v", err)
-		}
-		if err := os.Mkdir(attacker, 0o700); err != nil {
-			t.Fatalf("Mkdir attacker: %v", err)
-		}
-		movedParent := parent + ".moved"
-		destinationPath := filepath.Join(parent, "snapshot.db")
-		preservedStagePath := filepath.Join(dir, "parent-race-stage.db")
-		var stagePath string
-		var replacementErr error
-		err := snapshotDatabaseWithOptions(ctx, sourcePath, destinationPath, false, snapshotHooks{
-			AfterStageCreated: func(_, path string) { stagePath = path },
-			AfterVacuum: func() {
-				replacementErr = os.Rename(parent, movedParent)
-				if replacementErr != nil {
-					return
-				}
+func testParentReplacementDuringVacuum(t *testing.T, ctx context.Context, dir, sourcePath string) {
+	t.Helper()
+	parent := filepath.Join(dir, "racing-parent")
+	attacker := filepath.Join(dir, "attacker-parent")
+	if err := os.Mkdir(parent, 0o700); err != nil {
+		t.Fatalf("Mkdir parent: %v", err)
+	}
+	if err := os.Mkdir(attacker, 0o700); err != nil {
+		t.Fatalf("Mkdir attacker: %v", err)
+	}
+	movedParent := parent + ".moved"
+	destinationPath := filepath.Join(parent, "snapshot.db")
+	preservedStagePath := filepath.Join(dir, "parent-race-stage.db")
+	var stagePath string
+	var replacementErr error
+	err := snapshotDatabaseWithOptions(ctx, sourcePath, destinationPath, false, snapshotHooks{
+		AfterStageCreated: func(_, path string) { stagePath = path },
+		AfterVacuum: func() {
+			replacementErr = os.Rename(parent, movedParent)
+			if replacementErr == nil {
 				if symlinkErr := os.Symlink(attacker, parent); symlinkErr != nil {
 					t.Fatalf("replace parent with symlink: %v", symlinkErr)
 				}
-			},
-			BeforePublish: func() {
-				if replacementErr != nil {
-					if linkErr := os.Link(stagePath, preservedStagePath); linkErr != nil {
-						t.Fatalf("preserve verified stage after denied parent race: %v", linkErr)
-					}
+			}
+		},
+		BeforePublish: func() {
+			if replacementErr != nil {
+				if linkErr := os.Link(stagePath, preservedStagePath); linkErr != nil {
+					t.Fatalf("preserve verified stage after denied parent race: %v", linkErr)
 				}
-			},
-		})
-		if replacementErr != nil {
-			t.Logf("destination parent replacement denied by platform: %v", replacementErr)
-			if err != nil {
-				t.Fatalf("snapshot after denied parent race: %v", err)
 			}
-			if err := os.WriteFile(preservedStagePath, []byte("verified parent-race inode"), 0o600); err != nil {
-				t.Fatal(err)
-			}
-			if body, readErr := os.ReadFile(destinationPath); readErr != nil || string(body) != "verified parent-race inode" {
-				t.Fatalf("snapshot after denied parent race is not verified inode: body=%q read=%v", body, readErr)
-			}
-			return
-		}
-		if err == nil {
-			t.Fatal("snapshot accepted destination parent replacement")
-		}
-		if entries, readErr := os.ReadDir(attacker); readErr != nil || len(entries) != 0 {
-			t.Fatalf("attacker directory received snapshot state: entries=%v error=%v", entries, readErr)
-		}
-		if entries, readErr := os.ReadDir(movedParent); readErr != nil || len(entries) != 0 {
-			t.Fatalf("private staging survived parent race: entries=%v error=%v", entries, readErr)
-		}
+		},
 	})
+	assertParentReplacementOutcome(t, err, replacementErr, attacker, movedParent, destinationPath, preservedStagePath)
+}
 
-	t.Run("direct symlink", func(t *testing.T) {
-		victim := filepath.Join(dir, "victim.db")
-		if err := os.WriteFile(victim, []byte("victim"), 0o600); err != nil {
-			t.Fatalf("write victim: %v", err)
+func assertParentReplacementOutcome(t *testing.T, err, replacementErr error, attacker, movedParent, destinationPath, preservedStagePath string) {
+	t.Helper()
+	if replacementErr != nil {
+		t.Logf("destination parent replacement denied by platform: %v", replacementErr)
+		if err != nil {
+			t.Fatalf("snapshot after denied parent race: %v", err)
 		}
-		destinationPath := filepath.Join(dir, "direct-link.db")
-		if err := os.Symlink(victim, destinationPath); err != nil {
-			t.Fatalf("Symlink: %v", err)
+		if err := os.WriteFile(preservedStagePath, []byte("verified parent-race inode"), 0o600); err != nil {
+			t.Fatal(err)
 		}
-		if err := SnapshotDatabaseReplace(ctx, sourcePath, destinationPath); err == nil {
-			t.Fatal("force snapshot accepted direct destination symlink")
+		if body, readErr := os.ReadFile(destinationPath); readErr != nil || string(body) != "verified parent-race inode" {
+			t.Fatalf("snapshot after denied parent race is not verified inode: body=%q read=%v", body, readErr)
 		}
-		if body, err := os.ReadFile(victim); err != nil || string(body) != "victim" {
-			t.Fatalf("destination symlink victim changed = %q, %v", body, err)
-		}
-	})
+		return
+	}
+	if err == nil {
+		t.Fatal("snapshot accepted destination parent replacement")
+	}
+	assertDirectoryEmpty(t, attacker, "attacker directory received snapshot state")
+	assertDirectoryEmpty(t, movedParent, "private staging survived parent race")
+}
 
-	t.Run("force destination becomes symlink during vacuum", func(t *testing.T) {
-		victim := filepath.Join(dir, "racing-victim.db")
-		if err := os.WriteFile(victim, []byte("racing victim"), 0o600); err != nil {
-			t.Fatalf("write victim: %v", err)
+func assertDirectoryEmpty(t *testing.T, path, message string) {
+	t.Helper()
+	entries, err := os.ReadDir(path)
+	if err != nil || len(entries) != 0 {
+		t.Fatalf("%s: entries=%v error=%v", message, entries, err)
+	}
+}
+
+func testDirectDestinationSymlink(t *testing.T, ctx context.Context, dir, sourcePath string) {
+	t.Helper()
+	victim := filepath.Join(dir, "victim.db")
+	if err := os.WriteFile(victim, []byte("victim"), 0o600); err != nil {
+		t.Fatalf("write victim: %v", err)
+	}
+	destinationPath := filepath.Join(dir, "direct-link.db")
+	if err := os.Symlink(victim, destinationPath); err != nil {
+		t.Fatalf("Symlink: %v", err)
+	}
+	if err := SnapshotDatabaseReplace(ctx, sourcePath, destinationPath); err == nil {
+		t.Fatal("force snapshot accepted direct destination symlink")
+	}
+	if body, err := os.ReadFile(victim); err != nil || string(body) != "victim" {
+		t.Fatalf("destination symlink victim changed = %q, %v", body, err)
+	}
+}
+
+func testRacingDestinationSymlink(t *testing.T, ctx context.Context, dir, sourcePath string) {
+	t.Helper()
+	victim := filepath.Join(dir, "racing-victim.db")
+	if err := os.WriteFile(victim, []byte("racing victim"), 0o600); err != nil {
+		t.Fatalf("write victim: %v", err)
+	}
+	destinationPath := filepath.Join(dir, "racing-direct-link.db")
+	err := snapshotDatabaseWithOptions(ctx, sourcePath, destinationPath, true, snapshotHooks{AfterVacuum: func() {
+		if symlinkErr := os.Symlink(victim, destinationPath); symlinkErr != nil {
+			t.Fatalf("create racing destination symlink: %v", symlinkErr)
 		}
-		destinationPath := filepath.Join(dir, "racing-direct-link.db")
-		err := snapshotDatabaseWithOptions(ctx, sourcePath, destinationPath, true, snapshotHooks{
-			AfterVacuum: func() {
-				if symlinkErr := os.Symlink(victim, destinationPath); symlinkErr != nil {
-					t.Fatalf("create racing destination symlink: %v", symlinkErr)
-				}
-			},
-		})
-		if err == nil {
-			t.Fatal("force snapshot accepted a destination symlink created during vacuum")
-		}
-		if body, err := os.ReadFile(victim); err != nil || string(body) != "racing victim" {
-			t.Fatalf("racing destination symlink victim changed = %q, %v", body, err)
-		}
-	})
+	}})
+	if err == nil {
+		t.Fatal("force snapshot accepted a destination symlink created during vacuum")
+	}
+	if body, err := os.ReadFile(victim); err != nil || string(body) != "racing victim" {
+		t.Fatalf("racing destination symlink victim changed = %q, %v", body, err)
+	}
 }
 
 func TestSnapshotDatabasePublishesOnlyVerifiedStagedInode(t *testing.T) {
@@ -364,6 +400,11 @@ func TestSnapshotDatabasePublishesOnlyVerifiedStagedInode(t *testing.T) {
 	}
 	_ = db.Close()
 
+	runVerifiedStageCases(t, ctx, dir, sourcePath)
+}
+
+func runVerifiedStageCases(t *testing.T, ctx context.Context, dir, sourcePath string) {
+	t.Helper()
 	for _, test := range []struct {
 		name   string
 		attack func(t *testing.T, stageDir, stageFile, preservedPath string)
@@ -405,30 +446,31 @@ func TestSnapshotDatabasePublishesOnlyVerifiedStagedInode(t *testing.T) {
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			destinationPath := filepath.Join(dir, strings.ReplaceAll(test.name, " ", "-")+".db")
-			preservedPath := destinationPath + ".verified"
-			var stageDir, stageFile string
-			err := snapshotDatabaseWithOptions(ctx, sourcePath, destinationPath, false, snapshotHooks{
-				AfterStageCreated: func(dirPath, filePath string) {
-					stageDir, stageFile = dirPath, filePath
-				},
-				BeforePublish: func() {
-					test.attack(t, stageDir, stageFile, preservedPath)
-				},
-			})
-			if err != nil {
-				if _, statErr := os.Lstat(destinationPath); !errors.Is(statErr, os.ErrNotExist) {
-					t.Fatalf("failed publication left destination: %v (snapshot error: %v)", statErr, err)
-				}
-				return
-			}
-			if err := os.WriteFile(preservedPath, []byte("verified staged inode"), 0o600); err != nil {
-				t.Fatalf("write preserved verified inode: %v", err)
-			}
-			if body, readErr := os.ReadFile(destinationPath); readErr != nil || string(body) != "verified staged inode" {
-				t.Fatalf("published snapshot is not the verified staged inode: body=%q read=%v", body, readErr)
-			}
+			runVerifiedStageCase(t, ctx, dir, sourcePath, test.name, test.attack)
 		})
+	}
+}
+
+func runVerifiedStageCase(t *testing.T, ctx context.Context, dir, sourcePath, name string, attack func(*testing.T, string, string, string)) {
+	t.Helper()
+	destinationPath := filepath.Join(dir, strings.ReplaceAll(name, " ", "-")+".db")
+	preservedPath := destinationPath + ".verified"
+	var stageDir, stageFile string
+	err := snapshotDatabaseWithOptions(ctx, sourcePath, destinationPath, false, snapshotHooks{
+		AfterStageCreated: func(dirPath, filePath string) { stageDir, stageFile = dirPath, filePath },
+		BeforePublish:     func() { attack(t, stageDir, stageFile, preservedPath) },
+	})
+	if err != nil {
+		if _, statErr := os.Lstat(destinationPath); !errors.Is(statErr, os.ErrNotExist) {
+			t.Fatalf("failed publication left destination: %v (snapshot error: %v)", statErr, err)
+		}
+		return
+	}
+	if err := os.WriteFile(preservedPath, []byte("verified staged inode"), 0o600); err != nil {
+		t.Fatalf("write preserved verified inode: %v", err)
+	}
+	if body, readErr := os.ReadFile(destinationPath); readErr != nil || string(body) != "verified staged inode" {
+		t.Fatalf("published snapshot is not the verified staged inode: body=%q read=%v", body, readErr)
 	}
 }
 
@@ -448,49 +490,48 @@ func TestSnapshotDatabaseRejectsSourceDestinationHardLinkAlias(t *testing.T) {
 
 	for _, replace := range []bool{false, true} {
 		t.Run(map[bool]string{false: "no force", true: "force"}[replace], func(t *testing.T) {
-			destinationPath := filepath.Join(dir, map[bool]string{false: "alias.db", true: "force-alias.db"}[replace])
-			if err := os.Link(sourcePath, destinationPath); err != nil {
-				t.Fatalf("link source to destination: %v", err)
-			}
-			if err := snapshotDatabaseWithOptions(ctx, sourcePath, destinationPath, replace, snapshotHooks{}); err == nil || !strings.Contains(err.Error(), "same file") {
-				t.Fatalf("snapshot alias error = %v, want same-file rejection", err)
-			}
-			sourceInfo, sourceErr := os.Stat(sourcePath)
-			destinationInfo, destinationErr := os.Stat(destinationPath)
-			if sourceErr != nil || destinationErr != nil || !os.SameFile(sourceInfo, destinationInfo) {
-				t.Fatalf("alias changed after rejection: source=%v destination=%v", sourceErr, destinationErr)
-			}
+			assertSourceHardLinkAlias(t, ctx, sourcePath, dir, replace)
 		})
 	}
 
 	t.Run("force alias appears before publish", func(t *testing.T) {
-		destinationPath := filepath.Join(dir, "late-force-alias.db")
-		err := snapshotDatabaseWithOptions(ctx, sourcePath, destinationPath, true, snapshotHooks{
-			BeforePublish: func() {
-				if linkErr := os.Link(sourcePath, destinationPath); linkErr != nil {
-					t.Fatalf("create late source alias: %v", linkErr)
-				}
-			},
-		})
-		if err == nil || !strings.Contains(err.Error(), "same file") {
-			t.Fatalf("late force alias error = %v, want same-file rejection", err)
-		}
+		assertLateSourceHardLinkAlias(t, ctx, sourcePath, dir)
 	})
+}
+
+func assertSourceHardLinkAlias(t *testing.T, ctx context.Context, sourcePath, dir string, replace bool) {
+	t.Helper()
+	destinationPath := filepath.Join(dir, map[bool]string{false: "alias.db", true: "force-alias.db"}[replace])
+	if err := os.Link(sourcePath, destinationPath); err != nil {
+		t.Fatalf("link source to destination: %v", err)
+	}
+	if err := snapshotDatabaseWithOptions(ctx, sourcePath, destinationPath, replace, snapshotHooks{}); err == nil || !strings.Contains(err.Error(), "same file") {
+		t.Fatalf("snapshot alias error = %v, want same-file rejection", err)
+	}
+	sourceInfo, sourceErr := os.Stat(sourcePath)
+	destinationInfo, destinationErr := os.Stat(destinationPath)
+	if sourceErr != nil || destinationErr != nil || !os.SameFile(sourceInfo, destinationInfo) {
+		t.Fatalf("alias changed after rejection: source=%v destination=%v", sourceErr, destinationErr)
+	}
+}
+
+func assertLateSourceHardLinkAlias(t *testing.T, ctx context.Context, sourcePath, dir string) {
+	t.Helper()
+	destinationPath := filepath.Join(dir, "late-force-alias.db")
+	err := snapshotDatabaseWithOptions(ctx, sourcePath, destinationPath, true, snapshotHooks{BeforePublish: func() {
+		if linkErr := os.Link(sourcePath, destinationPath); linkErr != nil {
+			t.Fatalf("create late source alias: %v", linkErr)
+		}
+	}})
+	if err == nil || !strings.Contains(err.Error(), "same file") {
+		t.Fatalf("late force alias error = %v, want same-file rejection", err)
+	}
 }
 
 func TestSnapshotDatabaseRollsBackPostPublishFailures(t *testing.T) {
 	ctx := context.Background()
 	dir := t.TempDir()
-	sourcePath := filepath.Join(dir, "source.db")
-	db, err := sql.Open("sqlite", sourcePath)
-	if err != nil {
-		t.Fatalf("sql.Open: %v", err)
-	}
-	if _, err := db.ExecContext(ctx, `CREATE TABLE snapshot_rows(id INTEGER PRIMARY KEY)`); err != nil {
-		_ = db.Close()
-		t.Fatalf("create source: %v", err)
-	}
-	_ = db.Close()
+	sourcePath := createSnapshotRowsSource(t, ctx, dir)
 
 	for _, test := range []struct {
 		name     string
@@ -500,53 +541,85 @@ func TestSnapshotDatabaseRollsBackPostPublishFailures(t *testing.T) {
 		{name: "staging cleanup", injected: errors.New("injected staging cleanup failure")},
 		{name: "directory durability", injected: errors.New("injected directory sync failure")},
 	} {
-		if test.name == "staging cleanup" {
-			test.hooks.PostPublishCleanupError = test.injected
-		} else {
-			test.hooks.PostPublishSyncError = test.injected
-		}
 		for _, replace := range []bool{false, true} {
 			mode := map[bool]string{false: "no force", true: "force"}[replace]
 			t.Run(test.name+"/"+mode, func(t *testing.T) {
-				destinationPath := filepath.Join(dir, strings.ReplaceAll(test.name+"-"+mode, " ", "-")+".db")
-				var previousInfo os.FileInfo
-				if replace {
-					if err := os.WriteFile(destinationPath, []byte("existing"), 0o600); err != nil {
-						t.Fatalf("write force destination: %v", err)
-					}
-					previousInfo, err = os.Lstat(destinationPath)
-					if err != nil {
-						t.Fatalf("stat force destination: %v", err)
-					}
-				}
-				err := snapshotDatabaseWithOptions(ctx, sourcePath, destinationPath, replace, test.hooks)
-				if err == nil {
-					t.Fatal("injected post-publication failure returned nil")
-				}
-				if !errors.Is(err, test.injected) {
-					t.Fatalf("snapshot failed before injected post-publication hook: %v", err)
-				}
-				if !replace {
-					if _, statErr := os.Lstat(destinationPath); !errors.Is(statErr, os.ErrNotExist) {
-						t.Fatalf("no-force post-publication failure left destination: %v (snapshot error: %v)", statErr, err)
-					}
+				hooks := test.hooks
+				if test.name == "staging cleanup" {
+					hooks.PostPublishCleanupError = test.injected
 				} else {
-					restoredInfo, statErr := os.Lstat(destinationPath)
-					body, readErr := os.ReadFile(destinationPath)
-					if statErr != nil || readErr != nil || string(body) != "existing" || !os.SameFile(previousInfo, restoredInfo) {
-						t.Fatalf("force rollback did not restore exact destination: info=%v body=%q stat=%v read=%v snapshot=%v", restoredInfo, body, statErr, readErr, err)
-					}
+					hooks.PostPublishSyncError = test.injected
 				}
-				entries, readErr := os.ReadDir(dir)
-				if readErr != nil {
-					t.Fatalf("read destination directory: %v", readErr)
-				}
-				for _, entry := range entries {
-					if strings.HasPrefix(entry.Name(), ".omakiten-rollback-") || strings.HasPrefix(entry.Name(), ".omakiten-publish-") {
-						t.Fatalf("post-publication rollback left private link %q", entry.Name())
-					}
-				}
+				runPostPublishFailureCase(t, ctx, dir, sourcePath, replace, hooks, test.injected, test.name, mode)
 			})
+		}
+	}
+}
+
+func createSnapshotRowsSource(t *testing.T, ctx context.Context, dir string) string {
+	t.Helper()
+	sourcePath := filepath.Join(dir, "source.db")
+	db, err := sql.Open("sqlite", sourcePath)
+	if err != nil {
+		t.Fatalf("sql.Open: %v", err)
+	}
+	if _, err := db.ExecContext(ctx, `CREATE TABLE snapshot_rows(id INTEGER PRIMARY KEY)`); err != nil {
+		_ = db.Close()
+		t.Fatalf("create source: %v", err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatalf("close source: %v", err)
+	}
+	return sourcePath
+}
+
+func runPostPublishFailureCase(t *testing.T, ctx context.Context, dir, sourcePath string, replace bool, hooks snapshotHooks, injected error, name, mode string) {
+	t.Helper()
+	destinationPath := filepath.Join(dir, strings.ReplaceAll(name+"-"+mode, " ", "-")+".db")
+	var previousInfo os.FileInfo
+	if replace {
+		if err := os.WriteFile(destinationPath, []byte("existing"), 0o600); err != nil {
+			t.Fatalf("write force destination: %v", err)
+		}
+		var err error
+		previousInfo, err = os.Lstat(destinationPath)
+		if err != nil {
+			t.Fatalf("stat force destination: %v", err)
+		}
+	}
+	err := snapshotDatabaseWithOptions(ctx, sourcePath, destinationPath, replace, hooks)
+	if err == nil {
+		t.Fatal("injected post-publication failure returned nil")
+	}
+	if !errors.Is(err, injected) {
+		t.Fatalf("snapshot failed before injected post-publication hook: %v", err)
+	}
+	if replace {
+		assertRestoredSnapshotDestination(t, destinationPath, previousInfo, err)
+	} else if _, statErr := os.Lstat(destinationPath); !errors.Is(statErr, os.ErrNotExist) {
+		t.Fatalf("no-force post-publication failure left destination: %v (snapshot error: %v)", statErr, err)
+	}
+	assertNoPrivateSnapshotLinks(t, dir)
+}
+
+func assertRestoredSnapshotDestination(t *testing.T, path string, previousInfo os.FileInfo, snapshotErr error) {
+	t.Helper()
+	restoredInfo, statErr := os.Lstat(path)
+	body, readErr := os.ReadFile(path)
+	if statErr != nil || readErr != nil || string(body) != "existing" || !os.SameFile(previousInfo, restoredInfo) {
+		t.Fatalf("force rollback did not restore exact destination: info=%v body=%q stat=%v read=%v snapshot=%v", restoredInfo, body, statErr, readErr, snapshotErr)
+	}
+}
+
+func assertNoPrivateSnapshotLinks(t *testing.T, dir string) {
+	t.Helper()
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("read destination directory: %v", err)
+	}
+	for _, entry := range entries {
+		if strings.HasPrefix(entry.Name(), ".omakiten-rollback-") || strings.HasPrefix(entry.Name(), ".omakiten-publish-") {
+			t.Fatalf("post-publication rollback left private link %q", entry.Name())
 		}
 	}
 }
@@ -554,6 +627,19 @@ func TestSnapshotDatabaseRollsBackPostPublishFailures(t *testing.T) {
 func TestSnapshotDatabaseForceFinalizationIdentityAndDurability(t *testing.T) {
 	ctx := context.Background()
 	dir := t.TempDir()
+	sourcePath := createSnapshotRowsSourceWithRow(t, ctx, dir)
+
+	t.Run("destination substitution retains rollback inode", func(t *testing.T) {
+		testDestinationSubstitution(t, ctx, sourcePath)
+	})
+
+	t.Run("post-unlink sync failure leaves explicit publication", func(t *testing.T) {
+		testPostUnlinkSyncFailure(t, ctx, sourcePath)
+	})
+}
+
+func createSnapshotRowsSourceWithRow(t *testing.T, ctx context.Context, dir string) string {
+	t.Helper()
 	sourcePath := filepath.Join(dir, "source.db")
 	db, err := sql.Open("sqlite", sourcePath)
 	if err != nil {
@@ -563,159 +649,164 @@ func TestSnapshotDatabaseForceFinalizationIdentityAndDurability(t *testing.T) {
 		_ = db.Close()
 		t.Fatal(err)
 	}
-	_ = db.Close()
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return sourcePath
+}
 
-	t.Run("destination substitution retains rollback inode", func(t *testing.T) {
-		caseDir := t.TempDir()
-		destinationPath := filepath.Join(caseDir, "substituted.db")
-		previousAliasPath := filepath.Join(caseDir, "substituted-previous.db")
-		preservedPublicationPath := filepath.Join(caseDir, "substituted-publication.db")
-		attackerPath := filepath.Join(caseDir, "substituted-attacker.db")
-		if err := os.WriteFile(destinationPath, []byte("previous"), 0o600); err != nil {
-			t.Fatal(err)
+func testDestinationSubstitution(t *testing.T, ctx context.Context, sourcePath string) {
+	t.Helper()
+	caseDir := t.TempDir()
+	destinationPath := filepath.Join(caseDir, "substituted.db")
+	previousAliasPath := filepath.Join(caseDir, "substituted-previous.db")
+	preservedPublicationPath := filepath.Join(caseDir, "substituted-publication.db")
+	attackerPath := filepath.Join(caseDir, "substituted-attacker.db")
+	if err := os.WriteFile(destinationPath, []byte("previous"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Link(destinationPath, previousAliasPath); err != nil {
+		t.Fatalf("retain original inode test alias: %v", err)
+	}
+	if err := os.WriteFile(attackerPath, []byte("attacker"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	err := snapshotDatabaseWithOptions(ctx, sourcePath, destinationPath, true, snapshotHooks{BeforeRollbackLinkCleanup: func() {
+		if err := os.Rename(destinationPath, preservedPublicationPath); err != nil {
+			t.Fatalf("preserve publication before substitution: %v", err)
 		}
-		if err := os.Link(destinationPath, previousAliasPath); err != nil {
-			t.Fatalf("retain original inode test alias: %v", err)
+		if err := os.Rename(attackerPath, destinationPath); err != nil {
+			t.Fatalf("substitute snapshot destination: %v", err)
 		}
-		if err := os.WriteFile(attackerPath, []byte("attacker"), 0o600); err != nil {
-			t.Fatal(err)
-		}
-		err := snapshotDatabaseWithOptions(ctx, sourcePath, destinationPath, true, snapshotHooks{
-			BeforeRollbackLinkCleanup: func() {
-				if err := os.Rename(destinationPath, preservedPublicationPath); err != nil {
-					t.Fatalf("preserve publication before substitution: %v", err)
-				}
-				if err := os.Rename(attackerPath, destinationPath); err != nil {
-					t.Fatalf("substitute snapshot destination: %v", err)
-				}
-			},
-		})
-		var publicationErr *SnapshotPublicationError
-		if err == nil || !errors.As(err, &publicationErr) {
-			t.Fatalf("substituted finalization error = %v, want SnapshotPublicationError", err)
-		}
-		if publicationErr.IdentityAtPath {
-			t.Fatal("substituted destination reported the verified publication identity")
-		}
-		if publicationErr.PublishedIdentity == nil {
-			t.Fatal("substituted finalization omitted verified publication identity")
-		}
-		if count, queryErr := snapshotRowCount(preservedPublicationPath); queryErr != nil || count != 1 {
-			t.Fatalf("preserved publication rows = %d, %v", count, queryErr)
-		}
-		if body, readErr := os.ReadFile(destinationPath); readErr != nil || string(body) != "attacker" {
-			t.Fatalf("substituted destination changed = %q, %v", body, readErr)
-		}
-		var rollbackPath string
-		entries, readErr := os.ReadDir(caseDir)
-		if readErr != nil {
-			t.Fatal(readErr)
-		}
-		for _, entry := range entries {
-			if strings.HasPrefix(entry.Name(), ".omakiten-rollback-") {
-				rollbackPath = filepath.Join(caseDir, entry.Name())
-			}
-		}
-		if rollbackPath == "" {
-			t.Fatal("destination substitution removed the original rollback inode")
-		}
-		if err := os.WriteFile(rollbackPath, []byte("retained original inode"), 0o600); err != nil {
-			t.Fatal(err)
-		}
-		if body, readErr := os.ReadFile(previousAliasPath); readErr != nil || string(body) != "retained original inode" {
-			t.Fatalf("retained rollback is not exact original inode: body=%q read=%v", body, readErr)
-		}
-	})
+	}})
+	publicationErr := requireSnapshotPublicationError(t, err, "substituted finalization")
+	if publicationErr.IdentityAtPath {
+		t.Fatal("substituted destination reported the verified publication identity")
+	}
+	if count, queryErr := snapshotRowCount(preservedPublicationPath); queryErr != nil || count != 1 {
+		t.Fatalf("preserved publication rows = %d, %v", count, queryErr)
+	}
+	if body, readErr := os.ReadFile(destinationPath); readErr != nil || string(body) != "attacker" {
+		t.Fatalf("substituted destination changed = %q, %v", body, readErr)
+	}
+	rollbackPath := findPrivateLink(t, caseDir, ".omakiten-rollback-")
+	if err := os.WriteFile(rollbackPath, []byte("retained original inode"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if body, readErr := os.ReadFile(previousAliasPath); readErr != nil || string(body) != "retained original inode" {
+		t.Fatalf("retained rollback is not exact original inode: body=%q read=%v", body, readErr)
+	}
+}
 
-	t.Run("post-unlink sync failure leaves explicit publication", func(t *testing.T) {
-		caseDir := t.TempDir()
-		destinationPath := filepath.Join(caseDir, "post-unlink-sync.db")
-		previousAliasPath := filepath.Join(caseDir, "post-unlink-previous.db")
-		if err := os.WriteFile(destinationPath, []byte("previous"), 0o600); err != nil {
-			t.Fatal(err)
+func testPostUnlinkSyncFailure(t *testing.T, ctx context.Context, sourcePath string) {
+	t.Helper()
+	caseDir := t.TempDir()
+	destinationPath := filepath.Join(caseDir, "post-unlink-sync.db")
+	previousAliasPath := filepath.Join(caseDir, "post-unlink-previous.db")
+	if err := os.WriteFile(destinationPath, []byte("previous"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Link(destinationPath, previousAliasPath); err != nil {
+		t.Fatalf("retain original inode test alias: %v", err)
+	}
+	injected := errors.New("injected post-unlink directory sync failure")
+	err := snapshotDatabaseWithOptions(ctx, sourcePath, destinationPath, true, snapshotHooks{PostRollbackLinkSyncError: injected})
+	if !errors.Is(err, injected) {
+		t.Fatalf("post-unlink sync error = %v, want injected failure", err)
+	}
+	publicationErr := requireSnapshotPublicationError(t, err, "post-unlink sync")
+	if !publicationErr.IdentityAtPath {
+		t.Fatalf("post-unlink sync error did not retain publication: %+v", publicationErr)
+	}
+	if count, queryErr := snapshotRowCount(destinationPath); queryErr != nil || count != 1 {
+		t.Fatalf("post-unlink publication rows = %d, %v", count, queryErr)
+	}
+	if err := os.WriteFile(previousAliasPath, []byte("mutated original inode"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if body, readErr := os.ReadFile(destinationPath); readErr != nil || string(body) == "mutated original inode" {
+		t.Fatalf("post-unlink failure restored original inode: body=%q read=%v", body, readErr)
+	}
+	if strings.Contains(err.Error(), "before restoration") {
+		t.Fatalf("post-unlink failure falsely attempted old-inode restoration: %v", err)
+	}
+	if privatePath := findPrivateLinkOptional(t, caseDir, ".omakiten-rollback-"); privatePath != "" {
+		t.Fatalf("post-unlink sync failure retained nonexistent rollback state %q", privatePath)
+	}
+}
+
+func requireSnapshotPublicationError(t *testing.T, err error, label string) *SnapshotPublicationError {
+	t.Helper()
+	var publicationErr *SnapshotPublicationError
+	if err == nil || !errors.As(err, &publicationErr) {
+		t.Fatalf("%s error = %v, want SnapshotPublicationError", label, err)
+	}
+	if publicationErr.PublishedIdentity == nil {
+		t.Fatalf("%s omitted verified publication identity", label)
+	}
+	return publicationErr
+}
+
+func findPrivateLink(t *testing.T, dir, prefix string) string {
+	t.Helper()
+	path := findPrivateLinkOptional(t, dir, prefix)
+	if path == "" {
+		t.Fatalf("private link with prefix %q not found", prefix)
+	}
+	return path
+}
+
+func findPrivateLinkOptional(t *testing.T, dir, prefix string) string {
+	t.Helper()
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, entry := range entries {
+		if strings.HasPrefix(entry.Name(), prefix) {
+			return filepath.Join(dir, entry.Name())
 		}
-		if err := os.Link(destinationPath, previousAliasPath); err != nil {
-			t.Fatalf("retain original inode test alias: %v", err)
-		}
-		injected := errors.New("injected post-unlink directory sync failure")
-		err := snapshotDatabaseWithOptions(ctx, sourcePath, destinationPath, true, snapshotHooks{PostRollbackLinkSyncError: injected})
-		var publicationErr *SnapshotPublicationError
-		if !errors.Is(err, injected) || !errors.As(err, &publicationErr) || !publicationErr.IdentityAtPath {
-			t.Fatalf("post-unlink sync error = %v, publication=%+v", err, publicationErr)
-		}
-		if publicationErr.PublishedIdentity == nil {
-			t.Fatal("post-unlink failure omitted verified publication identity")
-		}
-		if count, queryErr := snapshotRowCount(destinationPath); queryErr != nil || count != 1 {
-			t.Fatalf("post-unlink publication rows = %d, %v", count, queryErr)
-		}
-		if err := os.WriteFile(previousAliasPath, []byte("mutated original inode"), 0o600); err != nil {
-			t.Fatal(err)
-		}
-		if body, readErr := os.ReadFile(destinationPath); readErr != nil || string(body) == "mutated original inode" {
-			t.Fatalf("post-unlink failure restored original inode: body=%q read=%v", body, readErr)
-		}
-		if strings.Contains(err.Error(), "before restoration") {
-			t.Fatalf("post-unlink failure falsely attempted old-inode restoration: %v", err)
-		}
-		entries, readErr := os.ReadDir(caseDir)
-		if readErr != nil {
-			t.Fatal(readErr)
-		}
-		for _, entry := range entries {
-			if strings.HasPrefix(entry.Name(), ".omakiten-rollback-") {
-				t.Fatalf("post-unlink sync failure retained nonexistent rollback state %q", entry.Name())
-			}
-		}
-	})
+	}
+	return ""
 }
 
 func TestSnapshotDatabaseForceAndNoForcePublication(t *testing.T) {
 	ctx := context.Background()
 	dir := t.TempDir()
-	sourcePath := filepath.Join(dir, "source.db")
-	db, err := sql.Open("sqlite", sourcePath)
-	if err != nil {
-		t.Fatalf("sql.Open: %v", err)
-	}
-	if _, err := db.ExecContext(ctx, `CREATE TABLE snapshot_rows(id INTEGER PRIMARY KEY); INSERT INTO snapshot_rows VALUES (1)`); err != nil {
-		_ = db.Close()
-		t.Fatalf("create source: %v", err)
-	}
-	_ = db.Close()
+	sourcePath := createSnapshotRowsSourceWithRow(t, ctx, dir)
 	destinationPath := filepath.Join(dir, "existing.db")
 	if err := os.WriteFile(destinationPath, []byte("existing"), 0o600); err != nil {
 		t.Fatalf("write existing destination: %v", err)
 	}
+	assertNoForcePreservesDestination(t, ctx, sourcePath, destinationPath)
+	assertForcePublishesSnapshot(t, ctx, sourcePath, destinationPath, dir)
+}
+
+func assertNoForcePreservesDestination(t *testing.T, ctx context.Context, sourcePath, destinationPath string) {
+	t.Helper()
 	if err := SnapshotDatabase(ctx, sourcePath, destinationPath); err == nil {
 		t.Fatal("no-force snapshot replaced existing destination")
 	}
 	if body, err := os.ReadFile(destinationPath); err != nil || string(body) != "existing" {
 		t.Fatalf("no-force destination changed = %q, %v", body, err)
 	}
+}
+
+func assertForcePublishesSnapshot(t *testing.T, ctx context.Context, sourcePath, destinationPath, dir string) {
+	t.Helper()
 	previousAliasPath := filepath.Join(dir, "existing-previous.db")
 	if err := os.Link(destinationPath, previousAliasPath); err != nil {
 		t.Fatalf("retain existing destination test alias: %v", err)
 	}
 	publicationAliasPath := filepath.Join(dir, "existing-publication.db")
-	if err := snapshotDatabaseWithOptions(ctx, sourcePath, destinationPath, true, snapshotHooks{
-		BeforeRollbackLinkCleanup: func() {
-			if linkErr := os.Link(destinationPath, publicationAliasPath); linkErr != nil {
-				t.Fatalf("retain verified publication test alias: %v", linkErr)
-			}
-		},
-	}); err != nil {
+	if err := snapshotDatabaseWithOptions(ctx, sourcePath, destinationPath, true, snapshotHooks{BeforeRollbackLinkCleanup: func() {
+		if linkErr := os.Link(destinationPath, publicationAliasPath); linkErr != nil {
+			t.Fatalf("retain verified publication test alias: %v", linkErr)
+		}
+	}}); err != nil {
 		t.Fatalf("force snapshot: %v", err)
 	}
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		t.Fatalf("read snapshot directory: %v", err)
-	}
-	for _, entry := range entries {
-		if strings.HasPrefix(entry.Name(), ".omakiten-rollback-") || strings.HasPrefix(entry.Name(), ".omakiten-publish-") {
-			t.Fatalf("successful force snapshot left private link %q", entry.Name())
-		}
-	}
+	assertNoPrivateSnapshotLinks(t, dir)
 	snapshot, err := sql.Open("sqlite", destinationPath)
 	if err != nil {
 		t.Fatalf("open replaced snapshot: %v", err)

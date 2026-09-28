@@ -4,6 +4,11 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
+
+	"omakiten/internal/domain"
+	"omakiten/internal/tui/screenhost"
+	"omakiten/internal/tui/screens/board"
+	"omakiten/internal/tui/screens/commentdetail"
 )
 
 func ctrlK() tea.KeyMsg  { return tea.KeyMsg{Type: tea.KeyCtrlK} }
@@ -21,19 +26,34 @@ func TestCtrlKOpensPaletteFromBoard(t *testing.T) {
 	}
 }
 
+func TestCtrlKBlockedOnHomeWithoutActiveProject(t *testing.T) {
+	model, _ := newPickerModel(t)
+	model.project = domain.ProjectContext{}
+	model.top = topHome
+	next, _ := model.Update(ctrlK())
+	if got := next.(Model); got.paletteOpen {
+		t.Fatal("ctrl+k opened palette on Home without an active project")
+	}
+}
+
 func TestCtrlKBlockedWhileCommentScreenActive(t *testing.T) {
 	model, _ := newPickerModel(t)
-	model.commentScreenOpen = true
+	model.commentDetailScreen = commentdetail.New().Open(commentdetail.Payload{Comment: domain.Comment{ID: 1}})
+	model.screenStack = []screenhost.ID{screenhost.CommentDetail}
 	next, _ := model.Update(ctrlK())
 	got := next.(Model)
 	if got.paletteOpen {
-		t.Fatalf("ctrl+k opened palette despite commentScreenOpen=true")
+		t.Fatalf("ctrl+k opened palette despite active comment route")
 	}
 }
 
 func TestCtrlKBlockedWhileMoveModeActive(t *testing.T) {
 	model, _ := newPickerModel(t)
-	model.moveMode = true
+	model.tasks = []domain.Task{{ID: 1, BucketKey: "backlog"}}
+	model.workflow = domain.Workflow{Buckets: []domain.Bucket{{Key: "backlog"}}}
+	model.boardScreen = board.New()
+	model.boardScreen = model.boundBoardScreen()
+	model = pressRune(t, model, 'm')
 	next, _ := model.Update(ctrlK())
 	got := next.(Model)
 	if got.paletteOpen {
@@ -43,11 +63,11 @@ func TestCtrlKBlockedWhileMoveModeActive(t *testing.T) {
 
 func TestCtrlKBlockedWhileTaskScreenOpen(t *testing.T) {
 	model, _ := newPickerModel(t)
-	model.taskScreen = taskScreenView
+	model.screenStack = []screenhost.ID{screenhost.TaskDetail}
 	next, _ := model.Update(ctrlK())
 	got := next.(Model)
 	if got.paletteOpen {
-		t.Fatalf("ctrl+k opened palette despite taskScreen=view")
+		t.Fatalf("ctrl+k opened palette despite hosted Task Detail")
 	}
 }
 

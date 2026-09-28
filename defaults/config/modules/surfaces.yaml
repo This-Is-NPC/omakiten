@@ -1,0 +1,79 @@
+# Canonical surfaces table (70 operation.Service methods).
+# Shared by every kit via:
+#   surfaces:
+#     from: ./modules/surfaces.yaml
+#
+# Sibling of workflows: — not nested under workflow.operations (domain guards).
+# Product (60): cli/tui/mcp true. Wiring (10): all false + reason token.
+# Tokens are stored as-is; the catalog resolves them at display time.
+
+command.list: { cli: true, tui: true, mcp: true }
+command.resolve: { cli: true, tui: true, mcp: true }
+comment.add: { cli: true, tui: true, mcp: true }
+comment.delete: { cli: true, tui: true, mcp: true }
+comment.edit: { cli: true, tui: true, mcp: true }
+comment.list: { cli: true, tui: true, mcp: true }
+dependency.add: { cli: true, tui: true, mcp: true }
+dependency.list: { cli: true, tui: true, mcp: true }
+dependency.remove: { cli: true, tui: true, mcp: true }
+error.record: { cli: true, tui: true, mcp: true }
+insights.summary: { cli: true, tui: true, mcp: true }
+law.get: { cli: true, tui: true, mcp: true }
+law.list: { cli: true, tui: true, mcp: true }
+logs.list: { cli: true, tui: true, mcp: true }
+metrics.summary: { cli: true, tui: true, mcp: true }
+orphans.migrate: { cli: true, tui: true, mcp: true }
+persona.get: { cli: true, tui: true, mcp: true }
+persona.list: { cli: true, tui: true, mcp: true }
+plan.continue: { cli: true, tui: true, mcp: true }
+plan.create: { cli: true, tui: true, mcp: true }
+plan.delete: { cli: true, tui: true, mcp: true }
+plan.edit: { cli: true, tui: true, mcp: true }
+plan.list: { cli: true, tui: true, mcp: true }
+plan.show: { cli: true, tui: true, mcp: true }
+plan.task.assign: { cli: true, tui: true, mcp: true }
+plan.task.claim_next: { cli: true, tui: true, mcp: true }
+plan.task.unassign: { cli: true, tui: true, mcp: true }
+plan.wave.add: { cli: true, tui: true, mcp: true }
+plan.wave.remove: { cli: true, tui: true, mcp: true }
+plan.wave.rename: { cli: true, tui: true, mcp: true }
+plan.wave.reorder: { cli: true, tui: true, mcp: true }
+progress.record: { cli: true, tui: true, mcp: true }
+project.edit: { cli: true, tui: true, mcp: true }
+project.overview: { cli: true, tui: true, mcp: true }
+project.resume: { cli: true, tui: true, mcp: true }
+search: { cli: true, tui: true, mcp: true }
+skill.get: { cli: true, tui: true, mcp: true }
+skill.list: { cli: true, tui: true, mcp: true }
+solution.add: { cli: true, tui: true, mcp: true }
+solution.confirm: { cli: true, tui: true, mcp: true }
+solution.list_top: { cli: true, tui: true, mcp: true }
+tag.add: { cli: true, tui: true, mcp: true }
+tag.list: { cli: true, tui: true, mcp: true }
+tag.list_all: { cli: true, tui: true, mcp: true }
+tag.merge: { cli: true, tui: true, mcp: true }
+tag.remove: { cli: true, tui: true, mcp: true }
+task.archive: { cli: true, tui: true, mcp: true }
+task.assign: { cli: true, tui: true, mcp: true }
+task.continue: { cli: true, tui: true, mcp: true }
+task.create: { cli: true, tui: true, mcp: true }
+task.create_intent: { cli: true, tui: true, mcp: true }
+task.delete: { cli: true, tui: true, mcp: true }
+task.edit: { cli: true, tui: true, mcp: true }
+task.list: { cli: true, tui: true, mcp: true }
+task.transition: { cli: true, tui: true, mcp: true }
+task.unarchive: { cli: true, tui: true, mcp: true }
+task_activity.list: { cli: true, tui: true, mcp: true }
+template.list: { cli: true, tui: true, mcp: true }
+template.show: { cli: true, tui: true, mcp: true }
+workflow.show: { cli: true, tui: true, mcp: true }
+wiring.command_description: { cli: false, tui: false, mcp: false, reason: "${{intl:operations.denied.wiring}}" }
+wiring.selector: { cli: false, tui: false, mcp: false, reason: "${{intl:operations.denied.wiring}}" }
+wiring.set_now: { cli: false, tui: false, mcp: false, reason: "${{intl:operations.denied.wiring}}" }
+wiring.set_orphan_service: { cli: false, tui: false, mcp: false, reason: "${{intl:operations.denied.wiring}}" }
+wiring.set_project_selector: { cli: false, tui: false, mcp: false, reason: "${{intl:operations.denied.wiring}}" }
+wiring.set_settings: { cli: false, tui: false, mcp: false, reason: "${{intl:operations.denied.wiring}}" }
+wiring.set_snapshot: { cli: false, tui: false, mcp: false, reason: "${{intl:operations.denied.wiring}}" }
+wiring.settings_cache_prompts: { cli: false, tui: false, mcp: false, reason: "${{intl:operations.denied.wiring}}" }
+wiring.snapshot: { cli: false, tui: false, mcp: false, reason: "${{intl:operations.denied.wiring}}" }
+wiring.synonyms: { cli: false, tui: false, mcp: false, reason: "${{intl:operations.denied.wiring}}" }

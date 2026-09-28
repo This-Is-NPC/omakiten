@@ -1,103 +1,51 @@
 package tui
 
 import (
-	"fmt"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/charmbracelet/lipgloss"
 
 	"omakiten/internal/config"
-	"omakiten/internal/tui/components/multilineform"
+	"omakiten/internal/tui/components/field"
+	"omakiten/internal/tui/components/screenkit"
+	"omakiten/internal/tui/screens/taskform"
 )
 
 // kicker renders a section label in dev-editorial style. Structural labels use
 // the secondary color so the primary accent stays reserved for active focus.
 func (s styles) kicker(label string) string {
-	return s.info.Render("// " + strings.ToUpper(label))
+	return screenkit.Kicker(s.info, label)
 }
 
-// kickerFocused is the focused-panel variant: replaces `//` with `▸` and
-// flips to the primary accent. Used to mark which side of the task screen
-// owns navigation keys without painting the full panel border green.
-func (s styles) kickerFocused(label string) string {
-	return s.hintAccent.Render("▸ " + strings.ToUpper(label))
-}
+// multilineFormTheme bundles the styles the shared multiline field area needs
+// into the value type that field.RenderArea and Resize accept.
+//
+// The derivation itself lives in components/field, over the projected Styles
+// rather than over the root's private fields, so a fixture and the running app
+// build the same chrome from the same function. What stays here is only the
+// projection this host hands it.
+func (s styles) multilineFormTheme() field.Theme { return field.Multiline(s.kit) }
 
-// kickerCount renders `// LABEL · N` — kicker with a trailing count.
-func (s styles) kickerCount(label string, count int) string {
-	return s.info.Render(fmt.Sprintf("// %s · %d", strings.ToUpper(label), count))
-}
+// taskEditTheme is the same story one size up: the task form's chrome, derived
+// by components/field from the styles a screen is allowed to see.
+func (s styles) taskEditTheme() taskform.Theme { return field.Form(s.kit) }
 
-// kickerCountFocused is the focused-panel variant of kickerCount.
-func (s styles) kickerCountFocused(label string, count int) string {
-	return s.hintAccent.Render(fmt.Sprintf("▸ %s · %d", strings.ToUpper(label), count))
-}
-
-// metaRow renders a definition-list row: `// LABEL` (kicker) + value, the label
-// padded to labelWidth so values align across multiple rows.
-func (s styles) metaRow(label, value string, labelWidth int) string {
-	rendered := "// " + strings.ToUpper(label)
-	pad := labelWidth - lipgloss.Width(rendered)
-	if pad < 1 {
-		pad = 1
-	}
-	return s.info.Render(rendered) + strings.Repeat(" ", pad) + value
-}
-
-// badgeForColor returns the lipgloss style that paints a config-driven
-// badge (priority, severity) in the requested theme color. The accepted
-// tokens are the four theme semantic names — `error`, `warning`,
-// `success`, `info` — so config.{priorities,severities}[].color stays
-// a stable enum and theme authors only have to edit palette tokens in
-// one place. Unknown / empty colors fall back to the neutral info
-// badge so the renderer never emits an unstyled pill.
-func (s styles) badgeForColor(color string) lipgloss.Style {
-	switch strings.ToLower(strings.TrimSpace(color)) {
-	case "error":
-		return s.badgeHigh
-	case "warning":
-		return s.badgeFix
-	case "success":
-		return s.badgeNormal
-	case "info":
-		return s.badgeInfo
-	}
-	return s.badgeInfo
-}
-
-// kanbanColumnSized returns the kanban-column style sized to the given
-// inner width and (optional) viewport budget. innerHeight is the number
-// of rows the box should occupy on screen — pass 0 to keep the
-// content-sized default. Centralising the policy here means every
-// card-in-column surface (board lanes, settings entity grid) closes its
-// bottom border on the same row regardless of how many cards fit.
-func (s styles) kanbanColumnSized(innerWidth, innerHeight int) lipgloss.Style {
-	style := s.kanbanColumn.Width(innerWidth)
-	if innerHeight > 0 {
-		style = style.Height(innerHeight)
-	}
-	return style
-}
-
-// multilineFormTheme bundles the styles the shared multiline-form leaf
-// needs into the value type that components/multilineform.Render and
-// Resize accept. One canonical theme drives the task description, the
-// inline comment-add modal, and the comment-edit overlay so the three
-// surfaces render with identical chrome — the prior split between
-// `multilineInput` (Padding 0,2 / neutral border default) and
-// `commentInput` (Padding 0,1 / always-accent border) caused subtle
-// visual drift between forms and was the trigger for the unification.
-func (s styles) multilineFormTheme() multilineform.Theme {
-	return multilineform.Theme{
-		Border:       s.formMultiline,
-		BorderActive: s.hintAccent.GetForeground(),
-		Cursor:       s.cursor,
-	}
-}
+// Status messages share one terminal boundary. Keep the visible copy to one
+// logical line and at most maxStatusTextCells cells. The secondary rune bound
+// is deliberately finite so combining marks and other zero-width input cannot
+// bypass the visible-cell cap and grow the rendered status without limit.
+const (
+	maxStatusTextCells = 240
+	maxStatusTextRunes = 2 * maxStatusTextCells
+)
 
 // statusBadge renders a status message as `[INFO] msg` or `[ERROR] msg` based
-// on a content heuristic. Replaces italic-on-secondary status rendering.
+// on a content heuristic. Untrusted producer text is made safe and bounded
+// before it can influence either classification or styling.
 func (s styles) statusBadge(msg string) string {
+	msg = safeStatusText(msg)
 	if msg == "" {
 		return ""
 	}
@@ -121,6 +69,30 @@ func (s styles) statusBadge(msg string) string {
 	return tagStyle.Render("["+level+"]") + " " + s.muted.Render(msg)
 }
 
+func safeStatusText(msg string) string {
+	// Preserve word boundaries for control whitespace before Sanitize removes
+	// controls. Sequence introducers are deliberately left intact so ANSI/OSC
+	// stripping still consumes their payloads as a unit.
+	msg = strings.Map(func(r rune) rune {
+		if unicode.IsControl(r) && unicode.IsSpace(r) {
+			return ' '
+		}
+		return r
+	}, msg)
+	msg = strings.Join(strings.Fields(screenkit.Sanitize(msg)), " ")
+	if utf8.RuneCountInString(msg) > maxStatusTextRunes {
+		kept := 0
+		for index := range msg {
+			if kept == maxStatusTextRunes-1 {
+				msg = msg[:index] + "…"
+				break
+			}
+			kept++
+		}
+	}
+	return screenkit.Truncate(msg, maxStatusTextCells)
+}
+
 type styles struct {
 	title           lipgloss.Style
 	nav             lipgloss.Style
@@ -132,21 +104,18 @@ type styles struct {
 	// textarea/textinput. Set Foreground=primary so the cursor.View()
 	// reverse-pass renders as a primary-bg block over a primary-fg char,
 	// guaranteeing visibility regardless of the surrounding line style.
-	cursor             lipgloss.Style
-	border             lipgloss.Style
-	kanbanColumn       lipgloss.Style
-	card               lipgloss.Style
-	cardSelected       lipgloss.Style
-	entityCard         lipgloss.Style
-	entityCardSelected lipgloss.Style
-	marker             lipgloss.Style
-	separator          lipgloss.Style
-	empty              lipgloss.Style
-	input              lipgloss.Style
+	cursor       lipgloss.Style
+	border       lipgloss.Style
+	card         lipgloss.Style
+	cardSelected lipgloss.Style
+	marker       lipgloss.Style
+	separator    lipgloss.Style
+	empty        lipgloss.Style
+	input        lipgloss.Style
 	// formMultiline is the bordered chrome shared by every multi-line
 	// textarea form — task description, inline comment-add, comment-edit
 	// overlay. Width and Height are intentionally not preset: the
-	// components/multilineform leaf overrides both per-call from the
+	// field area leaf overrides both per-call from the
 	// live terminal geometry, so baking them in here would either be
 	// shadowed (silent dead state) or surface as a stale override on
 	// resize.
@@ -168,10 +137,10 @@ type styles struct {
 	hintTrick    lipgloss.Style
 	hintToolCall lipgloss.Style
 	muted        lipgloss.Style
-	info          lipgloss.Style
-	success       lipgloss.Style
-	warning       lipgloss.Style
-	error         lipgloss.Style
+	info         lipgloss.Style
+	success      lipgloss.Style
+	warning      lipgloss.Style
+	error        lipgloss.Style
 
 	badgeHigh        lipgloss.Style
 	badgeNormal      lipgloss.Style
@@ -191,6 +160,11 @@ type styles struct {
 	// them in board/table/graph. Strikethrough doubles as a redundant cue
 	// for users with limited color contrast.
 	archivedCard lipgloss.Style
+
+	// kit is the screenkit projection, resolved once by newStyles. Read it
+	// through screenStyles; never assign it from anywhere else, or the two
+	// halves of the theme drift.
+	kit screenkit.Styles
 }
 
 func newStyles(theme config.Theme) styles {
@@ -225,7 +199,7 @@ func newStyles(theme config.Theme) styles {
 		return border
 	}
 
-	return styles{
+	resolved := styles{
 		title:       lipgloss.NewStyle().Bold(true).Foreground(primary),
 		nav:         lipgloss.NewStyle().Foreground(secondary),
 		activeNav:   lipgloss.NewStyle().Foreground(primary).Bold(true),
@@ -236,16 +210,13 @@ func newStyles(theme config.Theme) styles {
 		// so the activity column stays visually consistent — same column
 		// alignment, same width budget. The metadata cue comes from the text
 		// color, not a different border color.
-		systemEventCard:    lipgloss.NewStyle().Foreground(secondary).Border(lipgloss.NormalBorder()).BorderForeground(border).Padding(0, 1),
-		border:             lipgloss.NewStyle().Foreground(border),
-		kanbanColumn:       lipgloss.NewStyle().Border(lipgloss.NormalBorder()).BorderForeground(border).Width(columnWidth).Padding(0, 0),
-		card:               lipgloss.NewStyle().Foreground(foreground).Border(lipgloss.NormalBorder()).BorderForeground(border).Padding(0, 1).Width(cardBoxWidth),
-		cardSelected:       lipgloss.NewStyle().Foreground(foreground).Bold(true).Border(lipgloss.NormalBorder()).BorderForeground(primary).Padding(0, 1).Width(cardBoxWidth),
-		entityCard:         lipgloss.NewStyle().Foreground(foreground).Border(lipgloss.NormalBorder()).BorderForeground(border).Padding(0, 1).Width(cardBoxWidth),
-		entityCardSelected: lipgloss.NewStyle().Foreground(foreground).Bold(true).Border(lipgloss.NormalBorder()).BorderForeground(primary).Padding(0, 1).Width(cardBoxWidth),
-		marker:             lipgloss.NewStyle().Foreground(primary).Bold(true),
-		separator:          lipgloss.NewStyle().Foreground(border),
-		empty:              lipgloss.NewStyle().Foreground(border).Width(columnWidth).Align(lipgloss.Center),
+		systemEventCard: lipgloss.NewStyle().Foreground(secondary).Border(lipgloss.NormalBorder()).BorderForeground(border).Padding(0, 1),
+		border:          lipgloss.NewStyle().Foreground(border),
+		card:            lipgloss.NewStyle().Foreground(foreground).Border(lipgloss.NormalBorder()).BorderForeground(border).Padding(0, 1).Width(cardBoxWidth),
+		cardSelected:    lipgloss.NewStyle().Foreground(foreground).Bold(true).Border(lipgloss.NormalBorder()).BorderForeground(primary).Padding(0, 1).Width(cardBoxWidth),
+		marker:          lipgloss.NewStyle().Foreground(primary).Bold(true),
+		separator:       lipgloss.NewStyle().Foreground(border),
+		empty:           lipgloss.NewStyle().Foreground(border).Width(columnWidth).Align(lipgloss.Center),
 		// Default border color is the muted `border` token; the form
 		// helpers in render_task.go opt-in to the `primary` accent only
 		// when their field is focused. Without this default, every input
@@ -253,7 +224,7 @@ func newStyles(theme config.Theme) styles {
 		// user reported as confusing — the eye lost which field was the
 		// active one.
 		input: lipgloss.NewStyle().Foreground(foreground).Border(lipgloss.NormalBorder()).BorderForeground(border).Padding(0, 2),
-		// formMultiline holds the neutral-border defaults; multilineform.Render
+		// formMultiline holds the neutral-border defaults; field.RenderArea
 		// swaps BorderForeground to the accent color when its `focused` flag
 		// is true. Padding(0, 2) matches the surrounding panel chrome so the
 		// inner textarea inherits the same horizontal rhythm as the rest of
@@ -295,5 +266,77 @@ func newStyles(theme config.Theme) styles {
 		badgeTokenRed:    lipgloss.NewStyle().Background(errorColor).Foreground(badgeFg).Padding(0, 1).Bold(true),
 
 		archivedCard: lipgloss.NewStyle().Foreground(border).Strikethrough(true).Border(lipgloss.NormalBorder()).BorderForeground(border).Padding(0, 1).Width(cardBoxWidth),
+	}
+	// Project once, here, rather than on every read. The screen contract is
+	// forty-odd styles wide and is now read per BADGE, not just per frame, so
+	// rebuilding it on each call would put a struct copy of the whole theme on
+	// every pill a board column paints.
+	resolved.kit = resolved.project()
+	return resolved
+}
+
+// ScreenStyles resolves a theme straight into the screenkit contract for hosts
+// that paint components outside the TUI event loop. The dev-only component
+// gallery (cmd/okt-gallery) is the only caller: it renders each component
+// against the shipped theme rather than a fixture palette.
+//
+// screenStyles itself stays unexported because a screen must reach its styles
+// through the Kit its host hands it — this entry point exists for hosts with no
+// root Model to build a Kit from, not as a second door into the same styles.
+func ScreenStyles(theme config.Theme) screenkit.Styles {
+	return newStyles(theme).screenStyles()
+}
+
+// screenStyles is the resolved theme projected onto the subset an extracted
+// screen is allowed to paint with, computed once by newStyles.
+func (s styles) screenStyles() screenkit.Styles { return s.kit }
+
+// project builds that projection. It is the ONE place root styles cross into
+// screenkit, so a screen can never reach a style the contract does not grant.
+// Called only by newStyles — everything else reads the memoised result.
+func (s styles) project() screenkit.Styles {
+	return screenkit.Styles{
+		Panel:            s.panel,
+		Border:           s.border,
+		Separator:        s.separator,
+		Marker:           s.marker,
+		Info:             s.info,
+		Hint:             s.hint,
+		HintAccent:       s.hintAccent,
+		HintBox:          s.hintBox,
+		Empty:            s.empty,
+		Error:            s.error,
+		Warning:          s.warning,
+		Success:          s.success,
+		BadgeInfo:        s.badgeInfo,
+		BadgeLow:         s.badgeLow,
+		BadgeNormal:      s.badgeNormal,
+		BadgeHigh:        s.badgeHigh,
+		BadgeBlocker:     s.badgeBlocker,
+		BadgeComment:     s.badgeComment,
+		BadgeSubtask:     s.badgeSubtask,
+		BadgeScope:       s.badgeScope,
+		BadgeFix:         s.badgeFix,
+		BadgeActive:      s.badgeActive,
+		TokenGreen:       s.badgeTokenGreen,
+		TokenYellow:      s.badgeTokenYellow,
+		TokenRed:         s.badgeTokenRed,
+		Card:             s.card,
+		CardSelected:     s.cardSelected,
+		CardArchived:     s.archivedCard,
+		CommentCard:      s.commentCard,
+		SystemEventCard:  s.systemEventCard,
+		Input:            s.input,
+		FormMultiline:    s.formMultiline,
+		Cursor:           s.cursor,
+		Nav:              s.nav,
+		ActiveNav:        s.activeNav,
+		CategoryTask:     s.hintTasks,
+		CategoryComment:  s.hintComment,
+		CategoryPlan:     s.hintPlan,
+		CategoryAudit:    s.hintAudit,
+		CategoryGuard:    s.hintGuard,
+		CategoryTrick:    s.hintTrick,
+		CategoryToolCall: s.hintToolCall,
 	}
 }

@@ -9,12 +9,68 @@ linters:
   default: none
   enable:
     - depguard
+    - funlen
+    - gocritic
+    - gocognit
     - govet
     - ineffassign
+    - nolintlint
     - staticcheck
     - unused
 
   settings:
+    # gocritic is enabled for ONE reason: ruleguard, which is how this repo
+    # writes a custom lint rule without building a golangci-lint plugin binary.
+    # Its own checks stay off — `enabled-checks` is an allowlist when
+    # `disable-all` is set, so nothing arrives that was not asked for. Measured
+    # before enabling: gocritic's default set reports 21 findings repo-wide (2
+    # under internal/tui/components and cmd/okt-gallery), all appendAssign.
+    # Those are real and worth fixing, but they are not this rule's business and
+    # folding them in would have made the 523-finding baseline move for an
+    # unrelated reason.
+    gocritic:
+      disable-all: true
+      enabled-checks:
+        - ruleguard
+      settings:
+        ruleguard:
+          rules: "${base-path}/rules/rules.go"
+
+    # Cognitive complexity, not cyclomatic. The two disagree on this codebase and
+    # cognitive is the one telling the truth: `hostedScreen` scores 35 cyclomatic
+    # and 17 cognitive (a flat switch mapping an id to a screen — tedious, not
+    # hard), while `prepareExactGeneration` scores 36 cyclomatic and 78 cognitive
+    # (a retry loop around a database snapshot, nested five deep, with rollback
+    # and validation inside). Cyclomatic ranks the harmless one as nearly three
+    # times worse. Cognitive also does not charge Go for `if err != nil`, which
+    # is the standard reason Go projects have to loosen a cyclomatic threshold.
+    #
+    # 15 is the SonarSource default — the same provenance 10 has for McCabe.
+    # NOTE: min-complexity reports functions ABOVE it, so this rejects 16+.
+    gocognit:
+      min-complexity: 15
+
+    # funlen exists to close the escape hatch from gocognit: flattening a nested
+    # function into one long sequential blob lowers cognitive complexity while
+    # making the code worse. A 200-line blob is 100+ statements, so 40 catches it.
+    #
+    # `lines` is off deliberately. The longest functions here are DATA — the
+    # gallery catalog literal is 277 lines and one statement, the arch gates'
+    # case tables are over 100. Counting lines would force splitting tables,
+    # which is the cosmetic churn this pair is meant to prevent.
+    funlen:
+      lines: -1
+      statements: 40
+
+    # With no allowlist, `//nolint` is the leak. There are zero in the repo today
+    # and these settings keep it that way: a bare directive is rejected, one
+    # without a reason is rejected, and one that stops matching anything is
+    # rejected — the same expiry the arch-test allowlists carry.
+    nolintlint:
+      require-explanation: true
+      require-specific: true
+      allow-unused: false
+
     depguard:
       rules:
         domain-is-pure:
@@ -34,7 +90,7 @@ linters:
               desc: domain is the inner core; depending on adapters inverts the hex direction
             - pkg: omakiten/internal/mcp
               desc: domain is the inner core; depending on adapters inverts the hex direction
-            - pkg: omakiten/internal/agent
+            - pkg: omakiten/internal/operation
               desc: domain is the inner core; depending on adapters inverts the hex direction
             - pkg: omakiten/internal/app
               desc: domain is the inner core; depending on application services inverts the hex direction
@@ -56,7 +112,7 @@ linters:
               desc: app talks to adapters via ports declared in app/ports.go
             - pkg: omakiten/internal/mcp
               desc: app talks to adapters via ports declared in app/ports.go
-            - pkg: omakiten/internal/agent
+            - pkg: omakiten/internal/operation
               desc: app talks to adapters via ports declared in app/ports.go
             - pkg: omakiten/internal/agentruntime
               desc: app cannot import its composition root
@@ -76,7 +132,7 @@ linters:
               desc: sqlite must not depend on a sibling adapter
             - pkg: omakiten/internal/mcp
               desc: sqlite must not depend on a sibling adapter
-            - pkg: omakiten/internal/agent
+            - pkg: omakiten/internal/operation
               desc: sqlite must not depend on a sibling adapter
             - pkg: omakiten/internal/agentruntime
               desc: sqlite must not depend on the composition root
@@ -96,7 +152,7 @@ linters:
               desc: configstore must not depend on a sibling adapter
             - pkg: omakiten/internal/mcp
               desc: configstore must not depend on a sibling adapter
-            - pkg: omakiten/internal/agent
+            - pkg: omakiten/internal/operation
               desc: configstore must not depend on a sibling adapter
             - pkg: omakiten/internal/agentruntime
               desc: configstore must not depend on the composition root
@@ -109,11 +165,61 @@ linters:
             - pkg: omakiten/internal/tui
               desc: agentruntime is the headless agent/MCP composition root; TUI delivery must stay behind neutral hook actions and sender ports
 
+        cli-does-not-import-app:
+          list-mode: lax
+          files:
+            - "**/internal/cli/**"
+          deny:
+            - pkg: omakiten/internal/app
+              desc: cli consumes operation.Service; importing application services bypasses the facade
+
+        tui-does-not-import-app:
+          list-mode: lax
+          files:
+            - "**/internal/tui/**"
+          deny:
+            - pkg: omakiten/internal/app
+              desc: tui consumes operation.Service; importing application services bypasses the facade
+
+        screens-do-not-import-operation:
+          list-mode: lax
+          files:
+            - "**/internal/tui/screens/**"
+          deny:
+            - pkg: omakiten/internal/operation
+              desc: screens talk to the TUI host; only internal/tui (the facade) may import operation
+
+        screens-do-not-import-lipgloss:
+          list-mode: lax
+          files:
+            - "**/internal/tui/screens/**"
+          deny:
+            - pkg: github.com/charmbracelet/lipgloss
+              desc: screens receive styles and measurements through internal/tui/components/screenkit
+
+        components-purity:
+          list-mode: lax
+          files:
+            - "**/internal/tui/components/**"
+          deny:
+            - pkg: omakiten/internal/config
+              desc: components are presentation primitives and must not depend on configuration
+            - pkg: omakiten/internal/domain
+              desc: components are presentation primitives and must not depend on domain models
+            - pkg: omakiten/internal/app
+              desc: components are presentation primitives and must not depend on application services
+            - pkg: omakiten/internal/sqlite
+              desc: components are presentation primitives and must not depend on storage adapters
+
   exclusions:
     rules:
       - path: _test\.go$
         linters:
           - depguard
+        # Deliberate test-file policy: screen tests may import lipgloss to
+        # measure rendered output and configure deterministic render probes;
+        # they do not ship screen code or paint production UI. The production
+        # screen rule above is mirrored by internal/arch's non-test scanner.
       # staticcheck QF1012 is a quickfix suggestion (`fmt.Fprintf(&b, ...)`
       # over `b.WriteString(fmt.Sprintf(...))`). The two forms are
       # equivalent; the WriteString shape reads cleaner in the
@@ -123,3 +229,23 @@ linters:
         text: "QF1012"
         linters:
           - staticcheck
+
+# Three golangci-lint defaults hide findings, and all three bite hardest exactly
+# when a new linter is being adopted — when the count is the thing you are
+# steering by. Each was hit while measuring this repo:
+#
+#   max-issues-per-linter (50) capped funlen at "50 issues" when the real number
+#   was 150, which reads as almost-done rather than barely-started.
+#
+#   max-same-issues (3) truncates per message text, and a complexity linter emits
+#   near-identical messages by design.
+#
+#   uniq-by-line (true) drops a finding when another linter already reported that
+#   line. gocognit and funlen land on the same line — the function declaration —
+#   so enabling both hid 118 of funlen's 150. They would have reappeared one at a
+#   time as the cognitive findings were fixed, which looks like the work growing
+#   back.
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0
+  uniq-by-line: false

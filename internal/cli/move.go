@@ -2,12 +2,10 @@ package cli
 
 import (
 	"context"
-	"strconv"
 
 	"github.com/spf13/cobra"
 
-	"omakiten/internal/app"
-	"omakiten/internal/domain"
+	"omakiten/internal/operation"
 )
 
 func newMoveCommand(opts *runtimeOptions) *cobra.Command {
@@ -19,9 +17,9 @@ func newMoveCommand(opts *runtimeOptions) *cobra.Command {
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runJSON(cmd, func(ctx context.Context) (any, error) {
-				taskID, err := strconv.ParseInt(args[0], 10, 64)
+				taskID, err := parseTaskID(args[0])
 				if err != nil {
-					return nil, domain.NewError(domain.ErrValidation, opts.t("cli.err.task_id_not_numeric"), map[string]any{"value": args[0]})
+					return nil, err
 				}
 
 				rt, err := opts.open(ctx, true)
@@ -30,16 +28,11 @@ func newMoveCommand(opts *runtimeOptions) *cobra.Command {
 				}
 				defer rt.close()
 
-				project, err := opts.resolveProject(ctx, rt.store)
-				if err != nil {
-					return nil, err
-				}
-
-				task, err := app.NewTaskServiceFromStore(rt.store, rt.activeRegistry(), rt.activeSnapshot()).Move(ctx, project, taskID, to)
-				if err != nil {
-					return nil, err
-				}
-				return map[string]any{"project": project, "task": task}, nil
+				return rt.operationService().MoveTask(ctx, operation.MoveTaskInput{
+					ProjectSelector: opts.projectSelector(),
+					TaskID:          taskID,
+					BucketKey:       to,
+				})
 			})
 		},
 	}

@@ -29,19 +29,7 @@ func TestTemplateServiceSetDefaultRewritesFrontmatter(t *testing.T) {
 	configPath := filepath.Join(configDir, "omakiten.yaml")
 
 	templatesDir := filepath.Join(tmp, "templates")
-	if err := os.MkdirAll(templatesDir, 0o755); err != nil {
-		t.Fatalf("MkdirAll(templates) = %v", err)
-	}
-	// Two task templates: alpha (currently bound for project demo) and beta
-	// (no binding yet). After SetDefault on beta, alpha must lose the binding.
-	alphaPath := filepath.Join(templatesDir, "alpha.md")
-	betaPath := filepath.Join(templatesDir, "beta.md")
-	if err := os.WriteFile(alphaPath, []byte("---\nname: Alpha\nentity: task\ndefault: task\nproject: demo\n---\n\nbody alpha\n"), 0o644); err != nil {
-		t.Fatalf("WriteFile(alpha) = %v", err)
-	}
-	if err := os.WriteFile(betaPath, []byte("---\nname: Beta\nentity: task\n---\n\nbody beta\n"), 0o644); err != nil {
-		t.Fatalf("WriteFile(beta) = %v", err)
-	}
+	alphaPath, betaPath := writeDefaultTemplateFiles(t, templatesDir)
 
 	bundle, _ := testfixtures.LoadBundle(t, "with_project.yaml")
 	cs := configstore.New()
@@ -57,7 +45,11 @@ func TestTemplateServiceSetDefaultRewritesFrontmatter(t *testing.T) {
 
 	editor := app.NewBundleEditor(cs, configPath)
 	// Seed-import so subsequent ApplyWithFiles round-trips succeed.
-	if _, err := editor.Apply(ctx, nil); err != nil {
+	bundle, _, sourceHashes, err := editor.LoadPlan()
+	if err != nil {
+		t.Fatalf("editor.LoadPlan(seed) = %v", err)
+	}
+	if _, err := editor.Apply(ctx, bundle, sourceHashes, nil); err != nil {
 		t.Fatalf("editor.Apply(seed) = %v", err)
 	}
 
@@ -66,17 +58,33 @@ func TestTemplateServiceSetDefaultRewritesFrontmatter(t *testing.T) {
 		t.Fatalf("SetDefault(beta) = %v", err)
 	}
 
+	assertDefaultTemplateFiles(t, alphaPath, betaPath)
+}
+
+func writeDefaultTemplateFiles(t *testing.T, dir string) (string, string) {
+	t.Helper()
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatalf("MkdirAll(templates) = %v", err)
+	}
+	alphaPath := filepath.Join(dir, "alpha.md")
+	betaPath := filepath.Join(dir, "beta.md")
+	if err := os.WriteFile(alphaPath, []byte("---\nname: Alpha\nentity: task\ndefault: task\nproject: demo\n---\n\nbody alpha\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile(alpha) = %v", err)
+	}
+	if err := os.WriteFile(betaPath, []byte("---\nname: Beta\nentity: task\n---\n\nbody beta\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile(beta) = %v", err)
+	}
+	return alphaPath, betaPath
+}
+
+func assertDefaultTemplateFiles(t *testing.T, alphaPath, betaPath string) {
 	betaBytes, err := os.ReadFile(betaPath)
 	if err != nil {
 		t.Fatalf("ReadFile(beta) = %v", err)
 	}
-	if !strings.Contains(string(betaBytes), "default: task") {
-		t.Fatalf("beta frontmatter missing default: task — got %q", betaBytes)
+	if !strings.Contains(string(betaBytes), "default: task") || !strings.Contains(string(betaBytes), "project: demo") {
+		t.Fatalf("beta frontmatter = %q, want default task and project demo", betaBytes)
 	}
-	if !strings.Contains(string(betaBytes), "project: demo") {
-		t.Fatalf("beta frontmatter missing project: demo — got %q", betaBytes)
-	}
-
 	alphaBytes, err := os.ReadFile(alphaPath)
 	if err != nil {
 		t.Fatalf("ReadFile(alpha) = %v", err)
@@ -117,7 +125,11 @@ func TestTemplateServiceSetDefaultClears(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = store.Close() })
 	editor := app.NewBundleEditor(cs, configPath)
-	if _, err := editor.Apply(ctx, nil); err != nil {
+	bundle, _, sourceHashes, err := editor.LoadPlan()
+	if err != nil {
+		t.Fatalf("editor.LoadPlan(seed) = %v", err)
+	}
+	if _, err := editor.Apply(ctx, bundle, sourceHashes, nil); err != nil {
 		t.Fatalf("editor.Apply(seed) = %v", err)
 	}
 

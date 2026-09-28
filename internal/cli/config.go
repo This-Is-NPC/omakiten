@@ -4,12 +4,14 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/spf13/cobra"
 
 	"omakiten/internal/config"
 	"omakiten/internal/domain"
+	"omakiten/internal/sqlite"
 )
 
 const updateDefaultsManualCommand = "okt config refresh-defaults"
@@ -17,6 +19,10 @@ const updateDefaultsManualCommand = "okt config refresh-defaults"
 func updateDefaultsManualCommandForConfig(configPath string) string {
 	if configPath == "" {
 		return updateDefaultsManualCommand
+	}
+	rootDir := config.ConfigRootFromYAMLPath(configPath)
+	if err := config.ValidateDefaultRefreshRoot(rootDir, configPath); err != nil {
+		return "okt setup"
 	}
 	return "okt --config " + shellQuoteArg(configPath) + " config refresh-defaults"
 }
@@ -142,68 +148,117 @@ func newConfigCommand(opts *runtimeOptions) *cobra.Command {
 		Use:   "config",
 		Short: opts.t("cli.config.short"),
 	}
+	cmd.AddCommand(newConfigValidateCommand(opts))
+	cmd.AddCommand(newConfigPresetsCommand(opts))
+	cmd.AddCommand(newConfigRefreshDefaultsCommand(opts))
+	cmd.AddCommand(newConfigSurfacesCommand(opts))
+	cmd.AddCommand(newConfigInitCommand(opts))
+	cmd.AddCommand(newConfigShowCommand(opts))
+	cmd.AddCommand(newConfigPathCommand(opts))
+	cmd.AddCommand(newConfigWhyCommand(opts))
+	cmd.AddCommand(newConfigDiffCommand(opts))
+	cmd.AddCommand(newConfigLanguageCommand(opts))
+	return cmd
+}
 
-	var validateMigrate bool
-	validate := &cobra.Command{
+func newConfigValidateCommand(opts *runtimeOptions) *cobra.Command {
+	var migrate bool
+	cmd := &cobra.Command{
 		Use:   "validate [path]",
 		Short: opts.t("cli.config.validate.short"),
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runJSON(cmd, func(context.Context) (any, error) {
-				path := ""
-				if len(args) > 0 {
-					path = args[0]
-				} else {
-					var err error
-					path, err = opts.resolvedConfigPath()
-					if err != nil {
-						return nil, err
-					}
-				}
-
-				if validateMigrate {
-					rootDir, err := opts.resolvedConfigRoot()
-					if err != nil {
-						return nil, err
-					}
-					// MigrateLayout + EnsureDefaultFiles are both
-					// idempotent and non-destructive on user-owned
-					// files (`migrateSchemaDefaults` is additive,
-					// `EnsureDefaultFiles` skips paths that already
-					// exist). Running them as part of the health check
-					// is the contract documented in #365 AC 1.
-					if err := config.MigrateLayout(rootDir); err != nil {
-						return nil, domain.NewError(domain.ErrConfigInvalid, t("cli.err.config_invalid"), buildValidateFailureDetails(path, err, nil))
-					}
-					if err := config.EnsureDefaultFiles(rootDir); err != nil {
-						return nil, domain.NewError(domain.ErrConfigInvalid, t("cli.err.config_invalid"), buildValidateFailureDetails(path, err, nil))
-					}
-				}
-
-				bundle, err := config.LoadBundle(path)
-				if err != nil {
-					if validateMigrate {
-						return nil, domain.NewError(domain.ErrConfigInvalid, t("cli.err.config_invalid"), buildValidateFailureDetails(path, err, nil))
-					}
-					return nil, domain.NewError(domain.ErrConfigInvalid, t("cli.err.config_invalid"), map[string]any{"path": path, "error": domain.SafeError(err)})
-				}
-				if validateMigrate && bundle.ActiveThemeErr != nil {
-					return nil, domain.NewError(domain.ErrConfigInvalid, t("cli.err.theme_invalid"), buildValidateFailureDetails(path, bundle.ActiveThemeErr, extractBundleWarnings(bundle)))
-				}
-				if validateMigrate {
-					return map[string]any{
-						"path":     path,
-						"errors":   []map[string]any{},
-						"warnings": extractBundleWarnings(bundle),
-					}, nil
-				}
-				return map[string]any{"path": path, "kit": bundle.Kit}, nil
-			})
+			return runConfigValidate(cmd, opts, args, migrate)
 		},
 	}
-	validate.Flags().BoolVar(&validateMigrate, "migrate", false, opts.t("cli.config.validate.flag.migrate"))
+	cmd.Flags().BoolVar(&migrate, "migrate", false, opts.t("cli.config.validate.flag.migrate"))
+	_ = cmd.Flags().MarkHidden("migrate")
+	return cmd
+}
 
-	presets := &cobra.Command{
+func runConfigValidate(cmd *cobra.Command, opts *runtimeOptions, args []string, migrate bool) error {
+	return runJSON(cmd, func(ctx context.Context) (any, error) {
+		path, err := validationConfigPath(opts, args)
+		if err != nil {
+			return nil, err
+		}
+		if migrate {
+			return runV030TransitionValidation(ctx, opts, path)
+		}
+		bundle, err := loadConfigForValidation(path)
+		if err != nil {
+			return nil, err
+		}
+		if bundle.ActiveThemeErr != nil {
+			return nil, domain.NewError(domain.ErrConfigInvalid, t("cli.err.theme_invalid"), buildValidateFailureDetails(path, bundle.ActiveThemeErr, extractBundleWarnings(bundle)))
+		}
+		return map[string]any{"path": path, "kit": bundle.Kit}, nil
+	})
+}
+
+func runV030TransitionValidation(ctx context.Context, opts *runtimeOptions, path string) (any, error) {
+	dbPath, err := opts.resolvedDBPath()
+	if err != nil {
+		return nil, err
+	}
+	if err := sqlite.ValidateV030ReleaseDatabase(ctx, dbPath); err != nil {
+		return nil, configValidationFailure(path, err)
+	}
+	configPath, err := validateV030ManagedConfigPath(path)
+	if err != nil {
+		return nil, configValidationFailure(path, err)
+	}
+	return map[string]any{
+		"path":       configPath,
+		"db_path":    dbPath,
+		"transition": "v0.30.0-to-current",
+		"errors":     []map[string]any{},
+		"warnings":   []string{},
+	}, nil
+}
+
+func validateV030ManagedConfigPath(path string) (string, error) {
+	absolutePath, err := filepath.Abs(path)
+	if err != nil {
+		return "", fmt.Errorf("config path is invalid: %w", err)
+	}
+	rootDir := config.ConfigRootFromYAMLPath(absolutePath)
+	configDir := filepath.Join(rootDir, "config")
+	if filepath.Dir(absolutePath) != configDir {
+		return "", fmt.Errorf("transition requires an official managed preset under %s", configDir)
+	}
+	base := filepath.Base(absolutePath)
+	if filepath.Ext(base) != ".yaml" {
+		return "", fmt.Errorf("transition requires an official managed preset under %s", configDir)
+	}
+	name := strings.TrimSuffix(base, filepath.Ext(base))
+	if _, ok := config.PresetByName(name); !ok || base != name+".yaml" {
+		return "", fmt.Errorf("transition requires one of the official managed presets: omakase.yaml, izakaya.yaml, kaiseki.yaml, shokunin.yaml")
+	}
+	return absolutePath, nil
+}
+
+func validationConfigPath(opts *runtimeOptions, args []string) (string, error) {
+	if len(args) > 0 {
+		return args[0], nil
+	}
+	return opts.resolvedConfigPath()
+}
+
+func loadConfigForValidation(path string) (config.Bundle, error) {
+	bundle, err := config.LoadBundle(path)
+	if err == nil {
+		return bundle, nil
+	}
+	return config.Bundle{}, configValidationFailure(path, err)
+}
+
+func configValidationFailure(path string, err error) error {
+	return domain.NewError(domain.ErrConfigInvalid, t("cli.err.config_invalid"), buildValidateFailureDetails(path, err, nil))
+}
+
+func newConfigPresetsCommand(opts *runtimeOptions) *cobra.Command {
+	return &cobra.Command{
 		Use:   "presets",
 		Short: opts.t("cli.config.presets.short"),
 		RunE: func(cmd *cobra.Command, _ []string) error {
@@ -212,7 +267,10 @@ func newConfigCommand(opts *runtimeOptions) *cobra.Command {
 			})
 		},
 	}
-	refreshDefaults := &cobra.Command{
+}
+
+func newConfigRefreshDefaultsCommand(opts *runtimeOptions) *cobra.Command {
+	return &cobra.Command{
 		Use:   "refresh-defaults",
 		Short: opts.t("cli.config.refresh_defaults.short"),
 		RunE: func(cmd *cobra.Command, _ []string) error {
@@ -258,17 +316,72 @@ func newConfigCommand(opts *runtimeOptions) *cobra.Command {
 			})
 		},
 	}
+}
 
-	cmd.AddCommand(validate)
-	cmd.AddCommand(presets)
-	cmd.AddCommand(refreshDefaults)
-	cmd.AddCommand(newConfigInitCommand(opts))
-	cmd.AddCommand(newConfigShowCommand(opts))
-	cmd.AddCommand(newConfigPathCommand(opts))
-	cmd.AddCommand(newConfigWhyCommand(opts))
-	cmd.AddCommand(newConfigDiffCommand(opts))
-	cmd.AddCommand(newConfigLanguageCommand(opts))
+func newConfigSurfacesCommand(opts *runtimeOptions) *cobra.Command {
+	var scaffold, check bool
+	cmd := &cobra.Command{
+		Use:   "surfaces",
+		Short: opts.t("cli.config.surfaces.short"),
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			switch {
+			case scaffold:
+				_, err := fmt.Fprint(cmd.OutOrStdout(), config.SurfaceScaffoldYAML())
+				return err
+			case check:
+				return runJSON(cmd, func(context.Context) (any, error) {
+					return runConfigSurfacesCheck(opts)
+				})
+			default:
+				return fmt.Errorf("exactly one of --scaffold or --check is required")
+			}
+		},
+	}
+	cmd.Flags().BoolVar(&scaffold, "scaffold", false, opts.t("cli.config.surfaces.flag.scaffold"))
+	cmd.Flags().BoolVar(&check, "check", false, opts.t("cli.config.surfaces.flag.check"))
+	cmd.MarkFlagsMutuallyExclusive("scaffold", "check")
+	cmd.MarkFlagsOneRequired("scaffold", "check")
 	return cmd
+}
+
+func runConfigSurfacesCheck(opts *runtimeOptions) (any, error) {
+	path, err := opts.resolvedConfigPath()
+	if err != nil {
+		return nil, err
+	}
+	table, err := config.LoadSurfaceTable(path)
+	if err != nil {
+		return nil, domain.NewError(domain.ErrConfigInvalid, t("cli.err.config_invalid"), map[string]any{
+			"path":  path,
+			"error": domain.SafeError(err),
+		})
+	}
+	missing, extra := config.DiffSurfaces(table)
+	if len(missing) > 0 || len(extra) > 0 {
+		return nil, domain.NewError(domain.ErrConfigInvalid, surfaceCheckMessage(missing, extra), map[string]any{
+			"path":    path,
+			"missing": missing,
+			"extra":   extra,
+		})
+	}
+	return map[string]any{
+		"path":    path,
+		"ok":      true,
+		"missing": missing,
+		"extra":   extra,
+	}, nil
+}
+
+func surfaceCheckMessage(missing, extra []string) string {
+	var parts []string
+	if len(missing) > 0 {
+		parts = append(parts, "missing "+strings.Join(missing, ", "))
+	}
+	if len(extra) > 0 {
+		parts = append(parts, "extra "+strings.Join(extra, ", "))
+	}
+	return "surface table does not match census: " + strings.Join(parts, "; ")
 }
 
 // resolvedPresets decorates each bundled preset with its catalog-resolved

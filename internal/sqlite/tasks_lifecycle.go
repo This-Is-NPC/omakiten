@@ -79,7 +79,7 @@ RETURNING id, entity_type, COALESCE(entity_id, 0), project_id, event_type, body,
 // BackfillTaskCompletedAt sets tasks.completed_at = updated_at for every
 // task currently sitting in the workflow's final bucket whose
 // completed_at column is still NULL. The MoveTask + SetTaskState write
-// paths now keep the column populated going forward (see migration 023
+// paths now keep the column populated going forward (see the current schema
 // follow-up); this helper closes the gap for rows that landed in the
 // terminal bucket before that wiring existed.
 //
@@ -133,15 +133,35 @@ func (s *Store) SetTaskState(ctx context.Context, projectID, taskID int64, state
 		return domain.Task{}, domain.Event{}, err
 	}
 	defer func() { _ = tx.Rollback() }()
-
-	prev, err := s.taskByIDTx(ctx, tx, projectID, taskID, buckets)
+	result, err := s.setTaskStateTx(ctx, tx, projectID, taskID, state, targetBucketKey, buckets)
 	if err != nil {
 		return domain.Task{}, domain.Event{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return domain.Task{}, domain.Event{}, err
+	}
+	s.publishEvent(ctx, result.event)
+	if result.unassignEvent.EventType != "" {
+		s.publishEvent(ctx, result.unassignEvent)
+	}
+	return result.task, result.event, nil
+}
+
+type taskStateResult struct {
+	task          domain.Task
+	event         domain.Event
+	unassignEvent domain.Event
+}
+
+func (s *Store) setTaskStateTx(ctx context.Context, tx *sql.Tx, projectID, taskID int64, state domain.TaskState, targetBucketKey string, buckets domain.BucketResolver) (taskStateResult, error) {
+	prev, err := s.taskByIDTx(ctx, tx, projectID, taskID, buckets)
+	if err != nil {
+		return taskStateResult{}, err
 	}
 
 	var prevAssignedTo sql.NullString
 	if err := tx.QueryRowContext(ctx, `SELECT assigned_to FROM tasks WHERE project_id = ? AND id = ?`, projectID, taskID).Scan(&prevAssignedTo); err != nil {
-		return domain.Task{}, domain.Event{}, err
+		return taskStateResult{}, err
 	}
 
 	bucketKey := prev.BucketKey
@@ -149,7 +169,7 @@ func (s *Store) SetTaskState(ctx context.Context, projectID, taskID int64, state
 	if targetBucketKey != "" && targetBucketKey != prev.BucketKey {
 		targetBucketID, err := s.activeBucketID(ctx, targetBucketKey, buckets)
 		if err != nil {
-			return domain.Task{}, domain.Event{}, err
+			return taskStateResult{}, err
 		}
 		bucketArg = targetBucketID
 		bucketKey = targetBucketKey
@@ -172,9 +192,16 @@ RETURNING id, project_id, bucket_id, title, description, priority_id, state, cre
 `, string(state), bucketArg, isFinal, bucketArg, projectID, taskID)
 	task, err := scanTask(row, bucketKey)
 	if err != nil {
-		return domain.Task{}, domain.Event{}, err
+		return taskStateResult{}, err
 	}
+	event, unassignEv, err := s.taskStateEvents(ctx, tx, projectID, taskID, state, prev, task, bucketKey, prevAssignedTo, buckets)
+	if err != nil {
+		return taskStateResult{}, err
+	}
+	return taskStateResult{task: task, event: event, unassignEvent: unassignEv}, nil
+}
 
+func (s *Store) taskStateEvents(ctx context.Context, tx *sql.Tx, projectID, taskID int64, state domain.TaskState, prev, task domain.Task, bucketKey string, prevAssignedTo sql.NullString, buckets domain.BucketResolver) (domain.Event, domain.Event, error) {
 	eventType := domain.EventTypeTaskArchived
 	if state == domain.TaskStateActive {
 		eventType = domain.EventTypeTaskUnarchived
@@ -186,13 +213,14 @@ RETURNING id, project_id, bucket_id, title, description, priority_id, state, cre
 		"to_state":    state,
 	})
 	if marshalErr != nil {
-		return domain.Task{}, domain.Event{}, marshalErr
+		return domain.Event{}, domain.Event{}, marshalErr
 	}
 	var event domain.Event
 	if s.shouldLogEvent(eventType) {
+		var err error
 		event, err = insertTaskEvent(ctx, tx, projectID, taskID, eventType, "", payload)
 		if err != nil {
-			return domain.Task{}, domain.Event{}, err
+			return domain.Event{}, domain.Event{}, err
 		}
 	} else {
 		event = domain.Event{EntityType: domain.EventEntityTask, EntityID: taskID, ProjectID: projectID, EventType: eventType, Payload: payload}
@@ -205,21 +233,13 @@ RETURNING id, project_id, bucket_id, title, description, priority_id, state, cre
 			var err error
 			unassignEv, err = insertEntityEvent(ctx, tx, domain.EventEntityTask, taskID, projectID, domain.EventTypeTaskUnassigned, unassignPayload)
 			if err != nil {
-				return domain.Task{}, domain.Event{}, err
+				return domain.Event{}, domain.Event{}, err
 			}
 		} else {
 			unassignEv = domain.Event{EntityType: domain.EventEntityTask, EntityID: taskID, ProjectID: projectID, EventType: domain.EventTypeTaskUnassigned, Payload: unassignPayload}
 		}
 	}
-
-	if err := tx.Commit(); err != nil {
-		return domain.Task{}, domain.Event{}, err
-	}
-	s.publishEvent(ctx, event)
-	if unassignEv.EventType != "" {
-		s.publishEvent(ctx, unassignEv)
-	}
-	return task, event, nil
+	return event, unassignEv, nil
 }
 
 // EmitTaskEditedEvent records a task.edited event with a payload describing

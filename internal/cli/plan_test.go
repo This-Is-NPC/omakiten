@@ -36,17 +36,7 @@ func TestCLIPlanLifecycle(t *testing.T) {
 		t.Fatalf("wave-add output = %s", wave)
 	}
 
-	// Re-parse wave id from the JSON; cheaper to grep the printed payload
-	// than to re-run a fresh JSON decoder fixture here.
-	idIdx := strings.Index(wave, `"id":`)
-	if idIdx < 0 {
-		t.Fatalf("wave-add lacks id field: %s", wave)
-	}
-	commaIdx := strings.Index(wave[idIdx:], ",")
-	if commaIdx < 0 {
-		t.Fatalf("wave-add id field missing terminator: %s", wave)
-	}
-	waveID := strings.TrimPrefix(wave[idIdx:idIdx+commaIdx], `"id":`)
+	waveID := waveIDFromJSON(t, wave)
 
 	runCLI(t, dbPath, configPath, "plan", "assign", "ship", waveID, "1")
 
@@ -193,15 +183,18 @@ func TestCLIPlanDeleteRequiresConfirm(t *testing.T) {
 	runCLI(t, dbPath, configPath, "init", "--name", "Project", "--slug", "project")
 	runCLI(t, dbPath, configPath, "plan", "create", "ship", "--name", "Ship")
 
-	// Without --confirm → validation error, plan survives.
-	runCLIExpectError(t, dbPath, configPath, "validation_error", "plan", "delete", "ship")
+	// Without --confirm → confirmation gate, plan survives.
+	preview := runCLI(t, dbPath, configPath, "plan", "delete", "ship")
+	if !strings.Contains(preview, `"requires_confirmation":true`) && !strings.Contains(preview, `"requires_confirmation": true`) {
+		t.Fatalf("plan delete without confirm should require confirmation: %s", preview)
+	}
 	if listed := runCLI(t, dbPath, configPath, "plan", "list"); !strings.Contains(listed, `"slug":"ship"`) {
 		t.Fatalf("plan should survive unconfirmed delete: %s", listed)
 	}
 
-	// With --confirm → removed.
+	// With --confirm → removed (facade returns snapshot, not deleted slug).
 	deleted := runCLI(t, dbPath, configPath, "plan", "delete", "ship", "--confirm")
-	if !strings.Contains(deleted, `"deleted":"ship"`) {
+	if !strings.Contains(deleted, `"snapshot"`) {
 		t.Fatalf("plan delete output = %s", deleted)
 	}
 	if listed := runCLI(t, dbPath, configPath, "plan", "list"); strings.Contains(listed, `"slug":"ship"`) {
@@ -246,10 +239,13 @@ func TestCLIPlanWaveMutationsAndUnassign(t *testing.T) {
 		t.Fatalf("unassign output = %s", unassigned)
 	}
 
-	// wave-remove requires --confirm.
-	runCLIExpectError(t, dbPath, configPath, "validation_error", "plan", "wave-remove", wave1ID)
+	// wave-remove requires --confirm (facade Confirmation block).
+	preview := runCLI(t, dbPath, configPath, "plan", "wave-remove", wave1ID)
+	if !strings.Contains(preview, `"requires_confirmation":true`) && !strings.Contains(preview, `"requires_confirmation": true`) {
+		t.Fatalf("wave-remove without confirm should require confirmation: %s", preview)
+	}
 	removed := runCLI(t, dbPath, configPath, "plan", "wave-remove", wave1ID, "--confirm")
-	if !strings.Contains(removed, `"removed_wave"`) {
+	if !strings.Contains(removed, `"wave"`) {
 		t.Fatalf("wave-remove output = %s", removed)
 	}
 }
@@ -257,13 +253,18 @@ func TestCLIPlanWaveMutationsAndUnassign(t *testing.T) {
 // waveIDFromJSON extracts the wave id from a wave-add JSON payload.
 func waveIDFromJSON(t *testing.T, out string) string {
 	t.Helper()
-	idIdx := strings.Index(out, `"id":`)
+	waveIdx := strings.Index(out, `"wave":`)
+	if waveIdx < 0 {
+		t.Fatalf("payload lacks wave object: %s", out)
+	}
+	fragment := out[waveIdx:]
+	idIdx := strings.Index(fragment, `"id":`)
 	if idIdx < 0 {
-		t.Fatalf("payload lacks id field: %s", out)
+		t.Fatalf("wave object lacks id field: %s", out)
 	}
-	commaIdx := strings.Index(out[idIdx:], ",")
+	commaIdx := strings.Index(fragment[idIdx:], ",")
 	if commaIdx < 0 {
-		t.Fatalf("id field missing terminator: %s", out)
+		t.Fatalf("wave id field missing terminator: %s", out)
 	}
-	return strings.TrimPrefix(out[idIdx:idIdx+commaIdx], `"id":`)
+	return strings.TrimPrefix(fragment[idIdx:idIdx+commaIdx], `"id":`)
 }

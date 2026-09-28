@@ -1,6 +1,7 @@
 package config
 
 import (
+	"bytes"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -10,13 +11,15 @@ import (
 
 // LoadTheme keeps the existing themes/<slug>.yaml contract.
 func LoadTheme(path string) (Theme, error) {
-	file, err := os.Open(path)
+	raw, err := readFileBounded(path, MaxEntityFileBytes)
 	if err != nil {
 		return Theme{}, err
 	}
-	defer func() { _ = file.Close() }()
+	return decodeThemeBytes(raw)
+}
 
-	decoder := yaml.NewDecoder(file)
+func decodeThemeBytes(raw []byte) (Theme, error) {
+	decoder := yaml.NewDecoder(bytes.NewReader(raw))
 	decoder.KnownFields(true)
 
 	var theme Theme
@@ -37,17 +40,37 @@ func LoadTheme(path string) (Theme, error) {
 // failure the returned error names both candidate paths so operators
 // can see the custom override path was considered, with the underlying
 // loader error wrapped via %w (errors.Is/As-friendly).
-func resolveActiveTheme(rootDir, active string) (Theme, string, error) {
+func resolveActiveThemeReader(rootDir, active string, reader bundleSourceReader) (Theme, string, error) {
 	if active == "" {
 		return Theme{}, "", nil
 	}
 	customPath := filepath.Join(rootDir, "themes", "custom", active+".yaml")
 	defaultPath := filepath.Join(rootDir, "themes", active+".yaml")
 	themePath := defaultPath
-	if _, err := os.Stat(customPath); err == nil {
-		themePath = customPath
+	if reader == nil {
+		if _, err := lstatNoFollow(customPath); err == nil {
+			themePath = customPath
+		} else if !os.IsNotExist(err) {
+			return Theme{}, customPath, fmt.Errorf("resolve theme (custom=%s default=%s): %w", customPath, defaultPath, err)
+		}
+	} else {
+		if _, err := reader.readFile(customPath, MaxEntityFileBytes); err == nil {
+			themePath = customPath
+		} else if !os.IsNotExist(err) {
+			return Theme{}, customPath, fmt.Errorf("resolve theme (custom=%s default=%s): %w", customPath, defaultPath, err)
+		}
 	}
-	theme, err := LoadTheme(themePath)
+	var theme Theme
+	var err error
+	if reader == nil {
+		theme, err = LoadTheme(themePath)
+	} else {
+		var raw []byte
+		raw, err = reader.readFile(themePath, MaxEntityFileBytes)
+		if err == nil {
+			theme, err = decodeThemeBytes(raw)
+		}
+	}
 	if err != nil {
 		return Theme{}, themePath, fmt.Errorf("resolve theme (custom=%s default=%s): %w", customPath, defaultPath, err)
 	}

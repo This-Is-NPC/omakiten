@@ -5,8 +5,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"omakiten/internal/app"
-	"omakiten/internal/domain"
+	"omakiten/internal/operation"
 )
 
 func newAddCommand(opts *runtimeOptions) *cobra.Command {
@@ -25,24 +24,18 @@ func newAddCommand(opts *runtimeOptions) *cobra.Command {
 					return nil, err
 				}
 				defer rt.close()
-				ctx = rt.WithActivityRepo(ctx)
 
-				project, err := opts.resolveProject(ctx, rt.store)
-				if err != nil {
-					return nil, err
+				input := operation.CreateTaskInput{
+					ProjectSelector:     opts.projectSelector(),
+					Title:               title,
+					Description:         description,
+					BucketKey:           bucket,
+					SkipSimilarityCheck: true,
 				}
-
-				service := app.NewTaskServiceFromStore(rt.store, rt.activeRegistry(), rt.activeSnapshot())
-				var task domain.Task
 				if cmd.Flags().Changed("parent") {
-					task, err = service.AddSub(ctx, project, parent, title, description, "", bucket)
-				} else {
-					task, err = service.Add(ctx, project, title, description, "", bucket)
+					input.ParentID = &parent
 				}
-				if err != nil {
-					return nil, err
-				}
-				return map[string]any{"project": project, "task": task}, nil
+				return rt.operationService().CreateTask(ctx, input)
 			})
 		},
 	}

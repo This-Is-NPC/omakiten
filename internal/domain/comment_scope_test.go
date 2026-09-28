@@ -29,19 +29,25 @@ func TestValidateCommentScopeTaskID(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			err := ValidateCommentScopeTaskID(tc.scope, tc.taskID, tc.hasTaskID)
-			if tc.wantErr && err == nil {
-				t.Fatalf("ValidateCommentScopeTaskID(%q, %d, %v) = nil, want error", tc.scope, tc.taskID, tc.hasTaskID)
-			}
-			if !tc.wantErr && err != nil {
-				t.Fatalf("ValidateCommentScopeTaskID(%q, %d, %v) = %v, want nil", tc.scope, tc.taskID, tc.hasTaskID, err)
-			}
-			if tc.wantErr {
-				var coded *CodedError
-				if !errors.As(err, &coded) || coded.Code != ErrValidation {
-					t.Fatalf("error = %v, want coded ErrValidation", err)
-				}
-			}
+			assertCommentScopeValidation(t, tc.scope, tc.taskID, tc.hasTaskID, tc.wantErr)
 		})
+	}
+}
+
+func assertCommentScopeValidation(t *testing.T, scope string, taskID int64, hasTaskID, wantErr bool) {
+	t.Helper()
+	err := ValidateCommentScopeTaskID(scope, taskID, hasTaskID)
+	if wantErr && err == nil {
+		t.Fatalf("ValidateCommentScopeTaskID(%q, %d, %v) = nil, want error", scope, taskID, hasTaskID)
+	}
+	if !wantErr && err != nil {
+		t.Fatalf("ValidateCommentScopeTaskID(%q, %d, %v) = %v, want nil", scope, taskID, hasTaskID, err)
+	}
+	if !wantErr {
+		return
+	}
+	var coded *CodedError
+	if !errors.As(err, &coded) || coded.Code != ErrValidation {
+		t.Fatalf("error = %v, want coded ErrValidation", err)
 	}
 }

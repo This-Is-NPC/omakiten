@@ -27,7 +27,7 @@ func TestAdapterBundleRoundTrip(t *testing.T) {
 	if err := os.MkdirAll(skillsDir, 0o755); err != nil {
 		t.Fatalf("MkdirAll(skills) = %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(skillsDir, "go.md"), []byte("---\nname: Go\ndescription: Go skill.\n---\n\nbody"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(skillsDir, "go.md"), []byte("---\nname: Go\ndescription: Go skill.\nschema_version: 2\nrole_affinity: [builder]\n---\n\nbody"), 0o644); err != nil {
 		t.Fatalf("WriteFile(skill) = %v", err)
 	}
 
@@ -137,9 +137,9 @@ func TestAdapterEntityFilePathLayout(t *testing.T) {
 func TestAdapterSlugify(t *testing.T) {
 	adapter := New()
 	cases := map[string]string{
-		"Hello World":  "hello-world",
-		"foo_bar.baz":  "foo-bar-baz",
-		"  trim me  ":  "trim-me",
+		"Hello World":   "hello-world",
+		"foo_bar.baz":   "foo-bar-baz",
+		"  trim me  ":   "trim-me",
 		"already-kebab": "already-kebab",
 	}
 	for in, want := range cases {

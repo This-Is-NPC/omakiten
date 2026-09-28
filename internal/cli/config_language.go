@@ -22,7 +22,7 @@ func newConfigLanguageCommand(opts *runtimeOptions) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "language",
 		Short: opts.t("cli.config.language.short"),
-		Long: opts.t("cli.config.language.long"),
+		Long:  opts.t("cli.config.language.long"),
 	}
 	cmd.AddCommand(newConfigLanguageShowCommand(opts))
 	cmd.AddCommand(newConfigLanguageSetCommand(opts))
@@ -78,52 +78,20 @@ func newConfigLanguageSetCommand(opts *runtimeOptions) *cobra.Command {
 		// pointers track which flags the user actually passed so we can
 		// distinguish "unset" from "explicitly empty" — empty agent is a
 		// legitimate intent (clears the directive line).
-		agentSet bool
 	)
 	cmd := &cobra.Command{
 		Use:   "set",
 		Short: opts.t("cli.config.language.set.short"),
-		Long: opts.t("cli.config.language.set.long"),
+		Long:  opts.t("cli.config.language.set.long"),
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			cliSet := cmd.Flags().Changed("cli")
-			tuiSet := cmd.Flags().Changed("tui")
-			agentSet = cmd.Flags().Changed("agent")
-			return runJSON(cmd, func(ctx context.Context) (any, error) {
-				if !cliSet && !tuiSet && !agentSet {
-					return nil, domain.NewError(domain.ErrValidation, opts.t("cli.err.language_set_no_flags"), nil)
-				}
-				path, err := writeTargetPath(opts, global)
-				if err != nil {
-					return nil, err
-				}
-				bundle, err := config.LoadBundle(path)
-				if err != nil {
-					return nil, domain.NewError(domain.ErrConfigInvalid, opts.t("cli.err.config_invalid"), map[string]any{"path": path, "error": fmt.Sprint(err)})
-				}
-				next := bundle.Config.Languages
-				if cliSet {
-					next.CLI = strings.TrimSpace(cli)
-				}
-				if tuiSet {
-					next.TUI = strings.TrimSpace(tui)
-				}
-				if agentSet {
-					next.AgentOutput = strings.TrimSpace(agent)
-				}
-				bundle.Config.Languages = next
-				if err := validateLanguageWriteIntent(bundle, cliSet, tuiSet); err != nil {
-					return nil, err
-				}
-				if err := config.SaveBundle(path, bundle); err != nil {
-					return nil, fmt.Errorf("save %s: %w", path, err)
-				}
-				if err := reloadActiveBundle(ctx, opts); err != nil {
-					return nil, err
-				}
-				return map[string]any{
-					"path":      path,
-					"languages": settingsToMap(next),
-				}, nil
+			return runConfigLanguageSet(cmd, opts, languageSetInputs{
+				cli:      cli,
+				tui:      tui,
+				agent:    agent,
+				global:   global,
+				cliSet:   cmd.Flags().Changed("cli"),
+				tuiSet:   cmd.Flags().Changed("tui"),
+				agentSet: cmd.Flags().Changed("agent"),
 			})
 		},
 	}
@@ -132,6 +100,65 @@ func newConfigLanguageSetCommand(opts *runtimeOptions) *cobra.Command {
 	cmd.Flags().StringVar(&agent, "agent", "", opts.t("cli.config.language.set.flag.agent"))
 	cmd.Flags().BoolVar(&global, "global", false, opts.t("cli.config.language.set.flag.global"))
 	return cmd
+}
+
+type languageSetInputs struct {
+	cli      string
+	tui      string
+	agent    string
+	global   bool
+	cliSet   bool
+	tuiSet   bool
+	agentSet bool
+}
+
+func runConfigLanguageSet(cmd *cobra.Command, opts *runtimeOptions, inputs languageSetInputs) error {
+	return runJSON(cmd, func(ctx context.Context) (any, error) {
+		if !inputs.cliSet && !inputs.tuiSet && !inputs.agentSet {
+			return nil, domain.NewError(domain.ErrValidation, opts.t("cli.err.language_set_no_flags"), nil)
+		}
+		path, err := writeTargetPath(opts, inputs.global)
+		if err != nil {
+			return nil, err
+		}
+		bundle, err := loadLanguageWriteBundle(opts, path)
+		if err != nil {
+			return nil, err
+		}
+		next := languageSettingsFromInputs(bundle.Config.Languages, inputs)
+		bundle.Config.Languages = next
+		if err := validateLanguageWriteIntent(bundle, inputs.cliSet, inputs.tuiSet); err != nil {
+			return nil, err
+		}
+		if err := config.SaveBundle(path, bundle); err != nil {
+			return nil, fmt.Errorf("save %s: %w", path, err)
+		}
+		if err := reloadActiveBundle(ctx, opts); err != nil {
+			return nil, err
+		}
+		return map[string]any{"path": path, "languages": settingsToMap(next)}, nil
+	})
+}
+
+func loadLanguageWriteBundle(opts *runtimeOptions, path string) (config.Bundle, error) {
+	bundle, err := config.LoadBundle(path)
+	if err != nil {
+		return config.Bundle{}, domain.NewError(domain.ErrConfigInvalid, opts.t("cli.err.config_invalid"), map[string]any{"path": path, "error": fmt.Sprint(err)})
+	}
+	return bundle, nil
+}
+
+func languageSettingsFromInputs(settings config.LanguageSettings, inputs languageSetInputs) config.LanguageSettings {
+	if inputs.cliSet {
+		settings.CLI = strings.TrimSpace(inputs.cli)
+	}
+	if inputs.tuiSet {
+		settings.TUI = strings.TrimSpace(inputs.tui)
+	}
+	if inputs.agentSet {
+		settings.AgentOutput = strings.TrimSpace(inputs.agent)
+	}
+	return settings
 }
 
 func newConfigLanguageResetCommand(opts *runtimeOptions) *cobra.Command {

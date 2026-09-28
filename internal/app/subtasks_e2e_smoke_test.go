@@ -41,83 +41,81 @@ func TestSubtasksEndToEndSmoke(t *testing.T) {
 		t.Fatalf("Add(parent) = %v", err)
 	}
 
-	addChild := func(parentID int64, title string) domain.Task {
-		t.Helper()
-		child, err := service.AddSub(ctx, project.Context(), parentID, title, "", "", "")
-		if err != nil {
-			t.Fatalf("AddSub(%s) = %v", title, err)
-		}
-		if child.BucketKey != "backlog" {
-			t.Fatalf("AddSub(%s) bucket = %q, want backlog (root kit first bucket)", title, child.BucketKey)
-		}
-		return child
+	projectCtx := project.Context()
+	children := addSubtasks(t, ctx, service, projectCtx, parent.ID)
+	grandchild := addSubtask(t, ctx, service, projectCtx, children[0].ID, "gc1")
+	assertSubtasksGuard(t, ctx, service, projectCtx, parent.ID, children)
+	walkTasksToDone(t, ctx, service, projectCtx, grandchild, children)
+	closeParent(t, ctx, service, projectCtx, parent.ID)
+	assertRootDone(t, ctx, service, projectCtx, parent.ID)
+}
+
+func addSubtasks(t *testing.T, ctx context.Context, service *TaskService, project domain.ProjectContext, parentID int64) []domain.Task {
+	children := make([]domain.Task, 0, 3)
+	for _, title := range []string{"c1", "c2", "c3"} {
+		children = append(children, addSubtask(t, ctx, service, project, parentID, title))
 	}
+	return children
+}
 
-	c1 := addChild(parent.ID, "c1")
-	c2 := addChild(parent.ID, "c2")
-	c3 := addChild(parent.ID, "c3")
-	gc1 := addChild(c1.ID, "gc1")
+func addSubtask(t *testing.T, ctx context.Context, service *TaskService, project domain.ProjectContext, parentID int64, title string) domain.Task {
+	child, err := service.AddSub(ctx, project, parentID, title, "", "", "")
+	if err != nil {
+		t.Fatalf("AddSub(%s) = %v", title, err)
+	}
+	if child.BucketKey != "backlog" {
+		t.Fatalf("AddSub(%s) bucket = %q, want backlog (root kit first bucket)", title, child.BucketKey)
+	}
+	return child
+}
 
-	// Guard fires before any child reaches done. The message must name
-	// one of the open direct children — order is FK-iteration order so
-	// any of c1/c2/c3 is acceptable, but never the grandchild (guard
-	// only walks direct children).
-	_, err = service.Move(ctx, project.Context(), parent.ID, "review")
+func assertSubtasksGuard(t *testing.T, ctx context.Context, service *TaskService, project domain.ProjectContext, parentID int64, children []domain.Task) {
+	_, err := service.Move(ctx, project, parentID, "review")
 	if err == nil {
 		t.Fatal("Move(parent dev→review) error = nil, want guard violation")
 	}
 	var coded *domain.CodedError
-	if !errors.As(err, &coded) || coded.Code != domain.ErrGuardViolation {
-		t.Fatalf("Move(parent) error code = %v, want ErrGuardViolation (%v)", err, domain.ErrGuardViolation)
+	if !errors.As(err, &coded) || coded.Code != domain.ErrGuardViolation || !strings.Contains(coded.Message, "subtasks_complete") {
+		t.Fatalf("Move(parent) error = %v, want subtasks_complete guard violation", err)
 	}
-	if !strings.Contains(coded.Message, "subtasks_complete") {
-		t.Fatalf("guard message %q missing rule name", coded.Message)
-	}
-	named := false
-	for _, child := range []domain.Task{c1, c2, c3} {
+	for _, child := range children {
 		if strings.Contains(coded.Message, child.Title) {
-			named = true
-			break
+			return
 		}
 	}
-	if !named {
-		t.Fatalf("guard message %q must name an open direct child (c1/c2/c3)", coded.Message)
+	t.Fatalf("guard message %q must name an open direct child (c1/c2/c3)", coded.Message)
+}
+
+func walkTasksToDone(t *testing.T, ctx context.Context, service *TaskService, project domain.ProjectContext, grandchild domain.Task, children []domain.Task) {
+	walkTaskToDone(t, ctx, service, project, grandchild.ID, grandchild.Title)
+	for _, child := range children {
+		walkTaskToDone(t, ctx, service, project, child.ID, child.Title)
 	}
+}
 
-	walkToDone := func(taskID int64, label string) {
-		t.Helper()
-		if _, err := service.Move(ctx, project.Context(), taskID, "dev"); err != nil {
-			t.Fatalf("Move(%s backlog→dev) = %v", label, err)
-		}
-		if _, err := service.Move(ctx, project.Context(), taskID, "review"); err != nil {
-			t.Fatalf("Move(%s dev→review) = %v", label, err)
-		}
-		if _, err := service.Move(ctx, project.Context(), taskID, "done"); err != nil {
-			t.Fatalf("Move(%s review→done) = %v", label, err)
+func walkTaskToDone(t *testing.T, ctx context.Context, service *TaskService, project domain.ProjectContext, taskID int64, label string) {
+	for _, bucket := range []string{"dev", "review", "done"} {
+		if _, err := service.Move(ctx, project, taskID, bucket); err != nil {
+			t.Fatalf("Move(%s -> %s) = %v", label, bucket, err)
 		}
 	}
+}
 
-	// Grandchild has no children — guard passes immediately at each level.
-	walkToDone(gc1.ID, "gc1")
-	// c1 now has gc1 in done — its own dev→review guard passes.
-	walkToDone(c1.ID, "c1")
-	walkToDone(c2.ID, "c2")
-	walkToDone(c3.ID, "c3")
-
-	// All direct children of parent are in done — parent promotion succeeds.
-	if _, err := service.Move(ctx, project.Context(), parent.ID, "review"); err != nil {
+func closeParent(t *testing.T, ctx context.Context, service *TaskService, project domain.ProjectContext, parentID int64) {
+	if _, err := service.Move(ctx, project, parentID, "review"); err != nil {
 		t.Fatalf("Move(parent dev→review) after children done = %v", err)
 	}
-	if _, err := service.Move(ctx, project.Context(), parent.ID, "done"); err != nil {
+	if _, err := service.Move(ctx, project, parentID, "done"); err != nil {
 		t.Fatalf("Move(parent review→done) = %v", err)
 	}
+}
 
-	// Sanity: the parent really did land in done.
-	roots, err := service.List(ctx, project.Context(), domain.TaskFilter{ParentMode: domain.ParentRoots})
+func assertRootDone(t *testing.T, ctx context.Context, service *TaskService, project domain.ProjectContext, parentID int64) {
+	roots, err := service.List(ctx, project, domain.TaskFilter{ParentMode: domain.ParentRoots})
 	if err != nil {
 		t.Fatalf("List(roots) = %v", err)
 	}
-	if len(roots) != 1 || roots[0].ID != parent.ID || roots[0].BucketKey != "done" {
+	if len(roots) != 1 || roots[0].ID != parentID || roots[0].BucketKey != "done" {
 		t.Fatalf("roots = %+v, want one root in done", roots)
 	}
 }

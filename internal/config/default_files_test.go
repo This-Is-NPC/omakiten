@@ -10,55 +10,71 @@ import (
 )
 
 func TestRefreshDefaultFilesPrunesManagedAndPreservesUserState(t *testing.T) {
+	fixture := seedRefreshDefaultFiles(t)
+
+	if err := RefreshDefaultFiles(fixture.root); err != nil {
+		t.Fatalf("RefreshDefaultFiles: %v", err)
+	}
+	assertRefreshPreservedState(t, fixture)
+}
+
+type refreshDefaultFixture struct {
+	root, activePath, profilePath string
+	activeBytes                   []byte
+	customFiles                   map[string]string
+	staleManaged                  []string
+}
+
+func seedRefreshDefaultFiles(t *testing.T) refreshDefaultFixture {
+	t.Helper()
 	root := t.TempDir()
 	if err := EnsureDefaultFiles(root); err != nil {
 		t.Fatalf("EnsureDefaultFiles: %v", err)
 	}
-
-	activePath := filepath.Join(root, "config", paths.ActiveConfigStateFile)
-	activeBytes := []byte("kaiseki.yaml\n")
-	if err := os.WriteFile(activePath, activeBytes, 0o644); err != nil {
+	fixture := refreshDefaultFixture{
+		root:        root,
+		activePath:  filepath.Join(root, "config", paths.ActiveConfigStateFile),
+		activeBytes: []byte("kaiseki.yaml\n"),
+		customFiles: map[string]string{
+			filepath.Join("config", "custom", "user.yaml"):          "user config\n",
+			filepath.Join("skills", "custom", "user.md"):            "user skill\n",
+			filepath.Join("laws", "custom", "user.md"):              "user law\n",
+			filepath.Join("personas", "custom", "user.md"):          "user persona\n",
+			filepath.Join("templates", "custom", "user.md"):         "user template\n",
+			filepath.Join("themes", "custom", "user.yaml"):          "user theme\n",
+			filepath.Join("notifications", "custom", "user.yaml"):   "user notification\n",
+			filepath.Join("languages", "custom", "user.yaml"):       "user language\n",
+			filepath.Join("languages", "custom", "nested", "x.txt"): "nested custom\n",
+		},
+		staleManaged: []string{
+			filepath.Join(root, "config", "stale.yaml"),
+			filepath.Join(root, "config", "modules", "stale.yaml"),
+			filepath.Join(root, "skills", "stale.md"),
+			filepath.Join(root, "skills", "nested", "stale.md"),
+			filepath.Join(root, "languages", "stale.yaml"),
+		},
+	}
+	if err := os.WriteFile(fixture.activePath, fixture.activeBytes, 0o644); err != nil {
 		t.Fatalf("seed .active: %v", err)
 	}
-
-	customFiles := map[string]string{
-		filepath.Join("config", "custom", "user.yaml"):          "user config\n",
-		filepath.Join("skills", "custom", "user.md"):            "user skill\n",
-		filepath.Join("laws", "custom", "user.md"):              "user law\n",
-		filepath.Join("personas", "custom", "user.md"):          "user persona\n",
-		filepath.Join("templates", "custom", "user.md"):         "user template\n",
-		filepath.Join("themes", "custom", "user.yaml"):          "user theme\n",
-		filepath.Join("notifications", "custom", "user.yaml"):   "user notification\n",
-		filepath.Join("languages", "custom", "user.yaml"):       "user language\n",
-		filepath.Join("languages", "custom", "nested", "x.txt"): "nested custom\n",
-	}
-	for rel, body := range customFiles {
+	for rel, body := range fixture.customFiles {
 		writeConfigTestFile(t, filepath.Join(root, rel), body)
 	}
-
-	staleManaged := []string{
-		filepath.Join(root, "config", "stale.yaml"),
-		filepath.Join(root, "config", "modules", "stale.yaml"),
-		filepath.Join(root, "skills", "stale.md"),
-		filepath.Join(root, "skills", "nested", "stale.md"),
-		filepath.Join(root, "languages", "stale.yaml"),
-	}
-	for _, path := range staleManaged {
+	for _, path := range fixture.staleManaged {
 		writeConfigTestFile(t, path, "stale\n")
 	}
+	fixture.profilePath = filepath.Join(root, "config", "omakase.yaml")
+	writeConfigTestFile(t, fixture.profilePath, "version: 1\n# flattened stale copy\n")
+	return fixture
+}
 
-	profilePath := filepath.Join(root, "config", "omakase.yaml")
-	writeConfigTestFile(t, profilePath, "version: 1\n# flattened stale copy\n")
-
-	if err := RefreshDefaultFiles(root); err != nil {
-		t.Fatalf("RefreshDefaultFiles: %v", err)
+func assertRefreshPreservedState(t *testing.T, fixture refreshDefaultFixture) {
+	t.Helper()
+	if got, err := os.ReadFile(fixture.activePath); err != nil || string(got) != string(fixture.activeBytes) {
+		t.Fatalf(".active after refresh = %q, %v; want %q", got, err, fixture.activeBytes)
 	}
-
-	if got, err := os.ReadFile(activePath); err != nil || string(got) != string(activeBytes) {
-		t.Fatalf(".active after refresh = %q, %v; want %q", got, err, activeBytes)
-	}
-	for rel, want := range customFiles {
-		got, err := os.ReadFile(filepath.Join(root, rel))
+	for rel, want := range fixture.customFiles {
+		got, err := os.ReadFile(filepath.Join(fixture.root, rel))
 		if err != nil {
 			t.Fatalf("custom file %s missing after refresh: %v", rel, err)
 		}
@@ -66,13 +82,13 @@ func TestRefreshDefaultFilesPrunesManagedAndPreservesUserState(t *testing.T) {
 			t.Fatalf("custom file %s = %q, want %q", rel, got, want)
 		}
 	}
-	for _, path := range staleManaged {
+	for _, path := range fixture.staleManaged {
 		if _, err := os.Stat(path); !os.IsNotExist(err) {
 			t.Fatalf("stale managed path %s survived refresh; err=%v", path, err)
 		}
 	}
 
-	refreshedProfile, err := os.ReadFile(profilePath)
+	refreshedProfile, err := os.ReadFile(fixture.profilePath)
 	if err != nil {
 		t.Fatalf("read refreshed profile: %v", err)
 	}
@@ -85,10 +101,10 @@ func TestRefreshDefaultFilesPrunesManagedAndPreservesUserState(t *testing.T) {
 	if got := string(refreshedProfile); strings.Contains(got, "# flattened stale copy") {
 		t.Fatalf("refreshed profile still carries the seeded stale marker; file was not overwritten:\n%s", got[:min(len(got), 400)])
 	}
-	if got := string(refreshedProfile); !strings.Contains(got, "merge_from: ./modules/base-config.yaml") || !strings.Contains(got, "from: ./themes/naruto.yaml#personas") {
+	if got := string(refreshedProfile); !strings.Contains(got, "merge_from: ./modules/base-config.yaml") || !strings.Contains(got, "from: ./themes/naruto.yaml#personas") || !strings.Contains(got, "from: ./modules/surfaces.yaml") {
 		t.Fatalf("refreshed profile lost shipped import form:\n%s", got[:min(len(got), 400)])
 	}
-	if _, err := os.Stat(filepath.Join(root, "config", "modules", "base-config.yaml")); err != nil {
+	if _, err := os.Stat(filepath.Join(fixture.root, "config", "modules", "base-config.yaml")); err != nil {
 		t.Fatalf("shipped config module not restored: %v", err)
 	}
 }

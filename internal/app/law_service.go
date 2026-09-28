@@ -77,10 +77,14 @@ func (s *LawService) List(ctx context.Context) ([]domain.Law, error) {
 }
 
 func (s *LawService) ListFiltered(_ context.Context, filter LawListFilter) ([]domain.Law, error) {
-	bundle, err := s.editor.Load()
+	bundle, _, _, err := s.editor.LoadPlan()
 	if err != nil {
 		return nil, err
 	}
+	return s.lawsFromBundle(bundle, filter), nil
+}
+
+func (s *LawService) lawsFromBundle(bundle config.Bundle, filter LawListFilter) []domain.Law {
 	laws := lawsFromSnapshot(config.BuildSnapshot(bundle))
 	bySlug := indexLaws(bundle.Laws)
 	warnings := warningIndex(bundle.Warnings)
@@ -111,7 +115,7 @@ func (s *LawService) ListFiltered(_ context.Context, filter LawListFilter) ([]do
 		}
 		out = append(out, law)
 	}
-	return out, nil
+	return out
 }
 
 func (f LawListFilter) matches(law domain.Law) bool {
@@ -151,7 +155,7 @@ func (s *LawService) Add(ctx context.Context, input domain.LawInput) (domain.Law
 	}
 
 	path := s.files.CustomEntityFilePath(s.editor.RootDir(), config.EntityKindLaw, slug)
-	bytes, err := s.files.LawFileBytes(config.Law{Slug: slug, Name: name, 			Severity: s.severityLabel(severity), Body: body})
+	bytes, err := s.files.LawFileBytes(config.Law{Slug: slug, Name: name, Severity: s.severityLabel(severity), Body: body})
 	if err != nil {
 		return domain.Law{}, configError(path, err)
 	}
@@ -159,49 +163,62 @@ func (s *LawService) Add(ctx context.Context, input domain.LawInput) (domain.Law
 	if err := assertNoCollision(path, slug, "law"); err != nil {
 		return domain.Law{}, err
 	}
+	bundle, _, fileHashes, err := s.editor.LoadPlanWithFiles()
+	if err != nil {
+		return domain.Law{}, err
+	}
 
-	if _, err := s.editor.ApplyWithFiles(ctx, func(bundle *config.Bundle) error {
-		for _, l := range bundle.Laws {
-			if l.Slug == slug {
-				return domain.NewError(domain.ErrValidation, "law key must be unique", map[string]any{"slug": slug})
-			}
-		}
-		law := config.Law{
-			Slug:     slug,
-			Name:     name,
-			Severity: s.severityLabel(severity),
-			Body:     body,
-			Scope:    string(scope),
-			IsCustom: true,
-		}
-		switch scope {
-		case domain.LawScopeProject:
-			if !projectExists(*bundle, project) {
-				return domain.NewError(domain.ErrValidation, "project not found", map[string]any{"slug": project})
-			}
-			law.ProjectSlug = project
-		case domain.LawScopePersona:
-			if !personaExists(*bundle, persona) {
-				return domain.NewError(domain.ErrPersonaNotFound, "persona not found", map[string]any{"slug": persona})
-			}
-			law.PersonaSlug = persona
-		}
-		bundle.Laws = append(bundle.Laws, law)
-		return nil
-	}, []FileOp{{Op: OpWrite, Path: path, Bytes: bytes}}); err != nil {
+	mutator := func(bundle *config.Bundle) error {
+		law := config.Law{Slug: slug, Name: name, Severity: s.severityLabel(severity), Body: body, Scope: string(scope), IsCustom: true}
+		return appendLaw(bundle, law, scope, project, persona)
+	}
+	if _, err := s.editor.ApplyWithFiles(ctx, bundle, fileHashes, mutator, []FileOp{{Op: OpWrite, Path: s.editor.RelativePath(path), Bytes: bytes, ExpectedHash: fileHashes[path]}}); err != nil {
 		return domain.Law{}, err
 	}
 	return s.Show(ctx, slug)
 }
 
+func appendLaw(bundle *config.Bundle, law config.Law, scope domain.LawScope, project, persona string) error {
+	for _, existing := range bundle.Laws {
+		if existing.Slug == law.Slug {
+			return domain.NewError(domain.ErrValidation, "law key must be unique", map[string]any{"slug": law.Slug})
+		}
+	}
+	switch scope {
+	case domain.LawScopeProject:
+		if !projectExists(*bundle, project) {
+			return domain.NewError(domain.ErrValidation, "project not found", map[string]any{"slug": project})
+		}
+		law.ProjectSlug = project
+	case domain.LawScopePersona:
+		if !personaExists(*bundle, persona) {
+			return domain.NewError(domain.ErrPersonaNotFound, "persona not found", map[string]any{"slug": persona})
+		}
+		law.PersonaSlug = persona
+	}
+	bundle.Laws = append(bundle.Laws, law)
+	return nil
+}
+
+//nolint:gocognit,funlen // Entity editing keeps validation, serialization, and publication together.
 func (s *LawService) Edit(ctx context.Context, slug string, update domain.LawUpdate) (domain.Law, error) {
 	slug = strings.TrimSpace(slug)
 	if slug == "" {
 		return domain.Law{}, domain.NewError(domain.ErrValidation, "law slug is required", nil)
 	}
-	current, err := s.Show(ctx, slug)
+	bundle, _, fileHashes, err := s.editor.LoadPlanWithFiles()
 	if err != nil {
 		return domain.Law{}, err
+	}
+	var current domain.Law
+	for _, law := range s.lawsFromBundle(bundle, LawListFilter{}) {
+		if law.Key == slug {
+			current = law
+			break
+		}
+	}
+	if current.Key == "" {
+		return domain.Law{}, domain.NewError(domain.ErrLawNotFound, "law not found", map[string]any{"slug": slug})
 	}
 
 	law := config.Law{
@@ -247,7 +264,7 @@ func (s *LawService) Edit(ctx context.Context, slug string, update domain.LawUpd
 		return domain.Law{}, configError(path, err)
 	}
 
-	if _, err := s.editor.ApplyWithFiles(ctx, nil, []FileOp{{Op: OpWrite, Path: path, Bytes: bytes}}); err != nil {
+	if _, err := s.editor.ApplyWithFiles(ctx, bundle, fileHashes, nil, []FileOp{{Op: OpWrite, Path: s.editor.RelativePath(path), Bytes: bytes, ExpectedHash: fileHashes[path]}}); err != nil {
 		return domain.Law{}, err
 	}
 	return s.Show(ctx, slug)
@@ -258,15 +275,25 @@ func (s *LawService) Remove(ctx context.Context, slug string) error {
 	if slug == "" {
 		return domain.NewError(domain.ErrValidation, "law slug is required", nil)
 	}
-	current, err := s.Show(ctx, slug)
+	bundle, _, fileHashes, err := s.editor.LoadPlanWithFiles()
 	if err != nil {
 		return err
+	}
+	var current domain.Law
+	for _, law := range s.lawsFromBundle(bundle, LawListFilter{}) {
+		if law.Key == slug {
+			current = law
+			break
+		}
+	}
+	if current.Key == "" {
+		return domain.NewError(domain.ErrLawNotFound, "law not found", map[string]any{"slug": slug})
 	}
 	path := current.SourcePath
 	if path == "" {
 		path = s.files.EntityFilePath(s.editor.RootDir(), config.EntityKindLaw, slug)
 	}
-	_, err = s.editor.ApplyWithFiles(ctx, func(bundle *config.Bundle) error {
+	_, err = s.editor.ApplyWithFiles(ctx, bundle, fileHashes, func(bundle *config.Bundle) error {
 		bundle.Laws = filterLawsBySlug(bundle.Laws, slug)
 		for i := range bundle.Personas {
 			bundle.Personas[i].Laws = filterStrings(bundle.Personas[i].Laws, slug)
@@ -275,7 +302,7 @@ func (s *LawService) Remove(ctx context.Context, slug string) error {
 			bundle.Projects[i].Laws = filterStrings(bundle.Projects[i].Laws, slug)
 		}
 		return nil
-	}, []FileOp{{Op: OpDelete, Path: path}})
+	}, []FileOp{{Op: OpDelete, Path: s.editor.RelativePath(path), ExpectedHash: fileHashes[path]}})
 	return err
 }
 
@@ -339,7 +366,6 @@ func (s *LawService) normalizeSeverity(value domain.Severity) (domain.Severity, 
 	}
 	return value, nil
 }
-
 
 func indexLaws(items []config.Law) map[string]config.Law {
 	out := make(map[string]config.Law, len(items))

@@ -67,6 +67,28 @@ events:
     defaults:
       max_age_days: 0
       max_rows: 0
+  # orphan_sweep bounds the reconciliation pass that removes event rows whose
+  # positive project_id no longer resolves to a projects row. It is a safety
+  # net, NOT the deletion path: `okt project delete` already removes every
+  # event of the project in the same transaction as the projects row. The
+  # sweep only cleans up what a process that bypassed that sequence left
+  # behind (a stale long-lived MCP/TUI session writing after the delete).
+  # Every knob is optional; omit the block to inherit these values.
+  orphan_sweep:
+    enabled: true
+    # Cadence between two successful passes (1440 = 24h).
+    interval_minutes: 1440
+    # Cadence after a pass that hit a cap or failed (60 = 1h), so a backlog
+    # drains faster than the steady-state interval without busy-looping.
+    retry_interval_minutes: 60
+    # Rows removed by one DELETE statement (one implicit transaction).
+    batch_rows: 100
+    # Hard cap on rows a single pass may delete before it yields.
+    max_rows_per_pass: 500
+    # Wall-clock budget for a single pass. The sweep runs inline on a
+    # caller's goroutine, so the budget stays small enough to disappear
+    # under a keystroke.
+    max_duration_ms: 50
   defaults:
     log: true
     broadcast: true
@@ -372,8 +394,6 @@ views:
       order: desc         # only direction is configurable for logs
     limit: 50
     window_days: 30       # default time horizon for the LOGS view (days)
-    filter:
-      source: []          # subset of [cli, tui, mcp]
   task_activity:
     sort:
       order: asc          # asc = chronological | desc = newest first

@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os"
 
 	"omakiten/internal/domain"
 )
@@ -24,19 +23,6 @@ const (
 	MaxNotificationFileBytes int64 = 100 * 1024
 	MaxLanguagePackBytes     int64 = 1 * 1024 * 1024
 )
-
-// readFileBounded mirrors os.ReadFile but caps the read at max+1 bytes
-// so the function can distinguish "fits the budget" from "overran the
-// budget". Returns ErrConfigTooLarge wrapped in a domain.CodedError on
-// overflow.
-func readFileBounded(path string, max int64) ([]byte, error) {
-	file, err := os.Open(path)
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = file.Close() }()
-	return readBounded(file, path, max)
-}
 
 // readBounded drains r up to max+1 bytes. Returns the first max bytes
 // on success; a coded ErrConfigTooLarge on overflow so callers can

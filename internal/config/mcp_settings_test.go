@@ -13,8 +13,8 @@ import (
 // fields, so this fixture declares them all.
 func TestLoadBundleAcceptsMCPSettings(t *testing.T) {
 	dir := t.TempDir()
-	configPath := filepath.Join(dir, "omakiten.yaml")
-	writeFile(t, configPath, `version: 1
+	configPath := filepath.Join(dir, "config", "omakiten.yaml")
+	writeWiring(t, configPath, `version: 1
 kit: { id: 1, key: default, name: Default }
 config:
   output: { json_minified: true, omit_empty: true }
@@ -45,7 +45,6 @@ config:
     logs: { sort: {order: desc}, limit: 50, window_days: 30 }
     task_activity: { sort: {order: asc} }
   sqlite: { busy_timeout_ms: 5000, cache_size_kb: 1024, mmap_size_bytes: 0 }
-  activity_log: { max_rows: 500, max_age_days: 7 }
   solutions: { default_top_limit: 10, max_top_limit: 100 }
   events: { default_recent_limit: 50, defaults: { log: true, broadcast: true, hook: true } }
   search: { stopwords: [and, the] }
@@ -94,8 +93,8 @@ workflows:
 // to a code-side default (which no longer exists).
 func TestMCPSettingsRejectsOmittedFields(t *testing.T) {
 	dir := t.TempDir()
-	configPath := filepath.Join(dir, "omakiten.yaml")
-	writeFile(t, configPath, `version: 1
+	configPath := filepath.Join(dir, "config", "omakiten.yaml")
+	writeWiring(t, configPath, `version: 1
 kit: { id: 1, key: default, name: Default }
 config:
   output: { json_minified: true, omit_empty: true }
@@ -120,8 +119,8 @@ workflows:
 // in the strict-mode check (must be > 0) with a descriptive message.
 func TestLoadBundleRejectsNegativeMCPSettings(t *testing.T) {
 	dir := t.TempDir()
-	configPath := filepath.Join(dir, "omakiten.yaml")
-	writeFile(t, configPath, `version: 1
+	configPath := filepath.Join(dir, "config", "omakiten.yaml")
+	writeWiring(t, configPath, `version: 1
 kit: { id: 1, key: default, name: Default }
 config:
   output: { json_minified: true, omit_empty: true }

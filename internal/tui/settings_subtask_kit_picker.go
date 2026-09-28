@@ -5,10 +5,9 @@ import (
 	"path/filepath"
 	"strings"
 
-	tea "github.com/charmbracelet/bubbletea"
-
 	"omakiten/internal/config"
-	"omakiten/internal/tui/components/picker"
+	"omakiten/internal/tui/screenhost"
+	"omakiten/internal/tui/screens/settingspicker"
 )
 
 // subtaskKitOption is one row in the sub-task kit picker. IsNone marks
@@ -52,20 +51,21 @@ func (m *Model) openSubtaskKitPicker() {
 		m.status = m.t("tui.status.no_subtask_kit_profiles")
 	}
 	active := m.currentSubtaskKitRelative()
-	cursor := 0
-	for i, opt := range options {
-		switch {
-		case opt.IsNone && active == "":
-			cursor = i
-		case opt.RelativePath == active:
-			cursor = i
+	m.subtaskKitPickerScreen = settingspicker.New(settingspicker.SubtaskKit).Open(subtaskKitPickerPayload(options, active))
+	m.pushScreen(screenhost.SubtaskKitPicker)
+	m.status = m.t("tui.status.subtask_kit_picker")
+}
+
+func subtaskKitPickerPayload(options []subtaskKitOption, active string) settingspicker.Payload {
+	rows := make([]settingspicker.Option, len(options))
+	for i, option := range options {
+		rows[i] = settingspicker.Option{
+			Value: option.RelativePath, Label: option.Display, Detail: option.Filename,
+			Custom: option.IsCustom, None: option.IsNone,
+			Active: option.IsNone && active == "" || option.RelativePath == active,
 		}
 	}
-	m.subtaskKitPickerOptions = options
-	m.entityScreen = entityScreenView
-	m.entityForm = entityForm{mode: entityScreenSubtaskKitPicker}
-	m.entityPicker = picker.New(picker.Single).WithCursor(cursor, len(options), 0)
-	m.status = m.t("tui.status.subtask_kit_picker")
+	return settingspicker.Payload{Kind: settingspicker.SubtaskKit, Current: active, Options: rows}
 }
 
 // discoverSubtaskKitOptions lists every yaml profile the config picker
@@ -121,154 +121,37 @@ func (m Model) currentSubtaskKitRelative() string {
 	return bundle.SubtaskKit
 }
 
-// updateSubtaskKitPicker routes keypresses while the sub-kit picker is
-// open. Cancel closes the overlay; Select runs the apply path.
-func (m Model) updateSubtaskKitPicker(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	if msg.String() == "ctrl+c" || msg.String() == "q" {
-		return m, tea.Quit
-	}
-	var cmd tea.Cmd
-	m.entityPicker, cmd = m.entityPicker.Update(msg, len(m.subtaskKitPickerOptions), scrollDataRows(m.pickerViewportRows()))
-	switch m.entityPicker.LastEvent() {
-	case picker.EventCancel:
-		m.closeEntityScreen(m.t("tui.status.subtask_kit_picker_cancelled"))
-	case picker.EventSelect:
-		m.applySubtaskKitSelection()
-	}
-	return m, cmd
-}
-
 // applySubtaskKitSelection writes the chosen sub-kit path into
 // omakiten.yaml (or clears it for the "none" sentinel), then triggers
 // the hot-reload path so #285's migration handler and #282's
-// transparency notice fire through the cache rebuild. On reload
-// failure the YAML mutation is rolled back via the transactional
-// helper (`applySubtaskKitWithRollback`) so disk AND runtime/cache
-// state both return to the prior wiring — #301 review §11557 finding
-// B9 closed the regression where the YAML was reverted but the cache
-// had already rotated to the candidate snapshot.
-func (m *Model) applySubtaskKitSelection() {
-	if m.entityPicker.Cursor < 0 || m.entityPicker.Cursor >= len(m.subtaskKitPickerOptions) {
-		return
-	}
-	chosen := m.subtaskKitPickerOptions[m.entityPicker.Cursor]
-	relative := ""
-	if !chosen.IsNone {
-		relative = chosen.RelativePath
-	}
+// transparency notice fire through the cache rebuild. If reload fails,
+// the current-path write remains published and the error is surfaced.
+func (m *Model) applySubtaskKitSelection(relative string) {
+	previousActive := m.currentSubtaskKitRelative()
 
-	originalRelative, err := m.loadCurrentSubtaskKitRelative()
-	if err != nil {
+	if _, err := applyBundleEditor(m.ctx, m.repos.Editor, func(bundle *config.Bundle) error {
+		bundle.SubtaskKit = relative
+		return nil
+	}); err != nil {
 		m.status = fmt.Sprintf(m.t("tui.status.subtask_kit_switch_failed_fmt"), err.Error())
 		return
 	}
-	previousActive := m.currentSubtaskKitRelative()
-
-	if applyErr := m.applySubtaskKitWithRollback(originalRelative, relative); applyErr != nil {
-		m.status = fmt.Sprintf(m.t("tui.status.subtask_kit_switch_failed_fmt"), applyErr.Error())
+	if err := m.reloadBundle(m.repos.Editor.Path()); err != nil {
+		m.status = fmt.Sprintf(m.t("tui.status.subtask_kit_switch_failed_fmt"), err.Error())
 		return
 	}
-	switch {
-	case chosen.IsNone:
+	switch relative {
+	case "":
 		if previousActive == "" {
-			m.closeEntityScreen(m.t("tui.status.subtask_kit_already_none"))
+			m.popScreen()
+			m.status = m.t("tui.status.subtask_kit_already_none")
 		} else {
-			m.closeEntityScreen(m.t("tui.status.subtask_kit_cleared"))
+			m.popScreen()
+			m.status = m.t("tui.status.subtask_kit_cleared")
 		}
 	default:
-		display := strings.TrimSuffix(chosen.Filename, filepath.Ext(chosen.Filename))
-		m.closeEntityScreen(fmt.Sprintf(m.t("tui.status.subtask_kit_switched_fmt"), display))
+		display := strings.TrimSuffix(filepath.Base(relative), filepath.Ext(relative))
+		m.popScreen()
+		m.status = fmt.Sprintf(m.t("tui.status.subtask_kit_switched_fmt"), display)
 	}
-}
-
-// applySubtaskKitWithRollback is the transactional write/reload/
-// rollback helper for the sub-task kit picker. The candidate write
-// always runs first; on reload failure the helper rewrites the
-// original `subtask_kit` value AND re-runs `reloadBundle` against the
-// restored file so the runtime cache rotates back to the prior
-// snapshot. Without the second reload the on-disk YAML would say
-// "use the previous kit" while the cache still held the candidate's
-// snapshot (#301 review §11557 finding B9).
-//
-// The second `reloadBundle` suppresses the bundle.swapped emit so the
-// user is not bounced through a second orphan-migration prompt for a
-// rollback they did not consent to (mirrors `revertConfigSwap`).
-func (m *Model) applySubtaskKitWithRollback(originalRelative, candidateRelative string) error {
-	if _, err := m.repos.Editor.Apply(m.ctx, func(bundle *config.Bundle) error {
-		bundle.SubtaskKit = candidateRelative
-		return nil
-	}); err != nil {
-		return err
-	}
-	if err := m.reloadBundle(m.repos.Editor.Path()); err != nil {
-		if _, rerr := m.repos.Editor.Apply(m.ctx, func(bundle *config.Bundle) error {
-			bundle.SubtaskKit = originalRelative
-			return nil
-		}); rerr != nil {
-			return fmt.Errorf("%w (rollback yaml write also failed: %v)", err, rerr)
-		}
-		m.suppressNextSwapEmit = true
-		if rerr := m.reloadBundle(m.repos.Editor.Path()); rerr != nil {
-			return fmt.Errorf("%w (rollback reload also failed: %v)", err, rerr)
-		}
-		return err
-	}
-	return nil
-}
-
-// loadCurrentSubtaskKitRelative reads the active wiring file and
-// returns the SubtaskKit field as written on disk. Used by the
-// rollback path so the YAML can be restored byte-for-byte after a
-// failed reload — the in-memory snapshot's SubtaskKitPath returns a
-// resolved (absolute) path, which would not round-trip through the
-// saver. Errors propagate so the caller surfaces them via status.
-func (m Model) loadCurrentSubtaskKitRelative() (string, error) {
-	bundle, err := m.repos.Editor.Load()
-	if err != nil {
-		return "", err
-	}
-	return bundle.SubtaskKit, nil
-}
-
-// renderSubtaskKitPicker draws the picker panel matching the root-kit
-// picker's kicker + hint + rows shape (single accent per the design
-// language) so the surface reads identically when the user toggles
-// between the two pickers.
-//
-// The active dot uses RelativePath identity, not the basename — a
-// default `foo.yaml` and a `custom/foo.yaml` are distinct rows and
-// only one carries the dot at a time (#301 review §11557 finding B8).
-func (m Model) renderSubtaskKitPicker() string {
-	active := m.currentSubtaskKitRelative()
-	rows := make([]string, 0, len(m.subtaskKitPickerOptions))
-	for index, opt := range m.subtaskKitPickerOptions {
-		marker := m.cursorMarker(m.entityPicker.Cursor == index)
-		dot := " "
-		switch {
-		case opt.IsNone && active == "":
-			dot = "•"
-		case !opt.IsNone && opt.RelativePath == active:
-			dot = "•"
-		}
-		var row string
-		if opt.IsNone {
-			row = fmt.Sprintf("%s %s %s", marker, dot, m.styles.hint.Render(m.t("tui.picker.subtask_kit_none")))
-		} else {
-			row = fmt.Sprintf("%s %s %s  %s", marker, dot, opt.Display, m.styles.hint.Render(opt.Filename))
-			if opt.IsCustom {
-				row += " " + m.styles.badgeInfo.Render(m.t("tui.badge.custom"))
-			}
-		}
-		rows = append(rows, row)
-	}
-	displayActive := active
-	if displayActive == "" {
-		displayActive = m.t("tui.picker.subtask_kit_none")
-	}
-	header := []string{
-		m.styles.kicker(fmt.Sprintf(m.t("tui.kicker.subtask_kit_active_fmt"), displayActive)),
-		m.styles.hint.Render(m.t("tui.picker.hint.subtask_kit")),
-		"",
-	}
-	return m.renderPickerPanel(header, rows, m.entityPicker.Scroll, m.pickerViewportRows())
 }

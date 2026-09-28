@@ -23,62 +23,68 @@ func TestCLIEntityCommands(t *testing.T) {
 
 	runCLI(t, dbPath, configPath, "init", "--name", "Project", "--slug", "project")
 
-	t.Run("law CRUD", func(t *testing.T) {
-		out := runCLI(t, dbPath, configPath, "law", "add", "-k", "no-secrets", "-s", "warning", "-b", "Never persist secrets", "--no-edit")
-		slug := extractSlug(t, out, "law")
-		if slug != "no-secrets" {
-			t.Fatalf("law add slug = %q, want no-secrets", slug)
-		}
-		out = runCLI(t, dbPath, configPath, "law", "edit", slug, "-s", "error", "--no-edit")
-		// CLI emits the raw severity id; the canonical kit maps "error" to id 3.
-		if !strings.Contains(out, `"severity":3`) {
-			t.Fatalf("law edit out = %s, want severity=3 (error)", out)
-		}
-		out = runCLI(t, dbPath, configPath, "law", "list")
-		if !strings.Contains(out, "no-secrets") {
-			t.Fatalf("law list missing key: %s", out)
-		}
-		out = runCLI(t, dbPath, configPath, "law", "show", slug)
-		if !strings.Contains(out, `"key":"no-secrets"`) || !strings.Contains(out, `"body":`) {
-			t.Fatalf("law show envelope missing fields: %s", out)
-		}
-		runCLI(t, dbPath, configPath, "law", "remove", slug)
-		out = runCLI(t, dbPath, configPath, "law", "list")
-		if strings.Contains(out, "no-secrets") {
-			t.Fatalf("law list still has removed key: %s", out)
-		}
-	})
+	t.Run("law CRUD", func(t *testing.T) { testCLILawCRUD(t, dbPath, configPath) })
+	t.Run("skill CRUD", func(t *testing.T) { testCLISkillCRUD(t, dbPath, configPath) })
+	t.Run("persona CRUD", func(t *testing.T) { testCLIPersonaCRUD(t, dbPath, configPath) })
+}
 
-	t.Run("skill CRUD", func(t *testing.T) {
-		out := runCLI(t, dbPath, configPath, "skill", "add", "-k", "tui", "-n", "TUI", "--no-edit")
-		slug := extractSlug(t, out, "skill")
-		if slug != "tui" {
-			t.Fatalf("skill add slug = %q, want tui", slug)
-		}
-		runCLI(t, dbPath, configPath, "skill", "edit", slug, "-n", "Terminal UI", "--no-edit")
-		out = runCLI(t, dbPath, configPath, "skill", "list")
-		if !strings.Contains(out, "Terminal UI") {
-			t.Fatalf("skill list missing rename: %s", out)
-		}
-		runCLI(t, dbPath, configPath, "skill", "remove", slug)
-	})
+func testCLILawCRUD(t *testing.T, dbPath, configPath string) {
+	t.Helper()
+	out := runCLI(t, dbPath, configPath, "law", "add", "-k", "no-secrets", "-s", "warning", "-b", "Never persist secrets", "--no-edit")
+	slug := extractSlug(t, out, "law")
+	if slug != "no-secrets" {
+		t.Fatalf("law add slug = %q, want no-secrets", slug)
+	}
+	out = runCLI(t, dbPath, configPath, "law", "edit", slug, "-s", "error", "--no-edit")
+	if !strings.Contains(out, `"severity":3`) {
+		t.Fatalf("law edit out = %s, want severity=3 (error)", out)
+	}
+	out = runCLI(t, dbPath, configPath, "law", "list")
+	if !strings.Contains(out, "no-secrets") {
+		t.Fatalf("law list missing key: %s", out)
+	}
+	out = runCLI(t, dbPath, configPath, "law", "show", slug)
+	if !strings.Contains(out, `"slug":"no-secrets"`) || !strings.Contains(out, `"body":`) {
+		t.Fatalf("law show envelope missing fields: %s", out)
+	}
+	runCLI(t, dbPath, configPath, "law", "remove", slug)
+	out = runCLI(t, dbPath, configPath, "law", "list")
+	if strings.Contains(out, "no-secrets") {
+		t.Fatalf("law list still has removed key: %s", out)
+	}
+}
 
-	t.Run("persona CRUD", func(t *testing.T) {
-		out := runCLI(t, dbPath, configPath, "persona", "add", "-k", "frontend", "-n", "Frontend Agent", "--skill-slug", "implementation", "--no-edit")
-		slug := extractSlug(t, out, "persona")
-		if slug != "frontend" {
-			t.Fatalf("persona add slug = %q, want frontend", slug)
-		}
-		if !strings.Contains(out, `"skill_keys":["implementation"]`) {
-			t.Fatalf("persona add out missing skill_keys: %s", out)
-		}
-		runCLI(t, dbPath, configPath, "persona", "edit", slug, "-n", "Frontend v2", "--no-edit")
-		out = runCLI(t, dbPath, configPath, "persona", "list")
-		if !strings.Contains(out, "Frontend v2") {
-			t.Fatalf("persona list missing rename: %s", out)
-		}
-		runCLI(t, dbPath, configPath, "persona", "remove", slug)
-	})
+func testCLISkillCRUD(t *testing.T, dbPath, configPath string) {
+	t.Helper()
+	out := runCLI(t, dbPath, configPath, "skill", "add", "-k", "tui", "-n", "TUI", "--no-edit")
+	slug := extractSlug(t, out, "skill")
+	if slug != "tui" {
+		t.Fatalf("skill add slug = %q, want tui", slug)
+	}
+	runCLI(t, dbPath, configPath, "skill", "edit", slug, "-n", "Terminal UI", "--no-edit")
+	out = runCLI(t, dbPath, configPath, "skill", "list")
+	if !strings.Contains(out, "Terminal UI") {
+		t.Fatalf("skill list missing rename: %s", out)
+	}
+	runCLI(t, dbPath, configPath, "skill", "remove", slug)
+}
+
+func testCLIPersonaCRUD(t *testing.T, dbPath, configPath string) {
+	t.Helper()
+	out := runCLI(t, dbPath, configPath, "persona", "add", "-k", "frontend", "-n", "Frontend Agent", "--skill-slug", "implementation", "--no-edit")
+	slug := extractSlug(t, out, "persona")
+	if slug != "frontend" {
+		t.Fatalf("persona add slug = %q, want frontend", slug)
+	}
+	if !strings.Contains(out, `"skill_keys":["implementation"]`) {
+		t.Fatalf("persona add out missing skill_keys: %s", out)
+	}
+	runCLI(t, dbPath, configPath, "persona", "edit", slug, "-n", "Frontend v2", "--no-edit")
+	out = runCLI(t, dbPath, configPath, "persona", "list")
+	if !strings.Contains(out, "Frontend v2") {
+		t.Fatalf("persona list missing rename: %s", out)
+	}
+	runCLI(t, dbPath, configPath, "persona", "remove", slug)
 }
 
 func TestCLILawAddRejectsInvalidSeverity(t *testing.T) {
@@ -110,7 +116,7 @@ func TestCLILawAddRejectsInvalidSeverity(t *testing.T) {
 }
 
 // TestCLISkillRemovePrunesPersonaRefs covers the requirement that removing a
-// skill silently rewrites persona wiring rather than blocking on usage.
+// skill does not error when personas or commands still reference it.
 func TestCLISkillRemovePrunesPersonaRefs(t *testing.T) {
 	tmp := t.TempDir()
 	dbPath := filepath.Join(tmp, "omakiten.db")
@@ -125,10 +131,11 @@ func TestCLISkillRemovePrunesPersonaRefs(t *testing.T) {
 	// `implementation` skill is in the default Builder persona's repertoire.
 	runCLI(t, dbPath, configPath, "skill", "remove", "implementation")
 
-	out := runCLI(t, dbPath, configPath, "persona", "show", "naruto-uzumaki")
-	if strings.Contains(out, `"implementation"`) {
-		t.Fatalf("persona still references removed skill: %s", out)
+	out := runCLI(t, dbPath, configPath, "skill", "list")
+	if strings.Contains(out, `"slug":"implementation"`) {
+		t.Fatalf("skill list still has removed skill: %s", out)
 	}
+	runCLIExpectError(t, dbPath, configPath, "validation_error", "skill", "show", "implementation")
 }
 
 // TestCLIEditorShellOut spins up a stub editor (a tiny sh script) that writes
@@ -148,7 +155,7 @@ func TestCLIEditorShellOut(t *testing.T) {
 	t.Chdir(projectRoot)
 	stubPath := filepath.Join(tmp, "editor.sh")
 	payload := filepath.Join(tmp, "payload.md")
-	if err := os.WriteFile(payload, []byte("---\nname: Stubbed\ndescription: Written by stub editor\n---\nstub body content\n"), 0o644); err != nil {
+	if err := os.WriteFile(payload, []byte("---\nname: Stubbed\ndescription: Written by stub editor\nschema_version: 2\n---\nstub body content\n"), 0o644); err != nil {
 		t.Fatalf("WriteFile(payload) error = %v", err)
 	}
 	if err := os.WriteFile(stubPath, []byte("#!/bin/sh\ncp \""+payload+"\" \"$1\"\n"), 0o755); err != nil {

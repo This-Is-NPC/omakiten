@@ -31,6 +31,7 @@ const (
 	ErrEditorNotFound            ErrorCode = "editor_not_found"
 	ErrConfigTooLarge            ErrorCode = "config_too_large"
 	ErrSearchIndexInvalid        ErrorCode = "search_index_invalid"
+	ErrOperationDenied           ErrorCode = "operation_denied"
 )
 
 type CodedError struct {

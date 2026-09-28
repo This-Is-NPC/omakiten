@@ -121,8 +121,8 @@ func TestCascade_SubtaskRespectsSubKitGuardSetExclusively(t *testing.T) {
 	snap := config.BuildSnapshot(config.Bundle{
 		Kit: config.Kit{ID: 100, Key: "omakase", Name: "Omakase"},
 		Workflows: []config.Workflow{{
-			ID:   1,
-			Key:  "omakase",
+			ID:  1,
+			Key: "omakase",
 			Buckets: []config.Bucket{
 				{ID: 2, Key: "dev", Position: 1},
 				{ID: 3, Key: "review", Position: 2},
@@ -135,8 +135,8 @@ func TestCascade_SubtaskRespectsSubKitGuardSetExclusively(t *testing.T) {
 		SubtaskBundle: &config.Bundle{
 			Kit: config.Kit{ID: 200, Key: "izakaya", Name: "Izakaya"},
 			Workflows: []config.Workflow{{
-				ID:   2,
-				Key:  "izakaya",
+				ID:  2,
+				Key: "izakaya",
 				Buckets: []config.Bucket{
 					{ID: 2, Key: "dev", Position: 1},
 					{ID: 3, Key: "review", Position: 2},
@@ -183,8 +183,8 @@ func TestCascade_NoSubtaskKit_AllTasksShareRootGuards(t *testing.T) {
 	snap := config.BuildSnapshot(config.Bundle{
 		Kit: config.Kit{ID: 100, Key: "omakase", Name: "Omakase"},
 		Workflows: []config.Workflow{{
-			ID:   1,
-			Key:  "omakase",
+			ID:  1,
+			Key: "omakase",
 			Buckets: []config.Bucket{
 				{ID: 1, Key: "backlog", Position: 1},
 				{ID: 2, Key: "dev", Position: 2},

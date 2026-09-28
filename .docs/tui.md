@@ -5,6 +5,7 @@
 ## Contents
 
 - [Home (multi-project picker)](#home-multi-project-picker)
+- [Project view](#project-view)
 - [Navigation model](#navigation-model)
 - [Help overlay](#help-overlay)
 - [Footer](#footer)
@@ -20,7 +21,7 @@
 
 ## Home (multi-project picker)
 
-When `okt tui` is launched **outside** a registered project (no `--project` / `--project-id`, and the current working directory does not match any registered `root_path`), the TUI opens on the Home Screen. It lists every project in the local SQLite database as a card — name, slug, root path, pending task count, and the project's tags as filled-pill badges.
+When `okt tui` is launched **outside** a registered project (no `--project` / `--project-id`, and the current working directory does not match any registered `root_path`), the TUI opens on the registered Home screen (`internal/tui/screens/home`). The screen owns its project-card projection, cursor/scroll, loading/error state, delete-confirm arm, resize behavior, footer/help, and reload generation. It lists every project in the local SQLite database as a card — name, slug, root path, pending task count, and the project's tags as filled-pill badges.
 
 Home is **outside** the regular zone cycle. `tab` / `1`–`3` never land on Home. Entry points:
 
@@ -31,6 +32,8 @@ While Home is active the per-project nav strip is suppressed (Home reads as a ch
 
 Confirmed project deletion holds a cross-process backup-directory lease and writes a verified SQLite recovery image through the same pinned live `Store` connection that performs deletion, rather than reopening `DBPath`. The Store retries external generation changes before acquiring `BEGIN IMMEDIATE`; only an image matching the locked generation can proceed to the cascade. Snapshot, lease, repeated-churn, or pre-commit directory-identity failure aborts deletion and leaves the project intact. Retention runs through the pinned directory root after commit, and the final Home status includes the protected recovery path.
 
+Home emits typed select/create/edit/delete intents. The root host resolves repositories, project context, global notification overlays, backup construction, destructive execution, audit warnings, and navigation. Reload and delete results carry the screen request generation and are discarded when they arrive stale or Home is no longer active.
+
 ### Home keybindings
 
 | Key | Action |
@@ -39,6 +42,9 @@ Confirmed project deletion holds a cross-process backup-directory lease and writ
 | `pgup` · `pgdn` · `ctrl+u` · `ctrl+d` | scroll by half page |
 | `g` · `G` | first / last project |
 | `enter` | open the highlighted project (loads the Board) |
+| `n` | emit create-project guidance |
+| `e` | select the highlighted project and open Project view |
+| `d` · `d` | arm and confirm project deletion (a configured notification replaces the second-key presentation) |
 | `ctrl+h` | reload Home (refresh tags / pending counts) |
 | `q` · `ctrl+c` | quit |
 
@@ -60,6 +66,20 @@ okt --project omakiten tui
 
 The TUI consumes the same application services as the CLI and MCP layers — the SQLite store and bundled config files are the only state. There is no separate TUI cache.
 
+## Project view
+
+Press `ctrl+p`, or `e` on a project in Home, to push the registered Project route (`internal/tui/screens/project`). The screen keeps project identity intact while owning its metadata/dashboard/activity projection, three-zone focus, activity cursor/scroll, loading/error generation, resize behavior, footer, and help. `esc` pops the route and restores the prior screen without rewriting its legacy zone/sub selection.
+
+| Key | Action |
+|---|---|
+| `tab` · `shift+tab` | cycle metadata / dashboard / activity focus |
+| `enter` | open the focused comment, or open a task referenced by a system event |
+| `f` | push the registered full-width Project Form reader |
+| `r` | refresh the project projection |
+| `esc` | pop back to the previous route |
+
+The Project Form reader owns its `detailscreen` scroll and markdown presentation. `M` toggles raw/rendered markdown; `f` or `esc` pops back to Project. While open it blocks background refresh and global input overlays so reader keystrokes cannot leak into the host.
+
 ## Navigation model
 
 The header renders a single chrome with two rows of tiles:
@@ -79,10 +99,10 @@ The header renders a single chrome with two rows of tiles:
 
 | Top | Subs | Renderer family |
 |---|---|---|
-| `01 // TASKS` | `board` · `table` · `graph` · `plans` | `render_board.go`, `render_table.go`, `render_graph.go`, `render_plans.go`, `render_plan_network.go` |
+| `01 // TASKS` | `board` · `table` · `graph` · `plans` | `screens/{board,table,graph,plans,plannetwork}/` |
 | `02 // STATS` | `general` · `logs` | `render_stats.go`, `render_logs.go` |
 | `03 // SETTINGS` | `general` · `laws` · `personas` · `skills` · `templates` · `tags` | `render_settings_general.go`, `render_config.go` (wraps `render_entity.go`) |
-| `00 // HOME` (sentinel) | — | `render_home.go` |
+| `00 // HOME` (sentinel) | — | `screens/home` |
 
 Subs map to `subID` constants in `internal/tui/state.go`; the wiring (which dispatcher / renderer fires for which sub) lives in `Update` and `renderCurrentView` in `model.go` / `render_chrome.go`.
 
@@ -171,7 +191,7 @@ Every scrollable surface in this guide — per-zone tables below and every modal
 
 ### Tasks › Plans
 
-The fourth Tasks sub-tab surfaces WBS-style plans (`render_plans.go`, `render_plan_network.go`). It is the in-TUI counterpart to the MCP `plans.*` tools and the `okt plan ...` CLI surface.
+The fourth Tasks sub-tab surfaces WBS-style plans (`screens/plans/`, `screens/plannetwork/`). The list, read-only goal reader, and Plan Network are registered route-stack screens with owned lifecycle. Plan Network owns its graph projection, cursor/scroll/collapse state, goal editor, assignment input, resize, footer/help, and reload policy; it emits typed save/assign outcomes while the host retains service execution and rejects stale generation or plan-scope results. It is the in-TUI counterpart to the MCP `plans.*` tools and the `okt plan ...` CLI surface.
 
 The sub opens to a **list view** first; pressing `enter` on a plan opens the **network diagram** for that plan. `esc` returns to the list.
 
@@ -282,17 +302,29 @@ The TUI's per-second realtime tick is **not** logged — `refreshTickMsg` wraps 
 
 ### Settings › General (read-only)
 
-Runtime info card with two stacked bordered tables:
+Registered read-only contract screen with stacked bordered tables:
 
 - **Runtime**: `okt version`, active profile yaml path, SQLite path
 - **Project**: active workflow key, bucket keys, active theme
 
-Mutating any of these still goes through dedicated pickers (`t` for theme, `c` for config) which remain reachable from every Settings sub.
+The screen owns effective-section ordering, scrolling, resize/entry clamping, footer/help, and bundle-reload intent. Mutating any values still goes through the host's dedicated pickers/editor; the screen does not own config mutation state.
+
+Theme, Config, and Subtask-kit open registered child screens backed by `internal/tui/screens/settingspicker`. The child screen owns candidate selection, cursor/scroll, active preview, dirty state, resize, refresh intent, and apply/cancel outcomes. The host alone discovers and validates files, writes configuration, reloads caches, rolls back failed sub-kit reloads, and publishes status.
 
 | Key | Action |
 |---|---|
 | `t` | open theme picker (hot-reload) |
 | `c` | open config picker (hot-reload) |
+| `s` | open sub-task kit picker |
+| `e` | edit the active yaml in `$EDITOR` |
+| `r` | reload the active bundle projection |
+| `j` / `k`, `pgup` / `pgdn`, `g` / `G` | scroll, page, or jump within the read-only projection |
+
+### Settings › Guards (read-only)
+
+Registered contract screen showing the active workflow as a position-ordered from/to matrix. Disallowed or diagonal cells render `—`, allowed unguarded transitions render `[empty]`, and guarded transitions list guard slugs. A divergent sub-task kit produces separate **Root** and **Subtask kit** matrices; equivalent matrices collapse to one.
+
+General and Guards retain independent scroll offsets and share the key contract above. Matrix rendering lives in the pure `internal/tui/components/guardmatrix` package: it accepts immutable workflow/snapshot presentation input and owns no draft or mutation state. Studio may reuse that component, but Studio editing behavior remains separate from these Settings screens.
 
 #### Config picker hot-reload
 
@@ -322,9 +354,9 @@ Every dispatched action emits `confirmation.granted` with `author_type=human`
 keyed by the active project so the audit log captures the human keystroke
 that authorised the run.
 
-### Settings › Laws / Personas / Skills
+### Settings › Laws / Personas / Skills / Templates / Tags
 
-Each entity kind owns its own sub. Cards wrap into a multi-column grid sized to the available terminal width (`entityGridCols`); per-row scroll keeps the focused card on-screen.
+The five registered descriptors instantiate one parameterized `screens/entitylist.Screen`. Each instance owns its cursor, row-aligned scroll, resize/entry clamp, loading/error/empty projection, footer/help, delete-confirm fuse, and bundle-reload intent. Cards retain catalog order, labels, selection, active/custom/default/scope metadata, and width-aware wrapping. The screen emits semantic kind/slug outcomes; the host alone applies tag policy, opens detail/editor/picker controllers, and performs persistence.
 
 | Key | Action |
 |---|---|
@@ -355,13 +387,17 @@ Tag browser. Only **orphan** tags (zero references) can be deleted from the TUI;
 | `D` | delete every orphan tag (one shot) |
 | `t` · `c` | theme picker · config picker |
 
+### Entity detail
+
+Laws, Personas, Skills, and Templates open the registered `screens/entitydetail.Screen` on the route stack. It owns detail scroll, markdown mode, loading/error/not-found rendering, resize behavior, footer/help, and delete confirmation while the host supplies the current read projection and retains editor, deletion, picker, refresh, and persistence policy. `esc` pops back to the originating list.
+
 ## Modal sub-screens
 
 These open on top of a zone/sub and intercept all input until dismissed. The contextual help overlay (`?`) automatically narrows to whichever sub-screen is open. Every scrollable modal inherits [Common viewport bindings](#common-viewport-bindings); per-modal tables list only the surface-specific verbs.
 
 ### Modal text inputs
 
-Every modal that captures text — `modeMove`, the inline new-comment (`modeComment`), the dedicated comment edit overlay (`commentScreenEditing`), and the create / edit task form — drives a Charm `bubbles` component: `textinput.Model` for single-line surfaces (`modeMove`, task title), `textarea.Model` for multi-line surfaces (comments, task description). Standard caret keys (`↑ ↓ ← →` · `home` · `end`) apply throughout.
+Every modal that captures text drives a Charm `bubbles` component. Task Detail owns its move `textinput.Model` and new-comment `textarea.Model`; the registered Comment detail screen owns its edit textarea, and the registered task form owns its form inputs. Standard caret keys (`↑ ↓ ← →` · `home` · `end`) apply throughout, and opening Task Detail move mode cannot mutate or intercept the Comment detail input.
 
 `KeyMap.InsertNewline` is rebound on every textarea so `shift+enter` / `alt+enter` / `ctrl+j` insert a newline natively. For the task description textarea — where `ctrl+s` is the save key and a bare Enter is free for newlines — the binding includes `enter` too. For the comment textareas, `enter` is reserved for "save". The per-modal tables below therefore omit caret/newline rows and list only surface-specific verbs.
 
@@ -372,6 +408,8 @@ Every modal that captures text — `modeMove`, the inline new-comment (`modeComm
 ### Task view (after `enter` on a task card)
 
 Destructive verbs live inside the entered surface only — the board has no `d` shortcut. Pressing `e` or `d` runs a policy pre-check; if the bucket forbids it the guard hint surfaces in the status badge instead of opening the form. `↑ ↓` · `j k` route to the description (form focus) or activity cards (activity focus); `esc back` returns to the launching surface.
+
+Task Detail is the registered `screens/taskdetail` route. It owns the task/activity/subtask projection, activity and subtask cursors/scroll, focus, blocker picker, comment composer, move selector, nested-task stack, resize, footer/help and reload generation. Typed outcomes cross the host boundary for service operations and reader/form navigation. Realtime activity results are accepted only while route, task ID and generation still match; stale or cancelled results are dropped and a surviving focused event is re-anchored by ID.
 
 | Key | Action |
 |---|---|
@@ -397,13 +435,19 @@ The task view always renders three panels — task details on the left, sub-task
 | `space` | send the focused child straight to the workflow's final bucket — resolves the final bucket from the child's resolved kit so sub-tasks land in the sub-kit's terminal bucket, not the root kit's (guards still fire; errors surface inline) |
 | `m` | move the focused child by bucket key; the input prompt appends the sub-kit's bucket keys so valid targets are visible inline |
 | `enter` | drill into the focused child (becomes the new task view; `esc` pops back) |
-| `f` | open the dedicated description overlay for the focused task |
+| `f` | push the registered Description reader for the focused task |
 
 `f` is wired to the **parent task's** description, not the focused child — it surfaces the body when the inline form column truncates after `taskDescriptionInlineCap` lines (6 by default; the elision hint reads `+N more · f to focus`). To read a child's description, `enter` into it first.
 
-The `Parent` field on the task form (§E, last in the `Title → Description → Priority → Tags → Parent` rotation) holds the parent task id as a decimal — empty means root. The field is pre-filled from `tasks.parent_id` on edit, captured into `taskEditInitial` so `esc` can detect a dirty edit without re-querying the store, and validated on blur via `validateParentInputOnBlur` (rotation through `cycleTaskField`). Creating a sub-task through `a` / `n` instead routes through `TaskService.AddSub` with `taskCreateParentID` held out-of-band and rendered as a breadcrumb in the form header.
+Task create and edit use the registered `screens/taskform` child route, which owns the sectioned form (Title / Description / Priority / Tags / Parent) as screen code and paints line inputs and the description area through `components/field`. The shared section order is `Title → Description → Priority → Tags → Parent`; `tab` / `shift+tab` rotate focus, arrows cycle priority, and the active section carries the accent marker and border. The screen owns mode, initial values, dirty-discard confirmation, parent lookup presentation, resize, footer, and help, then emits typed save/cancel/lookup intents. The host rejects stale route/generation outcomes before it performs project-aware parent lookup, anti-cycle validation, tag synchronization, persistence, or post-save navigation. Empty Parent means root. Creating a sub-task through `a` / `n` carries the fixed parent in the screen payload and still routes through `TaskService.AddSub`.
+
+### Description reader (after `f` in Task view)
+
+The registered `screens/description` route owns body scroll, markdown/plain mode, terminal resize, loading/error/empty rendering, footer, and contextual help. It is pushed above Task Detail, so `f` or `esc` pops back to the same task focus without root open-state flags.
 
 ### Comment view (after `enter` on a comment)
+
+The registered `screens/commentdetail` route owns a single explicit read/edit mode, body scroll, markdown/plain mode, textarea geometry, dirty state, delete confirmation, resize, loading/save-error rendering, footer, and help. Task-scoped payloads carry resolved edit/delete permission and hints; project/universal comments opened from Project remain read-only. The host owns service calls and applies typed results, so a failed save stays in edit mode with the dirty buffer intact.
 
 | Key | Action |
 |---|---|
@@ -422,7 +466,7 @@ A multi-line `bubbles/textarea` opens **inline inside the activity column** of t
 
 ### Comment edit — edit existing comment (`e` on the comment view)
 
-Pressing `e` on the comment-view overlay flips the **same overlay** into a dedicated full-screen edit form (kicker · hint · bordered textarea · footer) — distinct from the inline new-comment input. The pre-filled body, the wider textarea, and `ctrl+s` as the save key match the task-edit form so the two write surfaces feel uniform.
+Pressing `e` changes the **same registered screen** to its explicit edit mode (kicker · hint · bordered textarea · footer), distinct from the inline new-comment input. The pre-filled body, wider textarea, dirty tracking, and `ctrl+s` save key match the task-edit form. `esc` discards the local buffer and returns to read mode; a host save error remains in edit mode and renders the error without losing text.
 
 | Key | Action |
 |---|---|
@@ -433,13 +477,15 @@ Pressing `e` on the comment-view overlay flips the **same overlay** into a dedic
 
 In the description textarea, bare `enter` also inserts a newline (the textarea is the only one where `ctrl+s`, not `enter`, is the save key).
 
+Create retains the `Title → Description → Priority → Tags → Parent` form. Edit uses the four-section component described above and preserves the current priority.
+
 | Key | Action |
 |---|---|
-| `tab` | switch field |
-| `← →` · `h l` | change priority |
+| `tab` · `shift+tab` | switch field / section |
+| `← →` · `h l` | change priority (create only) |
 | `ctrl+b` | edit blockers (existing tasks only) |
 | `ctrl+s` | save |
-| `esc` | cancel |
+| `esc` | cancel; dirty edits require a second press to confirm discard |
 
 ### Blocker picker (from task view via `b`, or from the form via `ctrl+b`)
 
@@ -462,23 +508,26 @@ In the description textarea, bare `enter` also inserts a newline (the textarea i
 
 ### Skill picker (from a persona via `p`)
 
+Persona-skill and Template-default relationships are registered child routes backed by `internal/tui/screens/relationshippicker`. The reusable screen owns candidate normalization, cursor/scroll, selected and dirty state, resize, footer/help, and typed select/save/cancel outcomes. The host validates the current entity and candidate set, rejects outcomes from stale route/snapshot generations, and alone performs persistence and projection refresh.
+
 | Key | Action |
 |---|---|
 | `space` | toggle |
 | `enter` on `+ create new` | scaffold new skill |
 | `ctrl+s` | save |
-| `esc` | cancel |
+| `esc` | cancel; after a selection change, press twice to confirm discard |
 
-### Theme / config / template-default pickers
+### Theme / config / subtask-kit / template-default pickers
 
 | Key | Action |
 |---|---|
-| `enter` | apply (theme: hot-reload; config: hot-reload via `BundleCache.Reload`; default: clears prior owner) |
-| `esc` | cancel |
+| `enter` | apply (theme: hot-reload; config: validate then publish via `BundleCache`; subtask-kit: write/clear; default: clears prior owner) |
+| `r` | rediscover candidates (Theme / Config / Subtask-kit child screens) |
+| `esc` | cancel; Template-default selection changes require a second press to confirm discard |
 
 ## File-backed editing — the `$EDITOR` shellout
 
-For skills, laws, personas, and templates, "new" and "edit" actions in **Settings** shell out to the resolved editor (`$EDITOR` → `$VISUAL` → `nano`, in that order; `internal/app/editor.go:ResolveEditor`). When the editor exits successfully, the bundle is re-imported through `app.BundleEditor.Apply` so the in-memory `*config.Snapshot` (and the per-project `ProjectRuntime` cache entry) reflect the on-disk change — migration 020 removed the SQL config mirror, so no rows are written by the reimport beyond the `bundle.imported` audit event.
+For skills, laws, personas, and templates, "new" and "edit" actions in **Settings** shell out to the resolved editor (`$EDITOR` → `$VISUAL` → `nano`, in that order; `internal/app/editor.go:ResolveEditor`). When the editor exits successfully, the bundle is re-imported through `app.BundleEditor.Apply` so the in-memory `*config.Snapshot` (and the per-project `ProjectRuntime` cache entry) reflect the on-disk change. The reimport writes no operational rows beyond the `bundle.imported` audit event.
 
 Two consequences worth knowing:
 
@@ -517,8 +566,7 @@ Heights of `1` service fixed-height surfaces (table rows, log entries, picker ro
 
 ### Assembly helpers (in `internal/tui/scroll.go`)
 
-- `m.renderScrollWindowSplit(items, heights, offset, viewport)` — wraps `scrollwindow.Slice` with `HintsSplit`, prepends `▲ N above` and appends `▼ N below` rows. Used by the board lanes, settings entity grid, home projects column, activity feed, and (via `sliceScrollRows`) the fixed-height table/logs/graph/picker surfaces.
-- `followScrollWindowSplit(offset, cursor, heights, viewport)` — sync analog. Used by `syncFocusedColumnScroll`, `syncFocusedEntityScroll`, and `syncHomeScroll`.
+- `m.renderScrollWindowSplit(items, heights, offset, viewport)` — wraps `scrollwindow.Slice` with `HintsSplit`, prepends `▲ N above` and appends `▼ N below` rows. Used by the root activity feeds; extracted screens use the shared `screenkit` implementation directly.
 - `m.sliceScrollRows(rows, scroll, viewport)` — public API for fixed-height callers. Thin wrapper that builds heights of 1s and delegates to `renderScrollWindowSplit`.
 - `m.panelViewportRows(panelChrome int)` — terminal-row budget for any panel sitting under the screen chrome. Live-measures the screen header / status line / footer so the budget tracks header changes automatically. Each caller declares only the rows internal to its own panel (border + kicker + separator + any trailing hint).
 - `scrollDataRows(viewport)` — the cursor-tracking adapter for fixed-height surfaces; subtracts the 2 worst-case hint rows so cursor + scroll math agree.
@@ -526,7 +574,7 @@ Heights of `1` service fixed-height surfaces (table rows, log entries, picker ro
 
 ### Detail-screen viewport (combined-footer style)
 
-The task view, comment view, help overlay, and entity view emit a single combined `▲ X above · ▼ Y below · j/k pgup/pgdn g/G` footer instead of split hint rows. They route through the same `scrollwindow.Slice` math but with `HintsNone` — the caller passes `viewport-1` and renders the footer outside the slice budget. See `internal/tui/components/viewport/viewport.go` for the assembly and `internal/tui/viewport.go:sliceViewport` for the parent-package wrapper.
+The task view, comment view, help overlay, and entity view emit a single combined `▲ X above · ▼ Y below · j/k pgup/pgdn g/G` footer instead of split hint rows. They route through the same `scrollwindow.Slice` math but with `HintsNone` — the caller passes `viewport-1` and renders the footer outside the slice budget. See `internal/tui/components/list/viewport.go` for the assembly and `internal/tui/viewport.go:sliceViewport` for the parent-package wrapper.
 
 ### Adding a new scrollable surface
 
@@ -543,7 +591,11 @@ The TUI loads its theme from `<config-root>/themes/<active>.yaml` with `themes/c
 
 ## Markdown rendering
 
-Body fields shown in the read-only detail panels (task description, comment body inside the dedicated comment view, and the entity body for laws / personas / skills / templates) render as styled markdown by default. The renderer (`internal/tui/markdown.go`) builds an `ansi.StyleConfig` from the active theme tokens (`primary`, `foreground`, `border`, `secondary`) — switching theme rebuilds the renderer and clears its per-(body, width) cache. Code blocks render as plain mono (no chroma syntax highlight) so they stay aligned with the dev-editorial palette.
+Body fields shown in the read-only detail panels (task description, comment body inside the dedicated comment view, and the entity body for laws / personas / skills / templates) render as styled markdown by default. The renderer (`internal/tui/components/markdown`) builds an `ansi.StyleConfig` from the active theme tokens (`primary`, `foreground`, `border`, `secondary`) — switching theme rebuilds the renderer and clears its per-(body, width) cache. Persisted body source crosses the component's terminal boundary before either raw output or Glamour rendering; C0/C1, ESC and OSC controls are removed while LF, Markdown syntax, Unicode and formatting structure remain intact. Code blocks render as plain mono (no chroma syntax highlight) so they stay aligned with the dev-editorial palette.
+
+Single-line persisted task and entity values follow the same terminal-boundary rule in the Table, Task Detail, Plan Network, Entity Detail, and Task Form screens. They are sanitized before truncation, width measurement, gridtable composition, or style rendering; this includes task titles, bucket/name labels, tags, assignees, entity rows, and parent lookup text. Empty values stay empty and printable Unicode is preserved.
+
+`gridtable.Render` is the default raw-cell boundary and strips all terminal controls, including caller-supplied SGR, before measuring or painting. Framework output that intentionally carries Lipgloss styling must use the explicit `gridtable.Cell` / `gridtable.Styled` / `RenderCells` path; migrated call sites sanitize external data before applying that style, so raw domain/config text cannot inherit the trusted path.
 
 Press `M` (capital) inside the task view, comment view, or entity view to toggle between raw and rendered for the rest of the session — useful when you need to copy markdown verbatim or debug formatting. The toggle is session-only; it is not persisted to the active profile yaml. The status badge confirms the active mode (`Markdown rendered` / `Markdown raw`). Editing flows (textareas + `$EDITOR`) are unaffected — they always show raw text.
 

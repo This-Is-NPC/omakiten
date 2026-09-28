@@ -44,8 +44,8 @@ func mapPersonaSlice(personas []config.Persona, skills []config.Skill) []domain.
 	}
 	out := make([]domain.Persona, 0, len(personas))
 	for i, p := range personas {
-		skillIDs := make([]int64, 0, len(p.Skills))
-		for _, slug := range p.Skills {
+		skillIDs := make([]int64, 0, len(p.SkillRepertoire))
+		for _, slug := range p.SkillRepertoire {
 			if id, ok := skillIDBySlug[slug]; ok {
 				skillIDs = append(skillIDs, id)
 			}
@@ -57,7 +57,7 @@ func mapPersonaSlice(personas []config.Persona, skills []config.Skill) []domain.
 			Description: p.Description,
 			Body:        p.Body,
 			SkillIDs:    skillIDs,
-			SkillKeys:   append([]string(nil), p.Skills...),
+			SkillKeys:   append([]string(nil), p.SkillRepertoire...),
 			LawKeys:     append([]string(nil), p.Laws...),
 			SourcePath:  p.SourcePath,
 			IsCustom:    p.IsCustom,
@@ -68,10 +68,14 @@ func mapPersonaSlice(personas []config.Persona, skills []config.Skill) []domain.
 }
 
 func (s *PersonaService) List(_ context.Context) ([]domain.Persona, error) {
-	bundle, err := s.editor.Load()
+	bundle, _, _, err := s.editor.LoadPlan()
 	if err != nil {
 		return nil, err
 	}
+	return s.personasFromBundle(bundle), nil
+}
+
+func (s *PersonaService) personasFromBundle(bundle config.Bundle) []domain.Persona {
 	// Always project from the on-disk bundle so a write-followed-by-read
 	// inside the same service instance (Add then Edit/Show) reflects the
 	// just-persisted state. The ctor-captured s.snap is still authoritative
@@ -93,7 +97,7 @@ func (s *PersonaService) List(_ context.Context) ([]domain.Persona, error) {
 			personas[index].Warning = w
 		}
 	}
-	return personas, nil
+	return personas
 }
 
 func (s *PersonaService) Show(ctx context.Context, slug string) (domain.Persona, error) {
@@ -113,6 +117,7 @@ func (s *PersonaService) Show(ctx context.Context, slug string) (domain.Persona,
 	return domain.Persona{}, domain.NewError(domain.ErrPersonaNotFound, "persona not found", map[string]any{"slug": slug})
 }
 
+//nolint:gocognit // Entity creation keeps reference validation adjacent to publication.
 func (s *PersonaService) Add(ctx context.Context, input domain.PersonaInput) (domain.Persona, error) {
 	slug, name, description, body, err := normalizePersonaInput(input, s.slugger)
 	if err != nil {
@@ -133,8 +138,12 @@ func (s *PersonaService) Add(ctx context.Context, input domain.PersonaInput) (do
 	if err := assertNoCollision(path, slug, "persona"); err != nil {
 		return domain.Persona{}, err
 	}
+	bundle, _, fileHashes, err := s.editor.LoadPlanWithFiles()
+	if err != nil {
+		return domain.Persona{}, err
+	}
 
-	if _, err := s.editor.ApplyWithFiles(ctx, func(bundle *config.Bundle) error {
+	if _, err := s.editor.ApplyWithFiles(ctx, bundle, fileHashes, func(bundle *config.Bundle) error {
 		for _, p := range bundle.Personas {
 			if p.Slug == slug {
 				return domain.NewError(domain.ErrValidation, "persona key must be unique", map[string]any{"slug": slug})
@@ -147,66 +156,45 @@ func (s *PersonaService) Add(ctx context.Context, input domain.PersonaInput) (do
 			}
 		}
 		bundle.Personas = append(bundle.Personas, config.Persona{
-			Slug:        slug,
-			Name:        name,
-			Description: description,
-			Body:        body,
-			Skills:      skillKeys,
-			SourcePath:  path,
-			IsCustom:    true,
+			Slug:            slug,
+			Name:            name,
+			Description:     description,
+			Body:            body,
+			SkillRepertoire: skillKeys,
+			SourcePath:      path,
+			IsCustom:        true,
 		})
 		return nil
-	}, []FileOp{{Op: OpWrite, Path: path, Bytes: bytes}}); err != nil {
+	}, []FileOp{{Op: OpWrite, Path: s.editor.RelativePath(path), Bytes: bytes, ExpectedHash: fileHashes[path]}}); err != nil {
 		return domain.Persona{}, err
 	}
 	return s.Show(ctx, slug)
 }
 
+//nolint:gocognit // Entity editing keeps validation, serialization, and publication together.
 func (s *PersonaService) Edit(ctx context.Context, slug string, update domain.PersonaUpdate) (domain.Persona, error) {
 	slug = strings.TrimSpace(slug)
 	if slug == "" {
 		return domain.Persona{}, domain.NewError(domain.ErrValidation, "persona slug is required", nil)
 	}
-	current, err := s.Show(ctx, slug)
+	bundle, _, fileHashes, err := s.editor.LoadPlanWithFiles()
 	if err != nil {
 		return domain.Persona{}, err
 	}
-
-	persona := config.Persona{
-		Slug:        slug,
-		Name:        current.Name,
-		Description: current.Description,
-		Body:        current.Body,
-		Skills:      append([]string(nil), current.SkillKeys...),
-		Laws:        append([]string(nil), current.LawKeys...),
-	}
-
-	fileChanged := false
-	if update.Name != nil {
-		next := strings.TrimSpace(*update.Name)
-		if next == "" {
-			return domain.Persona{}, domain.NewError(domain.ErrValidation, "persona name is required", nil)
+	var current domain.Persona
+	for _, persona := range s.personasFromBundle(bundle) {
+		if persona.Key == slug {
+			current = persona
+			break
 		}
-		persona.Name = next
-		fileChanged = true
 	}
-	if update.Description != nil {
-		persona.Description = *update.Description
-		fileChanged = true
-	}
-	if update.Body != nil {
-		persona.Body = *update.Body
-		fileChanged = true
+	if current.Key == "" {
+		return domain.Persona{}, domain.NewError(domain.ErrPersonaNotFound, "persona not found", map[string]any{"slug": slug})
 	}
 
-	wiringChanged := false
-	if update.SkillKeys != nil || update.SkillIDs != nil {
-		keys, err := s.resolveSkillRefs(ctx, domain.PersonaInput{SkillIDs: deref(update.SkillIDs), SkillKeys: deref(update.SkillKeys)})
-		if err != nil {
-			return domain.Persona{}, err
-		}
-		persona.Skills = keys
-		wiringChanged = true
+	persona, fileChanged, wiringChanged, err := s.personaEdit(ctx, current, update)
+	if err != nil {
+		return domain.Persona{}, err
 	}
 
 	if !fileChanged && !wiringChanged {
@@ -223,47 +211,94 @@ func (s *PersonaService) Edit(ctx context.Context, slug string, update domain.Pe
 		if err != nil {
 			return domain.Persona{}, configError(path, err)
 		}
-		ops = append(ops, FileOp{Op: OpWrite, Path: path, Bytes: bytes})
+		ops = append(ops, FileOp{Op: OpWrite, Path: s.editor.RelativePath(path), Bytes: bytes})
 	}
 
 	mutator := func(bundle *config.Bundle) error {
-		for index := range bundle.Personas {
-			if bundle.Personas[index].Slug != slug {
-				continue
-			}
-			if wiringChanged {
-				for _, ref := range persona.Skills {
-					if !skillRefExists(*bundle, ref) {
-						return domain.NewError(domain.ErrSkillNotFound, "skill not found", map[string]any{"slug": ref})
-					}
-				}
-				bundle.Personas[index].Skills = persona.Skills
-			}
-			return nil
-		}
-		return domain.NewError(domain.ErrPersonaNotFound, "persona not found", map[string]any{"slug": slug})
+		return updatePersonaWiring(bundle, slug, persona.SkillRepertoire, wiringChanged)
 	}
 
-	if _, err := s.editor.ApplyWithFiles(ctx, mutator, ops); err != nil {
+	if len(ops) > 0 {
+		for i := range ops {
+			ops[i].ExpectedHash = fileHashes[path]
+		}
+	}
+	if _, err := s.editor.ApplyWithFiles(ctx, bundle, fileHashes, mutator, ops); err != nil {
 		return domain.Persona{}, err
 	}
 	return s.Show(ctx, slug)
 }
 
+func (s *PersonaService) personaEdit(ctx context.Context, current domain.Persona, update domain.PersonaUpdate) (config.Persona, bool, bool, error) {
+	persona := config.Persona{Slug: current.Key, Name: current.Name, Description: current.Description, Body: current.Body, SkillRepertoire: append([]string(nil), current.SkillKeys...), Laws: append([]string(nil), current.LawKeys...)}
+	fileChanged := false
+	if update.Name != nil {
+		next := strings.TrimSpace(*update.Name)
+		if next == "" {
+			return config.Persona{}, false, false, domain.NewError(domain.ErrValidation, "persona name is required", nil)
+		}
+		persona.Name, fileChanged = next, true
+	}
+	if update.Description != nil {
+		persona.Description, fileChanged = *update.Description, true
+	}
+	if update.Body != nil {
+		persona.Body, fileChanged = *update.Body, true
+	}
+	wiringChanged := update.SkillKeys != nil || update.SkillIDs != nil
+	if wiringChanged {
+		keys, err := s.resolveSkillRefs(ctx, domain.PersonaInput{SkillIDs: deref(update.SkillIDs), SkillKeys: deref(update.SkillKeys)})
+		if err != nil {
+			return config.Persona{}, false, false, err
+		}
+		persona.SkillRepertoire = keys
+	}
+	return persona, fileChanged, wiringChanged, nil
+}
+
+func updatePersonaWiring(bundle *config.Bundle, slug string, skills []string, wiringChanged bool) error {
+	for index := range bundle.Personas {
+		if bundle.Personas[index].Slug != slug {
+			continue
+		}
+		if wiringChanged {
+			for _, ref := range skills {
+				if !skillRefExists(*bundle, ref) {
+					return domain.NewError(domain.ErrSkillNotFound, "skill not found", map[string]any{"slug": ref})
+				}
+			}
+			bundle.Personas[index].SkillRepertoire = skills
+		}
+		return nil
+	}
+	return domain.NewError(domain.ErrPersonaNotFound, "persona not found", map[string]any{"slug": slug})
+}
+
+//nolint:gocognit // Removal updates the entity and every owned reference in one apply.
 func (s *PersonaService) Remove(ctx context.Context, slug string) error {
 	slug = strings.TrimSpace(slug)
 	if slug == "" {
 		return domain.NewError(domain.ErrValidation, "persona slug is required", nil)
 	}
-	current, err := s.Show(ctx, slug)
+	bundle, _, fileHashes, err := s.editor.LoadPlanWithFiles()
 	if err != nil {
 		return err
+	}
+	var current domain.Persona
+	for _, persona := range s.personasFromBundle(bundle) {
+		if persona.Key == slug {
+			current = persona
+			break
+		}
+	}
+	if current.Key == "" {
+		return domain.NewError(domain.ErrPersonaNotFound, "persona not found", map[string]any{"slug": slug})
 	}
 	path := current.SourcePath
 	if path == "" {
 		path = s.files.EntityFilePath(s.editor.RootDir(), config.EntityKindPersona, slug)
 	}
-	_, err = s.editor.ApplyWithFiles(ctx, func(bundle *config.Bundle) error {
+	_, err = s.editor.ApplyWithFiles(ctx, bundle, fileHashes, func(bundle *config.Bundle) error {
 		out := bundle.Personas[:0]
 		for _, persona := range bundle.Personas {
 			if persona.Slug == slug {
@@ -282,37 +317,42 @@ func (s *PersonaService) Remove(ctx context.Context, slug string) error {
 		}
 		bundle.Laws = filtered
 		return nil
-	}, []FileOp{{Op: OpDelete, Path: path}})
+	}, []FileOp{{Op: OpDelete, Path: s.editor.RelativePath(path), ExpectedHash: fileHashes[path]}})
 	return err
 }
 
 // resolveSkillRefs converts whichever combination of SkillIDs / SkillKeys the
 // caller supplied into a deduped, validated slice of skill slugs.
 func (s *PersonaService) resolveSkillRefs(_ context.Context, input domain.PersonaInput) ([]string, error) {
-	out := make([]string, 0, len(input.SkillIDs)+len(input.SkillKeys))
 	seen := map[string]struct{}{}
-	if len(input.SkillIDs) > 0 {
-		skills := s.snap.Skills()
-		byID := map[int64]string{}
-		for i, skill := range skills {
-			byID[int64(i+1)] = skill.Slug
-		}
-		for _, id := range input.SkillIDs {
-			key, ok := byID[id]
-			if !ok {
-				return nil, domain.NewError(domain.ErrSkillNotFound, "skill not found", map[string]any{"skill_id": id})
-			}
-			if _, dup := seen[key]; dup {
-				continue
-			}
-			seen[key] = struct{}{}
-			out = append(out, key)
-		}
+	out, err := s.skillKeysFromIDs(input.SkillIDs, seen)
+	if err != nil {
+		return nil, err
 	}
 	for _, key := range input.SkillKeys {
 		key = strings.TrimSpace(key)
 		if key == "" {
 			continue
+		}
+		if _, dup := seen[key]; dup {
+			continue
+		}
+		seen[key] = struct{}{}
+		out = append(out, key)
+	}
+	return out, nil
+}
+
+func (s *PersonaService) skillKeysFromIDs(skillIDs []int64, seen map[string]struct{}) ([]string, error) {
+	out := make([]string, 0, len(skillIDs))
+	byID := make(map[int64]string, len(s.snap.Skills()))
+	for i, skill := range s.snap.Skills() {
+		byID[int64(i+1)] = skill.Slug
+	}
+	for _, id := range skillIDs {
+		key, ok := byID[id]
+		if !ok {
+			return nil, domain.NewError(domain.ErrSkillNotFound, "skill not found", map[string]any{"skill_id": id})
 		}
 		if _, dup := seen[key]; dup {
 			continue

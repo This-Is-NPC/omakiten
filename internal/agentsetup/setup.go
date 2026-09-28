@@ -26,11 +26,12 @@ const (
 )
 
 type Options struct {
-	Harness    string
-	ConfigPath string
-	Command    string
-	DryRun     bool
-	Force      bool
+	Harness     string
+	ConfigPath  string
+	ProjectRoot string
+	Command     string
+	DryRun      bool
+	Force       bool
 }
 
 type Result struct {
@@ -49,25 +50,53 @@ func SupportedHarnesses() []string {
 }
 
 func Setup(opts Options) (Result, error) {
+	plan, err := prepareSetup(opts)
+	if err != nil {
+		return plan.result, err
+	}
+
+	updated := mergeHarnessConfig(plan.existing, plan.result.Harness, plan.result.Command, plan.result.Args)
+	plan.result.Changed = true
+	if opts.DryRun {
+		plan.result.Status = "would_write"
+		if plan.exists {
+			plan.result.Message = "Dry run only; existing harness config would be updated without overwriting other entries."
+		} else {
+			plan.result.Message = "Dry run only; harness config would be created."
+		}
+		return plan.result, nil
+	}
+
+	return writeSetup(plan, updated)
+}
+
+type setupPlan struct {
+	result   Result
+	existing map[string]any
+	exists   bool
+	codec    configCodec
+}
+
+func prepareSetup(opts Options) (setupPlan, error) {
 	harness := strings.TrimSpace(opts.Harness)
 	if harness == "" {
 		harness = ClaudeCodeHarness
 	}
 	if !isSupportedHarness(harness) {
-		return Result{}, domain.NewError(domain.ErrValidation, "unsupported MCP harness", map[string]any{"harness": harness, "supported": SupportedHarnesses()})
+		return setupPlan{}, domain.NewError(domain.ErrValidation, "unsupported MCP harness", map[string]any{"harness": harness, "supported": SupportedHarnesses()})
 	}
 
 	configPath := opts.ConfigPath
 	if configPath == "" {
-		path, err := defaultConfigPath(harness)
+		path, err := defaultConfigPath(harness, opts.ProjectRoot)
 		if err != nil {
-			return Result{}, err
+			return setupPlan{}, err
 		}
 		configPath = path
 	}
 	absConfigPath, err := filepath.Abs(configPath)
 	if err != nil {
-		return Result{}, err
+		return setupPlan{}, err
 	}
 
 	command := strings.TrimSpace(opts.Command)
@@ -80,48 +109,38 @@ func Setup(opts Options) (Result, error) {
 	codec := codecFor(harness)
 	existing, exists, err := readConfig(absConfigPath, codec)
 	if err != nil {
-		return Result{}, err
+		return setupPlan{}, err
 	}
 
 	if entryExists(existing, harness) && !opts.Force {
-		result.Changed = false
 		result.Status = "already_configured"
 		result.Message = "Omakiten MCP server is already configured; pass force=true or --mcp-force to replace it."
-		return result, domain.NewError(domain.ErrValidation, "omakiten MCP server already configured", map[string]any{"config_path": absConfigPath, "harness": harness})
+		return setupPlan{result: result}, domain.NewError(domain.ErrValidation, "omakiten MCP server already configured", map[string]any{"config_path": absConfigPath, "harness": harness})
 	}
+	return setupPlan{result: result, existing: existing, exists: exists, codec: codec}, nil
+}
 
-	updated := mergeHarnessConfig(existing, harness, command, args)
-	result.Changed = true
-	if opts.DryRun {
-		result.Status = "would_write"
-		if exists {
-			result.Message = "Dry run only; existing harness config would be updated without overwriting other entries."
-		} else {
-			result.Message = "Dry run only; harness config would be created."
-		}
-		return result, nil
-	}
-
-	data, err := codec.Marshal(updated)
+func writeSetup(plan setupPlan, updated map[string]any) (Result, error) {
+	data, err := plan.codec.Marshal(updated)
 	if err != nil {
 		return Result{}, err
 	}
 	// config.WriteAtomic writes the harness config 0o600. If it has to create a
 	// brand-new parent dir it uses 0o700, but it deliberately does NOT chmod a
-	// pre-existing ~/.claude/ (shared with Claude Code) or --config-path parent,
-	// so this path never clobbers a foreign directory mode. See
+	// pre-existing parent (project root for Claude Code, or --config-path
+	// parent), so this path never clobbers a foreign directory mode. See
 	// internal/config/atomic.go.
-	if err := config.WriteAtomic(absConfigPath, data); err != nil {
+	if err := config.WriteAtomic(plan.result.ConfigPath, data); err != nil {
 		return Result{}, err
 	}
-	if exists {
-		result.Status = "updated"
-		result.Message = "Harness config updated while preserving existing entries."
+	if plan.exists {
+		plan.result.Status = "updated"
+		plan.result.Message = "Harness config updated while preserving existing entries."
 	} else {
-		result.Status = "created"
-		result.Message = "Harness config created."
+		plan.result.Status = "created"
+		plan.result.Message = "Harness config created."
 	}
-	return result, nil
+	return plan.result, nil
 }
 
 func isSupportedHarness(harness string) bool {
@@ -133,14 +152,14 @@ func isSupportedHarness(harness string) bool {
 	return false
 }
 
-func defaultConfigPath(harness string) (string, error) {
+func defaultConfigPath(harness, projectRoot string) (string, error) {
 	switch harness {
 	case ClaudeCodeHarness:
-		home, err := os.UserHomeDir()
+		root, err := resolveProjectRoot(projectRoot)
 		if err != nil {
 			return "", err
 		}
-		return filepath.Join(home, ".claude", ".mcp.json"), nil
+		return filepath.Join(root, ".mcp.json"), nil
 	case ClaudeDesktopHarness:
 		configDir, err := os.UserConfigDir()
 		if err != nil {
@@ -178,6 +197,13 @@ func defaultConfigPath(harness string) (string, error) {
 	}
 }
 
+func resolveProjectRoot(projectRoot string) (string, error) {
+	if strings.TrimSpace(projectRoot) != "" {
+		return filepath.Abs(projectRoot)
+	}
+	return os.Getwd()
+}
+
 // crushDefaultConfigPath returns Crush's documented global config path. Crush
 // uses Local AppData on Windows (not Roaming, which os.UserConfigDir returns)
 // and ~/.config on macOS (not ~/Library/Application Support), so the standard
@@ -207,10 +233,7 @@ func defaultCommand() string {
 
 func entryExists(existing map[string]any, harness string) bool {
 	switch harness {
-	case ClaudeCodeHarness:
-		_, ok := existing["omakiten"]
-		return ok
-	case ClaudeDesktopHarness, CursorHarness:
+	case ClaudeCodeHarness, ClaudeDesktopHarness, CursorHarness:
 		mcpServers, err := objectField(existing, "mcpServers")
 		if err != nil || mcpServers == nil {
 			return false
@@ -248,9 +271,7 @@ func mergeHarnessConfig(existing map[string]any, harness, command string, args [
 		out[k] = v
 	}
 	switch harness {
-	case ClaudeCodeHarness:
-		out["omakiten"] = map[string]any{"command": command, "args": args}
-	case ClaudeDesktopHarness, CursorHarness:
+	case ClaudeCodeHarness, ClaudeDesktopHarness, CursorHarness:
 		mcpServers, _ := objectField(out, "mcpServers")
 		if mcpServers == nil {
 			mcpServers = map[string]any{}

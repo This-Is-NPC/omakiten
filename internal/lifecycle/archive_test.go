@@ -59,9 +59,9 @@ func makeZip(t *testing.T, entries map[string][]byte) []byte {
 
 func TestExtractBinary_TarGzReturnsInnerEntry(t *testing.T) {
 	archive := makeTarGz(t, map[string][]byte{
-		"okt":            []byte("INNER_BINARY"),
-		"LICENSE":        []byte("MIT"),
-		"README.md":      []byte("readme"),
+		"okt":             []byte("INNER_BINARY"),
+		"LICENSE":         []byte("MIT"),
+		"README.md":       []byte("readme"),
 		"CONTRIBUTING.md": []byte("contributing"),
 	})
 	got, err := ExtractBinary(bytes.NewReader(archive), "linux", "okt")

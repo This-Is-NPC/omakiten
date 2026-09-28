@@ -9,9 +9,10 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"omakiten/internal/agentruntime"
-	"omakiten/internal/app"
 	"omakiten/internal/config"
-	"omakiten/internal/tui/components/detailscreen"
+	"omakiten/internal/domain"
+	"omakiten/internal/operation"
+	"omakiten/internal/tui/screenhost"
 )
 
 // editorFinishedMsg is emitted after $EDITOR exits via tea.ExecProcess. The
@@ -20,104 +21,14 @@ type editorFinishedMsg struct {
 	err error
 }
 
-func (m *Model) handleConfigKey(msg tea.KeyMsg) tea.Cmd {
-	switch msg.String() {
-	case "esc":
-		if m.deletePending {
-			m.clearDeletePrompt(m.t("tui.status.delete_cancelled"))
-		}
-	case "up", "k":
-		m.clearDeletePrompt("")
-		m.moveEntityCursor(-1)
-	case "down", "j":
-		m.clearDeletePrompt("")
-		m.moveEntityCursor(1)
-	case "D":
-		m.clearDeletePrompt("")
-		if m.entityKind == entityKindTag && m.repos.Tags != nil {
-			m.deleteOrphanTags()
-		}
-	case "enter":
-		m.clearDeletePrompt("")
-		if m.entityKind != entityKindTag {
-			m.openSelectedEntityView()
-		}
-	case "n":
-		m.clearDeletePrompt("")
-		if m.entityKind == entityKindTemplate {
-			m.status = m.t("tui.status.template_add_hint")
-		} else if m.entityKind != entityKindTag {
-			return m.openEntityCreate(m.entityKind)
-		}
-	case "e":
-		m.clearDeletePrompt("")
-		if m.entityKind != entityKindTag {
-			return m.openSelectedEntityEdit()
-		}
-	case "d":
-		switch m.entityKind {
-		case entityKindTag:
-			m.requestSelectedTagDelete()
-		case entityKindTemplate:
-			m.status = m.t("tui.status.template_remove_hint")
-		default:
-			m.requestSelectedEntityDelete()
-		}
-	case "p":
-		m.clearDeletePrompt("")
-		if m.entityKind == entityKindPersona {
-			m.openPersonaPickerForSelected()
-		}
-	case "t":
-		m.clearDeletePrompt("")
-		m.openThemePicker()
-	case "c":
-		m.clearDeletePrompt("")
-		m.openConfigPicker()
-	case "a":
-		m.clearDeletePrompt("")
-		if m.entityKind == entityKindTemplate {
-			m.openTemplateDefaultPickerForSelected()
-		}
+func (m *Model) clearDeletePrompt(status string) {
+	m.deletePending = false
+	m.deleteKind = entityKindLaw
+	m.deleteSlug = ""
+	m.taskDeletePendingID = 0
+	if status != "" {
+		m.status = status
 	}
-	return nil
-}
-
-func (m *Model) moveEntityCursor(delta int) {
-	if m.entityCursors == nil {
-		m.entityCursors = map[entityKind]int{}
-	}
-	count := m.entityCount(m.entityKind)
-	if count == 0 {
-		m.entityCursors[m.entityKind] = 0
-		m.syncFocusedEntityScroll()
-		return
-	}
-	cursor := m.entityCursors[m.entityKind] + delta
-	if cursor < 0 {
-		cursor = 0
-	}
-	if cursor >= count {
-		cursor = count - 1
-	}
-	m.entityCursors[m.entityKind] = cursor
-	m.syncFocusedEntityScroll()
-}
-
-func (m *Model) openSelectedEntityView() {
-	if m.entityCount(m.entityKind) == 0 {
-		m.status = m.t("tui.status.nothing_to_open")
-		return
-	}
-	cursor := m.selectedEntityIndex(m.entityKind)
-	slug := m.entitySlugAt(m.entityKind, cursor)
-	if slug == "" {
-		return
-	}
-	m.entityScreen = entityScreenView
-	m.entityForm = entityForm{kind: m.entityKind, mode: entityScreenView, slug: slug}
-	m.status = ""
-	m.entityView = detailscreen.New(0)
 }
 
 // openEntityCreate scaffolds a new entity file and runs $EDITOR against it.
@@ -143,19 +54,6 @@ func (m *Model) openEntityCreate(kind entityKind) tea.Cmd {
 // snapshot returns a value-receiver copy of m suitable for read-only helpers.
 func (m *Model) snapshot() Model { return *m }
 
-func (m *Model) openSelectedEntityEdit() tea.Cmd {
-	if m.entityCount(m.entityKind) == 0 {
-		m.status = m.t("tui.status.nothing_to_edit")
-		return nil
-	}
-	cursor := m.selectedEntityIndex(m.entityKind)
-	slug := m.entitySlugAt(m.entityKind, cursor)
-	if slug == "" {
-		return nil
-	}
-	return m.openEntityEditor(m.entityKind, slug)
-}
-
 func (m *Model) openEntityEditor(kind entityKind, slug string) tea.Cmd {
 	path := m.entitySourcePath(kind, slug)
 	if path == "" {
@@ -168,7 +66,7 @@ func (m *Model) openEntityEditor(kind entityKind, slug string) tea.Cmd {
 // runExternalEditor builds a tea.ExecProcess command that invokes $EDITOR on
 // path and reports completion via editorFinishedMsg.
 func runExternalEditor(path string) tea.Cmd {
-	editor := app.ResolveEditor()
+	editor := resolveEditor()
 	parts := strings.Fields(editor)
 	if len(parts) == 0 {
 		return func() tea.Msg { return editorFinishedMsg{err: fmt.Errorf("editor not configured")} }
@@ -186,32 +84,24 @@ func runExternalEditor(path string) tea.Cmd {
 func (m *Model) entitySlugAt(kind entityKind, index int) string {
 	switch kind {
 	case entityKindLaw:
-		if index < 0 || index >= len(m.laws) {
-			return ""
-		}
-		return m.laws[index].Key
+		return entityKeyAt(m.laws, index, func(law domain.Law) string { return law.Key })
 	case entityKindPersona:
-		if index < 0 || index >= len(m.personas) {
-			return ""
-		}
-		return m.personas[index].Key
+		return entityKeyAt(m.personas, index, func(persona domain.Persona) string { return persona.Key })
 	case entityKindSkill:
-		if index < 0 || index >= len(m.skills) {
-			return ""
-		}
-		return m.skills[index].Key
+		return entityKeyAt(m.skills, index, func(skill domain.Skill) string { return skill.Key })
 	case entityKindTemplate:
-		if index < 0 || index >= len(m.templates) {
-			return ""
-		}
-		return m.templates[index].Slug
+		return entityKeyAt(m.templates, index, func(template config.TaskTemplate) string { return template.Slug })
 	case entityKindTag:
-		if index < 0 || index >= len(m.tags) {
-			return ""
-		}
-		return m.tags[index].Name
+		return entityKeyAt(m.tags, index, func(tag domain.Tag) string { return tag.Name })
 	}
 	return ""
+}
+
+func entityKeyAt[T any](items []T, index int, key func(T) string) string {
+	if index < 0 || index >= len(items) {
+		return ""
+	}
+	return key(items[index])
 }
 
 func (m Model) entitySourcePath(kind entityKind, slug string) string {
@@ -250,7 +140,7 @@ func (m *Model) handleEditorFinished(msg editorFinishedMsg) {
 		return
 	}
 	if m.repos.Editor != nil {
-		resolved, err := m.repos.Editor.Apply(m.ctx, nil)
+		resolved, err := applyBundleEditor(m.ctx, m.repos.Editor, nil)
 		if err != nil {
 			m.status = err.Error()
 			return
@@ -262,33 +152,6 @@ func (m *Model) handleEditorFinished(msg editorFinishedMsg) {
 		return
 	}
 	m.status = m.t("tui.status.saved")
-}
-
-func (m *Model) requestSelectedEntityDelete() {
-	if m.entityCount(m.entityKind) == 0 {
-		m.status = m.t("tui.status.nothing_to_delete")
-		return
-	}
-	cursor := m.selectedEntityIndex(m.entityKind)
-	slug := m.entitySlugAt(m.entityKind, cursor)
-	if slug == "" {
-		return
-	}
-	m.requestEntityDelete(m.entityKind, slug)
-}
-
-func (m *Model) requestEntityDelete(kind entityKind, slug string) {
-	if slug == "" {
-		return
-	}
-	if m.deletePending && m.deleteKind == kind && m.deleteSlug == slug {
-		m.deleteEntity(kind, slug)
-		return
-	}
-	m.deletePending = true
-	m.deleteKind = kind
-	m.deleteSlug = slug
-	m.status = fmt.Sprintf(m.t("tui.confirm.entity_delete_fmt"), strings.ToLower(kind.String()), slug)
 }
 
 // rotateSnapshotAfterEdit advances the per-project Snapshot the TUI
@@ -306,9 +169,21 @@ func (m *Model) rotateSnapshotAfterEdit(resolved config.Bundle) {
 		return
 	}
 	if _, err := m.repos.Cache.Reload(m.ctx, m.repos.ProjectID, ""); err == nil {
+		m.studioRuntimeGeneration++
 		return
 	}
-	m.repos.Cache.Install(m.repos.ProjectID, &agentruntime.ProjectRuntime{Snapshot: config.BuildSnapshot(resolved)})
+	snap := config.BuildSnapshot(resolved)
+	runtime := &agentruntime.ProjectRuntime{Snapshot: snap}
+	if existing := m.repos.Cache.Get(m.repos.ProjectID); existing != nil {
+		runtime.Service = existing.Service
+		runtime.Editor = existing.Editor
+		runtime.PreviousSnapshot = existing.PreviousSnapshot
+		if runtime.Service != nil {
+			runtime.Service.SetSnapshot(snap)
+		}
+	}
+	m.repos.Cache.Install(m.repos.ProjectID, runtime)
+	m.studioRuntimeGeneration++
 }
 
 func (m *Model) deleteEntity(kind entityKind, slug string) {
@@ -316,16 +191,18 @@ func (m *Model) deleteEntity(kind entityKind, slug string) {
 		m.status = m.t("tui.status.editor_unavailable")
 		return
 	}
+	svc, ok := m.requireOps()
+	if !ok {
+		return
+	}
 	var err error
-	repos := m.repos.entityServiceRepos()
-	snap := m.repos.activeSnapshot()
 	switch kind {
 	case entityKindLaw:
-		err = app.NewLawService(repos, snap, m.registry).Remove(m.ctx, slug)
+		_, err = svc.RemoveLaw(m.ctx, slug)
 	case entityKindSkill:
-		err = app.NewSkillService(repos, snap).Remove(m.ctx, slug)
+		_, err = svc.RemoveSkill(m.ctx, slug)
 	case entityKindPersona:
-		err = app.NewPersonaService(repos, snap).Remove(m.ctx, slug)
+		_, err = svc.RemovePersona(m.ctx, slug)
 	}
 	if err != nil {
 		m.status = err.Error()
@@ -341,11 +218,40 @@ func (m *Model) deleteEntity(kind entityKind, slug string) {
 		m.status = refreshErr.Error()
 		return
 	}
-	if m.entityScreen == entityScreenView && m.entityForm.slug == slug {
-		m.closeEntityScreen(m.t("tui.status.deleted"))
+	if len(m.screenStack) > 0 && m.screenStack[len(m.screenStack)-1] == screenhost.EntityDetail && m.entityDetailScreen.Payload().Slug == slug {
+		m.popScreen()
+		m.status = m.t("tui.status.deleted")
 		return
 	}
 	m.status = m.t("tui.status.deleted")
+}
+
+func (m *Model) prepareTagDelete(name string) {
+	for _, tag := range m.tags {
+		if tag.Name != name {
+			continue
+		}
+		if tag.UsageCount > 0 {
+			if screen, ok := m.entityListScreens[screenhost.SettingsTags]; ok {
+				m.entityListScreens[screenhost.SettingsTags] = screen.CancelDelete()
+			}
+			m.status = fmt.Sprintf(m.t("tui.status.tag_in_use_fmt"), tag.Label, tag.UsageCount)
+			return
+		}
+		m.status = fmt.Sprintf(m.t("tui.confirm.tag_delete_fmt"), tag.Label)
+		return
+	}
+	m.status = m.t("tui.status.nothing_to_delete")
+}
+
+func (m *Model) confirmTagDelete(name string) {
+	for _, tag := range m.tags {
+		if tag.Name == name && tag.UsageCount > 0 {
+			m.prepareTagDelete(name)
+			return
+		}
+	}
+	m.deleteTagByName(name)
 }
 
 func (m *Model) deleteOrphanTags() {
@@ -369,27 +275,6 @@ func (m *Model) deleteOrphanTags() {
 	}
 }
 
-func (m *Model) requestSelectedTagDelete() {
-	if m.repos.Tags == nil || len(m.tags) == 0 {
-		m.status = m.t("tui.status.nothing_to_delete")
-		return
-	}
-	cursor := m.selectedEntityIndex(entityKindTag)
-	tag := m.tags[cursor]
-	if tag.UsageCount > 0 {
-		m.status = fmt.Sprintf(m.t("tui.status.tag_in_use_fmt"), tag.Label, tag.UsageCount)
-		return
-	}
-	if m.deletePending && m.deleteKind == entityKindTag && m.deleteSlug == tag.Name {
-		m.deleteTagByName(tag.Name)
-		return
-	}
-	m.deletePending = true
-	m.deleteKind = entityKindTag
-	m.deleteSlug = tag.Name
-	m.status = fmt.Sprintf(m.t("tui.confirm.tag_delete_fmt"), tag.Label)
-}
-
 func (m *Model) deleteTagByName(name string) {
 	if m.repos.Tags == nil {
 		m.status = m.t("tui.status.tag_repo_unavailable")
@@ -408,4 +293,69 @@ func (m *Model) deleteTagByName(name string) {
 	if n > 0 {
 		m.status = fmt.Sprintf(m.t("tui.status.tag_deleted_fmt"), name)
 	}
+}
+
+func (m *Model) prepareTagMerge(name string) {
+	for _, tag := range m.tags {
+		if tag.Name != name {
+			continue
+		}
+		m.status = fmt.Sprintf(m.t("tui.confirm.tag_merge_fmt"), tag.Label)
+		return
+	}
+	if screen, ok := m.entityListScreens[screenhost.SettingsTags]; ok {
+		m.entityListScreens[screenhost.SettingsTags] = screen.CancelMerge()
+	}
+	m.status = m.t("tui.status.tag_merge_missing")
+}
+
+func (m *Model) confirmTagMerge(sourceName, targetName string) {
+	svc := m.repos.operationService()
+	if svc == nil {
+		m.status = m.t("tui.status.tag_merge_unavailable")
+		if screen, ok := m.entityListScreens[screenhost.SettingsTags]; ok {
+			m.entityListScreens[screenhost.SettingsTags] = screen.CancelMerge()
+		}
+		return
+	}
+	if sourceName == "" || targetName == "" || sourceName == targetName {
+		m.status = m.t("tui.status.tag_merge_same")
+		return
+	}
+	var sourceID, targetID int64
+	var sourceLabel, targetLabel string
+	for _, tag := range m.tags {
+		switch tag.Name {
+		case sourceName:
+			sourceID, sourceLabel = tag.ID, tag.Label
+		case targetName:
+			targetID, targetLabel = tag.ID, tag.Label
+		}
+	}
+	if sourceID == 0 || targetID == 0 {
+		m.status = m.t("tui.status.tag_merge_missing")
+		return
+	}
+	resp, err := svc.MergeTags(m.ctx, operation.MergeTagsInput{
+		SourceTagID: sourceID,
+		TargetTagID: targetID})
+	if err != nil {
+		m.status = err.Error()
+		return
+	}
+	if screen, ok := m.entityListScreens[screenhost.SettingsTags]; ok {
+		m.entityListScreens[screenhost.SettingsTags] = screen.CancelArmed()
+	}
+	if err := m.refresh(); err != nil {
+		m.status = err.Error()
+		return
+	}
+	label := resp.Tag.Label
+	if label == "" {
+		label = targetLabel
+	}
+	if sourceLabel == "" {
+		sourceLabel = sourceName
+	}
+	m.status = fmt.Sprintf(m.t("tui.status.tag_merged_fmt"), sourceLabel, label)
 }

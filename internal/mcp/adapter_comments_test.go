@@ -5,8 +5,8 @@ import (
 	"encoding/json"
 	"testing"
 
-	"omakiten/internal/agent"
 	"omakiten/internal/config"
+	"omakiten/internal/operation"
 )
 
 // addComment is a shared helper: dispatch comments.add via CallTool and return
@@ -76,7 +76,12 @@ func TestAdapterCommentsEditTriStateThroughCallTool(t *testing.T) {
 		t.Fatalf("seed comment = %#v, want pinned/title/kind set", created)
 	}
 
-	// Body-only edit: pinned/title/kind omitted → must be preserved.
+	assertBodyOnlyCommentEdit(t, ctx, adapter, commentID)
+	assertUnpinCommentEdit(t, ctx, adapter, commentID)
+}
+
+func assertBodyOnlyCommentEdit(t *testing.T, ctx context.Context, adapter *Adapter, commentID int64) {
+	t.Helper()
 	editRes, err := adapter.CallTool(ctx, "comments.edit", withModel(map[string]any{
 		"comment_id": commentID,
 		"body":       "after",
@@ -99,14 +104,14 @@ func TestAdapterCommentsEditTriStateThroughCallTool(t *testing.T) {
 	if edited.Comment["pinned"] != true || edited.Comment["title"] != "X" || edited.Comment["kind"] != "handoff" {
 		t.Fatalf("body-only comments.edit wiped note fields = %#v", edited.Comment)
 	}
-
-	// Confirm the listed row also reflects the preserved fields (read-back).
 	rows := listComments(t, ctx, adapter, map[string]any{"comment_id": commentID})
 	if len(rows) != 1 || rows[0]["pinned"] != true || rows[0]["title"] != "X" || rows[0]["kind"] != "handoff" {
 		t.Fatalf("listed comment after body-only edit = %#v, want note fields intact", rows)
 	}
+}
 
-	// Explicit pinned=false → unpins; title/kind still preserved.
+func assertUnpinCommentEdit(t *testing.T, ctx context.Context, adapter *Adapter, commentID int64) {
+	t.Helper()
 	unpinRes, err := adapter.CallTool(ctx, "comments.edit", withModel(map[string]any{
 		"comment_id": commentID,
 		"body":       "after2",
@@ -124,15 +129,13 @@ func TestAdapterCommentsEditTriStateThroughCallTool(t *testing.T) {
 	if err := json.Unmarshal([]byte(unpinRes.Content[0].Text), &unpinned); err != nil {
 		t.Fatalf("comments.edit unpin payload not JSON: %v", err)
 	}
-	// pinned omitted from JSON when false (omitempty) — assert it is NOT true.
 	if unpinned.Comment["pinned"] == true {
 		t.Fatalf("explicit pinned=false did not unpin = %#v", unpinned.Comment)
 	}
 	if unpinned.Comment["title"] != "X" || unpinned.Comment["kind"] != "handoff" {
 		t.Fatalf("explicit pinned=false wiped title/kind = %#v", unpinned.Comment)
 	}
-	// Read-back: the listed row must also be unpinned.
-	rows = listComments(t, ctx, adapter, map[string]any{"comment_id": commentID})
+	rows := listComments(t, ctx, adapter, map[string]any{"comment_id": commentID})
 	if len(rows) != 1 || rows[0]["pinned"] == true {
 		t.Fatalf("listed comment after unpin = %#v, want pinned cleared", rows)
 	}
@@ -255,7 +258,7 @@ func commentCreateGuardBundle(t *testing.T) config.Bundle {
 func TestAdapterCommentsAddCreateGuardDenialViaMCP(t *testing.T) {
 	ctx := context.Background()
 	store, project, _ := newMCPProjectWithBundle(t, ctx, "guarded", commentCreateGuardBundle(t))
-	service := agent.NewService(store, agent.ProjectSelector{ProjectID: project.ID})
+	service := operation.NewService(store, operation.ProjectSelector{ProjectID: project.ID})
 	service.SetSnapshot(store.Snapshot())
 	adapter := NewAdapter(service)
 
@@ -287,7 +290,7 @@ func TestAdapterCommentsAddCreateGuardDenialViaMCP(t *testing.T) {
 func TestAdapterCommentsEditDeleteGuardDenialViaMCP(t *testing.T) {
 	ctx := context.Background()
 	store, project, task := newMCPProjectWithBundle(t, ctx, "guarded", commentGuardBundle(t))
-	service := agent.NewService(store, agent.ProjectSelector{ProjectID: project.ID})
+	service := operation.NewService(store, operation.ProjectSelector{ProjectID: project.ID})
 	service.SetSnapshot(store.Snapshot())
 	adapter := NewAdapter(service)
 

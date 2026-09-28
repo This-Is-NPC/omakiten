@@ -95,10 +95,10 @@ func TestDBSearchCommandsRefuseMissingDatabaseWithoutCreatingIt(t *testing.T) {
 	}
 }
 
-func TestDBCheckRejectsOldSchemaWithoutMigrating(t *testing.T) {
+func TestDBCheckRejectsNonCurrentSchemaWithoutMutating(t *testing.T) {
 	fixture := newCLIDBFixture(t, "old.db")
 	dbPath, configPath := fixture.dbPath, fixture.configPath
-	execCLIDBSQL(t, dbPath, `DELETE FROM schema_migrations WHERE version = '035_events_order_by_indexes.sql'`)
+	execCLIDBSQL(t, dbPath, `PRAGMA user_version = 0`)
 	execCLIDBSQL(t, dbPath, `DROP INDEX idx_events_project_created`)
 	execCLIDBSQL(t, dbPath, `DROP INDEX idx_events_project_type_created`)
 	execCLIDBSQL(t, dbPath, `CREATE INDEX idx_events_project_type ON events(project_id, event_type, entity_type, created_at)`)
@@ -107,7 +107,7 @@ func TestDBCheckRejectsOldSchemaWithoutMigrating(t *testing.T) {
 	runCLIExpectError(t, dbPath, configPath, "validation_error", "db", "check")
 	after := dbSchemaSnapshot(t, dbPath)
 	if before != after {
-		t.Fatalf("db check migrated old schema\nbefore=%s\nafter=%s", before, after)
+		t.Fatalf("db check mutated non-current schema\nbefore=%s\nafter=%s", before, after)
 	}
 }
 
@@ -163,6 +163,13 @@ func TestDBReindexRepairsAndReturnsBeforeAfterJSON(t *testing.T) {
 	fixture := newCLIDBFixture(t, "repair database.db")
 	dbPath, configPath := fixture.dbPath, fixture.configPath
 	execCLIDBSQL(t, dbPath, `INSERT INTO search_index(content, entity_type, entity_id, project_id) VALUES ('private malformed row', 'task', CAST(999 AS TEXT), 1)`)
+	assertDBReindexRefusal(t, dbPath, configPath)
+	assertDBReindexRepair(t, dbPath, configPath)
+	runCLI(t, dbPath, configPath, "db", "check")
+}
+
+func assertDBReindexRefusal(t *testing.T, dbPath, configPath string) {
+	t.Helper()
 	preflightSchema := dbSchemaSnapshot(t, dbPath)
 	refused := runCLIExpectError(t, dbPath, configPath, "validation_error", "db", "reindex")
 	if afterPreflight := dbSchemaSnapshot(t, dbPath); afterPreflight != preflightSchema {
@@ -186,7 +193,10 @@ func TestDBReindexRepairsAndReturnsBeforeAfterJSON(t *testing.T) {
 	if stillMalformed != 1 {
 		t.Fatalf("malformed rows after refusal = %d, want 1", stillMalformed)
 	}
+}
 
+func assertDBReindexRepair(t *testing.T, dbPath, configPath string) {
+	t.Helper()
 	cmd := NewRootCommand("test")
 	var stdout, stderr bytes.Buffer
 	cmd.SetOut(&stdout)
@@ -231,7 +241,6 @@ func TestDBReindexRepairsAndReturnsBeforeAfterJSON(t *testing.T) {
 	if !strings.Contains(strings.ToLower(stderr.String()), "backup") || !strings.Contains(stderr.String(), envelope.Data.BackupPath) {
 		t.Fatalf("malformed-only backup warning = %q, want actual verified backup path", stderr.String())
 	}
-	runCLI(t, dbPath, configPath, "db", "check")
 }
 
 func TestReindexConfirmationErrorGuidanceEnrichesTransactionalRecheck(t *testing.T) {
@@ -251,48 +260,14 @@ func TestReindexConfirmationErrorGuidanceEnrichesTransactionalRecheck(t *testing
 	}
 }
 
-func TestDBReindexReconstructiveSuccessIdentifiesExactDatabase(t *testing.T) {
+func TestDBReindexRejectsStructurallyIncompatibleDatabase(t *testing.T) {
 	fixture := newCLIDBFixture(t, "reconstruct database.db")
 	dbPath, configPath := fixture.dbPath, fixture.configPath
 	execCLIDBSQL(t, dbPath, `DROP TRIGGER search_index_tasks_ai`)
-	backupDir := filepath.Join(fixture.root, "state", "omakiten", "backups")
-	if err := os.MkdirAll(backupDir, 0o700); err != nil {
-		t.Fatalf("create backup directory: %v", err)
-	}
-	for i := 0; i < 7; i++ {
-		name := fmt.Sprintf("2026-07-13T10-00-%02d.000000000Z.db", i)
-		if err := os.WriteFile(filepath.Join(backupDir, name), []byte(name), 0o600); err != nil {
-			t.Fatalf("seed historical backup: %v", err)
-		}
-	}
-	if err := os.WriteFile(filepath.Join(backupDir, ".omakiten-backup.lock"), nil, 0o600); err != nil {
-		t.Fatalf("seed lease file: %v", err)
-	}
-	before, err := os.ReadDir(backupDir)
-	if err != nil {
-		t.Fatalf("read backups before reconstructive reindex: %v", err)
-	}
-
-	output := runCLI(t, dbPath, configPath, "db", "reindex", "--confirm")
-	var envelope struct {
-		Data struct {
-			BackupRecommended bool   `json:"backup_recommended"`
-			DatabasePath      string `json:"database_path"`
-			BackupPath        string `json:"backup_path"`
-		} `json:"data"`
-	}
-	if err := json.Unmarshal([]byte(output), &envelope); err != nil {
-		t.Fatalf("json.Unmarshal: %v", err)
-	}
-	if envelope.Data.BackupRecommended || envelope.Data.DatabasePath != dbPath || envelope.Data.BackupPath != "" {
-		t.Fatalf("reconstructive success guidance = %s", output)
-	}
-	after, err := os.ReadDir(backupDir)
-	if err != nil {
-		t.Fatalf("read backups after reconstructive reindex: %v", err)
-	}
-	if !reflect.DeepEqual(before, after) {
-		t.Fatalf("backup directory changed without a recovery image: before=%v after=%v", before, after)
+	before := dbSchemaSnapshot(t, dbPath)
+	runCLIExpectError(t, dbPath, configPath, "validation_error", "db", "reindex")
+	if after := dbSchemaSnapshot(t, dbPath); after != before {
+		t.Fatalf("structurally incompatible reindex mutated database\nbefore=%s\nafter=%s", before, after)
 	}
 }
 
@@ -361,10 +336,5 @@ func dbSchemaSnapshot(t *testing.T, dbPath string) string {
 	if err := db.QueryRow(`PRAGMA journal_mode`).Scan(&journal); err != nil {
 		t.Fatalf("journal_mode: %v", err)
 	}
-	var migrations sql.NullString
-	if err := db.QueryRow(`SELECT GROUP_CONCAT(version, ',') FROM (SELECT version FROM schema_migrations ORDER BY version)`).Scan(&migrations); err != nil {
-		// A foreign database intentionally has no migration table.
-		migrations.String = "<missing>"
-	}
-	return strings.Join(parts, "\n") + "\njournal=" + journal + "\nmigrations=" + migrations.String
+	return strings.Join(parts, "\n") + "\njournal=" + journal
 }

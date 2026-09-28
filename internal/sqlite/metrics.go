@@ -36,42 +36,29 @@ func (s *Store) AgentMetricsSummary(ctx context.Context, period string, projectI
 		return []domain.AgentMetrics{}, since, nil
 	}
 
-	inPlaceholders := make([]string, len(metricDefs))
-	inArgs := make([]any, len(metricDefs))
-	for i, def := range metricDefs {
-		inPlaceholders[i] = "?"
-		inArgs[i] = def.Key
+	countQuery, queryArgs := metricSummaryQuery(metricDefs, periodClause, projectID)
+
+	rows, err := s.db.QueryContext(ctx, countQuery, queryArgs...)
+	if err != nil {
+		return nil, since, fmt.Errorf("metrics summary counts: %w", err)
 	}
-	whereClauses := []string{
-		sqlutil.AgentAttributedFilter,
-		"event_type IN (" + strings.Join(inPlaceholders, ",") + ")",
-	}
-	args := append([]any{}, inArgs...)
-	if periodClause != "" {
-		whereClauses = append(whereClauses, periodClause)
-	}
-	if projectID > 0 {
-		whereClauses = append(whereClauses, "project_id = ?")
-		args = append(args, projectID)
+	defer func() { _ = rows.Close() }()
+
+	byModel, err := scanAgentMetrics(rows, metricDefs)
+	if err != nil {
+		return nil, since, err
 	}
 
-	where := strings.Join(whereClauses, " AND ")
-
-	// Emit one SUM(CASE WHEN event_type = ? THEN 1 ELSE 0 END) per metric
-	// def, in the order metricBucketDefs() returns. The scan loop below
-	// pulls them back out in the same order.
-	caseClauses := make([]string, len(metricDefs))
-	caseArgs := make([]any, len(metricDefs))
-	for i, def := range metricDefs {
-		caseClauses[i] = "  " + sqlutil.ConditionalCount("event_type = ?")
-		caseArgs[i] = def.Key
+	if err := s.fillSearchBeforeRecord(ctx, byModel, periodClause, projectID); err != nil {
+		return nil, since, err
 	}
+	return byModel, since, nil
+}
 
-	// Order: SELECT prepends case args before WHERE args.
-	queryArgs := append([]any{}, caseArgs...)
-	queryArgs = append(queryArgs, args...)
-
-	countQuery := `
+func metricSummaryQuery(metricDefs []domain.EventDef, periodClause string, projectID int64) (string, []any) {
+	where, whereArgs := metricSummaryWhere(metricDefs, periodClause, projectID)
+	caseClauses, caseArgs := metricSummaryCases(metricDefs)
+	query := `
 SELECT
   agent_model,
 ` + strings.Join(caseClauses, ",\n") + `
@@ -80,14 +67,40 @@ WHERE ` + where + `
 GROUP BY agent_model
 ORDER BY 2 DESC, 1
 `
+	args := append([]any{}, caseArgs...)
+	return query, append(args, whereArgs...)
+}
 
-	rows, err := s.db.QueryContext(ctx, countQuery, queryArgs...)
-	if err != nil {
-		return nil, since, fmt.Errorf("metrics summary counts: %w", err)
+func metricSummaryWhere(metricDefs []domain.EventDef, periodClause string, projectID int64) (string, []any) {
+	placeholders := make([]string, len(metricDefs))
+	args := make([]any, len(metricDefs))
+	for i, def := range metricDefs {
+		placeholders[i] = "?"
+		args[i] = def.Key
 	}
-	defer func() { _ = rows.Close() }()
+	clauses := []string{sqlutil.AgentAttributedFilter, "event_type IN (" + strings.Join(placeholders, ",") + ")"}
+	if periodClause != "" {
+		clauses = append(clauses, periodClause)
+	}
+	if projectID > 0 {
+		clauses = append(clauses, "project_id = ?")
+		args = append(args, projectID)
+	}
+	return strings.Join(clauses, " AND "), args
+}
 
-	byModel := []domain.AgentMetrics{}
+func metricSummaryCases(metricDefs []domain.EventDef) ([]string, []any) {
+	clauses := make([]string, len(metricDefs))
+	args := make([]any, len(metricDefs))
+	for i, def := range metricDefs {
+		clauses[i] = "  " + sqlutil.ConditionalCount("event_type = ?")
+		args[i] = def.Key
+	}
+	return clauses, args
+}
+
+func scanAgentMetrics(rows *sql.Rows, metricDefs []domain.EventDef) ([]domain.AgentMetrics, error) {
+	var models []domain.AgentMetrics
 	for rows.Next() {
 		var agentModel string
 		counts := make([]sql.NullInt64, len(metricDefs))
@@ -96,29 +109,18 @@ ORDER BY 2 DESC, 1
 			scanDest = append(scanDest, &counts[i])
 		}
 		if err := rows.Scan(scanDest...); err != nil {
-			return nil, since, err
+			return nil, err
 		}
-		m := domain.AgentMetrics{
-			AgentModel: agentModel,
-			Buckets:    make(map[domain.EventMetricBucket]int, len(metricDefs)),
-		}
+		m := domain.AgentMetrics{AgentModel: agentModel, Buckets: make(map[domain.EventMetricBucket]int, len(metricDefs))}
 		for i, def := range metricDefs {
 			m.Buckets[domain.EventMetricBucket(def.Metric)] = int(counts[i].Int64)
 		}
-		added := m.Buckets[domain.MetricBucketSolutionAdded]
-		if added > 0 {
+		if added := m.Buckets[domain.MetricBucketSolutionAdded]; added > 0 {
 			m.LikeRate = float64(m.Buckets[domain.MetricBucketSolutionLiked]) / float64(added)
 		}
-		byModel = append(byModel, m)
+		models = append(models, m)
 	}
-	if err := rows.Err(); err != nil {
-		return nil, since, err
-	}
-
-	if err := s.fillSearchBeforeRecord(ctx, byModel, periodClause, projectID); err != nil {
-		return nil, since, err
-	}
-	return byModel, since, nil
+	return models, rows.Err()
 }
 
 // fillSearchBeforeRecord computes the ratio of errors registered after a
@@ -144,45 +146,7 @@ func (s *Store) fillSearchBeforeRecord(ctx context.Context, models []domain.Agen
 		return nil
 	}
 
-	args := []any{recordedKey}
-	whereClauses := []string{
-		"r.event_type = ?",
-		sqlutil.AgentAttributedFilterFor("r"),
-		"r.agent_session_id IS NOT NULL AND r.agent_session_id != ''",
-	}
-	if periodClause != "" {
-		whereClauses = append(whereClauses, "r."+periodClause)
-	}
-	if projectID > 0 {
-		whereClauses = append(whereClauses, "r.project_id = ?")
-		args = append(args, projectID)
-	}
-
-	where := strings.Join(whereClauses, " AND ")
-
-	// The search-before-record tally is the same conditional-count idiom
-	// as the per-bucket counts above, but the predicate is a correlated
-	// EXISTS: "this record was preceded, in the same session, by a search
-	// within the 30-minute lookback". Built through sqlutil.ConditionalCount
-	// so it shares the metrics SELECT list's counting shape.
-	searchedBeforeRecord := sqlutil.ConditionalCount(`EXISTS (
-      SELECT 1 FROM events s
-      WHERE s.event_type = ?
-        AND s.agent_session_id = r.agent_session_id
-        AND s.id < r.id
-        AND s.created_at >= datetime(r.created_at, '-30 minutes')
-    )`)
-
-	query := `
-SELECT
-  r.agent_model,
-  COUNT(*),
-  ` + searchedBeforeRecord + `
-FROM events r
-WHERE ` + where + `
-GROUP BY r.agent_model
-`
-	queryArgs := append([]any{searchedKey}, args...)
+	query, queryArgs := searchBeforeRecordQuery(recordedKey, searchedKey, periodClause, projectID)
 	rows, err := s.db.QueryContext(ctx, query, queryArgs...)
 	if err != nil {
 		return fmt.Errorf("search-before-record: %w", err)
@@ -214,6 +178,40 @@ GROUP BY r.agent_model
 		models[i].SearchBeforeRecordRatio = float64(r.searched) / float64(r.sample)
 	}
 	return nil
+}
+
+func searchBeforeRecordQuery(recordedKey, searchedKey, periodClause string, projectID int64) (string, []any) {
+	args := []any{recordedKey}
+	clauses := []string{
+		"r.event_type = ?",
+		sqlutil.AgentAttributedFilterFor("r"),
+		"r.agent_session_id IS NOT NULL AND r.agent_session_id != ''",
+	}
+	if periodClause != "" {
+		clauses = append(clauses, "r."+periodClause)
+	}
+	if projectID > 0 {
+		clauses = append(clauses, "r.project_id = ?")
+		args = append(args, projectID)
+	}
+	searchedBeforeRecord := sqlutil.ConditionalCount(`EXISTS (
+      SELECT 1 FROM events s
+      WHERE s.event_type = ?
+        AND s.agent_session_id = r.agent_session_id
+        AND s.id < r.id
+        AND s.created_at >= datetime(r.created_at, '-30 minutes')
+    )`)
+
+	query := `
+SELECT
+  r.agent_model,
+  COUNT(*),
+  ` + searchedBeforeRecord + `
+FROM events r
+WHERE ` + strings.Join(clauses, " AND ") + `
+GROUP BY r.agent_model
+`
+	return query, append([]any{searchedKey}, args...)
 }
 
 // metricBucketDefs returns the YAML-loaded EventDefinitions that have a

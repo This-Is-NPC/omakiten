@@ -26,47 +26,57 @@ type HookActionResolver func(name string) bool
 // supply a hook entry without declaring a full events block.
 func ValidateHooks(hooks []HookSpec, knownEvents map[string]struct{}, isAction HookActionResolver, notifications map[string]Notification) error {
 	for i, h := range hooks {
-		on := strings.TrimSpace(h.On)
-		if on == "" {
-			return fmt.Errorf("config.hooks[%d]: on is required", i)
+		if err := validateHook(i, h, knownEvents, isAction, notifications); err != nil {
+			return err
 		}
-		if len(knownEvents) > 0 {
-			if _, ok := knownEvents[on]; !ok {
-				return fmt.Errorf("config.hooks[%d]: unknown event_type %q (declare it under config.events.definitions in the active kit)", i, on)
-			}
-		}
+	}
+	return nil
+}
 
-		do := strings.TrimSpace(h.Do)
-		notificationSlug := strings.TrimSpace(h.Notification)
-		switch {
-		case do == "" && notificationSlug == "":
-			return fmt.Errorf("config.hooks[%d]: one of do or notification is required", i)
-		case do != "" && notificationSlug != "":
-			return fmt.Errorf("config.hooks[%d]: do and notification are mutually exclusive — pick one", i)
-		case notificationSlug != "":
-			bud, ok := notifications[notificationSlug]
-			if !ok {
-				return fmt.Errorf("config.hooks[%d]: notification %q not loaded (declare a notifications/%s.yaml file)", i, notificationSlug, notificationSlug)
-			}
-			if strings.TrimSpace(h.Message) != "" && strings.TrimSpace(h.MessageField) != "" {
-				return fmt.Errorf("config.hooks[%d]: message and message_field are mutually exclusive — pick one", i)
-			}
-			if strings.TrimSpace(h.DetailMessage) != "" && strings.TrimSpace(h.DetailMessageField) != "" {
-				return fmt.Errorf("config.hooks[%d]: detail_message and detail_message_field are mutually exclusive — pick one", i)
-			}
-			if !notificationOrHookHasMessageSource(bud, h) {
-				return fmt.Errorf("config.hooks[%d]: notification %q declares no message/message_field and the hook supplies neither — set one on either layer", i, notificationSlug)
-			}
-		case do != "":
-			if isAction != nil && !isAction(do) {
-				return fmt.Errorf("config.hooks[%d]: unknown action %q (register it before LoadBundle)", i, do)
-			}
-			if do == "exec" {
-				if err := validateExecArgs(i, h.Args); err != nil {
-					return err
-				}
-			}
+func validateHook(i int, h HookSpec, knownEvents map[string]struct{}, isAction HookActionResolver, notifications map[string]Notification) error {
+	on := strings.TrimSpace(h.On)
+	if on == "" {
+		return fmt.Errorf("config.hooks[%d]: on is required", i)
+	}
+	if len(knownEvents) > 0 {
+		if _, ok := knownEvents[on]; !ok {
+			return fmt.Errorf("config.hooks[%d]: unknown event_type %q (declare it under config.events.definitions in the active kit)", i, on)
 		}
+	}
+
+	do := strings.TrimSpace(h.Do)
+	notificationSlug := strings.TrimSpace(h.Notification)
+	if do == "" && notificationSlug == "" {
+		return fmt.Errorf("config.hooks[%d]: one of do or notification is required", i)
+	}
+	if do != "" && notificationSlug != "" {
+		return fmt.Errorf("config.hooks[%d]: do and notification are mutually exclusive — pick one", i)
+	}
+	if notificationSlug != "" {
+		return validateHookNotification(i, h, notificationSlug, notifications)
+	}
+	if isAction != nil && !isAction(do) {
+		return fmt.Errorf("config.hooks[%d]: unknown action %q (register it before LoadBundle)", i, do)
+	}
+	if do == "exec" {
+		return validateExecArgs(i, h.Args)
+	}
+	return nil
+}
+
+func validateHookNotification(i int, h HookSpec, slug string, notifications map[string]Notification) error {
+	bundled, ok := notifications[slug]
+	if !ok {
+		return fmt.Errorf("config.hooks[%d]: notification %q not loaded (declare a notifications/%s.yaml file)", i, slug, slug)
+	}
+	if strings.TrimSpace(h.Message) != "" && strings.TrimSpace(h.MessageField) != "" {
+		return fmt.Errorf("config.hooks[%d]: message and message_field are mutually exclusive — pick one", i)
+	}
+	if strings.TrimSpace(h.DetailMessage) != "" && strings.TrimSpace(h.DetailMessageField) != "" {
+		return fmt.Errorf("config.hooks[%d]: detail_message and detail_message_field are mutually exclusive — pick one", i)
+	}
+	if !notificationOrHookHasMessageSource(bundled, h) {
+		return fmt.Errorf("config.hooks[%d]: notification %q declares no message/message_field and the hook supplies neither — set one on either layer", i, slug)
 	}
 	return nil
 }

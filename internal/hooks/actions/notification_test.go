@@ -2,6 +2,7 @@ package actions
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 
@@ -50,6 +51,24 @@ func TestNotificationShowAction_NoSenderIsNoop(t *testing.T) {
 	err := a.Execute(context.Background(), domain.Event{Body: "hi"}, map[string]any{NotificationArgSlug: "kit"})
 	if err != nil {
 		t.Fatalf("Execute with nil sender returned error: %v", err)
+	}
+}
+
+func TestNotificationShowAction_HonorsCancellationBeforeSend(t *testing.T) {
+	a := NewNotificationShowAction(sampleNotificationBundleSnapshot())
+	sender := &recordingSender{msgs: make(chan NotificationShowMsg, 1)}
+	a.SetSender(sender)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	err := a.Execute(ctx, domain.Event{Body: "hi"}, map[string]any{NotificationArgSlug: "kit"})
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("Execute error = %v, want context canceled", err)
+	}
+	select {
+	case msg := <-sender.msgs:
+		t.Fatalf("canceled action sent notification: %+v", msg)
+	default:
 	}
 }
 

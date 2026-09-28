@@ -5,7 +5,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"omakiten/internal/app"
+	"omakiten/internal/operation"
 )
 
 // newAssignCommand wires `okt assign TASK_ID [WHO]`. Passing an empty WHO
@@ -13,6 +13,8 @@ import (
 // recovery path for tasks whose claiming agent crashed without finishing.
 // Listed at the top level (rather than under a `task` parent) to match
 // the existing flat surface (`okt move`, `okt edit`, `okt archive`, ...).
+// Distinct from `okt plan assign`, which attaches a task to a plan wave
+// (census slug plan.task.assign). This command is task.assign / assignee.
 func newAssignCommand(opts *runtimeOptions) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "assign TASK_ID [WHO]",
@@ -37,16 +39,11 @@ func newAssignCommand(opts *runtimeOptions) *cobra.Command {
 				defer rt.close()
 				ctx = rt.WithActivityRepo(ctx)
 
-				project, err := opts.resolveProject(ctx, rt.store)
-				if err != nil {
-					return nil, err
-				}
-
-				task, event, err := app.NewTaskServiceFromStore(rt.store, rt.activeRegistry(), rt.activeSnapshot()).Assign(ctx, project, taskID, who)
-				if err != nil {
-					return nil, err
-				}
-				return map[string]any{"project": project, "task": task, "event": event}, nil
+				return rt.operationService().AssignTask(ctx, operation.AssignTaskInput{
+					ProjectSelector: opts.projectSelector(),
+					TaskID:          taskID,
+					Assignee:        who,
+				})
 			})
 		},
 	}

@@ -18,6 +18,10 @@ type snapshotHooks struct {
 	BeforeRollbackLinkCleanup                                                func()
 	PostPublishCleanupError, PostPublishSyncError, PostRollbackLinkSyncError error
 	DeferredCleanupError                                                     error
+	// SourceIdentity is the inode pinned by openSnapshotSource. When set,
+	// publication must not re-walk pragma_database_list through lexical
+	// validateMaintenancePath.
+	SourceIdentity os.FileInfo
 }
 
 type snapshotExecutor interface {
@@ -94,6 +98,27 @@ func (publication *snapshotPublication) finish(failure error) error {
 	if publication.root == nil {
 		return failure
 	}
+	failure = publication.finishPublished(failure)
+	failure = publication.rollbackFailure(failure)
+	failure = publication.cleanupRollbackLink(failure)
+	identityAtPath := publication.identityAtPath(failure)
+	failure = publication.close(failure)
+	if publication.identity != nil && failure != nil {
+		failure = &SnapshotPublicationError{
+			PublishedPath:     publication.path,
+			PublishedIdentity: publication.identity,
+			IdentityAtPath:    identityAtPath,
+			Err:               failure,
+		}
+	}
+	publication.path, publication.name, publication.rollbackName = "", "", ""
+	publication.rootIdentity, publication.identity, publication.rollbackIdentity = nil, nil, nil
+	publication.postPublicationSyncErr, publication.postRollbackSyncErr = nil, nil
+	publication.beforeRollbackCleanup = nil
+	return failure
+}
+
+func (publication *snapshotPublication) finishPublished(failure error) error {
 	if failure == nil && publication.identity != nil {
 		failure = errors.Join(syncPublishedSnapshotDirectory(publication.directory), publication.postPublicationSyncErr)
 		if failure == nil && publication.rollbackName != "" {
@@ -106,6 +131,10 @@ func (publication *snapshotPublication) finish(failure error) error {
 			}
 		}
 	}
+	return failure
+}
+
+func (publication *snapshotPublication) rollbackFailure(failure error) error {
 	if failure != nil && publication.identity != nil && publication.state == snapshotPublicationReversible {
 		var resolved bool
 		var rollbackErr error
@@ -119,16 +148,28 @@ func (publication *snapshotPublication) finish(failure error) error {
 			publication.identity, publication.rollbackName = nil, ""
 		}
 	}
+	return failure
+}
+
+func (publication *snapshotPublication) cleanupRollbackLink(failure error) error {
 	if publication.identity == nil && publication.rollbackName != "" {
 		_, cleanupErr := removeSnapshotRollbackLink(publication.root, publication.directory, publication.name, publication.rollbackIdentity, publication.rollbackName, publication.rollbackIdentity, nil)
 		failure = errors.Join(failure, cleanupErr)
 		publication.rollbackName = ""
 	}
+	return failure
+}
+
+func (publication *snapshotPublication) identityAtPath(failure error) bool {
 	var identityAtPath bool
 	if publication.identity != nil && failure != nil {
 		current, err := publication.root.Lstat(publication.name)
 		identityAtPath = err == nil && os.SameFile(publication.identity, current)
 	}
+	return identityAtPath
+}
+
+func (publication *snapshotPublication) close(failure error) error {
 	if publication.directory != nil {
 		if err := publication.directory.Close(); err != nil && failure != nil {
 			failure = errors.Join(failure, fmt.Errorf("close pinned snapshot destination directory: %w", err))
@@ -139,18 +180,6 @@ func (publication *snapshotPublication) finish(failure error) error {
 		failure = errors.Join(failure, fmt.Errorf("close snapshot destination directory: %w", err))
 	}
 	publication.root = nil
-	if publication.identity != nil && failure != nil {
-		failure = &SnapshotPublicationError{
-			PublishedPath:     publication.path,
-			PublishedIdentity: publication.identity,
-			IdentityAtPath:    identityAtPath,
-			Err:               failure,
-		}
-	}
-	publication.path, publication.name, publication.rollbackName = "", "", ""
-	publication.rootIdentity, publication.identity, publication.rollbackIdentity = nil, nil, nil
-	publication.postPublicationSyncErr, publication.postRollbackSyncErr = nil, nil
-	publication.beforeRollbackCleanup = nil
 	return failure
 }
 
@@ -195,13 +224,85 @@ func SnapshotDatabaseReplace(ctx context.Context, sourcePath, destinationPath st
 	return snapshotDatabaseWithOptions(ctx, sourcePath, destinationPath, true, snapshotHooks{})
 }
 
+func snapshotSourceValidationError(reason string) error {
+	return maintenanceValidationError(reason)
+}
+
+type snapshotSource struct {
+	db           *sql.DB
+	conn         *sql.Conn
+	release      func() error
+	verifyPragma func(string) error
+}
+
+func (source *snapshotSource) close() error {
+	var closeErr error
+	if source.conn != nil {
+		if err := source.conn.Close(); err != nil {
+			closeErr = errors.Join(closeErr, fmt.Errorf("close snapshot source connection: %w", err))
+		}
+		source.conn = nil
+	}
+	if source.db != nil {
+		if err := source.db.Close(); err != nil {
+			closeErr = errors.Join(closeErr, fmt.Errorf("close snapshot source database: %w", err))
+		}
+		source.db = nil
+	}
+	if source.release != nil {
+		closeErr = errors.Join(closeErr, source.release())
+		source.release = nil
+	}
+	source.verifyPragma = nil
+	return closeErr
+}
+
+func openSnapshotSource(ctx context.Context, sourcePath string) (source *snapshotSource, sourceIdentity os.FileInfo, returnErr error) {
+	_, sourceIdentity, sqliteOpenPath, release, verifyPragma, err := pinSnapshotSource(sourcePath)
+	if err != nil {
+		return nil, nil, fmt.Errorf("pin snapshot source: %w", err)
+	}
+	defer func() {
+		if returnErr != nil && source == nil {
+			_ = release()
+		}
+	}()
+	db, err := sql.Open("sqlite", sqliteFileURI(sqliteOpenPath, "mode=ro"))
+	if err != nil {
+		return nil, nil, fmt.Errorf("open snapshot source: %w", err)
+	}
+	source = &snapshotSource{
+		db:           db,
+		release:      release,
+		verifyPragma: verifyPragma,
+	}
+	defer func() {
+		if returnErr != nil {
+			_ = source.close()
+		}
+	}()
+	source.conn, err = db.Conn(ctx)
+	if err != nil {
+		return nil, nil, fmt.Errorf("pin snapshot source connection: %w", err)
+	}
+	var selectedPath string
+	if err = source.conn.QueryRowContext(ctx, `SELECT file FROM pragma_database_list WHERE name = 'main'`).Scan(&selectedPath); err != nil {
+		return nil, nil, fmt.Errorf("read snapshot source identity: %w", err)
+	}
+	if err = verifyPragma(selectedPath); err != nil {
+		return nil, nil, err
+	}
+	return source, sourceIdentity, nil
+}
+
 func snapshotDatabaseWithOptions(ctx context.Context, sourcePath, destinationPath string, replace bool, hooks snapshotHooks) (returnErr error) {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	sourcePath, sourceIdentity, err := validateMaintenancePath(sourcePath)
+	var err error
+	sourcePath, err = filepath.Abs(sourcePath)
 	if err != nil {
-		return fmt.Errorf("validate snapshot source: %w", err)
+		return fmt.Errorf("resolve snapshot source: %w", err)
 	}
 	destinationPath, err = filepath.Abs(destinationPath)
 	if err != nil {
@@ -210,55 +311,23 @@ func snapshotDatabaseWithOptions(ctx context.Context, sourcePath, destinationPat
 	if sourcePath == destinationPath {
 		return errors.New("snapshot destination must differ from source")
 	}
-	db, err := sql.Open("sqlite", sqliteFileURI(sourcePath, "mode=ro"))
+	source, sourceIdentity, err := openSnapshotSource(ctx, sourcePath)
 	if err != nil {
-		return fmt.Errorf("open snapshot source: %w", err)
-	}
-	var conn *sql.Conn
-	closeSource := func() error {
-		var closeErr error
-		if conn != nil {
-			if err := conn.Close(); err != nil {
-				closeErr = errors.Join(closeErr, fmt.Errorf("close snapshot source connection: %w", err))
-			}
-			conn = nil
-		}
-		if db != nil {
-			if err := db.Close(); err != nil {
-				closeErr = errors.Join(closeErr, fmt.Errorf("close snapshot source database: %w", err))
-			}
-			db = nil
-		}
-		return closeErr
+		return err
 	}
 	defer func() {
-		returnErr = errors.Join(returnErr, closeSource())
+		returnErr = errors.Join(returnErr, source.close())
 	}()
-	conn, err = db.Conn(ctx)
-	if err != nil {
-		return fmt.Errorf("pin snapshot source connection: %w", err)
-	}
-	var selectedPath string
-	if err := conn.QueryRowContext(ctx, `SELECT file FROM pragma_database_list WHERE name = 'main'`).Scan(&selectedPath); err != nil {
-		return fmt.Errorf("read snapshot source identity: %w", err)
-	}
-	_, selectedIdentity, err := validateMaintenancePath(selectedPath)
-	if err != nil || !os.SameFile(sourceIdentity, selectedIdentity) {
-		return errors.New("opened snapshot source identity does not match requested file")
-	}
-	_, currentIdentity, err := validateMaintenancePath(sourcePath)
-	if err != nil || !os.SameFile(sourceIdentity, currentIdentity) {
-		return errors.New("snapshot source path changed while opening")
-	}
+	hooks.SourceIdentity = sourceIdentity
 	callerBeforePublishCheck := hooks.BeforePublishCheck
 	hooks.BeforePublishCheck = func() error {
 		var checkErr error
 		if callerBeforePublishCheck != nil {
 			checkErr = callerBeforePublishCheck()
 		}
-		return errors.Join(checkErr, closeSource())
+		return errors.Join(checkErr, source.close())
 	}
-	return snapshotWithExecutor(ctx, conn, destinationPath, replace, hooks)
+	return snapshotWithExecutor(ctx, source.conn, destinationPath, replace, hooks)
 }
 
 func snapshotWithExecutor(ctx context.Context, executor snapshotExecutor, destinationPath string, replace bool, hooks snapshotHooks) (returnErr error) {
@@ -269,33 +338,21 @@ func snapshotWithExecutor(ctx context.Context, executor snapshotExecutor, destin
 	if err != nil {
 		return fmt.Errorf("resolve snapshot destination: %w", err)
 	}
-	sourceIdentity, err := snapshotExecutorIdentity(ctx, executor)
-	if err != nil {
-		return err
+	sourceIdentity := hooks.SourceIdentity
+	if sourceIdentity == nil {
+		sourceIdentity, err = snapshotExecutorIdentity(ctx, executor)
+		if err != nil {
+			return err
+		}
 	}
 	parentPath := filepath.Dir(destinationPath)
 	identities, err := ensureSecureSnapshotDirectory(parentPath)
 	if err != nil {
 		return err
 	}
-	publication := snapshotPublication{
-		path:                   destinationPath,
-		name:                   filepath.Base(destinationPath),
-		postPublicationSyncErr: hooks.PostPublishSyncError,
-		beforeRollbackCleanup:  hooks.BeforeRollbackLinkCleanup,
-		postRollbackSyncErr:    hooks.PostRollbackLinkSyncError,
-	}
-	publication.root, err = os.OpenRoot(parentPath)
+	publication, err := openSnapshotPublication(destinationPath, parentPath, sourceIdentity, identities, hooks)
 	if err != nil {
-		return fmt.Errorf("open snapshot destination directory: %w", err)
-	}
-	publication.rootIdentity, err = publication.root.Stat(".")
-	if err != nil || !os.SameFile(identities[len(identities)-1].info, publication.rootIdentity) {
-		return publication.finish(errors.New("snapshot destination directory changed while opening"))
-	}
-	publication.directory, err = publication.root.Open(".")
-	if err != nil {
-		return publication.finish(fmt.Errorf("pin snapshot destination directory: %w", err))
+		return err
 	}
 	stage := snapshotStage{parent: publication.root}
 	defer func() {
@@ -309,70 +366,116 @@ func snapshotWithExecutor(ctx context.Context, executor snapshotExecutor, destin
 	if err := validateSnapshotDestination(publication.root, publication.name, replace, sourceIdentity); err != nil {
 		return err
 	}
-
-	stage.name, err = createSnapshotStage(publication.root)
+	stagedInfo, err := prepareSnapshotStage(ctx, executor, parentPath, &stage, hooks)
 	if err != nil {
 		return err
 	}
-	stage.root, err = publication.root.OpenRoot(stage.name)
+	if err := validateSnapshotPublication(ctx, &publication, &stage, identities, replace, sourceIdentity, stagedInfo, hooks); err != nil {
+		return err
+	}
+	return publishSnapshot(&publication, &stage, replace, sourceIdentity, stagedInfo, hooks)
+}
+
+func openSnapshotPublication(destinationPath, parentPath string, sourceIdentity os.FileInfo, identities []snapshotPathIdentity, hooks snapshotHooks) (snapshotPublication, error) {
+	publication := snapshotPublication{
+		path:                   destinationPath,
+		name:                   filepath.Base(destinationPath),
+		postPublicationSyncErr: hooks.PostPublishSyncError,
+		beforeRollbackCleanup:  hooks.BeforeRollbackLinkCleanup,
+		postRollbackSyncErr:    hooks.PostRollbackLinkSyncError,
+	}
+	var err error
+	publication.root, err = os.OpenRoot(parentPath)
 	if err != nil {
-		return fmt.Errorf("open snapshot staging directory: %w", err)
+		return publication, fmt.Errorf("open snapshot destination directory: %w", err)
+	}
+	publication.rootIdentity, err = publication.root.Stat(".")
+	if err != nil || !os.SameFile(identities[len(identities)-1].info, publication.rootIdentity) {
+		return publication, publication.finish(errors.New("snapshot destination directory changed while opening"))
+	}
+	publication.directory, err = publication.root.Open(".")
+	if err != nil {
+		return publication, publication.finish(fmt.Errorf("pin snapshot destination directory: %w", err))
+	}
+	return publication, nil
+}
+
+func prepareSnapshotStage(ctx context.Context, executor snapshotExecutor, parentPath string, stage *snapshotStage, hooks snapshotHooks) (os.FileInfo, error) {
+	var err error
+	stage.name, err = createSnapshotStage(stage.parent)
+	if err != nil {
+		return nil, err
+	}
+	stage.root, err = stage.parent.OpenRoot(stage.name)
+	if err != nil {
+		return nil, fmt.Errorf("open snapshot staging directory: %w", err)
 	}
 	stage.file, err = stage.root.OpenFile(snapshotStageFileName, os.O_RDWR|os.O_CREATE|os.O_EXCL, 0o600)
 	if err != nil {
-		return fmt.Errorf("create private snapshot staging file: %w", err)
+		return nil, fmt.Errorf("create private snapshot staging file: %w", err)
 	}
 	stageDirPath := filepath.Join(parentPath, stage.name)
 	stageFilePath := filepath.Join(stageDirPath, snapshotStageFileName)
 	stage.directory, err = stage.root.Open(".")
 	if err != nil {
-		return fmt.Errorf("pin snapshot staging directory: %w", err)
+		return nil, fmt.Errorf("pin snapshot staging directory: %w", err)
 	}
 	var sqliteStagePath string
 	sqliteStagePath, stage.prepare, stage.release, err = bindSnapshotStage(stage.file, stage.directory, stageFilePath)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if hooks.AfterStageCreated != nil {
 		hooks.AfterStageCreated(stageDirPath, stageFilePath)
 	}
 	if _, err := executor.ExecContext(ctx, `VACUUM INTO ?`, sqliteStagePath); err != nil {
-		return fmt.Errorf("vacuum snapshot: %w", err)
+		return nil, fmt.Errorf("vacuum snapshot: %w", err)
 	}
 	if hooks.AfterVacuum != nil {
 		hooks.AfterVacuum()
 	}
 	if err := ctx.Err(); err != nil {
-		return err
+		return nil, err
+	}
+	if _, err := verifySnapshotStage(ctx, stage, sqliteStagePath); err != nil {
+		return nil, err
+	}
+	if err := stage.file.Chmod(0o600); err != nil {
+		return nil, fmt.Errorf("chmod snapshot: %w", err)
+	}
+	if err := stage.file.Sync(); err != nil {
+		return nil, fmt.Errorf("sync snapshot: %w", err)
 	}
 	stagedInfo, err := stage.file.Stat()
 	if err != nil {
-		return fmt.Errorf("read staged snapshot identity before verification: %w", err)
+		return nil, fmt.Errorf("read staged snapshot identity: %w", err)
+	}
+	if err := stage.prepare(); err != nil {
+		return nil, fmt.Errorf("prepare staged snapshot pathname binding for publication: %w", err)
+	}
+	return stagedInfo, nil
+}
+
+func verifySnapshotStage(ctx context.Context, stage *snapshotStage, sqliteStagePath string) (os.FileInfo, error) {
+	stagedInfo, err := stage.file.Stat()
+	if err != nil {
+		return nil, fmt.Errorf("read staged snapshot identity before verification: %w", err)
 	}
 	namedStageInfo, err := stage.root.Lstat(snapshotStageFileName)
 	if err != nil || namedStageInfo.Mode()&os.ModeSymlink != 0 || !namedStageInfo.Mode().IsRegular() || !os.SameFile(stagedInfo, namedStageInfo) {
-		return errors.New("staged snapshot identity changed before verification")
+		return nil, errors.New("staged snapshot identity changed before verification")
 	}
 	if err := verifySQLiteSnapshot(ctx, sqliteStagePath); err != nil {
-		return err
+		return nil, err
 	}
 	namedStageInfo, err = stage.root.Lstat(snapshotStageFileName)
 	if err != nil || !os.SameFile(stagedInfo, namedStageInfo) {
-		return errors.New("staged snapshot identity changed during verification")
+		return nil, errors.New("staged snapshot identity changed during verification")
 	}
-	if err := stage.file.Chmod(0o600); err != nil {
-		return fmt.Errorf("chmod snapshot: %w", err)
-	}
-	if err := stage.file.Sync(); err != nil {
-		return fmt.Errorf("sync snapshot: %w", err)
-	}
-	stagedInfo, err = stage.file.Stat()
-	if err != nil {
-		return fmt.Errorf("read staged snapshot identity: %w", err)
-	}
-	if err := stage.prepare(); err != nil {
-		return fmt.Errorf("prepare staged snapshot pathname binding for publication: %w", err)
-	}
+	return stagedInfo, nil
+}
+
+func validateSnapshotPublication(ctx context.Context, publication *snapshotPublication, stage *snapshotStage, identities []snapshotPathIdentity, replace bool, sourceIdentity, stagedInfo os.FileInfo, hooks snapshotHooks) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -391,31 +494,23 @@ func snapshotWithExecutor(ctx context.Context, executor snapshotExecutor, destin
 	if err != nil || !os.SameFile(publication.rootIdentity, currentRootInfo) {
 		return errors.New("snapshot destination directory changed before publish")
 	}
-
 	if err := validateSnapshotDestination(publication.root, publication.name, replace, sourceIdentity); err != nil {
 		return err
 	}
-	if err := validateSnapshotStageForPublication(stage.root, snapshotStageFileName, stagedInfo); err != nil {
-		return err
-	}
+	return validateSnapshotStageForPublication(stage.root, snapshotStageFileName, stagedInfo)
+}
+
+func publishSnapshot(publication *snapshotPublication, stage *snapshotStage, replace bool, sourceIdentity, stagedInfo os.FileInfo, hooks snapshotHooks) error {
 	publishName := publication.name
 	if replace {
+		var err error
 		publishName, err = randomSnapshotName(".omakiten-publish-")
 		if err != nil {
 			return err
 		}
 	}
 	if err := linkSnapshotFile(stage.file, stage.directory, snapshotStageFileName, publication.directory, publishName); err != nil {
-		linkErr := fmt.Errorf("link verified snapshot for publication: %w", err)
-		if !replace {
-			if current, statErr := publication.root.Lstat(publication.name); statErr == nil && os.SameFile(stagedInfo, current) {
-				publication.identity = current
-			}
-		} else if current, statErr := publication.root.Lstat(publishName); statErr == nil && os.SameFile(stagedInfo, current) {
-			_, cleanupErr := removePublishedSnapshot(publication.root, publication.directory, publishName, stagedInfo)
-			return errors.Join(linkErr, cleanupErr)
-		}
-		return linkErr
+		return handleSnapshotLinkFailure(publication, publishName, replace, stagedInfo, fmt.Errorf("link verified snapshot for publication: %w", err))
 	}
 	if !replace {
 		publication.identity = stagedInfo
@@ -423,43 +518,67 @@ func snapshotWithExecutor(ctx context.Context, executor snapshotExecutor, destin
 	candidateInfo, err := publication.root.Lstat(publishName)
 	if err != nil || candidateInfo.Mode()&os.ModeSymlink != 0 || !candidateInfo.Mode().IsRegular() || !os.SameFile(stagedInfo, candidateInfo) {
 		identityErr := errors.New("linked snapshot identity does not match verified staged file")
-		if !replace {
-			return identityErr
-		}
-		if err == nil && os.SameFile(stagedInfo, candidateInfo) {
+		if replace && err == nil && os.SameFile(stagedInfo, candidateInfo) {
 			_, cleanupErr := removePublishedSnapshot(publication.root, publication.directory, publishName, stagedInfo)
 			return errors.Join(identityErr, cleanupErr)
 		}
 		return identityErr
 	}
 	if replace {
-		if err := validateSnapshotDestination(publication.root, publication.name, true, sourceIdentity); err != nil {
-			_, cleanupErr := removePublishedSnapshot(publication.root, publication.directory, publishName, candidateInfo)
-			return errors.Join(err, cleanupErr)
+		if err := replaceSnapshotDestination(publication, publishName, candidateInfo, sourceIdentity, stagedInfo); err != nil {
+			return err
 		}
-		publication.rollbackName, publication.rollbackIdentity, err = prepareSnapshotReplacement(publication.root, publication.directory, publication.name)
-		if err != nil {
-			_, cleanupErr := removePublishedSnapshot(publication.root, publication.directory, publishName, candidateInfo)
-			return errors.Join(err, cleanupErr)
-		}
-		if err := renameSnapshotLink(publication.root, publication.directory, publishName, publication.name); err != nil {
-			renameErr := fmt.Errorf("replace snapshot destination: %w", err)
-			if current, statErr := publication.root.Lstat(publication.name); statErr == nil && os.SameFile(stagedInfo, current) {
-				publication.identity = current
-				return renameErr
-			}
-			_, cleanupErr := removePublishedSnapshot(publication.root, publication.directory, publishName, candidateInfo)
-			return errors.Join(renameErr, cleanupErr)
-		}
-		publication.identity = stagedInfo
+	} else if err := verifyFinalSnapshotPublication(publication, sourceIdentity, stagedInfo); err != nil {
+		return err
 	}
+	return errors.Join(stage.cleanup(), hooks.PostPublishCleanupError)
+}
+
+func handleSnapshotLinkFailure(publication *snapshotPublication, publishName string, replace bool, stagedInfo os.FileInfo, linkErr error) error {
+	if !replace {
+		if current, statErr := publication.root.Lstat(publication.name); statErr == nil && os.SameFile(stagedInfo, current) {
+			publication.identity = current
+		}
+		return linkErr
+	}
+	if current, statErr := publication.root.Lstat(publishName); statErr == nil && os.SameFile(stagedInfo, current) {
+		_, cleanupErr := removePublishedSnapshot(publication.root, publication.directory, publishName, stagedInfo)
+		return errors.Join(linkErr, cleanupErr)
+	}
+	return linkErr
+}
+
+func replaceSnapshotDestination(publication *snapshotPublication, publishName string, candidateInfo, sourceIdentity, stagedInfo os.FileInfo) error {
+	if err := validateSnapshotDestination(publication.root, publication.name, true, sourceIdentity); err != nil {
+		_, cleanupErr := removePublishedSnapshot(publication.root, publication.directory, publishName, candidateInfo)
+		return errors.Join(err, cleanupErr)
+	}
+	var err error
+	publication.rollbackName, publication.rollbackIdentity, err = prepareSnapshotReplacement(publication.root, publication.directory, publication.name)
+	if err != nil {
+		_, cleanupErr := removePublishedSnapshot(publication.root, publication.directory, publishName, candidateInfo)
+		return errors.Join(err, cleanupErr)
+	}
+	if err := renameSnapshotLink(publication.root, publication.directory, publishName, publication.name); err != nil {
+		renameErr := fmt.Errorf("replace snapshot destination: %w", err)
+		if current, statErr := publication.root.Lstat(publication.name); statErr == nil && os.SameFile(stagedInfo, current) {
+			publication.identity = current
+			return renameErr
+		}
+		_, cleanupErr := removePublishedSnapshot(publication.root, publication.directory, publishName, candidateInfo)
+		return errors.Join(renameErr, cleanupErr)
+	}
+	publication.identity = stagedInfo
+	return verifyFinalSnapshotPublication(publication, sourceIdentity, stagedInfo)
+}
+
+func verifyFinalSnapshotPublication(publication *snapshotPublication, sourceIdentity, stagedInfo os.FileInfo) error {
 	finalInfo, err := publication.root.Lstat(publication.name)
 	if err != nil || finalInfo.Mode()&os.ModeSymlink != 0 || !finalInfo.Mode().IsRegular() || !os.SameFile(stagedInfo, finalInfo) || os.SameFile(sourceIdentity, finalInfo) {
 		return errors.New("final snapshot publication identity check failed")
 	}
 	publication.identity = finalInfo
-
-	return errors.Join(stage.cleanup(), hooks.PostPublishCleanupError)
+	return nil
 }
 
 func prepareSnapshotReplacement(root *os.Root, directory *os.File, destinationName string) (string, os.FileInfo, error) {
@@ -641,18 +760,9 @@ func removePublishedSnapshot(root *os.Root, directory *os.File, name string, exp
 }
 
 func ensureSecureSnapshotDirectory(path string) ([]snapshotPathIdentity, error) {
-	absolutePath, err := filepath.Abs(path)
+	components, err := snapshotDirectoryComponents(path)
 	if err != nil {
-		return nil, fmt.Errorf("resolve snapshot directory: %w", err)
-	}
-	components := []string{filepath.Clean(absolutePath)}
-	for current := components[0]; ; {
-		parent := filepath.Dir(current)
-		if parent == current {
-			break
-		}
-		components = append(components, parent)
-		current = parent
+		return nil, err
 	}
 	identities := make([]snapshotPathIdentity, 0, len(components))
 	for index := len(components) - 1; index >= 0; index-- {
@@ -673,6 +783,23 @@ func ensureSecureSnapshotDirectory(path string) ([]snapshotPathIdentity, error) 
 		identities = append(identities, snapshotPathIdentity{path: component, info: info})
 	}
 	return identities, nil
+}
+
+func snapshotDirectoryComponents(path string) ([]string, error) {
+	absolutePath, err := filepath.Abs(path)
+	if err != nil {
+		return nil, fmt.Errorf("resolve snapshot directory: %w", err)
+	}
+	components := []string{filepath.Clean(absolutePath)}
+	for current := components[0]; ; {
+		parent := filepath.Dir(current)
+		if parent == current {
+			break
+		}
+		components = append(components, parent)
+		current = parent
+	}
+	return components, nil
 }
 
 func validateSecureSnapshotDirectory(identities []snapshotPathIdentity) error {

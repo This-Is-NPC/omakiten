@@ -13,7 +13,7 @@ import (
 )
 
 // entityFolders lists the per-kind folders the layout expects as siblings of
-// the config/ yaml dir. Order matters only for stable migration iteration.
+// the config/ yaml dir.
 var entityFolders = []string{"skills", "laws", "personas", "templates", "themes", "notifications", "languages"}
 
 // hardenDir creates dir (and any missing parents) owner-only (0o700), but only
@@ -28,20 +28,18 @@ var entityFolders = []string{"skills", "laws", "personas", "templates", "themes"
 // to match the 0o600 files inside it, closing the file-presence leak on first
 // creation; a pre-existing dir is left untouched.
 func hardenDir(dir string) error {
-	_, statErr := os.Stat(dir)
-	created := os.IsNotExist(statErr)
-	if statErr != nil && !created {
-		return statErr
+	return hardenDirNoFollow(dir)
+}
+
+// ensureCustomDir creates the user-owned escape hatch but never follows an
+// existing custom symlink. Refresh deliberately preserves that symlink and
+// never reads or writes through it.
+func ensureCustomDir(dir string) error {
+	info, err := lstatNoFollow(dir)
+	if err == nil && info.Mode()&os.ModeSymlink != 0 {
+		return nil
 	}
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return err
-	}
-	if created {
-		if err := os.Chmod(dir, 0o700); err != nil {
-			return err
-		}
-	}
-	return nil
+	return hardenDir(dir)
 }
 
 // EnsureDefaultFiles materializes the embedded default kit into a config root.
@@ -53,14 +51,14 @@ func EnsureDefaultFiles(rootDir string) error {
 	if err := copyDefaultConfigProfiles(rootDir, false); err != nil {
 		return err
 	}
-	if err := hardenDir(filepath.Join(rootDir, "config", "custom")); err != nil {
+	if err := ensureCustomDir(filepath.Join(rootDir, "config", "custom")); err != nil {
 		return fmt.Errorf("create config/custom: %w", err)
 	}
 	for _, sub := range entityFolders {
 		if err := copyDefaultDir(rootDir, sub, false); err != nil {
 			return err
 		}
-		if err := hardenDir(filepath.Join(rootDir, sub, "custom")); err != nil {
+		if err := ensureCustomDir(filepath.Join(rootDir, sub, "custom")); err != nil {
 			return fmt.Errorf("create %s/custom: %w", sub, err)
 		}
 	}
@@ -83,7 +81,7 @@ func RefreshDefaultFiles(rootDir string) error {
 	if err := copyDefaultConfigProfiles(rootDir, true); err != nil {
 		return err
 	}
-	if err := hardenDir(filepath.Join(rootDir, "config", "custom")); err != nil {
+	if err := ensureCustomDir(filepath.Join(rootDir, "config", "custom")); err != nil {
 		return fmt.Errorf("create config/custom: %w", err)
 	}
 	for _, sub := range entityFolders {
@@ -93,7 +91,7 @@ func RefreshDefaultFiles(rootDir string) error {
 		if err := copyDefaultDir(rootDir, sub, true); err != nil {
 			return err
 		}
-		if err := hardenDir(filepath.Join(rootDir, sub, "custom")); err != nil {
+		if err := ensureCustomDir(filepath.Join(rootDir, sub, "custom")); err != nil {
 			return fmt.Errorf("create %s/custom: %w", sub, err)
 		}
 	}
@@ -109,7 +107,7 @@ func ValidateDefaultRefreshRoot(rootDir, configPath string) error {
 		return err
 	}
 	configDir := filepath.Join(root, "config")
-	info, err := os.Lstat(configDir)
+	info, err := lstatNoFollow(configDir)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return fmt.Errorf("%s is not an Omakiten install root: missing config directory", root)
@@ -141,7 +139,7 @@ func ValidateDefaultRefreshRoot(rootDir, configPath string) error {
 
 func defaultRefreshRootHasMarker(configDir string) (bool, error) {
 	for _, name := range []string{paths.ActiveConfigStateFile, "custom", "modules"} {
-		_, err := os.Lstat(filepath.Join(configDir, name))
+		_, err := lstatNoFollow(filepath.Join(configDir, name))
 		if err == nil {
 			return true, nil
 		}
@@ -186,7 +184,7 @@ func validateManagedDefaultDirBoundaries(rootDir string) error {
 }
 
 func validateManagedDefaultDirBoundary(dir string) error {
-	info, err := os.Lstat(dir)
+	info, err := lstatNoFollow(dir)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil
@@ -213,9 +211,8 @@ func validateManagedDefaultDirBoundary(dir string) error {
 // CLI surfaces the idempotent repair command (`okt config refresh-defaults`),
 // and re-running the refresh is safe — prune skips already-removed entries and
 // recopy overwrites whatever remains, converging the install to the embedded
-// defaults regardless of where the prior run stopped. No rollback/staging is
-// added because the recovery path (re-run) is strictly simpler and equally
-// durable.
+// defaults regardless of where the prior run stopped. Re-running the refresh
+// is the supported recovery path.
 func pruneDefaultDir(dstDir, srcDir string, preserveActive bool) error {
 	if err := pruneDefaultDirContents(dstDir, filepath.ToSlash(srcDir), preserveActive); err != nil {
 		return fmt.Errorf("prune managed defaults in %s: %w", dstDir, err)
@@ -224,7 +221,7 @@ func pruneDefaultDir(dstDir, srcDir string, preserveActive bool) error {
 }
 
 func pruneDefaultDirContents(dstDir, srcDir string, preserveActive bool) error {
-	entries, err := os.ReadDir(dstDir)
+	entries, err := readDirNoFollow(dstDir)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil
@@ -232,51 +229,51 @@ func pruneDefaultDirContents(dstDir, srcDir string, preserveActive bool) error {
 		return err
 	}
 	for _, entry := range entries {
-		name := entry.Name()
-		if name == "custom" {
-			continue
-		}
-		if preserveActive && name == paths.ActiveConfigStateFile {
-			continue
-		}
-
-		dstPath := filepath.Join(dstDir, name)
-		srcPath := srcDir + "/" + name
-		srcInfo, statErr := fs.Stat(defaults.FS, srcPath)
-		srcExists := statErr == nil
-		if statErr != nil && !errors.Is(statErr, fs.ErrNotExist) {
-			return fmt.Errorf("stat embedded %s: %w", srcPath, statErr)
-		}
-
-		if entry.IsDir() {
-			if srcExists && !srcInfo.IsDir() {
-				if err := os.RemoveAll(dstPath); err != nil {
-					return err
-				}
-				continue
-			}
-			if err := pruneDefaultDirContents(dstPath, srcPath, false); err != nil {
-				return err
-			}
-			if !srcExists {
-				if err := removeDirIfEmpty(dstPath); err != nil {
-					return err
-				}
-			}
-			continue
-		}
-
-		if !srcExists || srcInfo.IsDir() {
-			if err := os.Remove(dstPath); err != nil && !os.IsNotExist(err) {
-				return err
-			}
+		if err := pruneDefaultEntry(dstDir, srcDir, preserveActive, entry); err != nil {
+			return err
 		}
 	}
 	return nil
 }
 
+func pruneDefaultEntry(dstDir, srcDir string, preserveActive bool, entry os.FileInfo) error {
+	name := entry.Name()
+	if name == "custom" || (preserveActive && name == paths.ActiveConfigStateFile) {
+		return nil
+	}
+	dstPath := filepath.Join(dstDir, name)
+	srcPath := srcDir + "/" + name
+	srcInfo, statErr := fs.Stat(defaults.FS, srcPath)
+	srcExists := statErr == nil
+	if statErr != nil && !errors.Is(statErr, fs.ErrNotExist) {
+		return fmt.Errorf("stat embedded %s: %w", srcPath, statErr)
+	}
+	if entry.IsDir() {
+		return pruneDefaultSubdir(dstPath, srcPath, srcExists, srcInfo)
+	}
+	if !srcExists || srcInfo.IsDir() {
+		if err := os.Remove(dstPath); err != nil && !os.IsNotExist(err) {
+			return err
+		}
+	}
+	return nil
+}
+
+func pruneDefaultSubdir(dstPath, srcPath string, srcExists bool, srcInfo fs.FileInfo) error {
+	if srcExists && !srcInfo.IsDir() {
+		return os.RemoveAll(dstPath)
+	}
+	if err := pruneDefaultDirContents(dstPath, srcPath, false); err != nil {
+		return err
+	}
+	if !srcExists {
+		return removeDirIfEmpty(dstPath)
+	}
+	return nil
+}
+
 func removeDirIfEmpty(dir string) error {
-	entries, err := os.ReadDir(dir)
+	entries, err := readDirNoFollow(dir)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil
@@ -311,28 +308,26 @@ func copyEmbeddedDirRecursive(srcDir, dstDir string, overwrite bool) error {
 		return fmt.Errorf("read embedded %s: %w", srcDir, err)
 	}
 	for _, entry := range entries {
-		src := srcDir + "/" + entry.Name()
-		dst := filepath.Join(dstDir, entry.Name())
-		if entry.IsDir() {
-			if err := hardenDir(dst); err != nil {
-				return fmt.Errorf("create %s: %w", dst, err)
-			}
-			if err := copyEmbeddedDirRecursive(src, dst, overwrite); err != nil {
-				return err
-			}
-			continue
-		}
-		if overwrite {
-			if err := copyDefaultOverwrite(dst, src); err != nil {
-				return err
-			}
-		} else {
-			if err := copyDefaultIfMissing(dst, src); err != nil {
-				return err
-			}
+		if err := copyEmbeddedEntry(srcDir, dstDir, overwrite, entry); err != nil {
+			return err
 		}
 	}
 	return nil
+}
+
+func copyEmbeddedEntry(srcDir, dstDir string, overwrite bool, entry fs.DirEntry) error {
+	src := srcDir + "/" + entry.Name()
+	dst := filepath.Join(dstDir, entry.Name())
+	if entry.IsDir() {
+		if err := hardenDir(dst); err != nil {
+			return fmt.Errorf("create %s: %w", dst, err)
+		}
+		return copyEmbeddedDirRecursive(src, dst, overwrite)
+	}
+	if overwrite {
+		return copyDefaultOverwrite(dst, src)
+	}
+	return copyDefaultIfMissing(dst, src)
 }
 
 func copyDefaultDir(rootDir, sub string, overwrite bool) error {
@@ -364,7 +359,14 @@ func copyDefaultDir(rootDir, sub string, overwrite bool) error {
 }
 
 func copyDefaultIfMissing(dstPath, srcPath string) error {
-	if _, err := os.Stat(dstPath); err == nil {
+	info, err := lstatNoFollow(dstPath)
+	if err == nil {
+		if info.Mode()&os.ModeSymlink != 0 {
+			return fmt.Errorf("refusing default target %s: symlink", dstPath)
+		}
+		if !info.Mode().IsRegular() {
+			return fmt.Errorf("refusing default target %s: not a regular file", dstPath)
+		}
 		return nil
 	} else if !os.IsNotExist(err) {
 		return err

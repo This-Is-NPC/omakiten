@@ -11,97 +11,96 @@ import (
 // popup at render time. Errors are wrapped with the notification name + path
 // so the user can pinpoint the offending file.
 func ValidateNotification(notification Notification) error {
-	if strings.TrimSpace(notification.Name) == "" {
-		return wrapNotificationErr("", notification.SourcePath, fmt.Errorf("name is required"))
+	checks := []func(Notification) error{
+		validateNotificationBasics,
+		validateNotificationAppearance,
+		validateNotificationLayout,
+		validateNotificationContent,
 	}
-	if strings.TrimSpace(notification.Description) == "" {
-		return wrapNotificationErr(notification.Name, notification.SourcePath, fmt.Errorf("description is required"))
-	}
-
-	if notification.Size.Width <= 0 || notification.Size.Height <= 0 {
-		return wrapNotificationErr(notification.Name, notification.SourcePath, fmt.Errorf("size.width and size.height must be > 0"))
-	}
-	if strings.TrimSpace(notification.Background) == "" {
-		return wrapNotificationErr(notification.Name, notification.SourcePath, fmt.Errorf("background is required (use transparent to opt out)"))
-	}
-
-	if err := IsValidColorSyntax(notification.Background); err != nil {
-		return wrapNotificationErr(notification.Name, notification.SourcePath, fmt.Errorf("background: %w", err))
-	}
-
-	// frame_interval_ms is only meaningful when an animation is
-	// declared. Empty animation → field ignored. Animation present →
-	// must be > 0.
-	if len(notification.Animation) > 0 && notification.FrameIntervalMs <= 0 {
-		return wrapNotificationErr(notification.Name, notification.SourcePath, fmt.Errorf("frame_interval_ms must be > 0 when an animation is set"))
-	}
-
-	if notification.TypingMsPerChar == nil {
-		return wrapNotificationErr(notification.Name, notification.SourcePath, fmt.Errorf("typing_ms_per_char is required"))
-	}
-	if *notification.TypingMsPerChar < 0 {
-		return wrapNotificationErr(notification.Name, notification.SourcePath, fmt.Errorf("typing_ms_per_char must be >= 0"))
-	}
-
-	if err := validateNotificationStyle(notification); err != nil {
-		return wrapNotificationErr(notification.Name, notification.SourcePath, err)
-	}
-
-	if err := validateNotificationBorder(notification.Border); err != nil {
-		return wrapNotificationErr(notification.Name, notification.SourcePath, err)
-	}
-
-	if notification.Style == NotificationStyleCustom {
-		if err := validateCustomBorder(notification.CustomBorder); err != nil {
+	for _, check := range checks {
+		if err := check(notification); err != nil {
 			return wrapNotificationErr(notification.Name, notification.SourcePath, err)
 		}
 	}
-
-	if err := validateAnimation(notification.Animation); err != nil {
-		return wrapNotificationErr(notification.Name, notification.SourcePath, err)
-	}
-
-	if err := validateBubbleForAnimation(notification.Bubble, len(notification.Animation) > 0); err != nil {
-		return wrapNotificationErr(notification.Name, notification.SourcePath, err)
-	}
-
-	if err := validatePosition(notification.Position); err != nil {
-		return wrapNotificationErr(notification.Name, notification.SourcePath, err)
-	}
-
-	if err := validateDismiss(notification.Dismiss); err != nil {
-		return wrapNotificationErr(notification.Name, notification.SourcePath, err)
-	}
-
-	if notification.Padding == nil {
-		return wrapNotificationErr(notification.Name, notification.SourcePath, fmt.Errorf("padding is required (set all sides to 0 for no padding)"))
-	}
-	if err := validatePadding(*notification.Padding); err != nil {
-		return wrapNotificationErr(notification.Name, notification.SourcePath, err)
-	}
-	if notification.AutoHeight == nil {
-		return wrapNotificationErr(notification.Name, notification.SourcePath, fmt.Errorf("auto_height is required"))
-	}
-	if notification.PaddingInside == nil {
-		return wrapNotificationErr(notification.Name, notification.SourcePath, fmt.Errorf("padding_inside is required"))
-	}
-	if notification.FooterVisible == nil {
-		return wrapNotificationErr(notification.Name, notification.SourcePath, fmt.Errorf("footer_visible is required"))
-	}
-
-	if err := validateFooterPosition(notification.FooterPosition, *notification.FooterVisible); err != nil {
-		return wrapNotificationErr(notification.Name, notification.SourcePath, err)
-	}
-
-	if err := validateNotificationMessage(notification); err != nil {
-		return wrapNotificationErr(notification.Name, notification.SourcePath, err)
-	}
-
-	if err := validateNotificationActions(notification.Actions, notification.Dismiss); err != nil {
-		return wrapNotificationErr(notification.Name, notification.SourcePath, err)
-	}
-
 	return nil
+}
+
+func validateNotificationBasics(n Notification) error {
+	if strings.TrimSpace(n.Name) == "" {
+		return fmt.Errorf("name is required")
+	}
+	if strings.TrimSpace(n.Description) == "" {
+		return fmt.Errorf("description is required")
+	}
+	if n.Size.Width <= 0 || n.Size.Height <= 0 {
+		return fmt.Errorf("size.width and size.height must be > 0")
+	}
+	if strings.TrimSpace(n.Background) == "" {
+		return fmt.Errorf("background is required (use transparent to opt out)")
+	}
+	if err := IsValidColorSyntax(n.Background); err != nil {
+		return fmt.Errorf("background: %w", err)
+	}
+	if len(n.Animation) > 0 && n.FrameIntervalMs <= 0 {
+		return fmt.Errorf("frame_interval_ms must be > 0 when an animation is set")
+	}
+	if n.TypingMsPerChar == nil {
+		return fmt.Errorf("typing_ms_per_char is required")
+	}
+	if *n.TypingMsPerChar < 0 {
+		return fmt.Errorf("typing_ms_per_char must be >= 0")
+	}
+	return nil
+}
+
+func validateNotificationAppearance(n Notification) error {
+	if err := validateNotificationStyle(n); err != nil {
+		return err
+	}
+	if err := validateNotificationBorder(n.Border); err != nil {
+		return err
+	}
+	if n.Style == NotificationStyleCustom {
+		if err := validateCustomBorder(n.CustomBorder); err != nil {
+			return err
+		}
+	}
+	if err := validateAnimation(n.Animation); err != nil {
+		return err
+	}
+	if err := validateBubbleForAnimation(n.Bubble, len(n.Animation) > 0); err != nil {
+		return err
+	}
+	if err := validatePosition(n.Position); err != nil {
+		return err
+	}
+	return validateDismiss(n.Dismiss)
+}
+
+func validateNotificationLayout(n Notification) error {
+	if n.Padding == nil {
+		return fmt.Errorf("padding is required (set all sides to 0 for no padding)")
+	}
+	if err := validatePadding(*n.Padding); err != nil {
+		return err
+	}
+	if n.AutoHeight == nil {
+		return fmt.Errorf("auto_height is required")
+	}
+	if n.PaddingInside == nil {
+		return fmt.Errorf("padding_inside is required")
+	}
+	if n.FooterVisible == nil {
+		return fmt.Errorf("footer_visible is required")
+	}
+	return validateFooterPosition(n.FooterPosition, *n.FooterVisible)
+}
+
+func validateNotificationContent(n Notification) error {
+	if err := validateNotificationMessage(n); err != nil {
+		return err
+	}
+	return validateNotificationActions(n.Actions, n.Dismiss)
 }
 
 // validateNotificationActions enforces the per-action invariants and the
@@ -123,39 +122,45 @@ func validateNotificationActions(actions []NotificationAction, dismiss Notificat
 		dismissKeys[k] = struct{}{}
 	}
 	for i, action := range actions {
-		key := strings.TrimSpace(action.Key)
-		if key == "" {
-			return fmt.Errorf("actions[%d].key is required", i)
+		if err := validateNotificationAction(i, action, seenKey, seenID, dismissKeys); err != nil {
+			return err
 		}
-		if prior, dup := seenKey[key]; dup {
-			return fmt.Errorf("actions[%d].key %q duplicates actions[%d].key", i, key, prior)
-		}
-		seenKey[key] = i
-		if _, clash := dismissKeys[key]; clash {
-			return fmt.Errorf("actions[%d].key %q collides with dismiss.keys — actions take priority but the duplicate is ambiguous; remove from one side", i, key)
-		}
-		id := strings.TrimSpace(action.ID)
-		if id == "" {
-			return fmt.Errorf("actions[%d].id is required (stable identifier for the audit log)", i)
-		}
-		if prior, dup := seenID[id]; dup {
-			return fmt.Errorf("actions[%d].id %q duplicates actions[%d].id", i, id, prior)
-		}
-		seenID[id] = i
-		if strings.TrimSpace(action.Label) == "" {
-			return fmt.Errorf("actions[%d].label is required (shown in the notification footer)", i)
-		}
-		if len(action.Command) == 0 {
-			continue
-		}
-		head := strings.TrimSpace(action.Command[0])
-		if head == "" {
-			return fmt.Errorf("actions[%d].command[0] must be a cobra subcommand, got empty string", i)
-		}
-		switch head {
-		case "tui", "mcp":
-			return fmt.Errorf("actions[%d].command[0] %q is reserved — `tui` and `mcp` cannot be dispatched from a hook-driven notification (they require their own terminal)", i, head)
-		}
+	}
+	return nil
+}
+
+func validateNotificationAction(i int, action NotificationAction, seenKey, seenID map[string]int, dismissKeys map[string]struct{}) error {
+	key := strings.TrimSpace(action.Key)
+	if key == "" {
+		return fmt.Errorf("actions[%d].key is required", i)
+	}
+	if prior, dup := seenKey[key]; dup {
+		return fmt.Errorf("actions[%d].key %q duplicates actions[%d].key", i, key, prior)
+	}
+	seenKey[key] = i
+	if _, clash := dismissKeys[key]; clash {
+		return fmt.Errorf("actions[%d].key %q collides with dismiss.keys — actions take priority but the duplicate is ambiguous; remove from one side", i, key)
+	}
+	id := strings.TrimSpace(action.ID)
+	if id == "" {
+		return fmt.Errorf("actions[%d].id is required (stable identifier for the audit log)", i)
+	}
+	if prior, dup := seenID[id]; dup {
+		return fmt.Errorf("actions[%d].id %q duplicates actions[%d].id", i, id, prior)
+	}
+	seenID[id] = i
+	if strings.TrimSpace(action.Label) == "" {
+		return fmt.Errorf("actions[%d].label is required (shown in the notification footer)", i)
+	}
+	if len(action.Command) == 0 {
+		return nil
+	}
+	head := strings.TrimSpace(action.Command[0])
+	if head == "" {
+		return fmt.Errorf("actions[%d].command[0] must be a cobra subcommand, got empty string", i)
+	}
+	if head == "tui" || head == "mcp" {
+		return fmt.Errorf("actions[%d].command[0] %q is reserved — `tui` and `mcp` cannot be dispatched from a hook-driven notification (they require their own terminal)", i, head)
 	}
 	return nil
 }

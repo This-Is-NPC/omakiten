@@ -6,8 +6,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"omakiten/internal/app"
 	"omakiten/internal/domain"
+	"omakiten/internal/operation"
 )
 
 // newPlanCommand assembles the `okt plan ...` subcommand tree. Plans
@@ -21,6 +21,7 @@ func newPlanCommand(opts *runtimeOptions) *cobra.Command {
 	cmd.AddCommand(newPlanCreateCommand(opts))
 	cmd.AddCommand(newPlanListCommand(opts))
 	cmd.AddCommand(newPlanShowCommand(opts))
+	cmd.AddCommand(newPlanContinueCommand(opts))
 	cmd.AddCommand(newPlanWaveAddCommand(opts))
 	cmd.AddCommand(newPlanAssignCommand(opts))
 	cmd.AddCommand(newPlanClaimCommand(opts))
@@ -48,26 +49,16 @@ func newPlanWaveRemoveCommand(opts *runtimeOptions) *cobra.Command {
 				if err != nil {
 					return nil, domain.NewError(domain.ErrValidation, "wave id is not numeric", map[string]any{"value": args[0]})
 				}
-				if !confirm {
-					return nil, domain.NewError(domain.ErrValidation,
-						"wave remove detaches the wave's tasks (wave cleared); pass --confirm to proceed", nil)
-				}
 				rt, err := opts.open(ctx, true)
 				if err != nil {
 					return nil, err
 				}
 				defer rt.close()
-				ctx = rt.WithActivityRepo(ctx)
-
-				project, err := opts.resolveProject(ctx, rt.store)
-				if err != nil {
-					return nil, err
-				}
-				wave, err := app.NewPlanService(rt.store).RemoveWave(ctx, project, waveID)
-				if err != nil {
-					return nil, err
-				}
-				return map[string]any{"project": project, "removed_wave": wave}, nil
+				return rt.operationService().RemovePlanWave(ctx, operation.RemovePlanWaveInput{
+					ProjectSelector: opts.projectSelector(),
+					WaveID:          waveID,
+					Confirmed:       confirm,
+				})
 			})
 		},
 	}
@@ -92,17 +83,11 @@ func newPlanWaveRenameCommand(opts *runtimeOptions) *cobra.Command {
 					return nil, err
 				}
 				defer rt.close()
-				ctx = rt.WithActivityRepo(ctx)
-
-				project, err := opts.resolveProject(ctx, rt.store)
-				if err != nil {
-					return nil, err
-				}
-				wave, err := app.NewPlanService(rt.store).RenameWave(ctx, project, waveID, args[1])
-				if err != nil {
-					return nil, err
-				}
-				return map[string]any{"project": project, "wave": wave}, nil
+				return rt.operationService().RenamePlanWave(ctx, operation.RenamePlanWaveInput{
+					ProjectSelector: opts.projectSelector(),
+					WaveID:          waveID,
+					Name:            args[1],
+				})
 			})
 		},
 	}
@@ -131,17 +116,11 @@ func newPlanWaveReorderCommand(opts *runtimeOptions) *cobra.Command {
 					return nil, err
 				}
 				defer rt.close()
-				ctx = rt.WithActivityRepo(ctx)
-
-				project, err := opts.resolveProject(ctx, rt.store)
-				if err != nil {
-					return nil, err
-				}
-				wave, err := app.NewPlanService(rt.store).ReorderWave(ctx, project, waveID, position)
-				if err != nil {
-					return nil, err
-				}
-				return map[string]any{"project": project, "wave": wave}, nil
+				return rt.operationService().ReorderPlanWave(ctx, operation.ReorderPlanWaveInput{
+					ProjectSelector: opts.projectSelector(),
+					WaveID:          waveID,
+					Position:        position,
+				})
 			})
 		},
 	}
@@ -165,17 +144,10 @@ func newPlanUnassignCommand(opts *runtimeOptions) *cobra.Command {
 					return nil, err
 				}
 				defer rt.close()
-				ctx = rt.WithActivityRepo(ctx)
-
-				project, err := opts.resolveProject(ctx, rt.store)
-				if err != nil {
-					return nil, err
-				}
-				event, err := app.NewPlanService(rt.store).UnassignTask(ctx, project, taskID)
-				if err != nil {
-					return nil, err
-				}
-				return map[string]any{"project": project, "task_id": taskID, "detached": event.EventType != ""}, nil
+				return rt.operationService().UnassignPlanTask(ctx, operation.UnassignPlanTaskInput{
+					ProjectSelector: opts.projectSelector(),
+					TaskID:          taskID,
+				})
 			})
 		},
 	}
@@ -194,58 +166,16 @@ func newPlanEditCommand(opts *runtimeOptions) *cobra.Command {
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runJSON(cmd, func(ctx context.Context) (any, error) {
-				var namePtr, slugPtr, statusPtr *string
-				if cmd.Flags().Changed("name") {
-					namePtr = &name
+				input, err := editPlanInput(cmd, opts, args[0], name, slug, status, goalBody)
+				if err != nil {
+					return nil, err
 				}
-				if cmd.Flags().Changed("slug") {
-					slugPtr = &slug
-				}
-				if cmd.Flags().Changed("status") {
-					statusPtr = &status
-				}
-				goalChanged := cmd.Flags().Changed("goal-body")
-				if namePtr == nil && slugPtr == nil && statusPtr == nil && !goalChanged {
-					return nil, domain.NewError(domain.ErrValidation,
-						"plan edit requires at least one of --name, --slug, --status, --goal-body", nil)
-				}
-
 				rt, err := opts.open(ctx, true)
 				if err != nil {
 					return nil, err
 				}
 				defer rt.close()
-				ctx = rt.WithActivityRepo(ctx)
-
-				project, err := opts.resolveProject(ctx, rt.store)
-				if err != nil {
-					return nil, err
-				}
-				svc := app.NewPlanService(rt.store)
-				plan, err := svc.GetBySlug(ctx, project, args[0])
-				if err != nil {
-					return nil, err
-				}
-				// UpdatePlan must run BEFORE UpdateGoalBody: UpdatePlan
-				// rejects a no-op name/slug/status diff with "changed
-				// nothing", and that rejection has to fire before the
-				// goal-body write commits + emits — otherwise a
-				// `--goal-body X --name <unchanged>` invocation would
-				// persist the goal edit and THEN error, leaving a partial
-				// write the caller cannot tell apart from a clean success.
-				if namePtr != nil || slugPtr != nil || statusPtr != nil {
-					plan, err = svc.UpdatePlan(ctx, project, plan.ID, namePtr, slugPtr, statusPtr)
-					if err != nil {
-						return nil, err
-					}
-				}
-				if goalChanged {
-					plan, err = svc.UpdateGoalBody(ctx, project, plan.ID, goalBody)
-					if err != nil {
-						return nil, err
-					}
-				}
-				return map[string]any{"project": project, "plan": plan}, nil
+				return rt.operationService().EditPlan(ctx, input)
 			})
 		},
 	}
@@ -254,6 +184,27 @@ func newPlanEditCommand(opts *runtimeOptions) *cobra.Command {
 	cmd.Flags().StringVar(&status, "status", "", opts.t("cli.plan.edit.flag.status"))
 	cmd.Flags().StringVarP(&goalBody, "goal-body", "g", "", opts.t("cli.plan.edit.flag.goal_body"))
 	return cmd
+}
+
+func editPlanInput(cmd *cobra.Command, opts *runtimeOptions, planSlug, name, slug, status, goalBody string) (operation.EditPlanInput, error) {
+	input := operation.EditPlanInput{ProjectSelector: opts.projectSelector(), Slug: planSlug}
+	if cmd.Flags().Changed("name") {
+		input.Name = &name
+	}
+	if cmd.Flags().Changed("slug") {
+		input.NewSlug = &slug
+	}
+	if cmd.Flags().Changed("status") {
+		input.Status = &status
+	}
+	if cmd.Flags().Changed("goal-body") {
+		input.GoalBody = &goalBody
+	}
+	if input.Name == nil && input.NewSlug == nil && input.Status == nil && input.GoalBody == nil {
+		return operation.EditPlanInput{}, domain.NewError(domain.ErrValidation,
+			"plan edit requires at least one of --name, --slug, --status, --goal-body", nil)
+	}
+	return input, nil
 }
 
 // newPlanDeleteCommand wires `okt plan delete SLUG --confirm`. The
@@ -267,30 +218,16 @@ func newPlanDeleteCommand(opts *runtimeOptions) *cobra.Command {
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runJSON(cmd, func(ctx context.Context) (any, error) {
-				if !confirm {
-					return nil, domain.NewError(domain.ErrValidation,
-						"plan delete is destructive (waves cascade, tasks detach); pass --confirm to proceed", nil)
-				}
 				rt, err := opts.open(ctx, true)
 				if err != nil {
 					return nil, err
 				}
 				defer rt.close()
-				ctx = rt.WithActivityRepo(ctx)
-
-				project, err := opts.resolveProject(ctx, rt.store)
-				if err != nil {
-					return nil, err
-				}
-				svc := app.NewPlanService(rt.store)
-				plan, err := svc.GetBySlug(ctx, project, args[0])
-				if err != nil {
-					return nil, err
-				}
-				if _, err := svc.DeletePlan(ctx, project, plan.ID); err != nil {
-					return nil, err
-				}
-				return map[string]any{"project": project, "deleted": plan.Slug}, nil
+				return rt.operationService().DeletePlan(ctx, operation.DeletePlanInput{
+					ProjectSelector: opts.projectSelector(),
+					Slug:            args[0],
+					Confirmed:       confirm,
+				})
 			})
 		},
 	}
@@ -312,17 +249,12 @@ func newPlanCreateCommand(opts *runtimeOptions) *cobra.Command {
 					return nil, err
 				}
 				defer rt.close()
-				ctx = rt.WithActivityRepo(ctx)
-
-				project, err := opts.resolveProject(ctx, rt.store)
-				if err != nil {
-					return nil, err
-				}
-				plan, err := app.NewPlanService(rt.store).Create(ctx, project, args[0], name, goalBody)
-				if err != nil {
-					return nil, err
-				}
-				return map[string]any{"project": project, "plan": plan}, nil
+				return rt.operationService().CreatePlan(ctx, operation.CreatePlanInput{
+					ProjectSelector: opts.projectSelector(),
+					Slug:            args[0],
+					Name:            name,
+					GoalBody:        goalBody,
+				})
 			})
 		},
 	}
@@ -343,17 +275,30 @@ func newPlanListCommand(opts *runtimeOptions) *cobra.Command {
 					return nil, err
 				}
 				defer rt.close()
-				ctx = rt.WithActivityRepo(ctx)
+				return rt.operationService().ListPlans(ctx, operation.ListPlansInput{
+					ProjectSelector: opts.projectSelector(),
+				})
+			})
+		},
+	}
+}
 
-				project, err := opts.resolveProject(ctx, rt.store)
+func newPlanContinueCommand(opts *runtimeOptions) *cobra.Command {
+	return &cobra.Command{
+		Use:   "continue SLUG",
+		Short: opts.t("cli.plan.continue.short"),
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runJSON(cmd, func(ctx context.Context) (any, error) {
+				rt, err := opts.open(ctx, true)
 				if err != nil {
 					return nil, err
 				}
-				plans, err := app.NewPlanService(rt.store).List(ctx, project)
-				if err != nil {
-					return nil, err
-				}
-				return map[string]any{"project": project, "plans": plans}, nil
+				defer rt.close()
+				return rt.operationService().ContinuePlan(ctx, operation.ContinuePlanInput{
+					ProjectSelector: opts.projectSelector(),
+					Slug:            args[0],
+				})
 			})
 		},
 	}
@@ -371,17 +316,10 @@ func newPlanShowCommand(opts *runtimeOptions) *cobra.Command {
 					return nil, err
 				}
 				defer rt.close()
-				ctx = rt.WithActivityRepo(ctx)
-
-				project, err := opts.resolveProject(ctx, rt.store)
-				if err != nil {
-					return nil, err
-				}
-				show, err := app.NewPlanServiceWithSnapshot(rt.store, rt.activeSnapshot()).Show(ctx, project, args[0])
-				if err != nil {
-					return nil, err
-				}
-				return map[string]any{"project": project, "plan": show}, nil
+				return rt.operationService().ShowPlan(ctx, operation.ShowPlanInput{
+					ProjectSelector: opts.projectSelector(),
+					Slug:            args[0],
+				})
 			})
 		},
 	}
@@ -400,22 +338,12 @@ func newPlanWaveAddCommand(opts *runtimeOptions) *cobra.Command {
 					return nil, err
 				}
 				defer rt.close()
-				ctx = rt.WithActivityRepo(ctx)
-
-				project, err := opts.resolveProject(ctx, rt.store)
-				if err != nil {
-					return nil, err
-				}
-				svc := app.NewPlanService(rt.store)
-				plan, err := svc.GetBySlug(ctx, project, args[0])
-				if err != nil {
-					return nil, err
-				}
-				wave, err := svc.AddWave(ctx, project, plan.ID, args[1], position)
-				if err != nil {
-					return nil, err
-				}
-				return map[string]any{"project": project, "wave": wave}, nil
+				return rt.operationService().AddPlanWave(ctx, operation.AddPlanWaveInput{
+					ProjectSelector: opts.projectSelector(),
+					Slug:            args[0],
+					Name:            args[1],
+					Position:        position,
+				})
 			})
 		},
 	}
@@ -443,21 +371,12 @@ func newPlanAssignCommand(opts *runtimeOptions) *cobra.Command {
 					return nil, err
 				}
 				defer rt.close()
-				ctx = rt.WithActivityRepo(ctx)
-
-				project, err := opts.resolveProject(ctx, rt.store)
-				if err != nil {
-					return nil, err
-				}
-				svc := app.NewPlanService(rt.store)
-				plan, err := svc.GetBySlug(ctx, project, args[0])
-				if err != nil {
-					return nil, err
-				}
-				if err := svc.AssignTask(ctx, project, taskID, plan.ID, waveID); err != nil {
-					return nil, err
-				}
-				return map[string]any{"project": project, "task_id": taskID, "plan_id": plan.ID, "wave_id": waveID}, nil
+				return rt.operationService().AssignPlanTask(ctx, operation.AssignPlanTaskInput{
+					ProjectSelector: opts.projectSelector(),
+					Slug:            args[0],
+					WaveID:          waveID,
+					TaskID:          taskID,
+				})
 			})
 		},
 	}
@@ -476,26 +395,10 @@ func newPlanClaimCommand(opts *runtimeOptions) *cobra.Command {
 					return nil, err
 				}
 				defer rt.close()
-				ctx = rt.WithActivityRepo(ctx)
-
-				project, err := opts.resolveProject(ctx, rt.store)
-				if err != nil {
-					return nil, err
-				}
-				svc := app.NewPlanServiceWithSnapshot(rt.store, rt.activeSnapshot())
-				plan, err := svc.GetBySlug(ctx, project, args[0])
-				if err != nil {
-					return nil, err
-				}
-				task, claimed, err := svc.ClaimNext(ctx, project, plan.ID)
-				if err != nil {
-					return nil, err
-				}
-				resp := map[string]any{"project": project, "claimed": claimed}
-				if claimed {
-					resp["task"] = task
-				}
-				return resp, nil
+				return rt.operationService().ClaimNextPlanTask(ctx, operation.ClaimNextPlanTaskInput{
+					ProjectSelector: opts.projectSelector(),
+					Slug:            args[0],
+				})
 			})
 		},
 	}

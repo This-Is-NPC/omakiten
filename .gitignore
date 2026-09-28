@@ -31,6 +31,7 @@ dev_env/
 # Editor and OS files
 .idea/
 .vscode/
+.cursor/
 *.swp
 *.swo
 .DS_Store
@@ -53,6 +54,7 @@ __pycache__/
 # >>> assisted_workflow >>>
 
 # my stuff
+.temp/
 personal_notes
 opencode.json
 .impeccable.md

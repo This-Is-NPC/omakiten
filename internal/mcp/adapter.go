@@ -7,8 +7,9 @@ import (
 	"unicode"
 
 	"omakiten/internal/activity"
-	"omakiten/internal/agent"
+	"omakiten/internal/config"
 	"omakiten/internal/domain"
+	"omakiten/internal/operation"
 )
 
 // agentModelArgKey / agentSessionArgKey are reserved top-level fields on
@@ -85,31 +86,31 @@ type Adapter struct {
 	// consulted when defaultProvider is nil (test paths that never
 	// touch a BundleCache). Production wires defaultProvider via
 	// SetDefaultServiceProvider so cache rebuilds always surface the
-	// fresh service — a stale *agent.Service pointer was the Phase
+	// fresh service — a stale *operation.Service pointer was the Phase
 	// 3b regression the provider fixes.
-	service         *agent.Service
+	service         *operation.Service
 	defaultProvider DefaultServiceProvider
 	repo            activity.ActivityLogRepository
 	resolver        ServiceResolver
 }
 
-// ServiceResolver returns the per-project agent.Service that should
+// ServiceResolver returns the per-project operation.Service that should
 // handle a tool call. Implementations consult the per-process
 // BundleCache (see agentruntime) and return the cached project's
 // service, falling back to the default when project is empty or
 // unresolvable. Returning (nil, nil) means "use the adapter's default
 // service" — the adapter treats it as an idiomatic no-op rather than
 // an error so resolvers can keep their decision tree shallow.
-type ServiceResolver func(ctx context.Context, project string, projectID int64) (*agent.Service, error)
+type ServiceResolver func(ctx context.Context, project string, projectID int64) (*operation.Service, error)
 
 // DefaultServiceProvider returns the adapter's fallback service on
 // every call. Threaded through SetDefaultServiceProvider so the
-// adapter never caches a *agent.Service pointer that could go stale
+// adapter never caches a *operation.Service pointer that could go stale
 // after a BundleCache rebuild. Returning nil falls back to the static
 // service NewAdapter captured.
-type DefaultServiceProvider func() *agent.Service
+type DefaultServiceProvider func() *operation.Service
 
-func NewAdapter(service *agent.Service) *Adapter {
+func NewAdapter(service *operation.Service) *Adapter {
 	return &Adapter{service: service}
 }
 
@@ -126,7 +127,7 @@ func (a *Adapter) SetDefaultServiceProvider(provider DefaultServiceProvider) {
 // provider when wired, falling back to the static service NewAdapter
 // captured. Returns nil when neither source produced a service —
 // CallTool surfaces that to the caller as a configuration error.
-func (a *Adapter) defaultService() *agent.Service {
+func (a *Adapter) defaultService() *operation.Service {
 	if a.defaultProvider != nil {
 		if svc := a.defaultProvider(); svc != nil {
 			return svc
@@ -141,7 +142,7 @@ func (a *Adapter) SetActivityLogRepository(repo activity.ActivityLogRepository) 
 
 // SetServiceResolver installs the per-project routing function. When
 // present, every CallTool peeks `project` / `project_id` from the
-// incoming args and asks the resolver which agent.Service should
+// incoming args and asks the resolver which operation.Service should
 // handle the call. The default service is used when the resolver is
 // absent, when it returns nil, or when the args do not declare a
 // project — that mirrors the pre-3b single-project behaviour for the
@@ -197,9 +198,43 @@ type ContentItem struct {
 	Meta map[string]any `json:"_meta,omitempty"`
 }
 
+// Tools returns every registered MCP tool, ignoring the surfaces table.
+// tools/list uses Adapter.Tools, which omits census slugs with mcp:false.
 func Tools() []ToolDefinition {
+	return toolsFromTable(nil)
+}
+
+// Tools lists the tools an MCP client may see. A census-mapped tool
+// whose surfaces row has mcp:false is omitted so an agent cannot
+// discover what it cannot call. commands.list maps to command.list.
+// A nil adapter, nil snapshot, or empty table lists everything — the
+// same unrestricted behaviour NewAdapter without a snapshot already had.
+func (a *Adapter) Tools() []ToolDefinition {
+	if a == nil {
+		return Tools()
+	}
+	svc := a.defaultService()
+	if svc == nil {
+		return Tools()
+	}
+	snap := svc.Snapshot()
+	if snap == nil {
+		return Tools()
+	}
+	table := snap.Surfaces()
+	if len(table) == 0 {
+		return Tools()
+	}
+	return toolsFromTable(table)
+}
+
+func toolsFromTable(table config.SurfaceTable) []ToolDefinition {
+	filter := len(table) > 0
 	definitions := make([]ToolDefinition, 0, len(registeredTools.ordered))
 	for _, registration := range registeredTools.ordered {
+		if filter && !mcpToolExposed(registration.name, table) {
+			continue
+		}
 		definitions = append(definitions, ToolDefinition{
 			Name:        registration.name,
 			Description: registration.description,
@@ -207,6 +242,18 @@ func Tools() []ToolDefinition {
 		})
 	}
 	return definitions
+}
+
+func mcpToolExposed(name string, table config.SurfaceTable) bool {
+	slug, mapped := operation.CensusSlugForMCPTool[name]
+	if !mapped {
+		return true
+	}
+	row, ok := table[slug]
+	if !ok || row.MCP == nil {
+		return false
+	}
+	return *row.MCP
 }
 
 // withAgentAttribution mutates an InputSchema in place to declare the
@@ -297,11 +344,11 @@ var promptArguments = map[string][]PromptArgument{
 // runtimes / tests), descriptions fall back to empty; the names + arguments
 // still list so prompts/list keeps functioning.
 func (a *Adapter) Prompts() []PromptDefinition {
-	var service *agent.Service
+	var service *operation.Service
 	if a != nil {
 		service = a.defaultService()
 	}
-	names := agent.CommandNames()
+	names := operation.CommandNames()
 	out := make([]PromptDefinition, 0, len(names))
 	for _, name := range names {
 		desc := ""
@@ -339,7 +386,7 @@ func (a *Adapter) CallTool(ctx context.Context, name string, args map[string]any
 	}
 
 	ctx = activity.WithAgent(ctx, "mcp", name, agentModel, agentSessionID)
-	return a.dispatchTool(ctx, service, name, args)
+	return a.dispatchTool(ctx, service.ForMCP(), name, args)
 }
 
 // peekProjectArg extracts `project` / `project_id` from an arbitrary
@@ -380,7 +427,7 @@ func peekProjectArg(args map[string]any) (project string, projectID int64) {
 // project arg and asks the resolver; ReadResource always uses the
 // default). dispatch itself never reads a.service so per-project
 // routing works without cross-call interference.
-func (a *Adapter) dispatchTool(ctx context.Context, service *agent.Service, name string, args map[string]any) (ToolResult, error) {
+func (a *Adapter) dispatchTool(ctx context.Context, service *operation.Service, name string, args map[string]any) (ToolResult, error) {
 	if a.repo != nil {
 		ctx = activity.WithRepository(ctx, a.repo)
 	}
@@ -401,6 +448,7 @@ func (a *Adapter) ReadResource(ctx context.Context, uri string) (ToolResult, err
 	// Empty agent model marks them as "not benchmarked" so the metrics
 	// layer can filter them out without a special sentinel.
 	ctx = activity.WithAgent(ctx, "mcp", "resource:"+uri, "", "")
+	service = service.ForMCP()
 	switch uri {
 	case "omakiten://project/overview":
 		return a.dispatchTool(ctx, service, "project.overview", map[string]any{})
@@ -425,7 +473,7 @@ func (a *Adapter) ReadResource(ctx context.Context, uri string) (ToolResult, err
 // risk in always emitting it, but the toggle exists for users who want to
 // observe pre/post caching behavior or work around a buggy client.
 func (a *Adapter) GetPrompt(ctx context.Context, name string, args map[string]any) (PromptResult, error) {
-	var service *agent.Service
+	var service *operation.Service
 	if a != nil {
 		service = a.defaultService()
 	}
@@ -436,12 +484,12 @@ func (a *Adapter) GetPrompt(ctx context.Context, name string, args map[string]an
 		// registered-only message rather than fabricated prose, and an
 		// unregistered name still errors. The cache hint rides along: the empty
 		// body is byte-stable.
-		if !agent.IsRegisteredCommand(name) {
+		if !operation.IsRegisteredCommand(name) {
 			return PromptResult{}, fmt.Errorf("unknown MCP prompt %q", name)
 		}
 		return promptResult("", "", true), nil
 	}
-	resolved, err := service.ResolveCommand(ctx, agent.ResolveCommandInput{Name: name, Arguments: args})
+	resolved, err := service.ForMCP().ResolveCommand(ctx, operation.ResolveCommandInput{Name: name, Arguments: args})
 	if err != nil {
 		return PromptResult{}, err
 	}
@@ -454,15 +502,15 @@ func (a *Adapter) GetPrompt(ctx context.Context, name string, args map[string]an
 // service.ResolveCommand so there is a single source of truth and the bytes
 // match (AC#4). An unknown/invalid name surfaces as a structured IsError tool
 // result, mirroring how every other tool reports a domain error.
-func resolveCommandTool(ctx context.Context, service *agent.Service, args map[string]any) (ToolResult, error) {
+func resolveCommandTool(ctx context.Context, service *operation.Service, args map[string]any) (ToolResult, error) {
 	name, _ := args["name"].(string)
 	var arguments map[string]any
 	if raw, ok := args["arguments"].(map[string]any); ok {
 		arguments = raw
 	}
-	resolved, err := service.ResolveCommand(ctx, agent.ResolveCommandInput{Name: name, Arguments: arguments})
+	resolved, err := service.ResolveCommand(ctx, operation.ResolveCommandInput{Name: name, Arguments: arguments})
 	if err != nil {
-		return resultFromData(agent.FailureFromError(err), true)
+		return resultFromData(operation.FailureFromError(err), true)
 	}
 	return ToolResult{Content: []ContentItem{{Type: "text", Text: resolved.Markdown}}}, nil
 }

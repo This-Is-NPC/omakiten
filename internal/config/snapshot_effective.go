@@ -125,34 +125,40 @@ func flattenNode(node *yaml.Node, prefix string) []flatRow {
 	case yaml.ScalarNode:
 		return []flatRow{{key: prefix, value: scalarLiteral(node)}}
 	case yaml.MappingNode:
-		if len(node.Content) == 0 {
-			return []flatRow{{key: prefix, value: "{}"}}
-		}
-		out := make([]flatRow, 0, len(node.Content)/2)
-		for i := 0; i+1 < len(node.Content); i += 2 {
-			k := node.Content[i]
-			v := node.Content[i+1]
-			if k.Kind != yaml.ScalarNode {
-				continue
-			}
-			out = append(out, flattenNode(v, joinPath(prefix, k.Value))...)
-		}
-		return out
+		return flattenMapping(node, prefix)
 	case yaml.SequenceNode:
-		if len(node.Content) == 0 {
-			return []flatRow{{key: prefix, value: "[]"}}
-		}
-		out := make([]flatRow, 0, len(node.Content))
-		for i, c := range node.Content {
-			out = append(out, flattenNode(c, joinPath(prefix, fmt.Sprintf("[%d]", i)))...)
-		}
-		return out
+		return flattenSequence(node, prefix)
 	case yaml.AliasNode:
 		if node.Alias != nil {
 			return flattenNode(node.Alias, prefix)
 		}
 	}
 	return nil
+}
+
+func flattenMapping(node *yaml.Node, prefix string) []flatRow {
+	if len(node.Content) == 0 {
+		return []flatRow{{key: prefix, value: "{}"}}
+	}
+	out := make([]flatRow, 0, len(node.Content)/2)
+	for i := 0; i+1 < len(node.Content); i += 2 {
+		key, value := node.Content[i], node.Content[i+1]
+		if key.Kind == yaml.ScalarNode {
+			out = append(out, flattenNode(value, joinPath(prefix, key.Value))...)
+		}
+	}
+	return out
+}
+
+func flattenSequence(node *yaml.Node, prefix string) []flatRow {
+	if len(node.Content) == 0 {
+		return []flatRow{{key: prefix, value: "[]"}}
+	}
+	out := make([]flatRow, 0, len(node.Content))
+	for i, child := range node.Content {
+		out = append(out, flattenNode(child, joinPath(prefix, fmt.Sprintf("[%d]", i)))...)
+	}
+	return out
 }
 
 // joinPath glues a dot-path together, skipping the separator when the

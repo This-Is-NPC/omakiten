@@ -34,10 +34,10 @@ knobs, see [system.md](system.md).
   `tasks`, `events` (with `event_tags`), `task_dependencies`, `tags`
   (with `task_tags` / `project_tags` / `error_tags`), `errors`,
   `solutions`, `plans`, `plan_waves` (added by
-  `migrations/023_plans.sql`; service layer in
+  the current SQLite schema; service layer in
   `internal/sqlite/plans.go`). Migration 009 folded `comments` and
-  `activity_logs` into `events`; migration 020 dropped every config
-  table; migration 022 adds the FTS5 `search_index` virtual table behind
+  `activity_logs` into `events`; configuration is YAML-only and the current
+  schema includes the FTS5 `search_index` virtual table behind
   the unified `search` MCP tool — populated by triggers off the base
   tables, no bundle reads required. The Store carries no bundle field —
   the only bundle-aware emission is
@@ -123,6 +123,10 @@ should reject changes that break any of them.
    `PreviousSnapshot` onto it. In-flight calls captured the previous
    pointer via `*agent.Service` resolved before the dispatch switch,
    so the rotation never poisons them.
+   Hook engines use a stricter handoff: rebuild constructs the replacement
+   inactive, drains the old engine through a bounded cancellation context,
+   then starts and publishes the replacement. A drain timeout leaves the
+   replacement unpublished and surfaces an error.
 5. **Concurrency = N agents, N ProjectRuntime, zero shared mutable
    hot-path state.** The cache's RWMutex guards the entry map; entries
    themselves are read-only after construction. Guards of project A
@@ -397,13 +401,13 @@ new copy.
   subscriber-observed-event ⇒ row-on-disk invariant. 15 callsites
   across `comments.go`, `plans.go`, `tasks.go` route every write +
   audit-event pair through this helper.
-- **`cursorwindow`** (`internal/tui/components/cursorwindow/`).
+- **`list.Window`** (`internal/tui/components/list/`).
   Canonical cursor + scroll holder for fixed-row TUI surfaces whose
   chrome is owned by the parent renderer. Cursor / scroll fields are
   unexported; every mutation routes through a typed method
   (`MoveCursor`, `JumpFirst`, `PageDown`, `WithItemCount`,
   `WithViewport`) that re-runs the resync invariant. Three TUI uses:
-  `graphCursor`, `plansCursor`, `planNetworkCursor`
+  `graphScreen`, `plansScreen`, `planNetworkCursor`
   (`internal/tui/state.go:537,546,560`).
 - **`sqlutil`** (`internal/sqlite/sqlutil/`). Dependency-free helpers
   shared by the SQL adapters:

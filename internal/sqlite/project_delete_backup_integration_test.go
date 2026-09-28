@@ -85,9 +85,14 @@ func TestProjectDeleteSnapshotsRealWALData(t *testing.T) {
 		t.Fatalf("post-commit audit calls = %d type=%q", events.calls, events.eventType)
 	}
 
+	assertProjectDeleteBackup(t, ctx, result.BackupPath, project.ID, taskCount)
+}
+
+func assertProjectDeleteBackup(t *testing.T, ctx context.Context, backupPath string, projectID int64, taskCount int) {
+	t.Helper()
 	// Snapshot: re-open as a fresh *sql.DB and assert the task rows survived
 	// the WAL → connection-bound snapshot → fresh-handle round-trip.
-	snap, err := sql.Open("sqlite", result.BackupPath)
+	snap, err := sql.Open("sqlite", backupPath)
 	if err != nil {
 		t.Fatalf("open backup as sql.DB: %v", err)
 	}
@@ -95,7 +100,7 @@ func TestProjectDeleteSnapshotsRealWALData(t *testing.T) {
 
 	var snapTaskCount int
 	if err := snap.QueryRowContext(ctx,
-		"SELECT COUNT(*) FROM tasks WHERE project_id = ?", project.ID,
+		"SELECT COUNT(*) FROM tasks WHERE project_id = ?", projectID,
 	).Scan(&snapTaskCount); err != nil {
 		t.Fatalf("count tasks in backup: %v", err)
 	}
@@ -105,7 +110,7 @@ func TestProjectDeleteSnapshotsRealWALData(t *testing.T) {
 
 	var snapProjectName string
 	if err := snap.QueryRowContext(ctx,
-		"SELECT name FROM projects WHERE id = ?", project.ID,
+		"SELECT name FROM projects WHERE id = ?", projectID,
 	).Scan(&snapProjectName); err != nil {
 		t.Fatalf("read project from backup: %v", err)
 	}

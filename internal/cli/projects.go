@@ -9,8 +9,9 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"omakiten/internal/app"
+	"omakiten/internal/agentruntime"
 	"omakiten/internal/domain"
+	"omakiten/internal/sqlite"
 )
 
 func newProjectsCommand(opts *runtimeOptions) *cobra.Command {
@@ -71,8 +72,7 @@ func runProjectsDelete(ctx context.Context, cmd *cobra.Command, opts *runtimeOpt
 	if err != nil {
 		return nil, err
 	}
-	svc := app.NewProjectService(rt.store, backup, rt.store).WithCheckpointer(rt.store)
-	result, err := svc.Delete(ctx, project.ID, counters)
+	result, err := agentruntime.DeleteProject(ctx, rt.store, backup, project.ID, counters)
 	if err != nil {
 		return nil, err
 	}
@@ -91,7 +91,7 @@ func runProjectsDelete(ctx context.Context, cmd *cobra.Command, opts *runtimeOpt
 // can be disambiguated by quoting (`okt projects delete "1234"` still
 // resolves as a slug if the lookup-by-id fails). The fall-through
 // behaviour matches `okt --project` resolution.
-func resolveProjectTarget(ctx context.Context, store app.ProjectRepository, target string) (domain.Project, error) {
+func resolveProjectTarget(ctx context.Context, store *sqlite.Store, target string) (domain.Project, error) {
 	target = strings.TrimSpace(target)
 	if target == "" {
 		return domain.Project{}, domain.NewError(domain.ErrValidation, "target is required", nil)
@@ -123,4 +123,3 @@ func promptDeleteConfirmation(cmd *cobra.Command, opts *runtimeOptions, project 
 	}
 	return nil
 }
-

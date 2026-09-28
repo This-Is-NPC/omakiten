@@ -98,33 +98,38 @@ func TestDeleteProjectWithBackupDiscardsCandidateAfterVersionReadFailure(t *test
 	for name, install := range tests {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
-			ctx := context.Background()
-			store, dbPath, project := atomicDeleteFixture(t, ctx)
-			create, discard, _ := atomicDeleteBackupCallbacks(t, dbPath)
-			var pinned *sql.Conn
-			var closeErr error
-			hooks := projectDeleteBackupHooks{AfterConnect: func(conn *sql.Conn) { pinned = conn }}
-			install(&hooks, func() {
-				if closeErr == nil {
-					closeErr = pinned.Close()
-				}
-			})
-
-			backupPath, err := store.deleteProjectWithBackup(ctx, project.ID, create, discard, func() error { return nil }, hooks)
-			if closeErr != nil {
-				t.Fatalf("close project-delete connection: %v", closeErr)
-			}
-			if err == nil {
-				t.Fatal("project delete survived injected data_version read failure")
-			}
-			if backupPath != "" {
-				t.Fatalf("data_version read failure retained candidate %q, want discard", backupPath)
-			}
-			assertMatchingBackupCount(t, filepath.Join(filepath.Dir(dbPath), "backups"), 0)
-			if _, err := store.FindProjectByID(ctx, project.ID); err != nil {
-				t.Fatalf("project missing after pre-mutation read failure: %v", err)
-			}
+			runVersionReadFailureCase(t, install)
 		})
+	}
+}
+
+func runVersionReadFailureCase(t *testing.T, install func(*projectDeleteBackupHooks, func())) {
+	t.Helper()
+	ctx := context.Background()
+	store, dbPath, project := atomicDeleteFixture(t, ctx)
+	create, discard, _ := atomicDeleteBackupCallbacks(t, dbPath)
+	var pinned *sql.Conn
+	var closeErr error
+	hooks := projectDeleteBackupHooks{AfterConnect: func(conn *sql.Conn) { pinned = conn }}
+	install(&hooks, func() {
+		if closeErr == nil {
+			closeErr = pinned.Close()
+		}
+	})
+
+	backupPath, err := store.deleteProjectWithBackup(ctx, project.ID, create, discard, func() error { return nil }, hooks)
+	if closeErr != nil {
+		t.Fatalf("close project-delete connection: %v", closeErr)
+	}
+	if err == nil {
+		t.Fatal("project delete survived injected data_version read failure")
+	}
+	if backupPath != "" {
+		t.Fatalf("data_version read failure retained candidate %q, want discard", backupPath)
+	}
+	assertMatchingBackupCount(t, filepath.Join(filepath.Dir(dbPath), "backups"), 0)
+	if _, err := store.FindProjectByID(ctx, project.ID); err != nil {
+		t.Fatalf("project missing after pre-mutation read failure: %v", err)
 	}
 }
 

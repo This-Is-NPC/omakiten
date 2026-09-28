@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-const templateBase = `version: 1
+var templateBase = `version: 1
 kit: { id: 1, key: default, name: Default }
 config:
   output: { json_minified: true, omit_empty: true }
@@ -37,7 +37,6 @@ config:
     logs: { sort: {order: desc}, limit: 50, window_days: 30 }
     task_activity: { sort: {order: asc} }
   sqlite: { busy_timeout_ms: 5000, cache_size_kb: 1024, mmap_size_bytes: 0 }
-  activity_log: { max_rows: 500, max_age_days: 7 }
   solutions: { default_top_limit: 10, max_top_limit: 100 }
   events: { default_recent_limit: 50, defaults: { log: true, broadcast: true, hook: true } }
   search: { stopwords: [and, the] }
@@ -49,7 +48,7 @@ workflows:
     buckets:
       - { id: 1, key: backlog, name: Backlog, position: 1 }
     transitions: []
-`
+` + canonicalSurfacesYAML()
 
 func writeTemplateFixture(t *testing.T, dir string) {
 	t.Helper()
@@ -62,7 +61,7 @@ func writeTemplateFixture(t *testing.T, dir string) {
 func TestLoadTemplatesAutoLoadsAllFiles(t *testing.T) {
 	dir := t.TempDir()
 	writeTemplateFixture(t, dir)
-	configPath := filepath.Join(dir, "omakiten.yaml")
+	configPath := filepath.Join(dir, "config", "omakiten.yaml")
 	writeFile(t, configPath, templateBase)
 
 	bundle, err := LoadBundle(configPath)
@@ -95,7 +94,7 @@ func TestLoadTemplatesAutoLoadsAllFiles(t *testing.T) {
 func TestLoadTemplatesAllowlistFilters(t *testing.T) {
 	dir := t.TempDir()
 	writeTemplateFixture(t, dir)
-	configPath := filepath.Join(dir, "omakiten.yaml")
+	configPath := filepath.Join(dir, "config", "omakiten.yaml")
 	writeFile(t, configPath, templateBase+`templates:
   - task-default
 `)
@@ -112,7 +111,7 @@ func TestLoadTemplatesAllowlistFilters(t *testing.T) {
 func TestLoadTemplatesListedSlugWithoutFileWarns(t *testing.T) {
 	dir := t.TempDir()
 	writeTemplateFixture(t, dir)
-	configPath := filepath.Join(dir, "omakiten.yaml")
+	configPath := filepath.Join(dir, "config", "omakiten.yaml")
 	writeFile(t, configPath, templateBase+`templates:
   - task-default
   - missing-template
@@ -141,7 +140,7 @@ func TestTemplateDefaultFrontmatterResolves(t *testing.T) {
 		"---\nname: Default\nentity: task\n---\nbody\n")
 	writeFile(t, filepath.Join(dir, "templates", "task-bug.md"),
 		"---\nname: Bug Report\nentity: task\ndefault: task\n---\nbody\n")
-	configPath := filepath.Join(dir, "omakiten.yaml")
+	configPath := filepath.Join(dir, "config", "omakiten.yaml")
 	writeFile(t, configPath, templateBase)
 
 	bundle, err := LoadBundle(configPath)
@@ -164,7 +163,7 @@ func TestTemplateDefaultUniquenessIsEnforced(t *testing.T) {
 		"---\nname: A\ndefault: task\n---\nbody\n")
 	writeFile(t, filepath.Join(dir, "templates", "b.md"),
 		"---\nname: B\ndefault: task\n---\nbody\n")
-	configPath := filepath.Join(dir, "omakiten.yaml")
+	configPath := filepath.Join(dir, "config", "omakiten.yaml")
 	writeFile(t, configPath, templateBase)
 
 	_, err := LoadBundle(configPath)
@@ -180,7 +179,7 @@ func TestTemplateDefaultRejectsKindOutsideTemplateDefaults(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, filepath.Join(dir, "templates", "weird.md"),
 		"---\nname: Weird\ndefault: not-a-known-kind\n---\nbody\n")
-	configPath := filepath.Join(dir, "omakiten.yaml")
+	configPath := filepath.Join(dir, "config", "omakiten.yaml")
 	// templateBase doesn't customize template_defaults, so we get the
 	// canonical [task, pr, comment-resume, comment-selfbranch] list which
 	// rejects "not-a-known-kind".
@@ -197,7 +196,7 @@ func TestTemplateDefaultRejectsKindOutsideTemplateDefaults(t *testing.T) {
 
 func TestLoadBundleWithoutTemplatesFolderIsNotError(t *testing.T) {
 	dir := t.TempDir()
-	configPath := filepath.Join(dir, "omakiten.yaml")
+	configPath := filepath.Join(dir, "config", "omakiten.yaml")
 	writeFile(t, configPath, templateBase)
 
 	bundle, err := LoadBundle(configPath)
@@ -213,7 +212,7 @@ func TestLoadTemplatesRequiresName(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, filepath.Join(dir, "templates", "broken.md"),
 		"---\ndescription: missing name\n---\nbody\n")
-	configPath := filepath.Join(dir, "omakiten.yaml")
+	configPath := filepath.Join(dir, "config", "omakiten.yaml")
 	writeFile(t, configPath, templateBase)
 
 	_, err := LoadBundle(configPath)

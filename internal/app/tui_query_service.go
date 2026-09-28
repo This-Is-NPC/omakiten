@@ -24,9 +24,12 @@ type TUISnapshot struct {
 	TaskTagsByID map[int64][]domain.Tag
 }
 
-// TUIQueryService centralises the multi-repo read fan-out the TUI used to
-// inline in its refresh method. Pulling it here keeps the TUI free of
-// per-port plumbing and gives the read pipeline a single test seam.
+// TUIQueryService is the in-app aggregator that satisfies TUIQuery. It
+// centralises the multi-repo read fan-out the TUI used to inline in its
+// refresh method. Pulling it here keeps the TUI free of per-port plumbing
+// and gives the read pipeline a single test seam. It is NOT a sqlite
+// adapter — it composes Task/Dependency/Comment/Tag repository ports with
+// the cached *config.Snapshot.
 //
 // Phase 3 perf note: the service deliberately does NOT hold a BundleEditor.
 // Every entity slice the TUI renders (skills, laws, personas, templates,
@@ -43,8 +46,13 @@ type TUIQueryService struct {
 	tags     TagRepository
 }
 
-// NewTUIQueryService wires the TUI read model.
-func NewTUIQueryService(tasks TaskRepository, snap *config.Snapshot, deps DependencyRepository, comments CommentRepository, tags TagRepository) *TUIQueryService {
+// Compile-time check: the aggregator implements the read-model port.
+var _ TUIQuery = (*TUIQueryService)(nil)
+
+// NewTUIQueryService wires the TUI read-model aggregator and returns it as
+// the TUIQuery port so composition roots / the TUI host depend on the
+// interface, not the concrete type.
+func NewTUIQueryService(tasks TaskRepository, snap *config.Snapshot, deps DependencyRepository, comments CommentRepository, tags TagRepository) TUIQuery {
 	return &TUIQueryService{tasks: tasks, snap: snap, deps: deps, comments: comments, tags: tags}
 }
 
@@ -91,55 +99,57 @@ func (s *TUIQueryService) Snapshot(ctx context.Context, project domain.ProjectCo
 	}
 	snap.Comments = comments
 
-	if cfgSnap != nil {
-		// Settings renders the full on-disk catalog (every preset's entities)
-		// with the active subset flagged, not just the active wiring. Runtime
-		// resolution still reads the picked snapshot slices elsewhere.
-		laws := allLawsFromSnapshot(cfgSnap)
-		skills := allSkillsFromSnapshot(cfgSnap)
-		personas := allPersonasFromSnapshot(cfgSnap)
+	loadEntitySnapshot(&snap, cfgSnap)
 
-		// Snapshot already carries the entity bodies BuildSnapshot copied
-		// from the bundle; the only data the legacy editor.Load() path
-		// contributed beyond that was the per-entity warning chip, which
-		// the snapshot now exposes via Warnings(). No disk scan on refresh.
-		warnings := bundleWarningIndex(cfgSnap.Warnings())
-		for i, sk := range skills {
-			if w, ok := warnings[sk.Key]; ok {
-				skills[i].Warning = w
-			}
-		}
-		for i, l := range laws {
-			if w, ok := warnings[l.Key]; ok {
-				laws[i].Warning = w
-			}
-		}
-		for i, p := range personas {
-			if w, ok := warnings[p.Key]; ok {
-				personas[i].Warning = w
-			}
-		}
-
-		snap.Laws = laws
-		snap.Skills = skills
-		snap.Personas = personas
-		snap.Templates = append([]config.TaskTemplate(nil), cfgSnap.AllTemplates()...)
-	}
-
-	if s.tags != nil {
-		allTags, err := s.tags.ListAllTags(ctx)
-		if err != nil {
-			return snap, err
-		}
-		snap.AllTags = allTags
-		taskTagsMap, err := s.tags.ListTaskTagsByProject(ctx, project.ID)
-		if err != nil {
-			return snap, err
-		}
-		snap.TaskTagsByID = taskTagsMap
+	if err := s.loadTagSnapshot(ctx, project.ID, &snap); err != nil {
+		return snap, err
 	}
 
 	return snap, nil
+}
+
+func loadEntitySnapshot(out *TUISnapshot, cfgSnap *config.Snapshot) {
+	if cfgSnap == nil {
+		return
+	}
+	// The snapshot carries entity bodies and warnings, so refresh does not scan disk.
+	laws := allLawsFromSnapshot(cfgSnap)
+	skills := allSkillsFromSnapshot(cfgSnap)
+	personas := allPersonasFromSnapshot(cfgSnap)
+	warnings := bundleWarningIndex(cfgSnap.Warnings())
+	for i := range skills {
+		if warning, ok := warnings[skills[i].Key]; ok {
+			skills[i].Warning = warning
+		}
+	}
+	for i := range laws {
+		if warning, ok := warnings[laws[i].Key]; ok {
+			laws[i].Warning = warning
+		}
+	}
+	for i := range personas {
+		if warning, ok := warnings[personas[i].Key]; ok {
+			personas[i].Warning = warning
+		}
+	}
+	out.Laws, out.Skills, out.Personas = laws, skills, personas
+	out.Templates = append([]config.TaskTemplate(nil), cfgSnap.AllTemplates()...)
+}
+
+func (s *TUIQueryService) loadTagSnapshot(ctx context.Context, projectID int64, out *TUISnapshot) error {
+	if s.tags == nil {
+		return nil
+	}
+	allTags, err := s.tags.ListAllTags(ctx)
+	if err != nil {
+		return err
+	}
+	taskTags, err := s.tags.ListTaskTagsByProject(ctx, projectID)
+	if err != nil {
+		return err
+	}
+	out.AllTags, out.TaskTagsByID = allTags, taskTags
+	return nil
 }
 
 // bundleWarningIndex returns the first source-warning message keyed by

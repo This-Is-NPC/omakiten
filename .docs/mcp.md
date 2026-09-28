@@ -29,13 +29,15 @@ Supported harnesses (CLI value → config target):
 
 | Harness | Default config path | Format | Server entry root |
 |---|---|---|---|
-| `claude-code` *(default)* | `~/.claude/.mcp.json` | JSON | `omakiten` (flat root — no `mcpServers` wrapper) |
+| `claude-code` *(default)* | `<project>/.mcp.json` | JSON | `mcpServers.omakiten` |
 | `claude-desktop` | `<UserConfigDir>/Claude/claude_desktop_config.json` | JSON | `mcpServers.omakiten` |
 | `opencode` | `<UserConfigDir>/opencode/opencode.json` | JSON | `mcp.omakiten` |
 | `crush` | `~/.config/crush/crush.json` (Linux/macOS) · `%LOCALAPPDATA%\crush\crush.json` (Windows) | JSON | `mcp.omakiten` |
 | `github-copilot` | `<UserConfigDir>/Code/User/mcp.json` (VS Code Copilot Chat, agent mode) | JSON | `servers.omakiten` |
 | `codex` | `~/.codex/config.toml` | TOML | `[mcp_servers.omakiten]` |
 | `cursor` | `~/.cursor/mcp.json` | JSON | `mcpServers.omakiten` |
+
+An earlier Omakiten release wrote Claude Code MCP config to `~/.claude/.mcp.json` with a flat root-level `omakiten` key; that path and shape are obsolete. If you still have that file from the broken setup, you can delete it after migrating to the project-scoped `.mcp.json`.
 
 Setup writes an `omakiten` server entry that runs:
 
@@ -88,7 +90,7 @@ System-internal entry points (`ReadResource`) bypass the coercive check and writ
 |---|---|
 | `project.overview` | Active project identity, workflow, pending count, and next-step prompt. `okt` / `okt-start` read this as one input, then also inspect tasks, plans, and handoff notes before recommending a command. |
 | `project.resume` | Project distribution, likely next work, blocked/dependent work. Used by `okt-project-resume`. |
-| `project.edit` | Updates the active project's `description` and persists it to the `projects.description` column, emitting `project.updated` (with the from/to diff) when the value changes. Returns the refreshed project DTO. Restores the project-description write path that was schema-only since migration 002. |
+| `project.edit` | Updates the active project's `description` and persists it to the `projects.description` column, emitting `project.updated` (with the from/to diff) when the value changes. Returns the refreshed project DTO. |
 | `workflow.show` | Active workflow buckets and allowed transitions. |
 | `orphans.migrate` | Rebind tasks whose bucket was deactivated by a workflow swap. First call without `confirmed=true` returns a preview report + `Confirmation` block listing every affected task; retry with `confirmed=true` to apply the rebind. Empty preview short-circuits to a no-op regardless of the flag. Mirrors the CLI `okt workflow orphans` command. |
 
@@ -123,6 +125,8 @@ System-internal entry points (`ReadResource`) bypass the coercive check and writ
 | `plans.rename_wave` | Rename a wave. Emits `plan.wave_renamed`. |
 | `plans.reorder_wave` | Move a wave to a new 1-based position; occupied positions swap. Emits `plan.wave_reordered`. |
 | `plans.unassign` | Detach a task from its plan by clearing `plan_id` and `wave_id`. Emits `plan.task_unassigned` when it changed something. |
+
+**Manual concurrency reference.** A 2026-08-02 run measured **87 simultaneous callers** against one database before any claim fails; the first failing level was 88. This is an environment-qualified, non-CI result (12 logical CPUs, SQLite 3.53.0, `busy_timeout=5000`, file-backed WAL) from source revision `a69613257999ca05b66ecc75a27842bb7635c104`. Past the ceiling the observed failure mode was a tool error, `begin immediate: database is locked (5) (SQLITE_BUSY)`, raised when a caller waits out `config.sqlite.busy_timeout_ms` on the write lock; an agent that sees it should retry. No duplicate claim, foreign claim, or database corruption appeared at any concurrency tested up to 128. Protocol, invalidation triggers, per-level results, and raw JSON: [`internal/claim-next-agent-ceiling.md`](./internal/claim-next-agent-ceiling.md).
 
 `plans.claim_next` requires `_agent_model` like every tool, but the value is also written to `tasks.assigned_to` as the claimant identity. The claim is ownership-only — the bucket transition is a separate `tasks.move` call that goes through the workflow guard pipeline (e.g. omakase requires a self-branch comment before `backlog → dev`). Agents claim, then move; the two steps stay separate so preset-defined guards on the bucket transition remain authoritative. Recovery from a crashed agent is human-driven: `okt assign <id> ""` clears the assignment, or `okt move <id> backlog` clears it via the transition-out hook. v1 explicitly does NOT auto-reclaim.
 

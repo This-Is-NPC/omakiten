@@ -292,72 +292,39 @@ func TestInsightsPerModelExcludesNonAgent(t *testing.T) {
 		byModel[m.AgentModel] = m
 	}
 
-	// Non-agent ('') row must be excluded.
-	if _, ok := byModel[""]; ok {
-		t.Fatalf("empty agent_model leaked into per-model contrast: %+v", got.PerModel.Models)
-	}
+	assertPerModelContrast(t, byModel, got.PerModel.Models)
+}
 
+func assertPerModelContrast(t *testing.T, byModel map[string]domain.ModelContrast, models []domain.ModelContrast) {
+	t.Helper()
+	if _, ok := byModel[""]; ok {
+		t.Fatalf("empty agent_model leaked into per-model contrast: %+v", models)
+	}
 	opus, ok := byModel["claude-opus-4-8"]
 	if !ok {
-		t.Fatalf("claude-opus-4-8 missing from per-model: %+v", got.PerModel.Models)
+		t.Fatalf("claude-opus-4-8 missing from per-model: %+v", models)
 	}
-	// Opus: 2 guard violations (self-branch @10d, workflow @9d... plus
-	// self-branch @1d = 3 total guard rows on opus). Re-check: opus guards =
-	// self-branch(10d), workflow(9d), self-branch(1d) = 3.
-	if opus.GuardViolations != 3 {
-		t.Fatalf("opus guard violations = %d, want 3", opus.GuardViolations)
-	}
-	// Opus dwell samples: task 1 has 3 moves -> 2 dwell intervals from opus
-	// (backlog->dev gives no prev; the 2nd and 3rd moves each have a prev).
-	if opus.DwellSamples != 2 {
-		t.Fatalf("opus dwell samples = %d, want 2", opus.DwellSamples)
+	if opus.GuardViolations != 3 || opus.DwellSamples != 2 {
+		t.Fatalf("opus counts = guards %d dwell %d, want 3 and 2", opus.GuardViolations, opus.DwellSamples)
 	}
 	if opus.AvgDwellDays < 0.5 || opus.AvgDwellDays > 1.5 {
 		t.Fatalf("opus avg dwell = %.2f, want ~1.0", opus.AvgDwellDays)
 	}
-	// Opus stamped events: 4 task.moved (tasks 1×3, 4×1) + 3 guard.violated = 7
-	// (>= MinModelSampleSize) -> NOT partial; it shows a confident reading.
-	if opus.SampleSize != 7 {
-		t.Fatalf("opus sample size = %d, want 7 (4 moves + 3 guards)", opus.SampleSize)
+	if opus.SampleSize != 7 || opus.Partial || opus.FirstStampedAt == "" {
+		t.Fatalf("opus sample state = %+v, want sample=7 non-partial with timestamp", opus)
 	}
-	if opus.Partial {
-		t.Fatalf("opus must NOT be partial: sample %d >= N=%d", opus.SampleSize, domain.MinModelSampleSize)
-	}
-	if opus.FirstStampedAt == "" {
-		t.Fatalf("opus first_stamped_at empty, want the earliest stamped date")
-	}
-	// Opus guards span 3 distinct tasks (1, 3, 1) -> tasks {1,3} = 2 -> 3/2.
 	if opus.GuardsPerTask < 1.4 || opus.GuardsPerTask > 1.6 {
-		t.Fatalf("opus guards/task = %.2f, want 1.5 (3 violations / 2 tasks)", opus.GuardsPerTask)
+		t.Fatalf("opus guards/task = %.2f, want 1.5", opus.GuardsPerTask)
 	}
-
 	sonnet, ok := byModel["claude-sonnet-4-6"]
 	if !ok {
-		t.Fatalf("claude-sonnet-4-6 missing from per-model: %+v", got.PerModel.Models)
+		t.Fatalf("claude-sonnet-4-6 missing from per-model: %+v", models)
 	}
-	// Sonnet: 1 guard (self-branch @3d), 0 dwell samples (its only move is a
-	// first move with no prev) -> dwell 0.
-	if sonnet.GuardViolations != 1 {
-		t.Fatalf("sonnet guard violations = %d, want 1", sonnet.GuardViolations)
+	if sonnet.GuardViolations != 1 || sonnet.DwellSamples != 0 || sonnet.AvgDwellDays != 0 {
+		t.Fatalf("sonnet dwell/guard state = %+v, want guard=1 dwell=0 avg=0", sonnet)
 	}
-	if sonnet.DwellSamples != 0 {
-		t.Fatalf("sonnet dwell samples = %d, want 0", sonnet.DwellSamples)
-	}
-	if sonnet.AvgDwellDays != 0 {
-		t.Fatalf("sonnet avg dwell = %.2f, want 0 (no completed interval)", sonnet.AvgDwellDays)
-	}
-	// Sonnet stamped TASK events: 1 task.moved (task 2) + 1 guard.violated = 2
-	// (< MinModelSampleSize=5) -> PARTIAL. The fixture also plants a stamped
-	// entity_type='error' event for sonnet — it must NOT count (the gate input
-	// is stamped task events only), so 2 here also pins the entity filter.
-	if sonnet.SampleSize != 2 {
-		t.Fatalf("sonnet sample size = %d, want 2 (1 move + 1 guard)", sonnet.SampleSize)
-	}
-	if !sonnet.Partial {
-		t.Fatalf("sonnet must be partial: sample %d < N=%d", sonnet.SampleSize, domain.MinModelSampleSize)
-	}
-	if sonnet.FirstStampedAt == "" {
-		t.Fatalf("sonnet first_stamped_at empty, want the earliest stamped date for partial label")
+	if sonnet.SampleSize != 2 || !sonnet.Partial || sonnet.FirstStampedAt == "" {
+		t.Fatalf("sonnet sample state = %+v, want sample=2 partial with timestamp", sonnet)
 	}
 }
 

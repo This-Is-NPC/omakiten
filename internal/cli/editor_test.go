@@ -13,13 +13,7 @@ import (
 // with embedded separators are rejected outright; empty input returns
 // the coded EditorNotFound error.
 func TestResolveEditorBinary(t *testing.T) {
-	cases := []struct {
-		name        string
-		input       string
-		wantErr     bool
-		wantCode    domain.ErrorCode
-		wantAbsPath string
-	}{
+	cases := []editorResolutionCase{
 		{name: "empty input is coded not-configured", input: "", wantErr: true, wantCode: domain.ErrEditorNotFound},
 		{name: "whitespace input is coded not-configured", input: "   ", wantErr: true, wantCode: domain.ErrEditorNotFound},
 		{name: "bare name on PATH resolves", input: "sh", wantErr: false},
@@ -30,29 +24,42 @@ func TestResolveEditorBinary(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			got, err := resolveEditorBinary(tc.input)
-			if tc.wantErr {
-				if err == nil {
-					t.Fatalf("expected error, got %q", got)
-				}
-				var coded *domain.CodedError
-				if !errors.As(err, &coded) {
-					t.Fatalf("error is not a CodedError: %T %v", err, err)
-				}
-				if coded.Code != tc.wantCode {
-					t.Fatalf("error code = %q, want %q", coded.Code, tc.wantCode)
-				}
-				return
-			}
-			if err != nil {
-				t.Fatalf("unexpected error: %v", err)
-			}
-			if !strings.HasPrefix(got, "/") {
-				t.Fatalf("resolveEditorBinary returned non-absolute path %q", got)
-			}
-			if tc.wantAbsPath != "" && got != tc.wantAbsPath {
-				t.Fatalf("got %q, want %q", got, tc.wantAbsPath)
-			}
+			assertEditorResolution(t, tc)
 		})
+	}
+}
+
+type editorResolutionCase struct {
+	name        string
+	input       string
+	wantErr     bool
+	wantCode    domain.ErrorCode
+	wantAbsPath string
+}
+
+func assertEditorResolution(t *testing.T, tc editorResolutionCase) {
+	t.Helper()
+	got, err := resolveEditorBinary(tc.input)
+	if tc.wantErr {
+		if err == nil {
+			t.Fatalf("expected error, got %q", got)
+		}
+		var coded *domain.CodedError
+		if !errors.As(err, &coded) {
+			t.Fatalf("error is not a CodedError: %T %v", err, err)
+		}
+		if coded.Code != tc.wantCode {
+			t.Fatalf("error code = %q, want %q", coded.Code, tc.wantCode)
+		}
+		return
+	}
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.HasPrefix(got, "/") {
+		t.Fatalf("resolveEditorBinary returned non-absolute path %q", got)
+	}
+	if tc.wantAbsPath != "" && got != tc.wantAbsPath {
+		t.Fatalf("got %q, want %q", got, tc.wantAbsPath)
 	}
 }

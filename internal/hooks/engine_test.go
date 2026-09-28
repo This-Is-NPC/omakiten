@@ -4,7 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"runtime"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -240,7 +242,7 @@ func TestEngineWithZeroProjectIDCatchesAll(t *testing.T) {
 	registry.Register(signalAction{name: "test", wg: &wg, ran: nil, mu: &mu, counter: &count})
 
 	engine := NewEngine([]Hook{{On: domain.EventTypeTaskCreated, Do: "test"}}, registry, defaultSettings(), &fakeRecorder{})
-	// projectID left at zero — catch-all
+	engine.SetGlobal()
 	engine.Start(bus)
 	defer engine.Stop()
 
@@ -392,60 +394,59 @@ func TestEngineFiltersHooksBySubjectDepth(t *testing.T) {
 	engine.Start(bus)
 	defer engine.Stop()
 
-	rootWG.Add(1)
+	assertRootDepthHook(t, bus, &rootWG, &rootMu, &subMu, &rootEvents, &subEvents)
+	assertSubtaskDepthHooks(t, bus, &subWG, &subMu, &rootMu, &rootEvents, &subEvents)
+}
+
+func assertRootDepthHook(t *testing.T, bus events.Bus, wg *sync.WaitGroup, rootMu, subMu *sync.Mutex, rootEvents, subEvents *[]domain.Event) {
+	t.Helper()
+	wg.Add(1)
 	if err := bus.Publish(context.Background(), domain.Event{EventType: domain.EventTypeTaskCreated, Payload: `{"subject_task_id":1,"subject_depth":0,"resolved_kit":"root"}`}); err != nil {
 		t.Fatalf("Publish root created = %v", err)
 	}
-	rootWG.Wait()
+	wg.Wait()
 	time.Sleep(20 * time.Millisecond)
-	if len(rootEvents) != 1 {
-		t.Fatalf("root hook events = %d, want 1", len(rootEvents))
-	}
-	if len(subEvents) != 0 {
-		t.Fatalf("sub hook fired for root task: %+v", subEvents)
-	}
-
-	subWG.Add(1)
-	if err := bus.Publish(context.Background(), domain.Event{EventType: domain.EventTypeTaskCreated, Payload: `{"subject_task_id":2,"subject_parent_id":1,"subject_depth":1,"resolved_kit":"sub"}`}); err != nil {
-		t.Fatalf("Publish sub created = %v", err)
-	}
-	subWG.Wait()
+	rootMu.Lock()
+	gotRoot := len(*rootEvents)
+	rootMu.Unlock()
 	subMu.Lock()
-	gotSubCreated := len(subEvents)
+	gotSub := len(*subEvents)
+	subMu.Unlock()
+	if gotRoot != 1 {
+		t.Fatalf("root hook events = %d, want 1", gotRoot)
+	}
+	if gotSub != 0 {
+		t.Fatalf("sub hook fired for root task: %+v", *subEvents)
+	}
+}
+
+func assertSubtaskDepthHooks(t *testing.T, bus events.Bus, wg *sync.WaitGroup, subMu, rootMu *sync.Mutex, rootEvents, subEvents *[]domain.Event) {
+	t.Helper()
+	publish := func(eventType, payload string) {
+		wg.Add(1)
+		if err := bus.Publish(context.Background(), domain.Event{EventType: eventType, Payload: payload}); err != nil {
+			t.Fatalf("Publish %s = %v", eventType, err)
+		}
+		wg.Wait()
+	}
+	publish(domain.EventTypeTaskCreated, `{"subject_task_id":2,"subject_parent_id":1,"subject_depth":1,"resolved_kit":"sub"}`)
+	subMu.Lock()
+	gotSubCreated := len(*subEvents)
 	subMu.Unlock()
 	if gotSubCreated != 1 {
 		t.Fatalf("sub hook events after sub create = %d, want 1", gotSubCreated)
 	}
-
-	subWG.Add(1)
-	if err := bus.Publish(context.Background(), domain.Event{EventType: domain.EventTypeTaskMoved, Payload: `{"subject_task_id":2,"subject_parent_id":1,"subject_depth":1,"resolved_kit":"sub"}`}); err != nil {
-		t.Fatalf("Publish sub moved = %v", err)
-	}
-	subWG.Wait()
-
-	subWG.Add(1)
-	if err := bus.Publish(context.Background(), domain.Event{EventType: domain.EventTypeTaskBucketOrphaned, Payload: `{"subject_task_id":2,"subject_parent_id":1,"subject_depth":1,"resolved_kit":"sub"}`}); err != nil {
-		t.Fatalf("Publish sub orphaned = %v", err)
-	}
-	subWG.Wait()
-
-	// #301 finding A4 regression: a sub-task guard.violated payload
-	// must route ONLY to the sub-kit hook (depth=1), not the root one.
-	subWG.Add(1)
-	if err := bus.Publish(context.Background(), domain.Event{EventType: domain.EventTypeGuardViolated, Payload: `{"operation":"task.archive","rule":"subtasks_complete","subject_task_id":2,"subject_parent_id":1,"subject_depth":1,"resolved_kit":"sub"}`}); err != nil {
-		t.Fatalf("Publish sub guard.violated = %v", err)
-	}
-	subWG.Wait()
-
+	publish(domain.EventTypeTaskMoved, `{"subject_task_id":2,"subject_parent_id":1,"subject_depth":1,"resolved_kit":"sub"}`)
+	publish(domain.EventTypeTaskBucketOrphaned, `{"subject_task_id":2,"subject_parent_id":1,"subject_depth":1,"resolved_kit":"sub"}`)
+	publish(domain.EventTypeGuardViolated, `{"operation":"task.archive","rule":"subtasks_complete","subject_task_id":2,"subject_parent_id":1,"subject_depth":1,"resolved_kit":"sub"}`)
 	subMu.Lock()
-	gotSubTotal := len(subEvents)
+	gotSubTotal := len(*subEvents)
 	subMu.Unlock()
 	if gotSubTotal != 4 {
 		t.Fatalf("sub hook total events = %d, want 4 (created + moved + orphaned + guard.violated)", gotSubTotal)
 	}
-	// Root hook must not have absorbed the sub-task guard.violated.
 	rootMu.Lock()
-	gotRoot := len(rootEvents)
+	gotRoot := len(*rootEvents)
 	rootMu.Unlock()
 	if gotRoot != 1 {
 		t.Fatalf("root hook events after sub guard.violated = %d, want 1 (root.created only)", gotRoot)
@@ -476,5 +477,219 @@ func TestEngineRootHookWithoutSubtaskKitMatchesAnyDepth(t *testing.T) {
 	mu.Unlock()
 	if got != 2 {
 		t.Fatalf("root hook count = %d, want 2", got)
+	}
+}
+
+type cancelBlockingAction struct {
+	name     string
+	started  chan<- struct{}
+	finished chan<- struct{}
+}
+
+func (a cancelBlockingAction) Name() string { return a.name }
+
+func (a cancelBlockingAction) Execute(ctx context.Context, _ domain.Event, _ map[string]any) error {
+	a.started <- struct{}{}
+	<-ctx.Done()
+	a.finished <- struct{}{}
+	return ctx.Err()
+}
+
+type nonCooperativeAction struct {
+	name     string
+	started  chan<- struct{}
+	release  <-chan struct{}
+	finished chan<- struct{}
+}
+
+func (a nonCooperativeAction) Name() string { return a.name }
+
+func (a nonCooperativeAction) Execute(_ context.Context, _ domain.Event, _ map[string]any) error {
+	a.started <- struct{}{}
+	<-a.release
+	a.finished <- struct{}{}
+	return nil
+}
+
+func TestEngineShutdownCancelsAdmittedAction(t *testing.T) {
+	started := make(chan struct{}, 1)
+	finished := make(chan struct{}, 1)
+	registry := NewActionRegistry()
+	registry.Register(cancelBlockingAction{name: "block", started: started, finished: finished})
+	engine := NewEngine([]Hook{{On: domain.EventTypeTaskCreated, Do: "block"}}, registry, defaultSettings(), nil)
+	bus := events.NewInProcessBus(defaultSettings())
+	engine.Start(bus)
+
+	if err := bus.Publish(context.Background(), domain.Event{EventType: domain.EventTypeTaskCreated}); err != nil {
+		t.Fatalf("Publish: %v", err)
+	}
+	<-started
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	if err := engine.Shutdown(ctx); err != nil {
+		t.Fatalf("Shutdown: %v", err)
+	}
+	select {
+	case <-finished:
+	default:
+		t.Fatal("Shutdown returned before the canceled action finished")
+	}
+	if err := engine.Shutdown(ctx); err != nil {
+		t.Fatalf("second Shutdown: %v", err)
+	}
+}
+
+func TestEngineShutdownTimesOutForNonCooperativeAction(t *testing.T) {
+	started := make(chan struct{}, 1)
+	release := make(chan struct{})
+	finished := make(chan struct{}, 1)
+	registry := NewActionRegistry()
+	registry.Register(nonCooperativeAction{name: "stubborn", started: started, release: release, finished: finished})
+	engine := NewEngine([]Hook{{On: domain.EventTypeTaskCreated, Do: "stubborn"}}, registry, defaultSettings(), nil)
+	bus := events.NewInProcessBus(defaultSettings())
+	engine.Start(bus)
+
+	if err := bus.Publish(context.Background(), domain.Event{EventType: domain.EventTypeTaskCreated}); err != nil {
+		t.Fatalf("Publish: %v", err)
+	}
+	<-started
+
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	err := engine.Shutdown(ctx)
+	cancel()
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("Shutdown error = %v, want context deadline exceeded", err)
+	}
+
+	close(release)
+	select {
+	case <-finished:
+	case <-time.After(time.Second):
+		t.Fatal("non-cooperative action did not finish after release")
+	}
+	drainCtx, drainCancel := context.WithTimeout(context.Background(), time.Second)
+	defer drainCancel()
+	if err := engine.Shutdown(drainCtx); err != nil {
+		t.Fatalf("Shutdown after release: %v", err)
+	}
+}
+
+type staleCallbackBus struct {
+	handler events.Handler
+	ready   chan<- struct{}
+	release <-chan struct{}
+}
+
+func (b *staleCallbackBus) Publish(ctx context.Context, ev domain.Event) error {
+	b.ready <- struct{}{}
+	<-b.release
+	b.handler(ctx, ev)
+	return nil
+}
+
+func (b *staleCallbackBus) Subscribe(_ events.Filter, handler events.Handler) events.Subscription {
+	b.handler = handler
+	return inertSubscription{}
+}
+
+func (*staleCallbackBus) SetSettings(config.EventsSettings) {}
+
+type inertSubscription struct{}
+
+func (inertSubscription) Unsubscribe() {}
+
+type countingAction struct {
+	count *atomic.Int64
+}
+
+func (countingAction) Name() string { return "count" }
+
+func (a countingAction) Execute(context.Context, domain.Event, map[string]any) error {
+	a.count.Add(1)
+	return nil
+}
+
+func TestEngineShutdownRejectsStaleCallbacksWithoutAddWaitRace(t *testing.T) {
+	const iterations = 1000
+	var admitted atomic.Int64
+	for i := 0; i < iterations; i++ {
+		ready := make(chan struct{}, 1)
+		release := make(chan struct{})
+		bus := &staleCallbackBus{ready: ready, release: release}
+		registry := NewActionRegistry()
+		registry.Register(countingAction{count: &admitted})
+		engine := NewEngine([]Hook{{On: domain.EventTypeTaskCreated, Do: "count"}}, registry, defaultSettings(), nil)
+		engine.Start(bus)
+
+		published := make(chan struct{})
+		go func() {
+			_ = bus.Publish(context.Background(), domain.Event{EventType: domain.EventTypeTaskCreated})
+			close(published)
+		}()
+		<-ready
+
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		if err := engine.Shutdown(ctx); err != nil {
+			cancel()
+			t.Fatalf("iteration %d Shutdown: %v", i, err)
+		}
+		cancel()
+		close(release)
+		<-published
+	}
+	runtime.Gosched()
+	if got := admitted.Load(); got != 0 {
+		t.Fatalf("actions admitted after shutdown = %d, want 0", got)
+	}
+}
+
+func TestEngineStartAndShutdownAreIdempotentUnderConcurrency(t *testing.T) {
+	registry := NewActionRegistry()
+	var count atomic.Int64
+	registry.Register(countingAction{count: &count})
+	engine := NewEngine([]Hook{{On: domain.EventTypeTaskCreated, Do: "count"}}, registry, defaultSettings(), nil)
+	bus := events.NewInProcessBus(defaultSettings())
+
+	const cycles = 100
+	for cycle := 0; cycle < cycles; cycle++ {
+		var starts sync.WaitGroup
+		starts.Add(8)
+		for range 8 {
+			go func() {
+				defer starts.Done()
+				engine.Start(bus)
+			}()
+		}
+		starts.Wait()
+
+		ready := make(chan struct{})
+		var calls sync.WaitGroup
+		calls.Add(16)
+		for range 8 {
+			go func() {
+				defer calls.Done()
+				<-ready
+				_ = bus.Publish(context.Background(), domain.Event{EventType: domain.EventTypeTaskCreated})
+			}()
+			go func() {
+				defer calls.Done()
+				<-ready
+				ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+				defer cancel()
+				if err := engine.Shutdown(ctx); err != nil {
+					t.Errorf("cycle %d Shutdown: %v", cycle, err)
+				}
+			}()
+		}
+		close(ready)
+		calls.Wait()
+
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		if err := engine.Shutdown(ctx); err != nil {
+			cancel()
+			t.Fatalf("cycle %d final Shutdown: %v", cycle, err)
+		}
+		cancel()
 	}
 }

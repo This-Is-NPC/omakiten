@@ -40,10 +40,31 @@ type Engine struct {
 	// Start, but the contract should not rely on caller ordering).
 	projectID atomic.Int64
 
-	mu  sync.Mutex
-	sub events.Subscription
-	wg  sync.WaitGroup
+	mu       sync.Mutex
+	state    engineState
+	ctx      context.Context
+	cancel   context.CancelFunc
+	sub      events.Subscription
+	stopDone chan struct{}
+	wg       sync.WaitGroup
 }
+
+type engineState uint8
+
+const (
+	engineStopped engineState = iota
+	engineRunning
+	engineStopping
+)
+
+// DefaultShutdownTimeout bounds compatibility callers that use Stop instead
+// of supplying their own shutdown context.
+const DefaultShutdownTimeout = 5 * time.Second
+
+// GlobalProjectID is the explicit scope used by bootstrap/test runtimes that
+// intentionally receive events for every project. A project runtime built
+// with a non-zero id must never use this value as an event fallback.
+const GlobalProjectID int64 = 0
 
 // NewEngine returns a configured but inactive engine. Call Start to
 // subscribe to the bus.
@@ -54,35 +75,99 @@ func NewEngine(hooks []Hook, registry *ActionRegistry, settings config.EventsSet
 // SetProjectID scopes the engine's dispatch filter to the supplied
 // project id. The composition root (BundleCache.buildProjectRuntime)
 // calls this once after construction so events targeting other
-// projects skip this engine entirely. Zero disables the filter —
-// engines built before the composition root resolves a project id
-// (bootstrap window, tests) keep receiving every event the bus emits.
+// projects skip this engine entirely. Use SetGlobal for an intentional
+// projectless/bootstrap scope.
 // Safe to call concurrently with dispatch: projectID is atomic.
 func (e *Engine) SetProjectID(id int64) {
 	e.projectID.Store(id)
 }
 
-// Start subscribes to the bus. Idempotent: a second call is a no-op
-// while the previous subscription is still alive. Stop releases it.
+// SetGlobal makes the engine's catch-all scope explicit for the legacy
+// projectless bootstrap path and tests. ProjectRuntime instances created for
+// an active project use SetProjectID instead.
+func (e *Engine) SetGlobal() {
+	e.projectID.Store(GlobalProjectID)
+}
+
+// Start subscribes to the bus and creates the cancellation context owned by
+// this run of the engine. Repeated and concurrent calls are no-ops while the
+// engine is running or draining; a fully stopped engine may be started again.
 func (e *Engine) Start(bus events.Bus) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	if e.sub != nil {
+	if e.state != engineStopped {
 		return
 	}
+	e.ctx, e.cancel = context.WithCancel(context.Background())
 	e.sub = bus.Subscribe(events.Filter{}, e.dispatch)
+	e.state = engineRunning
 }
 
-// Stop releases the bus subscription and waits for in-flight actions
-// to settle. Safe to call multiple times.
-func (e *Engine) Stop() {
+// Stop is the bounded compatibility form of Shutdown. Callers that need to
+// propagate a shorter deadline or surface cancellation directly should use
+// Shutdown.
+func (e *Engine) Stop() error {
+	ctx, cancel := context.WithTimeout(context.Background(), DefaultShutdownTimeout)
+	defer cancel()
+	return e.Shutdown(ctx)
+}
+
+// Shutdown closes action admission, unsubscribes from the bus, cancels every
+// admitted action through the Engine-owned context, and waits for the drain.
+// The state transition and dispatch's WaitGroup.Add share e.mu, so no Add can
+// race with or occur after the drain starts. A context timeout is returned to
+// the caller; the engine remains closed and completes its drain asynchronously
+// if a non-cooperative action returns later.
+func (e *Engine) Shutdown(ctx context.Context) error {
 	e.mu.Lock()
-	if e.sub != nil {
-		e.sub.Unsubscribe()
-		e.sub = nil
+	if e.state == engineStopped {
+		e.mu.Unlock()
+		return nil
+	}
+	if e.state == engineStopping {
+		done := e.stopDone
+		e.mu.Unlock()
+		return waitForShutdown(ctx, done)
+	}
+
+	e.state = engineStopping
+	sub := e.sub
+	e.sub = nil
+	cancel := e.cancel
+	done := make(chan struct{})
+	e.stopDone = done
+	e.mu.Unlock()
+
+	if sub != nil {
+		sub.Unsubscribe()
+	}
+	if cancel != nil {
+		cancel()
+	}
+	go e.finishShutdown(done)
+	return waitForShutdown(ctx, done)
+}
+
+func (e *Engine) finishShutdown(done chan struct{}) {
+	e.wg.Wait()
+	e.mu.Lock()
+	if e.stopDone == done {
+		e.state = engineStopped
+		e.ctx = nil
+		e.cancel = nil
+		e.stopDone = nil
+		close(done)
 	}
 	e.mu.Unlock()
-	e.wg.Wait()
+}
+
+func waitForShutdown(ctx context.Context, done <-chan struct{}) error {
+	select {
+	case <-done:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }
 
 // dispatch runs on the publisher's goroutine. It walks the configured
@@ -105,17 +190,29 @@ func (e *Engine) dispatch(ctx context.Context, ev domain.Event) {
 		if !ok {
 			continue
 		}
+		e.mu.Lock()
+		if e.state != engineRunning {
+			e.mu.Unlock()
+			return
+		}
+		lifecycle := e.ctx
 		e.wg.Add(1)
-		go e.run(ctx, idx, hook, action, ev)
+		e.mu.Unlock()
+		go e.run(lifecycle, ctx, idx, hook, action, ev)
 	}
 }
 
-func (e *Engine) run(parent context.Context, idx int, hook Hook, action Action, ev domain.Event) {
+func (e *Engine) run(lifecycle, parent context.Context, idx int, hook Hook, action Action, ev domain.Event) {
 	defer e.wg.Done()
 	// Detach from the parent's deadline so the hook gets the timeout
 	// each action chooses (exec defaults to 30s). We keep cancellation
-	// linked so app shutdown still propagates.
+	// linked and also bind the action to this Engine run's owned context.
 	ctx, cancel := context.WithCancel(detachDeadline(parent))
+	stopLifecycle := context.AfterFunc(lifecycle, cancel)
+	if lifecycle.Err() != nil {
+		cancel()
+	}
+	defer stopLifecycle()
 	defer cancel()
 
 	start := time.Now()
@@ -156,14 +253,12 @@ func (e *Engine) run(parent context.Context, idx int, hook Hook, action Action, 
 // Phase 3 scopes one engine per ProjectRuntime, so a non-zero
 // engine.projectID is the per-project filter and a non-zero
 // ev.ProjectID identifies the event's owner. Zero on either side opts
-// out of the filter so system events (ev.ProjectID == 0 — e.g.
-// bundle.swapped, hook.executed) reach every engine and engines built
-// for cross-project dispatch (engine.projectID == 0 — used by tests
-// and the bootstrap window before a project resolves) keep receiving
-// everything.
+// out of the filter so intentionally global system events reach every
+// engine. BundleCache emits bundle.imported with the importing runtime's
+// non-zero project id; its entity type being system does not make it global.
 func (e *Engine) matchesProject(ev domain.Event) bool {
 	pid := e.projectID.Load()
-	if pid == 0 || ev.ProjectID == 0 {
+	if pid == GlobalProjectID || ev.ProjectID == GlobalProjectID {
 		return true
 	}
 	return pid == ev.ProjectID

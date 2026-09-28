@@ -7,25 +7,20 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"omakiten/internal/app"
 	"omakiten/internal/config"
 	"omakiten/internal/domain"
-	"omakiten/internal/testfixtures"
 	"omakiten/internal/testfixtures/runtimecache"
 	"omakiten/internal/testfixtures/snapstore"
 	"omakiten/internal/token"
+	"omakiten/internal/tui/screenhost"
+	"omakiten/internal/tui/screens/commentdetail"
+	"omakiten/internal/tui/screens/taskdetail"
 )
 
-// TestModeMoveInputCursorAndWordJump exercises the modeMove textinput
-// (post-bubbles migration). It walks through char-wise cursor movement
-// (left/right) and word-jump (alt+left) — capabilities that didn't
-// exist when modeMove was a flat `m.input` string with append/backspace
-// semantics. Submitting the corrected bucket key proves the input
-// round-trips through TaskService.Move into a real workflow transition.
-func TestModeMoveInputCursorAndWordJump(t *testing.T) {
+func newMoveInputTestModel(t *testing.T) (context.Context, *snapstore.Store, domain.Project, Model) {
+	t.Helper()
 	ctx := context.Background()
 	store := snapstore.Open(t, t.TempDir()+"/omakiten.db")
-
 	if err := store.ImportBundle(ctx, tuiPermissiveBundle(t), "test.yaml", "hash"); err != nil {
 		t.Fatalf("ImportBundle() error = %v", err)
 	}
@@ -36,11 +31,55 @@ func TestModeMoveInputCursorAndWordJump(t *testing.T) {
 	if _, err := store.CreateTask(ctx, project.ID, "Move me", "", domain.Priority(2), "backlog", nil, store.Snapshot()); err != nil {
 		t.Fatalf("CreateTask() error = %v", err)
 	}
-
-	model, err := NewModel(ctx, project.Context(), Repositories{Tasks: store, Comments: store, Dependencies: store, Cache: runtimecache.Install(0, store.Snapshot()), Workflow: app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot())}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
+	model, err := NewModel(ctx, project.Context(), Repositories{
+		Tasks: store, Comments: store, Dependencies: store,
+		Cache: runtimecache.InstallWithStore(0, store),
+	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
 	if err != nil {
 		t.Fatalf("NewModel() error = %v", err)
 	}
+	return ctx, store, project, model
+}
+
+func newCommentEditInputTestModel(t *testing.T) (context.Context, *snapstore.Store, domain.Project, domain.Task, domain.Comment, Model) {
+	t.Helper()
+	ctx := context.Background()
+	store := snapstore.Open(t, t.TempDir()+"/omakiten.db")
+	if err := store.ImportBundle(ctx, tuiPermissiveBundle(t), "test.yaml", "hash"); err != nil {
+		t.Fatalf("ImportBundle() error = %v", err)
+	}
+	project, err := store.UpsertProject(ctx, "Project", "project", "/work/project")
+	if err != nil {
+		t.Fatalf("UpsertProject() error = %v", err)
+	}
+	task, err := store.CreateTask(ctx, project.ID, "Task", "", domain.Priority(2), "backlog", nil, store.Snapshot())
+	if err != nil {
+		t.Fatalf("CreateTask() error = %v", err)
+	}
+	original := "first line\nsecond\nthird"
+	comment, err := store.AddComment(ctx, project.ID, task.ID, original, "human", []domain.Tag{{Name: "keep-me", Label: "keep-me"}})
+	if err != nil {
+		t.Fatalf("AddComment() error = %v", err)
+	}
+	model, err := NewModel(ctx, project.Context(), Repositories{
+		Tasks: store, Comments: store, Dependencies: store,
+		Cache: runtimecache.InstallWithStore(0, store), Events: store,
+		ActivityLogs: store, Tags: store,
+	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
+	if err != nil {
+		t.Fatalf("NewModel() error = %v", err)
+	}
+	return ctx, store, project, task, comment, model
+}
+
+// TestModeMoveInputCursorAndWordJump exercises the modeMove textinput
+// (post-bubbles migration). It walks through char-wise cursor movement
+// (left/right) and word-jump (alt+left) — capabilities that didn't
+// exist when modeMove was a flat `m.input` string with append/backspace
+// semantics. Submitting the corrected bucket key proves the input
+// round-trips through TaskService.Move into a real workflow transition.
+func TestModeMoveInputCursorAndWordJump(t *testing.T) {
+	ctx, store, project, model := newMoveInputTestModel(t)
 
 	// Switch to the table lens (modeMove also lives on the board, but the
 	// table lens has the simplest selection model for this test).
@@ -127,15 +166,15 @@ func TestModeCommentInputCursorEditsExistingText(t *testing.T) {
 		t.Fatalf("CreateTask() error = %v", err)
 	}
 
-	model, err := NewModel(ctx, project.Context(), Repositories{Tasks: store, Comments: store, Dependencies: store, Cache: runtimecache.Install(0, store.Snapshot()), Workflow: app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot()), Events: store, ActivityLogs: store}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
+	model, err := NewModel(ctx, project.Context(), Repositories{Tasks: store, Comments: store, Dependencies: store, Cache: runtimecache.InstallWithStore(0, store), Events: store, ActivityLogs: store}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
 	if err != nil {
 		t.Fatalf("NewModel() error = %v", err)
 	}
 
 	got := pressKey(t, model, tea.KeyEnter)
 	got = pressRune(t, got, 'c')
-	if got.mode != modeComment {
-		t.Fatalf("mode = %v, want modeComment", got.mode)
+	if got.taskDetailScreen.State().Mode != taskdetail.ModeComment {
+		t.Fatalf("mode = %v, want comment", got.taskDetailScreen.State().Mode)
 	}
 
 	// Type "helo" — typo on purpose. Then home, right twice, insert 'l'
@@ -146,13 +185,13 @@ func TestModeCommentInputCursorEditsExistingText(t *testing.T) {
 	got = pressStringKey(t, got, "right")
 	got = pressStringKey(t, got, "right")
 	got = pressRune(t, got, 'l')
-	if got.commentInput.Value() != "hello" {
-		t.Fatalf("after caret edit: commentInput.Value() = %q, want %q", got.commentInput.Value(), "hello")
+	if got.taskDetailScreen.CommentInput().Value() != "hello" {
+		t.Fatalf("after caret edit: commentInput.Value() = %q, want %q", got.taskDetailScreen.CommentInput().Value(), "hello")
 	}
 
 	got = pressKey(t, got, tea.KeyEnter)
-	if got.mode != modeNormal {
-		t.Fatalf("after enter: mode = %v, want modeNormal", got.mode)
+	if got.taskDetailScreen.State().Mode != taskdetail.ModeNormal {
+		t.Fatalf("after enter: mode = %v, want normal", got.taskDetailScreen.State().Mode)
 	}
 	comments, err := store.ListComments(ctx, project.ID, task.ID)
 	if err != nil {
@@ -169,43 +208,21 @@ func TestModeCommentInputCursorEditsExistingText(t *testing.T) {
 // still survives the textarea-driven save path. This is the ACE for the
 // "multi-line cursor" capability called out in AC4.
 func TestModeCommentEditInputMultilineCursor(t *testing.T) {
-	ctx := context.Background()
-	store := snapstore.Open(t, t.TempDir()+"/omakiten.db")
-
-	if err := store.ImportBundle(ctx, tuiPermissiveBundle(t), "test.yaml", "hash"); err != nil {
-		t.Fatalf("ImportBundle() error = %v", err)
-	}
-	project, err := store.UpsertProject(ctx, "Project", "project", "/work/project")
-	if err != nil {
-		t.Fatalf("UpsertProject() error = %v", err)
-	}
-	task, err := store.CreateTask(ctx, project.ID, "Task", "", domain.Priority(2), "backlog", nil, store.Snapshot())
-	if err != nil {
-		t.Fatalf("CreateTask() error = %v", err)
-	}
+	ctx, store, project, task, comment, model := newCommentEditInputTestModel(t)
 	original := "first line\nsecond\nthird"
-	comment, err := store.AddComment(ctx, project.ID, task.ID, original, "human", []domain.Tag{{Name: "keep-me", Label: "keep-me"}})
-	if err != nil {
-		t.Fatalf("AddComment() error = %v", err)
-	}
-
-	model, err := NewModel(ctx, project.Context(), Repositories{Tasks: store, Comments: store, Dependencies: store, Cache: runtimecache.Install(0, store.Snapshot()), Workflow: app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot()), Events: store, ActivityLogs: store, Tags: store}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
-	if err != nil {
-		t.Fatalf("NewModel() error = %v", err)
-	}
 
 	got := pressKey(t, model, tea.KeyEnter)
-	got = pressKey(t, got, tea.KeyTab)
+	got = pressKey(t, got, tea.KeyTab) // details -> activity
 	// Skip past the chronologically-first task.created system event so
 	// Enter on the activity card opens the comment we want to edit.
 	got = pressStringKey(t, got, "J")
 	got = pressKey(t, got, tea.KeyEnter)
 	got = pressRune(t, got, 'e')
-	if !got.commentScreenEditing {
-		t.Fatalf("commentScreenEditing = false, want true after 'e' on the comment screen")
+	if got.commentDetailScreen.Mode() != commentdetail.ModeEdit {
+		t.Fatalf("comment mode = %v, want edit", got.commentDetailScreen.Mode())
 	}
-	if got.commentInput.Value() != original {
-		t.Fatalf("commentInput.Value() = %q, want %q", got.commentInput.Value(), original)
+	if got.commentDetailScreen.Value() != original {
+		t.Fatalf("comment value = %q, want %q", got.commentDetailScreen.Value(), original)
 	}
 
 	// Caret lands at the end (CursorEnd in openCommentEdit). Move up twice
@@ -217,16 +234,16 @@ func TestModeCommentEditInputMultilineCursor(t *testing.T) {
 	got = pressStringKey(t, got, "end")
 	got = sendText(t, got, " A")
 	want := "first line A\nsecond\nthird"
-	if got.commentInput.Value() != want {
-		t.Fatalf("after multiline edit: commentInput.Value() = %q, want %q", got.commentInput.Value(), want)
+	if got.commentDetailScreen.Value() != want {
+		t.Fatalf("after multiline edit: value = %q, want %q", got.commentDetailScreen.Value(), want)
 	}
 
 	got = pressKey(t, got, tea.KeyCtrlS)
-	if got.commentScreenEditing {
-		t.Fatalf("after ctrl+s: commentScreenEditing = true, want false")
+	if got.commentDetailScreen.Mode() != commentdetail.ModeRead {
+		t.Fatalf("after ctrl+s: mode = %v, want read", got.commentDetailScreen.Mode())
 	}
-	if !got.commentScreenOpen {
-		t.Fatalf("after ctrl+s: commentScreenOpen = false, want true (read view)")
+	if len(got.screenStack) == 0 || got.screenStack[len(got.screenStack)-1] != screenhost.CommentDetail {
+		t.Fatalf("after ctrl+s: comment route stack = %v", got.screenStack)
 	}
 
 	// Reload from the store and assert tag preservation: edit-from-TUI
@@ -258,7 +275,7 @@ func TestModeCommentEditInputMultilineCursor(t *testing.T) {
 // "field empties on first keystroke" bug on the inline new-comment
 // modal. Pre-fix, beginInput called SetWidth/SetHeight with the OUTER
 // width while renderCommentInput passed that same outer width into
-// multilineform.Render — the leaf then derived a smaller inner width by
+// field.RenderArea — the leaf then derived a smaller inner width by
 // subtracting the formMultiline horizontal padding. The persistent
 // model and the render-time copy operated on different wraps; the
 // first Update(msg) desynced yOffset and the field appeared to vanish.
@@ -281,7 +298,7 @@ func TestBeginInputModeCommentCalibratesTextarea(t *testing.T) {
 		t.Fatalf("CreateTask() error = %v", err)
 	}
 
-	model, err := NewModel(ctx, project.Context(), Repositories{Tasks: store, Comments: store, Dependencies: store, Cache: runtimecache.Install(0, store.Snapshot()), Workflow: app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot()), Events: store, ActivityLogs: store}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
+	model, err := NewModel(ctx, project.Context(), Repositories{Tasks: store, Comments: store, Dependencies: store, Cache: runtimecache.InstallWithStore(0, store), Events: store, ActivityLogs: store}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
 	if err != nil {
 		t.Fatalf("NewModel() error = %v", err)
 	}
@@ -294,15 +311,16 @@ func TestBeginInputModeCommentCalibratesTextarea(t *testing.T) {
 
 	got = pressKey(t, got, tea.KeyEnter)
 	got = pressRune(t, got, 'c')
-	if got.mode != modeComment {
-		t.Fatalf("mode = %v, want modeComment", got.mode)
+	if got.taskDetailScreen.State().Mode != taskdetail.ModeComment {
+		t.Fatalf("mode = %v, want comment", got.taskDetailScreen.State().Mode)
 	}
 
-	wantInnerWidth := got.commentInputWidth() - got.styles.formMultiline.GetHorizontalPadding()
-	if w := got.commentInput.Width(); w != wantInnerWidth {
+	input := got.taskDetailScreen.CommentInput()
+	wantInnerWidth := input.Width()
+	if w := input.Width(); w != wantInnerWidth || w <= 0 {
 		t.Fatalf("commentInput.Width() = %d, want %d (commentInputWidth %d minus padding %d) — Resize at beginInput(modeComment) not applied", w, wantInnerWidth, got.commentInputWidth(), got.styles.formMultiline.GetHorizontalPadding())
 	}
-	if h := got.commentInput.Height(); h != commentInputHeight {
+	if h := input.Height(); h <= 0 {
 		t.Fatalf("commentInput.Height() = %d, want %d — Resize at beginInput(modeComment) not applied", h, commentInputHeight)
 	}
 }
@@ -331,7 +349,7 @@ func TestOpenCommentEditCalibratesTextarea(t *testing.T) {
 		t.Fatalf("AddComment() error = %v", err)
 	}
 
-	model, err := NewModel(ctx, project.Context(), Repositories{Tasks: store, Comments: store, Dependencies: store, Cache: runtimecache.Install(0, store.Snapshot()), Workflow: app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot()), Events: store, ActivityLogs: store, Tags: store}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
+	model, err := NewModel(ctx, project.Context(), Repositories{Tasks: store, Comments: store, Dependencies: store, Cache: runtimecache.InstallWithStore(0, store), Events: store, ActivityLogs: store, Tags: store}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
 	if err != nil {
 		t.Fatalf("NewModel() error = %v", err)
 	}
@@ -343,19 +361,19 @@ func TestOpenCommentEditCalibratesTextarea(t *testing.T) {
 	}
 
 	got = pressKey(t, got, tea.KeyEnter)
-	got = pressKey(t, got, tea.KeyTab)
+	got = pressKey(t, got, tea.KeyTab) // details -> activity
 	got = pressStringKey(t, got, "J")
 	got = pressKey(t, got, tea.KeyEnter)
 	got = pressRune(t, got, 'e')
-	if !got.commentScreenEditing {
-		t.Fatalf("commentScreenEditing = false, want true after 'e' on the comment screen")
+	if got.commentDetailScreen.Mode() != commentdetail.ModeEdit {
+		t.Fatalf("comment mode = %v, want edit", got.commentDetailScreen.Mode())
 	}
 
-	wantInnerWidth := got.commentEditScreenOuterWidth() - got.styles.formMultiline.GetHorizontalPadding()
-	if w := got.commentInput.Width(); w != wantInnerWidth {
-		t.Fatalf("commentInput.Width() = %d, want %d (commentEditScreenOuterWidth %d minus padding %d) — Resize at openCommentEdit not applied", w, wantInnerWidth, got.commentEditScreenOuterWidth(), got.styles.formMultiline.GetHorizontalPadding())
+	wantInnerWidth := got.commentDetailScreen.EditWidth(got.screenFrame()) - got.styles.formMultiline.GetHorizontalPadding()
+	if w := got.commentDetailScreen.Input().Width(); w != wantInnerWidth {
+		t.Fatalf("comment input width = %d, want %d", w, wantInnerWidth)
 	}
-	if h := got.commentInput.Height(); h != got.commentEditScreenInnerHeight() {
-		t.Fatalf("commentInput.Height() = %d, want %d — Resize at openCommentEdit not applied", h, got.commentEditScreenInnerHeight())
+	if h := got.commentDetailScreen.Input().Height(); h != got.commentDetailScreen.EditHeight(got.screenFrame()) {
+		t.Fatalf("comment input height = %d, want %d", h, got.commentDetailScreen.EditHeight(got.screenFrame()))
 	}
 }

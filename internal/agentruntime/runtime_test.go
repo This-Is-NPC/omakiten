@@ -9,8 +9,8 @@ import (
 
 // TestOpenMaterializesRuntime verifies that Open boots a runtime end-to-end:
 // it creates the data dir, writes a default config, opens the sqlite store
-// and stitches together the agent.Service. The previous home of this test
-// (internal/agent/service_test.go) moved here when the bootstrap was
+// and stitches together the operation.Service. The previous home of this test
+// (internal/operation/service_test.go) moved here when the bootstrap was
 // extracted out of internal/agent — keeping the assertions gives the
 // composition root unit-level coverage of its own seam.
 func TestOpenMaterializesRuntime(t *testing.T) {

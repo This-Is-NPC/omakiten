@@ -6,7 +6,7 @@
 // pure-data Bundle/Law/Persona/Skill model types).
 //
 // The implementation today delegates to functions in `internal/config` to
-// avoid duplicating the loader/saver/migration logic — the boundary is
+// avoid duplicating the loader/saver logic — the boundary is
 // enforced at the import direction (app → port → configstore → config),
 // not by re-implementation. Future moves of the helper bodies into this
 // package are mechanical and do not require a port change.
@@ -33,6 +33,10 @@ func (Adapter) LoadBundle(path string) (config.Bundle, error) {
 	return config.LoadBundle(path)
 }
 
+func (Adapter) LoadBundlePlan(path string) (config.Bundle, map[string]string, error) {
+	return config.LoadBundlePlan(path)
+}
+
 func (Adapter) SaveBundle(path string, bundle config.Bundle) error {
 	return config.SaveBundle(path, bundle)
 }
@@ -45,12 +49,16 @@ func (Adapter) WriteAtomic(path string, data []byte) error {
 	return config.WriteAtomic(path, data)
 }
 
-func (Adapter) EnsureDefaultFiles(rootDir string) error {
-	return config.EnsureDefaultFiles(rootDir)
+func (Adapter) RemoveFile(path string) error {
+	return config.RemoveFile(path)
 }
 
-func (Adapter) MigrateLayout(rootDir string) error {
-	return config.MigrateLayout(rootDir)
+func (Adapter) ValidatePath(root, path string) error {
+	return config.ValidatePath(root, path)
+}
+
+func (Adapter) EnsureDefaultFiles(rootDir string) error {
+	return config.EnsureDefaultFiles(rootDir)
 }
 
 func (Adapter) ConfigRootFromYAMLPath(path string) string {

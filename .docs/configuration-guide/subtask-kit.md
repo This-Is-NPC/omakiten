@@ -150,7 +150,7 @@ Task-scoped event payloads carry the resolving subject identity so the dispatche
 }
 ```
 
-`subject_depth` is the materialised distance from the nearest root ancestor — 0 for root rows, 1 for direct children, 2 for grandchildren, and so on. The value comes from the persisted `tasks.depth` column (migration 028) so payloads carry the real depth without a recursive parent-walk at emission time; audit consumers and depth-aware hook filters can key off the exact value rather than the legacy `0/1` binary marker. The single payload helper lives at `internal/domain/event_payloads.go::NewTaskSubjectPayload` so the JSON shape stays in one place across the storage and app layers.
+`subject_depth` is the materialised distance from the nearest root ancestor — 0 for root rows, 1 for direct children, 2 for grandchildren, and so on. The value comes from the persisted `tasks.depth` column so payloads carry the real depth without a recursive parent-walk at emission time; audit consumers and depth-aware hook filters can key off the exact value. The single payload helper lives at `internal/domain/event_payloads.go::NewTaskSubjectPayload` so the JSON shape stays in one place across the storage and app layers.
 
 Dispatch rules:
 
@@ -203,6 +203,12 @@ The picker is read-only with respect to the sub-kit file's *contents*; selecting
 
 Default and custom kits with the same basename are **distinct identities** in the picker. A stock `config/izakaya.yaml` and a `config/custom/izakaya.yaml` show up as two rows; the active dot lands on whichever row's `RelativePath` matches the `subtask_kit:` value written in `omakiten.yaml`. Selecting the custom row writes `subtask_kit: custom/izakaya.yaml` so the loader resolves the user override; selecting the default writes `subtask_kit: izakaya.yaml`. The `subtask_kit:` value round-trips through the YAML byte-for-byte so the resolver never collapses the two onto the same kit.
 
-### Rollback restores disk AND runtime
+### Reload failures leave the published wiring for inspection
 
-If the candidate sub-kit fails to load (validator rejection, nested cascade, YAML parse error), the picker's rollback path rewrites the prior `subtask_kit:` value AND re-runs the bundle reload against the restored file so the cache rotates back to the previous snapshot. The user sees the error inline; the runtime ends up driving the same configuration the YAML names. The pre-fix code rewrote only the YAML and left the cache rotated to the bad bundle — the new transactional helper closes that window.
+If the candidate sub-kit fails to load (validator rejection, nested cascade, or
+YAML parse error), the picker does not restore the prior `subtask_kit:` value.
+BundleEditor has already published the wiring file as a whole-file atomic
+write, so the current file remains available for inspection and the error
+provides reload/retry/repair guidance. Fix the published file or restore it
+manually, then retry the reload. Multi-file publication is independent and is
+not transactional.

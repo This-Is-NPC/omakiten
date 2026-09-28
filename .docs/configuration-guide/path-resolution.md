@@ -12,6 +12,11 @@ In order, first match wins:
 4. **`$XDG_CONFIG_HOME`** env var — `$XDG_CONFIG_HOME/omakiten`.
 5. **OS default** — `~/.config/omakiten` (Linux / macOS); equivalent under Windows.
 
+Repo-local discovery is no-follow: the `.omakiten/` entry and every existing
+component from the discovery start directory are checked with `Lstat`. A
+symlinked root or intermediate component is an error, not a miss, so a
+malicious local tree cannot silently fall through to global configuration.
+
 ## `<root>` layout
 
 ```text
@@ -55,6 +60,31 @@ The `<root>/config/.active` state file stores the basename of the currently sele
 
 Errors with `no config yaml found in …` only when no `.yaml` exists anywhere — a config file is mandatory.
 
+On supported Unix-family targets, the marker, config directory, `custom/`
+directory, and selected YAML must be regular non-symlink paths.
+`SetActiveConfigInDir` writes `.active` to a same-directory temporary file,
+preserves the existing marker mode, flushes the file, closes it, and replaces
+the marker with an atomic rename. The Linux and other supported Unix-family
+backends hold the directory through descriptor-relative `O_NOFOLLOW`
+operations throughout creation, validation, and rename; the marker is
+revalidated immediately before commit.
+
+Windows and targets without a native marker backend, including Plan 9, fail
+closed for `.active` operations: an existing marker is not read and every
+marker write returns an explicit unsupported-backend error. Markerless
+alphabetical YAML discovery remains a resolver behavior, but it does not make
+setup or TUI marker persistence supported on those targets. On
+Windows, `--config <path>` selects a profile without reading or writing
+`.active`; Plan 9 and other unsupported targets require a platform support
+policy before config installation is supported.
+
+The Linux writer prevents a replacement of the validated directory path from
+redirecting the temp file or rename because both are descriptor-relative. A
+caller that later opens the returned YAML path can still race an attacker who
+replaces that file after discovery; the current editor interfaces accept paths,
+not open file handles, so eliminating that final race requires an interface
+change rather than more path checks.
+
 ## <a id="custom-shadowing"></a>`custom/` shadowing
 
 For both yaml profiles and entity files, the `custom/` subfolder always wins over the root.
@@ -69,12 +99,19 @@ Rationale: defaults refresh overwrites the root copy on every update; the `custo
 `okt` composition roots (CLI and agentruntime) run, in order:
 
 1. **Compute `rootDir`** directly (`ConfigRoot()` or `ConfigRootFromYAMLPath(--config)`).
-2. **`MigrateLayout(rootDir)`** — move legacy layouts forward (e.g. relocate a root-level `omakiten.yaml` into `custom/` once the canonical kit renames).
-3. **`EnsureDefaultFiles(rootDir)`** — seed any missing kit files from the embed.
-4. **`ActiveConfigFile()`** — resolve `.active` against the **post-migration** layout. Honors any rename that step 2 just performed.
-5. **`Import(activeConfigPath)`** — load the yaml + apply per-bucket / per-command overrides.
+2. **`EnsureDefaultFiles(rootDir)`** — seed any missing kit files from the embed.
+3. **`ActiveConfigFile()`** — resolve `.active` against the current layout.
+4. **`Import(activeConfigPath)`** — load the yaml + apply per-bucket / per-command overrides.
 
-The migrate-before-resolve order matters: when a previous canonical kit name (`omakiten.yaml`) gets moved into `custom/`, the post-migration resolver finds it there via the custom-before-root precedence. Pre-migration resolution would point at the now-empty root and error at `Import` with `config_invalid`.
+Default-file materialization is supported on Linux, the
+supported Unix-family targets, and Windows. Their filesystem backends reject
+symlink/reparse-point traversal and use descriptor/handle-relative reads,
+writes, removes, and renames. Config file writes preserve the existing
+descriptor-relative and atomic replacement guarantees.
+
+Plan 9 and other targets without the safe-I/O backend fail closed before
+default materialization; no path-based fallback or marker-persistence
+guarantee is made for them.
 
 ## <a id="modular-imports"></a>Modular config imports — value-level `from:`
 
@@ -110,7 +147,7 @@ Path rules mirror the [`subtask_kit` path-safety policy](subtask-kit.md#validato
 - contains a **parent-directory (`..`) segment**, or
 - after symlink resolution, **escapes** the declaring file's directory.
 
-Reads are bounded by the wiring-file budget from `internal/config/size_caps.go` (`MaxWiringFileBytes`); an oversized import surfaces the same coded `ErrConfigTooLarge` as an oversized root profile.
+Reads are bounded by the wiring-file budget from `internal/config/size_caps.go` (`MaxWiringFileBytes`); an oversized import surfaces the same coded `ErrConfigTooLarge` as an oversized root profile. On Linux and supported Unix-family targets, the loader opens each declaring directory and imported file with descriptor-relative `openat`/`O_NOFOLLOW` calls. Windows uses native handle-relative no-reparse opens. These backends prevent a path replacement after validation from redirecting the read; Plan 9 and other unsupported targets fail closed rather than using a path-based fallback.
 
 ### Nesting, cycles, and depth
 
@@ -126,7 +163,7 @@ Imported documents may themselves contain directives. The resolver walks the who
 
 ### Supported scope
 
-Imports are expanded for the **active profile yaml values** only. Entity body/frontmatter loaders (laws, skills, personas, templates, themes, notifications, languages — see [entities.md](entities.md)) are unchanged and do not honor `from:` unless a future task extends them. Because expansion happens entirely inside the config loader, **the TUI, MCP server, and CLI consume the already-resolved config and need no import awareness** — they see the same materialised `Bundle`/`Snapshot` whether a section was inline or imported.
+Imports are expanded for the **active profile yaml values** only. Entity body/frontmatter loaders (laws, skills, personas, templates, themes, notifications, languages — see [entities.md](entities.md)) do not honor `from:`, but they do use the same bounded no-follow reads. On Linux and supported Unix-family targets, directory enumeration and file reads are pinned to descriptor-relative handles; Windows uses native handle-relative no-reparse opens. Symlinked entity files or custom directories are rejected rather than followed, while Plan 9 and other unsupported targets fail closed. Because expansion happens entirely inside the config loader, **the TUI, MCP server, and CLI consume the already-resolved config and need no import awareness** — they see the same materialised `Bundle`/`Snapshot` whether a section was inline or imported.
 
 ## <a id="config-root-from-yaml-path"></a>`ConfigRootFromYAMLPath` recognized shapes
 
@@ -160,11 +197,26 @@ The badge reflects what the loader actually picked, not the discovery candidates
 
 ## SQLite database
 
-The DB is a single file at `<data-root>/omakiten.db`. Schema migrations are applied transactionally on every connect (`internal/sqlite/store.go:Open`). Source: `internal/paths/paths.go:DataDir`, `DatabaseFile`. The data root is `$OMAKITEN_HOME/data/`, `$XDG_DATA_HOME/omakiten/`, or `~/.local/share/omakiten/` in precedence order.
+The DB is a single file at `<data-root>/omakiten.db`. A missing file is
+initialized from the embedded current schema baseline in
+`internal/sqlite/schema.sql`. An existing file must match that baseline
+exactly; an older or otherwise mismatched DB is rejected without mutation and
+is not migrated. Preserve the rejected file separately if its contents matter,
+then either select a new database path, replace it with a current-compatible
+backup, or remove it and reinitialize when the old data is disposable. Source:
+`internal/paths/paths.go:DataDir`, `DatabaseFile`. The data root is
+`$OMAKITEN_HOME/data/`, `$XDG_DATA_HOME/omakiten/`, or
+`~/.local/share/omakiten/` in precedence order. See the [current schema and
+operational data model](../internal/data-model.md).
 
 ## Profiles (advanced)
 
-Multiple yaml profiles can coexist under `<root>/config/`; `<root>/config/.active` names the active one and the TUI Settings › Config picker writes it. See [`.active` resolution](#active-resolution) above for the full custom-before-root, alphabetical fallthrough order.
+Multiple yaml profiles can coexist under `<root>/config/`; on supported
+Unix-family targets, `<root>/config/.active` names the active one and the TUI
+Settings › Config picker writes it. Windows and Plan 9 fail closed when the
+picker or resolver would read/write `.active`; see [`.active`
+resolution](#active-resolution) above for the support matrix and the
+`--config` alternative for explicit profile selection on Windows.
 
 ## Backups
 
@@ -221,7 +273,7 @@ The local development workflow mirrors the production root under `dev_env/`:
 └── languages/
 ```
 
-`mise run dev:sync` mirrors `defaults/` into `dev_env/` aggressively (root overwritten, `custom/` left alone). `dev_env/` itself is gitignored (`.gitignore:24`). Tasks that need a clean dev state pull it in differently: `mise run mcp:prompts` `depends = ["dev:sync"]` directly, while `mise run tui` `depends = ["dev:install"]`, which transitively chains `dev:sync` + `build` before running `okt setup` against `dev_env/`.
+`mise run dev:sync` mirrors `defaults/` into `dev_env/` aggressively (managed files overwritten, `custom/` left alone). `dev_env/` itself is gitignored (`.gitignore:24`). Tasks that need a clean dev state pull it in differently: `mise run mcp:prompts` declares `depends = ["dev:sync"]`, while the raw-terminal `mise run tui` invokes `dev:install` inside its task body so the nested `dev:sync` + `build` output can be captured without detaching Bubble Tea from its controlling terminal. Both TUI tasks pass an explicit config below `dev_env/`, preventing repo-local `.omakiten/` discovery from escaping the dev environment.
 
 ## Update when
 
@@ -235,6 +287,7 @@ The local development workflow mirrors the production root under `dev_env/`:
 ## See also
 
 - [system.md](system.md) — `config.backup` retention knob and other runtime config.
+- [data-model.md](../internal/data-model.md) — current SQLite schema and operational data.
 - [subtask-kit.md](subtask-kit.md) — the `subtask_kit:` cascade, whose path-safety policy the `from:` import resolver reuses.
 - [project-overrides.md](project-overrides.md) — per-project layering (the architecture above the on-disk layout).
 - `internal/paths/paths.go`, `internal/config/repo_local.go`, `internal/config/loader.go`, `internal/config/import_resolver.go` — implementation.

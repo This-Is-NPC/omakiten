@@ -10,6 +10,13 @@ import (
 	"omakiten/internal/testfixtures/snapstore"
 )
 
+type policyAsk struct {
+	bucket    string
+	entity    string
+	operation string
+	want      bool
+}
+
 // Each scenario file under testdata/policy_*.yaml exercises one slice of
 // the bucket→defaults→implicit-true resolution chain. A single test
 // drives them all by loading the fixture, importing it, then asking
@@ -17,22 +24,16 @@ import (
 // op) combination the fixture is expected to cover. Adding a new
 // scenario means one YAML + one row in this table — no helper plumbing.
 func TestWorkflowServicePolicyResolutionFromYAML(t *testing.T) {
-	type ask struct {
-		bucket    string
-		entity    string
-		operation string
-		want      bool
-	}
 	cases := []struct {
 		fixture string
-		asks    []ask
+		asks    []policyAsk
 	}{
 		{
 			// Comment fields nil at the workflow.defaults layer fall back to
 			// the task fields at the same layer — comment edit/delete inherit
 			// task's strict false when the bucket has no override.
 			fixture: "policy_comment_inherits_task.yaml",
-			asks: []ask{
+			asks: []policyAsk{
 				{"backlog", app.EntityTask, app.PermissionEdit, false},
 				{"backlog", app.EntityTask, app.PermissionDelete, false},
 				{"backlog", app.EntityComment, app.PermissionEdit, false},
@@ -45,7 +46,7 @@ func TestWorkflowServicePolicyResolutionFromYAML(t *testing.T) {
 			// Bucket override on comment.delete only — every other field
 			// flows through to workflow.defaults.
 			fixture: "policy_comment_partial_override.yaml",
-			asks: []ask{
+			asks: []policyAsk{
 				{"backlog", app.EntityTask, app.PermissionEdit, true},
 				{"backlog", app.EntityTask, app.PermissionDelete, false},
 				{"backlog", app.EntityComment, app.PermissionEdit, true},
@@ -60,7 +61,7 @@ func TestWorkflowServicePolicyResolutionFromYAML(t *testing.T) {
 			// No defaults block, no bucket overrides — every field falls
 			// through to the implicit `true` at the bottom of the chain.
 			fixture: "policy_no_defaults_block.yaml",
-			asks: []ask{
+			asks: []policyAsk{
 				{"backlog", app.EntityTask, app.PermissionEdit, true},
 				{"backlog", app.EntityTask, app.PermissionDelete, true},
 				{"backlog", app.EntityComment, app.PermissionEdit, true},
@@ -75,7 +76,7 @@ func TestWorkflowServicePolicyResolutionFromYAML(t *testing.T) {
 			// task but not comment — see policy_bucket_overrides.yaml's
 			// header for the full breakdown.
 			fixture: "policy_bucket_overrides.yaml",
-			asks: []ask{
+			asks: []policyAsk{
 				{"backlog", app.EntityTask, app.PermissionEdit, true},
 				{"backlog", app.EntityTask, app.PermissionDelete, false},
 				// backlog declares task.edit=true and no comment block, so
@@ -99,38 +100,37 @@ func TestWorkflowServicePolicyResolutionFromYAML(t *testing.T) {
 
 	for _, c := range cases {
 		t.Run(c.fixture, func(t *testing.T) {
-			ctx := context.Background()
-			store := snapstore.Open(t, t.TempDir()+"/policy.db")
-			bundle, _ := testfixtures.LoadBundle(t, c.fixture)
-			if err := store.ImportBundle(ctx, bundle, "test.yaml", "hash"); err != nil {
-				t.Fatalf("ImportBundle() = %v", err)
-			}
-			project, err := store.UpsertProject(ctx, "Project", "project", "/work/project")
-			if err != nil {
-				t.Fatalf("UpsertProject() = %v", err)
-			}
-			workflow := app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot())
-
-			// Each ask creates a fresh task in the named bucket so the
-			// resolver evaluates the policy for that exact location. We
-			// delete the task between asks to keep the workflow state clean
-			// — otherwise transition guards would interfere on later asks.
-			for _, a := range c.asks {
-				task, err := store.CreateTask(ctx, project.ID, "probe", "", domain.Priority(2), a.bucket, nil, store.Snapshot())
-				if err != nil {
-					t.Fatalf("CreateTask(%s) = %v", a.bucket, err)
-				}
-				allowed, hint, err := workflow.ResolveBucketPermissions(ctx, project.Context(), task.ID, a.entity, a.operation)
-				if err != nil {
-					t.Fatalf("ResolveBucketPermissions(%s, %s, %s) = %v", a.bucket, a.entity, a.operation, err)
-				}
-				if allowed != a.want {
-					t.Errorf("ResolveBucketPermissions(%s, %s, %s) = %v (hint %q), want %v", a.bucket, a.entity, a.operation, allowed, hint, a.want)
-				}
-				if _, err := store.HardDeleteTask(ctx, project.ID, task.ID, store.Snapshot()); err != nil {
-					t.Fatalf("HardDeleteTask(%d) = %v", task.ID, err)
-				}
-			}
+			runPolicyCase(t, c.fixture, c.asks)
 		})
+	}
+}
+
+func runPolicyCase(t *testing.T, fixtureName string, asks []policyAsk) {
+	ctx := context.Background()
+	store := snapstore.Open(t, t.TempDir()+"/policy.db")
+	bundle, _ := testfixtures.LoadBundle(t, fixtureName)
+	if err := store.ImportBundle(ctx, bundle, "test.yaml", "hash"); err != nil {
+		t.Fatalf("ImportBundle() = %v", err)
+	}
+	project, err := store.UpsertProject(ctx, "Project", "project", "/work/project")
+	if err != nil {
+		t.Fatalf("UpsertProject() = %v", err)
+	}
+	workflow := app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot())
+	for _, ask := range asks {
+		task, err := store.CreateTask(ctx, project.ID, "probe", "", domain.Priority(2), ask.bucket, nil, store.Snapshot())
+		if err != nil {
+			t.Fatalf("CreateTask(%s) = %v", ask.bucket, err)
+		}
+		allowed, hint, err := workflow.ResolveBucketPermissions(ctx, project.Context(), task.ID, ask.entity, ask.operation)
+		if err != nil {
+			t.Fatalf("ResolveBucketPermissions(%s, %s, %s) = %v", ask.bucket, ask.entity, ask.operation, err)
+		}
+		if allowed != ask.want {
+			t.Errorf("ResolveBucketPermissions(%s, %s, %s) = %v (hint %q), want %v", ask.bucket, ask.entity, ask.operation, allowed, hint, ask.want)
+		}
+		if _, err := store.HardDeleteTask(ctx, project.ID, task.ID, store.Snapshot()); err != nil {
+			t.Fatalf("HardDeleteTask(%d) = %v", task.ID, err)
+		}
 	}
 }

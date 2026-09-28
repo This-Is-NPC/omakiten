@@ -310,6 +310,17 @@ bubble text. When they resolve to non-empty text, the TUI footer advertises
 and the detail page. The detail page uses the same scroll keys as long primary
 messages.
 
+Before a notification enters the overlay, its primary and detail text is
+sanitized for terminal controls, including ESC, OSC, C0, and C1 sequences.
+Line-feed separators are retained so multiline event bodies still wrap as
+written; harmless Unicode is preserved.
+
+The same terminal-boundary protection applies to configured animation frames,
+custom border glyphs, and action/footer labels. If sanitization removes a
+custom border glyph entirely, the overlay uses its deterministic square-border
+fallback; an action whose display key becomes empty is omitted from the
+footer.
+
 This is useful for defaults that keep the first page playful while still
 letting the user inspect the complete guard hint:
 

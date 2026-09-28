@@ -69,6 +69,52 @@ func TestCLIInitCanPreviewMCPSetup(t *testing.T) {
 	}
 }
 
+func TestCLIInitEnableMCPWritesProjectRootConfig(t *testing.T) {
+	tmp := t.TempDir()
+	dbPath := filepath.Join(tmp, "omakiten.db")
+	configPath := filepath.Join(tmp, "config", "omakase.yaml")
+	projectRoot := filepath.Join(tmp, "custom-root")
+	cwd := filepath.Join(tmp, "cwd")
+	for _, dir := range []string{projectRoot, cwd} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatalf("MkdirAll(%s) error = %v", dir, err)
+		}
+	}
+	t.Chdir(cwd)
+
+	output := runCLI(t, dbPath, configPath,
+		"init",
+		"--root", projectRoot,
+		"--name", "Project",
+		"--slug", "project",
+		"--enable-mcp",
+		"--mcp-command", "okt",
+	)
+	if !strings.Contains(output, `"agent_setup"`) || !strings.Contains(output, `"status":"created"`) {
+		t.Fatalf("init --enable-mcp output = %s, want created agent setup", output)
+	}
+
+	mcpConfig := filepath.Join(projectRoot, ".mcp.json")
+	data, err := os.ReadFile(mcpConfig)
+	if err != nil {
+		t.Fatalf("ReadFile(%s) error = %v", mcpConfig, err)
+	}
+	var written map[string]any
+	if err := json.Unmarshal(data, &written); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v", err)
+	}
+	servers, ok := written["mcpServers"].(map[string]any)
+	if !ok {
+		t.Fatalf("mcpServers missing or wrong type: %#v", written)
+	}
+	if _, ok := servers["omakiten"]; !ok {
+		t.Fatalf("mcpServers.omakiten missing: %#v", servers)
+	}
+	if _, err := os.Stat(filepath.Join(cwd, ".mcp.json")); !os.IsNotExist(err) {
+		t.Fatalf("unexpected CWD .mcp.json after init --root: %v", err)
+	}
+}
+
 func TestCLICodedErrorsForAgentRecovery(t *testing.T) {
 	tmp := t.TempDir()
 	dbPath := filepath.Join(tmp, "omakiten.db")
@@ -138,6 +184,41 @@ func TestCLIConfigInvalidUsesCodedError(t *testing.T) {
 	}
 	if envelope["code"] != string("config_invalid") {
 		t.Fatalf("code = %v, want config_invalid", envelope["code"])
+	}
+}
+
+func TestConfigValidateMigrateAcceptsLegacyUpdaterArgumentOrder(t *testing.T) {
+	tmp := t.TempDir()
+	dbPath := filepath.Join(tmp, "omakiten.db")
+	configPath := filepath.Join(tmp, "config", "omakase.yaml")
+	want := []byte("this is intentionally legacy and invalid: [\n")
+	if err := os.MkdirAll(filepath.Dir(configPath), 0o755); err != nil {
+		t.Fatalf("MkdirAll() error = %v", err)
+	}
+	if err := os.WriteFile(configPath, want, 0o600); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	cmd := NewRootCommand("test")
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetArgs([]string{"--db", dbPath, "config", "validate", "--migrate", "--config", configPath})
+	if err := cmd.Execute(); err == nil {
+		t.Fatal("Execute() error = nil, want missing/non-exact database failure")
+	}
+	var envelope map[string]any
+	if err := json.Unmarshal(bytes.TrimSpace(out.Bytes()), &envelope); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v, output = %s", err, out.String())
+	}
+	if envelope["code"] != string("config_invalid") {
+		t.Fatalf("code = %v, want config_invalid; output = %s", envelope["code"], out.String())
+	}
+	got, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatalf("ReadFile() error = %v", err)
+	}
+	if string(got) != string(want) {
+		t.Fatalf("transition changed legacy config: want %q, got %q", want, got)
 	}
 }
 

@@ -109,7 +109,7 @@ func (allTasksOrphans) rows(ctx context.Context, s *Store, projectID int64) ([]o
 
 // PreviewOrphanedTasks reports active tasks whose bucket no longer
 // belongs to the active workflow. The SQL `workflow_buckets` table was
-// dropped in migration 020; the implementation now diffs the current
+// not part of the current schema; the implementation diffs the current
 // in-memory resolver against the previous one (the caller hands the
 // previous-snapshot view through `previous` whenever the cache holds a
 // pre-rotation pointer) — task.bucket_id values that exist in the
@@ -155,26 +155,8 @@ func (s *Store) previewOrphansScoped(ctx context.Context, projectID int64, curre
 	report := domain.OrphanReport{WorkflowKey: wf.Key}
 	groups := map[string]*domain.OrphanGroup{}
 	for _, row := range taskRows {
-		// Resolve the bucket key the task was last bound to via the
-		// previous resolver: that view still knows the id↔key mapping
-		// the bucket had when the task was created or last moved. When
-		// no previous resolver exists (first-import path), fall back to
-		// the current resolver — a task whose id resolves in the
-		// current workflow is not orphaned regardless of swaps.
-		fromKey := ""
-		if !isNilResolver(previous) {
-			if b, ok := previous.BucketByID(row.bucketID); ok {
-				fromKey = b.Key
-			}
-		}
-		if fromKey == "" {
-			// No previous-resolver mapping. The task is orphaned only if
-			// its bucket_id is also absent from the current workflow.
-			if _, ok := current.BucketByID(row.bucketID); ok {
-				continue
-			}
-		} else if _, ok := activeKeysByKey[fromKey]; ok {
-			// Key survives across the swap — not user-facing orphan.
+		fromKey, orphaned := orphanSourceKey(row, current, previous, activeKeysByKey)
+		if !orphaned {
 			continue
 		}
 		toKey := defaultKey
@@ -206,6 +188,21 @@ func (s *Store) previewOrphansScoped(ctx context.Context, projectID int64, curre
 		return report.Groups[i].ToBucketKey < report.Groups[j].ToBucketKey
 	})
 	return report, nil
+}
+
+func orphanSourceKey(row orphanRow, current, previous domain.BucketResolver, activeKeys map[string]struct{}) (string, bool) {
+	fromKey := ""
+	if !isNilResolver(previous) {
+		if b, ok := previous.BucketByID(row.bucketID); ok {
+			fromKey = b.Key
+		}
+	}
+	if fromKey == "" {
+		_, currentHasBucket := current.BucketByID(row.bucketID)
+		return fromKey, !currentHasBucket
+	}
+	_, keySurvives := activeKeys[fromKey]
+	return fromKey, !keySurvives
 }
 
 // queryRecursiveOrphans runs the pre-built recursive CTE for the
@@ -404,32 +401,42 @@ func (s *Store) rebindOrphansInTx(ctx context.Context, tx *sql.Tx, projectID int
 
 	events := make([]domain.Event, 0, report.Total)
 	for _, group := range report.Groups {
-		toID, ok := idByKey[group.ToBucketKey]
-		if !ok {
-			return domain.OrphanReport{}, nil, fmt.Errorf("rebind orphaned tasks: target bucket %q not in active workflow", group.ToBucketKey)
+		groupEvents, err := s.rebindOrphanGroup(ctx, tx, projectID, group, idByKey, eventType, evCtx)
+		if err != nil {
+			return domain.OrphanReport{}, nil, err
 		}
-		for _, task := range group.Tasks {
-			if _, err := tx.ExecContext(ctx, `
+		events = append(events, groupEvents...)
+	}
+	return report, events, nil
+}
+
+func (s *Store) rebindOrphanGroup(ctx context.Context, tx *sql.Tx, projectID int64, group domain.OrphanGroup, idByKey map[string]int64, eventType string, evCtx orphanEventContext) ([]domain.Event, error) {
+	toID, ok := idByKey[group.ToBucketKey]
+	if !ok {
+		return nil, fmt.Errorf("rebind orphaned tasks: target bucket %q not in active workflow", group.ToBucketKey)
+	}
+	events := make([]domain.Event, 0, len(group.Tasks))
+	for _, task := range group.Tasks {
+		if _, err := tx.ExecContext(ctx, `
 UPDATE tasks SET bucket_id = ?, updated_at = CURRENT_TIMESTAMP
 WHERE project_id = ? AND id = ?
 `, toID, projectID, task.TaskID); err != nil {
-				return domain.OrphanReport{}, nil, err
-			}
-
-			payload := buildOrphanPayload(eventType, task, evCtx)
-			var ev domain.Event
-			if s.shouldLogEvent(eventType) {
-				ev, err = insertTaskEvent(ctx, tx, projectID, task.TaskID, eventType, "", payload)
-				if err != nil {
-					return domain.OrphanReport{}, nil, err
-				}
-			} else {
-				ev = domain.Event{EntityType: domain.EventEntityTask, EntityID: task.TaskID, ProjectID: projectID, EventType: eventType, Payload: payload}
-			}
-			events = append(events, ev)
+			return nil, err
 		}
+		payload := buildOrphanPayload(eventType, task, evCtx)
+		var ev domain.Event
+		if s.shouldLogEvent(eventType) {
+			var err error
+			ev, err = insertTaskEvent(ctx, tx, projectID, task.TaskID, eventType, "", payload)
+			if err != nil {
+				return nil, err
+			}
+		} else {
+			ev = domain.Event{EntityType: domain.EventEntityTask, EntityID: task.TaskID, ProjectID: projectID, EventType: eventType, Payload: payload}
+		}
+		events = append(events, ev)
 	}
-	return report, events, nil
+	return events, nil
 }
 
 // PreviewOrphanedCascade returns the combined orphan preview for the

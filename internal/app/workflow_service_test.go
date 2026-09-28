@@ -61,6 +61,22 @@ type recordedEvent struct {
 // Position == ID so finalBucketID picks the bucket with the largest id —
 // the convention these tests already encoded via finalBucketIDs.
 func (f *fakeStores) Snapshot() *config.Snapshot {
+	buckets := f.fakeBuckets()
+	transitions := f.fakeTransitions()
+	return config.BuildSnapshot(config.Bundle{
+		Workflows: []config.Workflow{{
+			ID:          1,
+			Key:         "test",
+			Name:        "Test",
+			Defaults:    f.workflowDefaults,
+			Buckets:     buckets,
+			Transitions: transitions,
+		}},
+		Config: config.Settings{Workflow: config.WorkflowSettings{Active: "test"}},
+	})
+}
+
+func (f *fakeStores) fakeBuckets() []config.Bucket {
 	seen := map[int64]bool{}
 	var buckets []config.Bucket
 	add := func(id int64, key string) {
@@ -78,12 +94,10 @@ func (f *fakeStores) Snapshot() *config.Snapshot {
 		buckets = append(buckets, bucket)
 	}
 	if f.defaultBucket != "" {
-		// defaultBucket-only fakes never set ids; surface as id=1 so the
-		// snapshot's bucketByKey / first-bucket lookups still resolve.
 		add(1, f.defaultBucket)
 	}
-	for _, b := range f.bucketsByKey {
-		add(b.ID, b.Key)
+	for _, bucket := range f.bucketsByKey {
+		add(bucket.ID, bucket.Key)
 	}
 	for pair := range f.allowedFromTo {
 		add(pair[0], "")
@@ -92,6 +106,10 @@ func (f *fakeStores) Snapshot() *config.Snapshot {
 	if f.currentBucketID > 0 {
 		add(f.currentBucketID, f.currentBucketKey)
 	}
+	return buckets
+}
+
+func (f *fakeStores) fakeTransitions() []config.Transition {
 	var transitions []config.Transition
 	for pair, allowed := range f.allowedFromTo {
 		if !allowed {
@@ -99,22 +117,12 @@ func (f *fakeStores) Snapshot() *config.Snapshot {
 		}
 		guards := f.guards[pair]
 		gs := make([]config.TransitionGuard, 0, len(guards))
-		for _, g := range guards {
-			gs = append(gs, config.TransitionGuard{Type: g.Type, Buckets: g.Buckets, Count: g.Count, Tag: g.Tag, Hint: g.Hint})
+		for _, guard := range guards {
+			gs = append(gs, config.TransitionGuard{Type: guard.Type, Buckets: guard.Buckets, Count: guard.Count, Tag: guard.Tag, Hint: guard.Hint})
 		}
 		transitions = append(transitions, config.Transition{From: int(pair[0]), To: int(pair[1]), Guards: gs})
 	}
-	return config.BuildSnapshot(config.Bundle{
-		Workflows: []config.Workflow{{
-			ID:          1,
-			Key:         "test",
-			Name:        "Test",
-			Defaults:    f.workflowDefaults,
-			Buckets:     buckets,
-			Transitions: transitions,
-		}},
-		Config: config.Settings{Workflow: config.WorkflowSettings{Active: "test"}},
-	})
+	return transitions
 }
 
 // WorkflowRepository

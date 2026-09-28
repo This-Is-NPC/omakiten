@@ -297,4 +297,3 @@ func TestFormatBytes_Buckets(t *testing.T) {
 		}
 	}
 }
-

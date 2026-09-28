@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"omakiten/internal/agent"
 	"omakiten/internal/mcp"
+	"omakiten/internal/operation"
 )
 
 // promptBudgets caps each `okt-*` prompt's resolved markdown size in bytes,
@@ -124,9 +124,9 @@ func TestTemplateBoundCommandsCarryFetchHint(t *testing.T) {
 	}
 	defer func() { _ = rt.Close() }()
 
-	for _, name := range agent.CommandNames() {
+	for _, name := range operation.CommandNames() {
 		t.Run(name, func(t *testing.T) {
-			resp, err := rt.Service().ResolveCommand(ctx, agent.ResolveCommandInput{Name: name})
+			resp, err := rt.Service().ResolveCommand(ctx, operation.ResolveCommandInput{Name: name})
 			if err != nil {
 				t.Fatalf("ResolveCommand(%s) error = %v", name, err)
 			}
@@ -149,7 +149,7 @@ func TestPromptPlaybooksReferenceOnlyKnownMCPTools(t *testing.T) {
 	ignored := map[string]struct{}{"omakiten.yaml": {}, "package.json": {}, "task.assigned": {}}
 	dottedBacktick := regexp.MustCompile("`([a-z_]+(?:\\.[a-z_]+)+)(?:\\s|`)")
 
-	for _, name := range agent.CommandNames() {
+	for _, name := range operation.CommandNames() {
 		resp := resolveForSmoke(t, name)
 		matches := dottedBacktick.FindAllStringSubmatch(resp.Markdown, -1)
 		for _, match := range matches {
@@ -222,7 +222,7 @@ var orchestratorCommands = map[string]struct{}{
 }
 
 // TestFullCommandSurfaceSmoke is the AC#2 closeout gate: it renders EVERY
-// command in agent.CommandNames() against the canonical omakase kit and asserts
+// command in operation.CommandNames() against the canonical omakase kit and asserts
 // each one carries its expected sections. This is the consolidation of the
 // per-wave CW3-CW7 subset gates (the prior TestCW5/TestCW6 *RenderNonEmpty
 // tests) into one coherent full-surface contract so a command that registers
@@ -260,99 +260,118 @@ func TestFullCommandSurfaceSmoke(t *testing.T) {
 	}
 	defer func() { _ = rt.Close() }()
 
-	names := agent.CommandNames()
+	names := operation.CommandNames()
 	if len(names) != 40 {
 		t.Fatalf("expected the v2 surface to carry 40 commands, got %d — update this gate and the docs if the surface changed deliberately", len(names))
 	}
 
 	for _, name := range names {
 		t.Run(name, func(t *testing.T) {
-			resp, err := rt.Service().ResolveCommand(ctx, agent.ResolveCommandInput{Name: name})
+			resp, err := rt.Service().ResolveCommand(ctx, operation.ResolveCommandInput{Name: name})
 			if err != nil {
 				t.Fatalf("ResolveCommand(%s) error = %v", name, err)
 			}
-
-			// Persona — role slot wired.
-			if resp.Persona == nil {
-				t.Fatalf("%s resolved with no persona — the role slot is not wired in the preset YAML", name)
-			}
-			if !strings.Contains(resp.Markdown, "## Persona — ") {
-				t.Fatalf("%s markdown missing non-empty Persona section:\n%s", name, resp.Markdown)
-			}
-
-			// Playbook — entity-sourced. The command playbook renders as the
-			// bound okt-<slug>-playbook skill body under ## Skills (the
-			// per-skill bullet contract below pins the body itself); there is
-			// no hardcoded ## Action section anymore.
-			if !strings.Contains(resp.Markdown, "## Skills\n") {
-				t.Fatalf("%s markdown missing the Skills section that carries the entity-sourced playbook:\n%s", name, resp.Markdown)
-			}
-
-			// prompts/list description — the bound playbook skill's frontmatter.
-			if strings.TrimSpace(resp.Description) == "" {
-				t.Fatalf("%s carries no prompts/list description", name)
-			}
-
-			// Laws — the global floor reaches every command.
-			if !strings.Contains(resp.Markdown, "## Laws\n") || len(resp.Laws) == 0 {
-				t.Fatalf("%s markdown missing non-empty Laws section (the global law floor should reach every command):\n%s", name, resp.Markdown)
-			}
-
-			// Skills — bullet-with-body. Every v2 command declares a minimal
-			// skill subset; each skill must render as a `- **Name** — body`
-			// bullet under `## Skills`, never an empty section or a bare name.
-			if len(resp.Skills) == 0 {
-				t.Fatalf("%s resolved with no skills — the command-level skill subset is not wired (or the persona repertoire is empty)", name)
-			}
-			if !strings.Contains(resp.Markdown, "## Skills\n") {
-				t.Fatalf("%s markdown missing the Skills section despite %d resolved skills:\n%s", name, len(resp.Skills), resp.Markdown)
-			}
-			for _, sk := range resp.Skills {
-				label := sk.Name
-				if label == "" {
-					label = sk.Slug
-				}
-				body := strings.TrimSpace(sk.Body)
-				if body == "" {
-					body = strings.TrimSpace(sk.Description)
-				}
-				if body == "" {
-					t.Fatalf("%s skill %q renders as a bare name bullet — bullet-with-body requires a non-empty body or description", name, label)
-				}
-				// The head of the bullet must be present verbatim in the
-				// rendered markdown so we know the body actually shipped.
-				head := body
-				if idx := strings.IndexByte(head, '\n'); idx >= 0 {
-					head = head[:idx]
-				}
-				wantBullet := "- **" + label + "** — " + head
-				if !strings.Contains(resp.Markdown, wantBullet) {
-					t.Fatalf("%s skill %q did not render bullet-with-body (expected line %q):\n%s", name, label, wantBullet, resp.Markdown)
-				}
-			}
-
-			// Templates — section present iff bound, with the JIT fetch hint.
-			if len(resp.Templates) > 0 {
-				if !strings.Contains(resp.Markdown, "## Templates\n") {
-					t.Fatalf("%s binds %d template(s) but renders no Templates section:\n%s", name, len(resp.Templates), resp.Markdown)
-				}
-				if !strings.Contains(resp.Markdown, "templates.show") {
-					t.Fatalf("%s binds templates but carries no templates.show JIT fetch hint:\n%s", name, resp.Markdown)
-				}
-			}
-
-			// Orchestrators carry a guidance/suggestion block: the Action must
-			// hand off to at least one downstream okt- command.
-			if _, isOrch := orchestratorCommands[name]; isOrch {
-				if !strings.Contains(resp.Markdown, "okt-") {
-					t.Fatalf("orchestrator %s carries no downstream okt- command suggestion in its guidance block:\n%s", name, resp.Markdown)
-				}
-				desc, ok := agent.DescribeCommand(name)
-				if !ok || desc.Tier != agent.CommandTierOrchestrator {
-					t.Fatalf("orchestrator %s must decode as the orchestrator tier, got %+v ok=%v", name, desc, ok)
-				}
-			}
+			assertFullCommandSurface(t, name, resp)
 		})
+	}
+}
+
+func assertFullCommandSurface(t *testing.T, name string, resp operation.ResolveCommandResponse) {
+	t.Helper()
+	assertCommandPersona(t, name, resp)
+	assertCommandPlaybook(t, name, resp)
+	assertCommandLaws(t, name, resp)
+	assertCommandSkills(t, name, resp)
+	assertCommandTemplates(t, name, resp)
+	if _, isOrchestrator := orchestratorCommands[name]; isOrchestrator {
+		assertOrchestratorGuidance(t, name, resp)
+	}
+}
+
+func assertCommandPersona(t *testing.T, name string, resp operation.ResolveCommandResponse) {
+	t.Helper()
+	if resp.Persona == nil {
+		t.Fatalf("%s resolved with no persona — the role slot is not wired in the preset YAML", name)
+	}
+	if !strings.Contains(resp.Markdown, "## Persona — ") {
+		t.Fatalf("%s markdown missing non-empty Persona section:\n%s", name, resp.Markdown)
+	}
+}
+
+func assertCommandPlaybook(t *testing.T, name string, resp operation.ResolveCommandResponse) {
+	t.Helper()
+	if !strings.Contains(resp.Markdown, "## Skills\n") {
+		t.Fatalf("%s markdown missing the Skills section that carries the entity-sourced playbook:\n%s", name, resp.Markdown)
+	}
+	if strings.TrimSpace(resp.Description) == "" {
+		t.Fatalf("%s carries no prompts/list description", name)
+	}
+}
+
+func assertCommandLaws(t *testing.T, name string, resp operation.ResolveCommandResponse) {
+	t.Helper()
+	if !strings.Contains(resp.Markdown, "## Laws\n") || len(resp.Laws) == 0 {
+		t.Fatalf("%s markdown missing non-empty Laws section (the global law floor should reach every command):\n%s", name, resp.Markdown)
+	}
+}
+
+func assertCommandSkills(t *testing.T, name string, resp operation.ResolveCommandResponse) {
+	t.Helper()
+	if len(resp.Skills) == 0 {
+		t.Fatalf("%s resolved with no skills — the command-level skill subset is not wired (or the persona repertoire is empty)", name)
+	}
+	if !strings.Contains(resp.Markdown, "## Skills\n") {
+		t.Fatalf("%s markdown missing the Skills section despite %d resolved skills:\n%s", name, len(resp.Skills), resp.Markdown)
+	}
+	for _, sk := range resp.Skills {
+		assertCommandSkillBullet(t, name, resp.Markdown, sk)
+	}
+}
+
+func assertCommandSkillBullet(t *testing.T, name, markdown string, sk operation.SkillInfo) {
+	t.Helper()
+	label := sk.Name
+	if label == "" {
+		label = sk.Slug
+	}
+	body := strings.TrimSpace(sk.Body)
+	if body == "" {
+		body = strings.TrimSpace(sk.Description)
+	}
+	if body == "" {
+		t.Fatalf("%s skill %q renders as a bare name bullet — bullet-with-body requires a non-empty body or description", name, label)
+	}
+	head := body
+	if idx := strings.IndexByte(head, '\n'); idx >= 0 {
+		head = head[:idx]
+	}
+	wantBullet := "- **" + label + "** — " + head
+	if !strings.Contains(markdown, wantBullet) {
+		t.Fatalf("%s skill %q did not render bullet-with-body (expected line %q):\n%s", name, label, wantBullet, markdown)
+	}
+}
+
+func assertCommandTemplates(t *testing.T, name string, resp operation.ResolveCommandResponse) {
+	t.Helper()
+	if len(resp.Templates) == 0 {
+		return
+	}
+	if !strings.Contains(resp.Markdown, "## Templates\n") {
+		t.Fatalf("%s binds %d template(s) but renders no Templates section:\n%s", name, len(resp.Templates), resp.Markdown)
+	}
+	if !strings.Contains(resp.Markdown, "templates.show") {
+		t.Fatalf("%s binds templates but carries no templates.show JIT fetch hint:\n%s", name, resp.Markdown)
+	}
+}
+
+func assertOrchestratorGuidance(t *testing.T, name string, resp operation.ResolveCommandResponse) {
+	t.Helper()
+	if !strings.Contains(resp.Markdown, "okt-") {
+		t.Fatalf("orchestrator %s carries no downstream okt- command suggestion in its guidance block:\n%s", name, resp.Markdown)
+	}
+	desc, ok := operation.DescribeCommand(name)
+	if !ok || desc.Tier != operation.CommandTierOrchestrator {
+		t.Fatalf("orchestrator %s must decode as the orchestrator tier, got %+v ok=%v", name, desc, ok)
 	}
 }
 
@@ -372,7 +391,7 @@ var defaultPresets = []string{"omakase", "izakaya", "kaiseki", "shokunin"}
 //
 //   - a non-empty prompts/list description — the bound okt-<slug>-playbook
 //     skill's frontmatter `description`. The Go layer carries no Description
-//     fallback (see agent.TestNoGoCommandProseFallback), so a non-empty value
+//     fallback (see operation.TestNoGoCommandProseFallback), so a non-empty value
 //     here proves the playbook skill is bound and its frontmatter flowed
 //     through.
 //   - the playbook body rendered as a `- **<label>** — <head>` bullet under
@@ -386,7 +405,7 @@ var defaultPresets = []string{"omakase", "izakaya", "kaiseki", "shokunin"}
 // breadth complement to the depth phrase-pins in the CW3-CW7 gates (which run
 // against omakase only).
 func TestDefaultKitCoversAllCommandsEntitySourced(t *testing.T) {
-	names := agent.CommandNames()
+	names := operation.CommandNames()
 	if len(names) != 40 {
 		t.Fatalf("expected the v2 surface to carry 40 commands, got %d — update this gate and the docs if the surface changed deliberately", len(names))
 	}
@@ -394,76 +413,82 @@ func TestDefaultKitCoversAllCommandsEntitySourced(t *testing.T) {
 	for _, preset := range defaultPresets {
 		preset := preset
 		t.Run(preset, func(t *testing.T) {
-			ctx := context.Background()
-			tmp := t.TempDir()
-			rt, err := Open(ctx, Options{
-				DBPath:     filepath.Join(tmp, "data", "omakiten.db"),
-				ConfigPath: filepath.Join(tmp, "config", preset+".yaml"),
-				CWD:        tmp,
-			})
-			if err != nil {
-				t.Fatalf("Open(%s) error = %v", preset, err)
-			}
-			t.Cleanup(func() { _ = rt.Close() })
-
-			for _, name := range names {
-				name := name
-				t.Run(name, func(t *testing.T) {
-					resp, err := rt.Service().ResolveCommand(ctx, agent.ResolveCommandInput{Name: name})
-					if err != nil {
-						t.Fatalf("ResolveCommand(%s) error = %v", name, err)
-					}
-
-					// Non-empty rendered prompt.
-					if strings.TrimSpace(resp.Markdown) == "" {
-						t.Fatalf("%s/%s resolved to an empty prompt", preset, name)
-					}
-
-					// Entity-sourced prompts/list description (playbook frontmatter).
-					if strings.TrimSpace(resp.Description) == "" {
-						t.Fatalf("%s/%s carries no prompts/list description — the bound okt-<slug>-playbook skill frontmatter did not flow through (the Go layer has no Description fallback)", preset, name)
-					}
-
-					// Entity-sourced playbook body, rendered as a bullet-with-body
-					// under ## Skills. `okt` shares okt-start's playbook.
-					wantPlaybook := name
-					if wantPlaybook == "okt" {
-						wantPlaybook = "okt-start"
-					}
-					wantPlaybook += "-playbook"
-
-					var body string
-					for _, sk := range resp.Skills {
-						if sk.Slug == wantPlaybook {
-							body = strings.TrimSpace(sk.Body)
-							break
-						}
-					}
-					if body == "" {
-						t.Fatalf("%s/%s did not bind a non-empty %s playbook skill — the entity-sourced playbook is missing for this preset", preset, name, wantPlaybook)
-					}
-					if !strings.Contains(resp.Markdown, "## Skills\n") {
-						t.Fatalf("%s/%s markdown missing the Skills section that carries the entity-sourced playbook:\n%s", preset, name, resp.Markdown)
-					}
-					head := body
-					if idx := strings.IndexByte(head, '\n'); idx >= 0 {
-						head = head[:idx]
-					}
-					// The bullet label is the skill's Name when set, else its slug.
-					label := wantPlaybook
-					for _, sk := range resp.Skills {
-						if sk.Slug == wantPlaybook && sk.Name != "" {
-							label = sk.Name
-							break
-						}
-					}
-					wantBullet := "- **" + label + "** — " + head
-					if !strings.Contains(resp.Markdown, wantBullet) {
-						t.Fatalf("%s/%s did not render its entity-sourced playbook marker (expected bullet head %q):\n%s", preset, name, wantBullet, resp.Markdown)
-					}
-				})
-			}
+			assertPresetCommands(t, preset, names)
 		})
+	}
+}
+
+func assertPresetCommands(t *testing.T, preset string, names []string) {
+	t.Helper()
+	ctx := context.Background()
+	tmp := t.TempDir()
+	rt, err := Open(ctx, Options{
+		DBPath:     filepath.Join(tmp, "data", "omakiten.db"),
+		ConfigPath: filepath.Join(tmp, "config", preset+".yaml"),
+		CWD:        tmp,
+	})
+	if err != nil {
+		t.Fatalf("Open(%s) error = %v", preset, err)
+	}
+	t.Cleanup(func() { _ = rt.Close() })
+	for _, name := range names {
+		name := name
+		t.Run(name, func(t *testing.T) {
+			resp, err := rt.Service().ResolveCommand(ctx, operation.ResolveCommandInput{Name: name})
+			if err != nil {
+				t.Fatalf("ResolveCommand(%s) error = %v", name, err)
+			}
+			assertEntitySourcedPrompt(t, preset, name, resp)
+		})
+	}
+}
+
+func assertEntitySourcedPrompt(t *testing.T, preset, name string, resp operation.ResolveCommandResponse) {
+	t.Helper()
+	if strings.TrimSpace(resp.Markdown) == "" {
+		t.Fatalf("%s/%s resolved to an empty prompt", preset, name)
+	}
+	if strings.TrimSpace(resp.Description) == "" {
+		t.Fatalf("%s/%s carries no prompts/list description — the bound okt-<slug>-playbook skill frontmatter did not flow through (the Go layer has no Description fallback)", preset, name)
+	}
+	wantPlaybook := name
+	if wantPlaybook == "okt" {
+		wantPlaybook = "okt-start"
+	}
+	wantPlaybook += "-playbook"
+	playbook := findSkill(resp.Skills, wantPlaybook)
+	if strings.TrimSpace(playbook.Body) == "" {
+		t.Fatalf("%s/%s did not bind a non-empty %s playbook skill — the entity-sourced playbook is missing for this preset", preset, name, wantPlaybook)
+	}
+	if !strings.Contains(resp.Markdown, "## Skills\n") {
+		t.Fatalf("%s/%s markdown missing the Skills section that carries the entity-sourced playbook:\n%s", preset, name, resp.Markdown)
+	}
+	assertEntitySourcedBullet(t, preset, name, resp.Markdown, wantPlaybook, playbook)
+}
+
+func findSkill(skills []operation.SkillInfo, slug string) operation.SkillInfo {
+	for _, skill := range skills {
+		if skill.Slug == slug {
+			return skill
+		}
+	}
+	return operation.SkillInfo{}
+}
+
+func assertEntitySourcedBullet(t *testing.T, preset, name, markdown, slug string, skill operation.SkillInfo) {
+	t.Helper()
+	body := strings.TrimSpace(skill.Body)
+	head := body
+	if idx := strings.IndexByte(head, '\n'); idx >= 0 {
+		head = head[:idx]
+	}
+	label := skill.Name
+	if label == "" {
+		label = slug
+	}
+	wantBullet := "- **" + label + "** — " + head
+	if !strings.Contains(markdown, wantBullet) {
+		t.Fatalf("%s/%s did not render its entity-sourced playbook marker (expected bullet head %q):\n%s", preset, name, wantBullet, markdown)
 	}
 }
 
@@ -537,7 +562,7 @@ func TestCW3OktRunDelegationPlaybook(t *testing.T) {
 	}
 	defer func() { _ = rt.Close() }()
 
-	resp, err := rt.Service().ResolveCommand(ctx, agent.ResolveCommandInput{Name: "okt-run"})
+	resp, err := rt.Service().ResolveCommand(ctx, operation.ResolveCommandInput{Name: "okt-run"})
 	if err != nil {
 		t.Fatalf("ResolveCommand(okt-run) error = %v", err)
 	}
@@ -560,8 +585,8 @@ func TestCW3OktRunDelegationPlaybook(t *testing.T) {
 
 	// okt-run decodes as a bare orchestrator (not granular) — the engine is
 	// subagents, not a workflow.
-	desc, ok := agent.DescribeCommand("okt-run")
-	if !ok || desc.Tier != agent.CommandTierOrchestrator {
+	desc, ok := operation.DescribeCommand("okt-run")
+	if !ok || desc.Tier != operation.CommandTierOrchestrator {
 		t.Fatalf("okt-run must decode as the orchestrator tier, got %+v ok=%v", desc, ok)
 	}
 
@@ -608,7 +633,7 @@ func TestCW3OktRunDelegationPlaybook(t *testing.T) {
 // omakase default kit and resolves one command, failing the test on any error.
 // It centralises the boilerplate the four guiding-orchestrator smoke gates
 // share, mirroring the single-command resolve the okt-run gate does inline.
-func resolveForSmoke(t *testing.T, name string) agent.ResolveCommandResponse {
+func resolveForSmoke(t *testing.T, name string) operation.ResolveCommandResponse {
 	t.Helper()
 	ctx := context.Background()
 	tmp := t.TempDir()
@@ -621,7 +646,7 @@ func resolveForSmoke(t *testing.T, name string) agent.ResolveCommandResponse {
 	}
 	t.Cleanup(func() { _ = rt.Close() })
 
-	resp, err := rt.Service().ResolveCommand(ctx, agent.ResolveCommandInput{Name: name})
+	resp, err := rt.Service().ResolveCommand(ctx, operation.ResolveCommandInput{Name: name})
 	if err != nil {
 		t.Fatalf("ResolveCommand(%s) error = %v", name, err)
 	}
@@ -631,7 +656,7 @@ func resolveForSmoke(t *testing.T, name string) agent.ResolveCommandResponse {
 // playbookBodyForSmoke resolves a command against the embedded omakase kit and
 // returns its entity-sourced playbook body — the body of the bound
 // okt-<slug>-playbook skill. It is the post-strip replacement for the removed
-// agent.CommandActionFallback in the distinct-pair gates: the operational prose
+// operation.CommandActionFallback in the distinct-pair gates: the operational prose
 // those tests compare now lives in the bound playbook skill, not in Go.
 func playbookBodyForSmoke(t *testing.T, name string) string {
 	t.Helper()
@@ -656,7 +681,7 @@ func playbookBodyForSmoke(t *testing.T, name string) string {
 // load-bearing phrase (case-insensitive). Each phrase pins a clause of the
 // guiding playbook so a future edit that erodes the next-move/coaching contract
 // surfaces here — same phrase-pinning style as TestCW3OktRunDelegationPlaybook.
-func assertGuidingOrchestrator(t *testing.T, name string, resp agent.ResolveCommandResponse, phrases []string) {
+func assertGuidingOrchestrator(t *testing.T, name string, resp operation.ResolveCommandResponse, phrases []string) {
 	t.Helper()
 	if resp.Persona == nil {
 		t.Fatalf("%s resolved with no persona — the role slot is not wired in the preset YAML", name)
@@ -672,8 +697,8 @@ func assertGuidingOrchestrator(t *testing.T, name string, resp agent.ResolveComm
 	if strings.TrimSpace(resp.Description) == "" {
 		t.Fatalf("%s carries no prompts/list description (the bound playbook skill's frontmatter)", name)
 	}
-	desc, ok := agent.DescribeCommand(name)
-	if !ok || desc.Tier != agent.CommandTierOrchestrator {
+	desc, ok := operation.DescribeCommand(name)
+	if !ok || desc.Tier != operation.CommandTierOrchestrator {
 		t.Fatalf("%s must decode as the orchestrator tier, got %+v ok=%v", name, desc, ok)
 	}
 	lower := strings.ToLower(resp.Markdown)
@@ -722,7 +747,7 @@ func TestCW4OktStartIsOktShortcut(t *testing.T) {
 	okt := resolveForSmoke(t, "okt")
 	start := resolveForSmoke(t, "okt-start")
 
-	playbookBody := func(resp agent.ResolveCommandResponse) string {
+	playbookBody := func(resp operation.ResolveCommandResponse) string {
 		for _, sk := range resp.Skills {
 			if sk.Slug == "okt-start-playbook" {
 				return strings.TrimSpace(sk.Body)
@@ -850,7 +875,7 @@ func TestCW4OktPauseHandoffNote(t *testing.T) {
 // prompt must contain every pinned load-bearing phrase (case-insensitive).
 // Mirrors assertGuidingOrchestrator but pins the system tier instead of the
 // orchestrator tier.
-func assertSystemCommand(t *testing.T, name string, resp agent.ResolveCommandResponse, phrases []string) {
+func assertSystemCommand(t *testing.T, name string, resp operation.ResolveCommandResponse, phrases []string) {
 	t.Helper()
 	if resp.Persona == nil {
 		t.Fatalf("%s resolved with no persona — the role slot is not wired in the preset YAML", name)
@@ -866,8 +891,8 @@ func assertSystemCommand(t *testing.T, name string, resp agent.ResolveCommandRes
 	if strings.TrimSpace(resp.Description) == "" {
 		t.Fatalf("%s carries no prompts/list description (the bound playbook skill's frontmatter)", name)
 	}
-	desc, ok := agent.DescribeCommand(name)
-	if !ok || desc.Tier != agent.CommandTierSystem {
+	desc, ok := operation.DescribeCommand(name)
+	if !ok || desc.Tier != operation.CommandTierSystem {
 		t.Fatalf("%s must decode as the system tier, got %+v ok=%v", name, desc, ok)
 	}
 	lower := strings.ToLower(resp.Markdown)
@@ -913,7 +938,7 @@ func TestCW7OktHelpTierGuide(t *testing.T) {
 // config-orientation template, so the JIT fetch hint must be present.
 func TestCW7OktConfigReachable(t *testing.T) {
 	registered := false
-	for _, n := range agent.CommandNames() {
+	for _, n := range operation.CommandNames() {
 		if n == "okt-config" {
 			registered = true
 			break
@@ -991,7 +1016,7 @@ func TestRestHandoffsPresent(t *testing.T) {
 	defer func() { _ = rt.Close() }()
 
 	for name, hints := range expectedHandoffs {
-		resp, err := rt.Service().ResolveCommand(ctx, agent.ResolveCommandInput{Name: name})
+		resp, err := rt.Service().ResolveCommand(ctx, operation.ResolveCommandInput{Name: name})
 		if err != nil {
 			t.Fatalf("ResolveCommand(%s) error = %v", name, err)
 		}
@@ -1019,7 +1044,7 @@ func TestCommandPlaybooksArePersonaAgnostic(t *testing.T) {
 		"documentation curator",
 		"honoring every law",
 	}
-	for _, name := range agent.CommandNames() {
+	for _, name := range operation.CommandNames() {
 		body := playbookBodyForSmoke(t, name)
 		if body == "" {
 			t.Fatalf("%s has no entity-sourced playbook body", name)
@@ -1046,7 +1071,7 @@ func TestCommandPlaybooksArePersonaAgnostic(t *testing.T) {
 // and the note-family + handoff-persisting commands must drive the scope-aware
 // `comments.*` surface. The prose lives in the bound okt-<slug>-playbook skills
 // (rendered under ## Skills), so the assertion runs against resp.Markdown — the
-// post-strip replacement for the old agent.CommandActionFallback body check.
+// post-strip replacement for the old operation.CommandActionFallback body check.
 func TestNoteCommandsTargetScopedComments(t *testing.T) {
 	ctx := context.Background()
 	tmp := t.TempDir()
@@ -1061,14 +1086,14 @@ func TestNoteCommandsTargetScopedComments(t *testing.T) {
 	defer func() { _ = rt.Close() }()
 
 	render := func(name string) string {
-		resp, err := rt.Service().ResolveCommand(ctx, agent.ResolveCommandInput{Name: name})
+		resp, err := rt.Service().ResolveCommand(ctx, operation.ResolveCommandInput{Name: name})
 		if err != nil {
 			t.Fatalf("ResolveCommand(%s) error = %v", name, err)
 		}
 		return resp.Markdown
 	}
 
-	for _, name := range agent.CommandNames() {
+	for _, name := range operation.CommandNames() {
 		if strings.Contains(render(name), "notes.") {
 			t.Errorf("command %q prompt still references the removed notes.* tool", name)
 		}
@@ -1097,13 +1122,13 @@ func TestPromptBudgets(t *testing.T) {
 	}
 	defer func() { _ = rt.Close() }()
 
-	for _, name := range agent.CommandNames() {
+	for _, name := range operation.CommandNames() {
 		t.Run(name, func(t *testing.T) {
 			budget, ok := promptBudgets[name]
 			if !ok {
 				t.Fatalf("missing budget for prompt %q — add it to promptBudgets", name)
 			}
-			resp, err := rt.Service().ResolveCommand(ctx, agent.ResolveCommandInput{Name: name})
+			resp, err := rt.Service().ResolveCommand(ctx, operation.ResolveCommandInput{Name: name})
 			if err != nil {
 				t.Fatalf("ResolveCommand(%s) error = %v", name, err)
 			}

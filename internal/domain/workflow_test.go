@@ -300,10 +300,10 @@ func TestInFlightBucketIDs(t *testing.T) {
 	bucket := func(id int64, pos int) Bucket { return Bucket{ID: id, Position: pos} }
 
 	tests := []struct {
-		name     string
-		buckets  []Bucket
-		wantIDs  []int64
-		wantOK   bool
+		name    string
+		buckets []Bucket
+		wantIDs []int64
+		wantOK  bool
 	}{
 		{
 			name:    "zero-value workflow is unknown",
@@ -344,23 +344,28 @@ func TestInFlightBucketIDs(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			ids, ok := Workflow{Buckets: tc.buckets}.InFlightBucketIDs()
-			if ok != tc.wantOK {
-				t.Fatalf("ok = %v, want %v", ok, tc.wantOK)
-			}
-			if len(ids) != len(tc.wantIDs) {
-				t.Fatalf("ids = %v, want %v", ids, tc.wantIDs)
-			}
-			for i := range ids {
-				if ids[i] != tc.wantIDs[i] {
-					t.Fatalf("ids = %v, want %v", ids, tc.wantIDs)
-				}
-			}
-			// The zero-value case must return a nil slice (not empty) so the
-			// caller's nil-check distinguishes unknown from known-empty.
-			if !tc.wantOK && ids != nil {
-				t.Fatalf("unknown workflow must return nil ids, got %v", ids)
-			}
+			assertInFlightBucketIDs(t, tc.buckets, tc.wantIDs, tc.wantOK)
 		})
+	}
+}
+
+func assertInFlightBucketIDs(t *testing.T, buckets []Bucket, wantIDs []int64, wantOK bool) {
+	t.Helper()
+	ids, ok := Workflow{Buckets: buckets}.InFlightBucketIDs()
+	if ok != wantOK {
+		t.Fatalf("ok = %v, want %v", ok, wantOK)
+	}
+	if len(ids) != len(wantIDs) {
+		t.Fatalf("ids = %v, want %v", ids, wantIDs)
+	}
+	for i := range ids {
+		if ids[i] != wantIDs[i] {
+			t.Fatalf("ids = %v, want %v", ids, wantIDs)
+		}
+	}
+	// The zero-value case must return a nil slice (not empty) so the
+	// caller's nil-check distinguishes unknown from known-empty.
+	if !wantOK && ids != nil {
+		t.Fatalf("unknown workflow must return nil ids, got %v", ids)
 	}
 }

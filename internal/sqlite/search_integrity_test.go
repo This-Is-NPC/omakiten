@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"omakiten/internal/domain"
+	"omakiten/internal/testutil"
 )
 
 func TestCheckSearchIndexHealthy(t *testing.T) {
@@ -243,108 +244,110 @@ func TestCheckSearchIndexReportsNULLMetadataAndReindexRepairs(t *testing.T) {
 
 func TestCheckSearchIndexReportsLogicalDrift(t *testing.T) {
 	t.Parallel()
-
-	tests := map[string]struct {
-		corrupt func(*testing.T, context.Context, *storeFixture, int64, int64)
-		assert  func(*testing.T, domain.SearchIndexIntegrityReport, int64)
-	}{
-		"orphaned": {
-			corrupt: func(t *testing.T, ctx context.Context, store *storeFixture, projectID, taskID int64) {
-				execIntegritySQL(t, ctx, store, `INSERT INTO search_index(content, entity_type, entity_id, project_id) VALUES ('orphan', 'task', ?, ?)`, taskID+1000, projectID)
-			},
-			assert: func(t *testing.T, report domain.SearchIndexIntegrityReport, _ int64) {
-				if got := searchIntegrityType(report, domain.SearchEntityTask).Orphaned.Count; got != 1 {
-					t.Fatalf("orphaned count = %d, want 1", got)
-				}
-			},
-		},
-		"unsupported retired note": {
-			corrupt: func(t *testing.T, ctx context.Context, store *storeFixture, projectID, taskID int64) {
-				execIntegritySQL(t, ctx, store, `INSERT INTO search_index(content, entity_type, entity_id, project_id) VALUES ('retired', 'secret_type_marker', ?, ?)`, taskID, projectID)
-			},
-			assert: func(t *testing.T, report domain.SearchIndexIntegrityReport, _ int64) {
-				var found bool
-				for _, typeReport := range report.Types {
-					if typeReport.EntityType == searchIndexUnsupportedType && typeReport.Unsupported.Count == 1 {
-						found = true
-					}
-				}
-				if !found || !report.RequiresBackupBeforeRepair() {
-					t.Fatalf("unsupported row not safely classified: %+v", report.Types)
-				}
-				encoded, err := json.Marshal(report)
-				if err != nil {
-					t.Fatalf("Marshal report: %v", err)
-				}
-				if strings.Contains(string(encoded), "secret_type_marker") {
-					t.Fatalf("report disclosed unsupported entity type: %s", encoded)
-				}
-			},
-		},
-		"duplicate": {
-			corrupt: func(t *testing.T, ctx context.Context, store *storeFixture, projectID, taskID int64) {
-				execIntegritySQL(t, ctx, store, `INSERT INTO search_index(content, entity_type, entity_id, project_id) SELECT content, entity_type, entity_id, project_id FROM search_index WHERE entity_type = 'task' AND entity_id = ?`, taskID)
-			},
-			assert: func(t *testing.T, report domain.SearchIndexIntegrityReport, _ int64) {
-				duplicates := searchIntegrityType(report, domain.SearchEntityTask).Duplicates
-				if duplicates.Count != 1 || duplicates.Details[0].IndexCount != 2 {
-					t.Fatalf("duplicates = %+v, want one key with two rows", duplicates)
-				}
-			},
-		},
-		"content mismatch": {
-			corrupt: func(t *testing.T, ctx context.Context, store *storeFixture, _, taskID int64) {
-				execIntegritySQL(t, ctx, store, `UPDATE search_index SET content = 'wrong content' WHERE entity_type = 'task' AND entity_id = ?`, taskID)
-			},
-			assert: func(t *testing.T, report domain.SearchIndexIntegrityReport, _ int64) {
-				if got := searchIntegrityType(report, domain.SearchEntityTask).ContentMismatched.Count; got != 1 {
-					t.Fatalf("content mismatch count = %d, want 1", got)
-				}
-			},
-		},
-		"null content mismatch": {
-			corrupt: func(t *testing.T, ctx context.Context, store *storeFixture, _, taskID int64) {
-				execIntegritySQL(t, ctx, store, `UPDATE search_index SET content = NULL WHERE entity_type = 'task' AND entity_id = ?`, taskID)
-			},
-			assert: func(t *testing.T, report domain.SearchIndexIntegrityReport, _ int64) {
-				if got := searchIntegrityType(report, domain.SearchEntityTask).ContentMismatched.Count; got != 1 {
-					t.Fatalf("NULL content mismatch count = %d, want 1", got)
-				}
-			},
-		},
-		"project mismatch": {
-			corrupt: func(t *testing.T, ctx context.Context, store *storeFixture, _, taskID int64) {
-				other := mustUpsertProject(t, store, "Other", fmt.Sprintf("other-%d", taskID), fmt.Sprintf("/work/other-%d", taskID))
-				execIntegritySQL(t, ctx, store, `UPDATE search_index SET project_id = ? WHERE entity_type = 'task' AND entity_id = ?`, other.ID, taskID)
-			},
-			assert: func(t *testing.T, report domain.SearchIndexIntegrityReport, _ int64) {
-				if got := searchIntegrityType(report, domain.SearchEntityTask).ProjectMismatched.Count; got != 1 {
-					t.Fatalf("project mismatch count = %d, want 1", got)
-				}
-			},
-		},
-	}
-
-	for name, test := range tests {
+	for name, test := range searchLogicalDriftCases() {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
-			ctx := context.Background()
-			store := openTestStore(t)
-			project := mustUpsertProject(t, store, "P", "p", "/work/p")
-			task, err := store.CreateTask(ctx, project.ID, "canonical marker", "body", domain.Priority(2), "backlog", nil, store.snap())
-			if err != nil {
-				t.Fatalf("CreateTask: %v", err)
-			}
-			test.corrupt(t, ctx, store, project.ID, task.ID)
-			report, err := store.CheckSearchIndex(ctx)
-			if err != nil {
-				t.Fatalf("CheckSearchIndex: %v", err)
-			}
-			if report.Healthy {
-				t.Fatal("report.Healthy = true, want false")
-			}
-			test.assert(t, report, task.ID)
+			runSearchLogicalDriftCase(t, test)
 		})
+	}
+}
+
+type searchLogicalDriftCase struct {
+	kind string
+}
+
+func searchLogicalDriftCases() map[string]searchLogicalDriftCase {
+	return map[string]searchLogicalDriftCase{
+		"orphaned":                 {kind: "orphan"},
+		"unsupported retired note": {kind: "unsupported"},
+		"duplicate":                {kind: "duplicate"},
+		"content mismatch":         {kind: "content"},
+		"null content mismatch":    {kind: "null-content"},
+		"project mismatch":         {kind: "project"},
+	}
+}
+
+func runSearchLogicalDriftCase(t *testing.T, test searchLogicalDriftCase) {
+	t.Helper()
+	ctx := context.Background()
+	store := openTestStore(t)
+	project := mustUpsertProject(t, store, "P", "p", "/work/p")
+	task, err := store.CreateTask(ctx, project.ID, "canonical marker", "body", domain.Priority(2), "backlog", nil, store.snap())
+	if err != nil {
+		t.Fatalf("CreateTask: %v", err)
+	}
+	corruptSearchLogicalDriftCase(t, ctx, store, project.ID, task.ID, test.kind)
+	report, err := store.CheckSearchIndex(ctx)
+	if err != nil {
+		t.Fatalf("CheckSearchIndex: %v", err)
+	}
+	if report.Healthy {
+		t.Fatal("report.Healthy = true, want false")
+	}
+	assertSearchLogicalDriftCase(t, report, test.kind)
+}
+
+func corruptSearchLogicalDriftCase(t *testing.T, ctx context.Context, store *storeFixture, projectID, taskID int64, kind string) {
+	t.Helper()
+	switch kind {
+	case "orphan":
+		execIntegritySQL(t, ctx, store, `INSERT INTO search_index(content, entity_type, entity_id, project_id) VALUES ('orphan', 'task', ?, ?)`, taskID+1000, projectID)
+	case "unsupported":
+		execIntegritySQL(t, ctx, store, `INSERT INTO search_index(content, entity_type, entity_id, project_id) VALUES ('retired', 'secret_type_marker', ?, ?)`, taskID, projectID)
+	case "duplicate":
+		execIntegritySQL(t, ctx, store, `INSERT INTO search_index(content, entity_type, entity_id, project_id) SELECT content, entity_type, entity_id, project_id FROM search_index WHERE entity_type = 'task' AND entity_id = ?`, taskID)
+	case "content":
+		execIntegritySQL(t, ctx, store, `UPDATE search_index SET content = 'wrong content' WHERE entity_type = 'task' AND entity_id = ?`, taskID)
+	case "null-content":
+		execIntegritySQL(t, ctx, store, `UPDATE search_index SET content = NULL WHERE entity_type = 'task' AND entity_id = ?`, taskID)
+	case "project":
+		other := mustUpsertProject(t, store, "Other", fmt.Sprintf("other-%d", taskID), fmt.Sprintf("/work/other-%d", taskID))
+		execIntegritySQL(t, ctx, store, `UPDATE search_index SET project_id = ? WHERE entity_type = 'task' AND entity_id = ?`, other.ID, taskID)
+	}
+}
+
+func assertSearchLogicalDriftCase(t *testing.T, report domain.SearchIndexIntegrityReport, kind string) {
+	t.Helper()
+	tasks := searchIntegrityType(report, domain.SearchEntityTask)
+	switch kind {
+	case "orphan":
+		if tasks.Orphaned.Count != 1 {
+			t.Fatalf("orphaned count = %d, want 1", tasks.Orphaned.Count)
+		}
+	case "unsupported":
+		assertUnsupportedSearchDrift(t, report)
+	case "duplicate":
+		if tasks.Duplicates.Count != 1 || tasks.Duplicates.Details[0].IndexCount != 2 {
+			t.Fatalf("duplicates = %+v, want one key with two rows", tasks.Duplicates)
+		}
+	case "content", "null-content":
+		if tasks.ContentMismatched.Count != 1 {
+			t.Fatalf("content mismatch count = %d, want 1", tasks.ContentMismatched.Count)
+		}
+	case "project":
+		if tasks.ProjectMismatched.Count != 1 {
+			t.Fatalf("project mismatch count = %d, want 1", tasks.ProjectMismatched.Count)
+		}
+	}
+}
+
+func assertUnsupportedSearchDrift(t *testing.T, report domain.SearchIndexIntegrityReport) {
+	t.Helper()
+	var found bool
+	for _, typeReport := range report.Types {
+		if typeReport.EntityType == searchIndexUnsupportedType && typeReport.Unsupported.Count == 1 {
+			found = true
+		}
+	}
+	if !found || !report.RequiresBackupBeforeRepair() {
+		t.Fatalf("unsupported row not safely classified: %+v", report.Types)
+	}
+	encoded, err := json.Marshal(report)
+	if err != nil {
+		t.Fatalf("Marshal report: %v", err)
+	}
+	if strings.Contains(string(encoded), "secret_type_marker") {
+		t.Fatalf("report disclosed unsupported entity type: %s", encoded)
 	}
 }
 
@@ -410,13 +413,7 @@ func TestCheckSearchIndexMixedIssueClassesGolden(t *testing.T) {
 	if err != nil {
 		t.Fatalf("MarshalIndent: %v", err)
 	}
-	want, err := os.ReadFile(filepath.Join("testdata", "search_integrity_mixed.golden"))
-	if err != nil {
-		t.Fatalf("ReadFile golden: %v", err)
-	}
-	if strings.TrimSpace(string(encoded)) != strings.TrimSpace(string(want)) {
-		t.Fatalf("mixed integrity report changed\nwant:\n%s\ngot:\n%s", want, encoded)
-	}
+	testutil.GoldenNewlineTerminated(t, "search_integrity_mixed.golden", string(encoded))
 }
 
 func TestCheckSearchIndexDetectsEqualTotalOffsettingDrift(t *testing.T) {
@@ -656,6 +653,18 @@ func TestOpenSearchMaintenanceRejectsSymlinkedParentBeforeOpen(t *testing.T) {
 	}
 }
 
+func TestOpenSearchMaintenanceDoesNotCreateDatabase(t *testing.T) {
+	t.Parallel()
+
+	path := filepath.Join(t.TempDir(), "missing.db")
+	if _, err := OpenSearchMaintenance(context.Background(), path); err == nil {
+		t.Fatal("OpenSearchMaintenance created or accepted a missing database")
+	}
+	if _, err := os.Stat(path); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("missing database stat error = %v, want not-exist", err)
+	}
+}
+
 func TestMaintenanceSnapshotAndReindexRejectPathReplacementAfterOpen(t *testing.T) {
 	ctx := context.Background()
 	dir := t.TempDir()
@@ -700,7 +709,12 @@ func TestMaintenanceSnapshotAndReindexRejectPathReplacementAfterOpen(t *testing.
 		t.Fatal("maintenance reindex accepted replaced pathname")
 	}
 
-	originalDB, err := sql.Open("sqlite", originalMoved)
+	assertMaintenanceReplacementPreserved(t, ctx, originalMoved, path)
+}
+
+func assertMaintenanceReplacementPreserved(t *testing.T, ctx context.Context, originalPath, replacementPath string) {
+	t.Helper()
+	originalDB, err := sql.Open("sqlite", originalPath)
 	if err != nil {
 		t.Fatalf("open moved original: %v", err)
 	}
@@ -709,7 +723,7 @@ func TestMaintenanceSnapshotAndReindexRejectPathReplacementAfterOpen(t *testing.
 	if err := originalDB.QueryRowContext(ctx, `SELECT COUNT(*) FROM search_index WHERE content = 'original corrupt evidence'`).Scan(&originalCorruption); err != nil || originalCorruption != 1 {
 		t.Fatalf("original corruption after refusal = %d, %v", originalCorruption, err)
 	}
-	replacementDB, err := sql.Open("sqlite", path)
+	replacementDB, err := sql.Open("sqlite", replacementPath)
 	if err != nil {
 		t.Fatalf("open replacement: %v", err)
 	}
@@ -786,24 +800,7 @@ func TestReindexSearchRepairsAllLogicalAndTriggerDriftAndIsIdempotent(t *testing
 	if err != nil {
 		t.Fatalf("CreateTask: %v", err)
 	}
-	if _, err := store.AddComment(ctx, project.ID, task.ID, "repair marker comment", "human", nil); err != nil {
-		t.Fatalf("AddComment: %v", err)
-	}
-	errorRecord, err := store.RecordError(ctx, project.ID, "repair marker error", "context", nil)
-	if err != nil {
-		t.Fatalf("RecordError: %v", err)
-	}
-	if _, err := store.AddSolution(ctx, errorRecord.ID, "repair marker solution", "steps", nil); err != nil {
-		t.Fatalf("AddSolution: %v", err)
-	}
-	if _, err := store.CreatePlan(ctx, project.ID, "repair-plan", "repair marker plan", "goal"); err != nil {
-		t.Fatalf("CreatePlan: %v", err)
-	}
-	execIntegritySQL(t, ctx, store, `DELETE FROM search_index WHERE entity_type = 'task' AND entity_id = ?`, task.ID)
-	execIntegritySQL(t, ctx, store, `INSERT INTO search_index(content, entity_type, entity_id, project_id) VALUES ('orphan', 'task', ?, ?)`, task.ID+1000, project.ID)
-	execIntegritySQL(t, ctx, store, `INSERT INTO search_index(content, entity_type, entity_id, project_id) VALUES ('retired', 'note', ?, ?)`, task.ID, project.ID)
-	execIntegritySQL(t, ctx, store, `DROP TRIGGER search_index_tasks_ai`)
-	execIntegritySQL(t, ctx, store, `CREATE TRIGGER search_index_unexpected AFTER INSERT ON tags BEGIN SELECT 1; END`)
+	seedSearchRepairDrift(t, ctx, store, project.ID, task.ID)
 
 	result, err := store.reindexSearchWithPolicy(ctx, checkSearchIndex, true)
 	if err != nil {
@@ -819,6 +816,41 @@ func TestReindexSearchRepairsAllLogicalAndTriggerDriftAndIsIdempotent(t *testing
 	if err != nil {
 		t.Fatalf("Search after repair = %+v, %v", hits, err)
 	}
+	assertSearchEntityTypes(t, hits)
+
+	second, err := store.reindexSearchWithPolicy(ctx, checkSearchIndex, true)
+	if err != nil {
+		t.Fatalf("second ReindexSearch: %v", err)
+	}
+	if !second.Before.Healthy || !second.After.Healthy || second.BackupRecommended {
+		t.Fatalf("idempotent result = %+v", second)
+	}
+}
+
+func seedSearchRepairDrift(t *testing.T, ctx context.Context, store *storeFixture, projectID, taskID int64) {
+	t.Helper()
+	if _, err := store.AddComment(ctx, projectID, taskID, "repair marker comment", "human", nil); err != nil {
+		t.Fatalf("AddComment: %v", err)
+	}
+	errorRecord, err := store.RecordError(ctx, projectID, "repair marker error", "context", nil)
+	if err != nil {
+		t.Fatalf("RecordError: %v", err)
+	}
+	if _, err := store.AddSolution(ctx, errorRecord.ID, "repair marker solution", "steps", nil); err != nil {
+		t.Fatalf("AddSolution: %v", err)
+	}
+	if _, err := store.CreatePlan(ctx, projectID, "repair-plan", "repair marker plan", "goal"); err != nil {
+		t.Fatalf("CreatePlan: %v", err)
+	}
+	execIntegritySQL(t, ctx, store, `DELETE FROM search_index WHERE entity_type = 'task' AND entity_id = ?`, taskID)
+	execIntegritySQL(t, ctx, store, `INSERT INTO search_index(content, entity_type, entity_id, project_id) VALUES ('orphan', 'task', ?, ?)`, taskID+1000, projectID)
+	execIntegritySQL(t, ctx, store, `INSERT INTO search_index(content, entity_type, entity_id, project_id) VALUES ('retired', 'note', ?, ?)`, taskID, projectID)
+	execIntegritySQL(t, ctx, store, `DROP TRIGGER search_index_tasks_ai`)
+	execIntegritySQL(t, ctx, store, `CREATE TRIGGER search_index_unexpected AFTER INSERT ON tags BEGIN SELECT 1; END`)
+}
+
+func assertSearchEntityTypes(t *testing.T, hits []domain.SearchHit) {
+	t.Helper()
 	seen := map[domain.SearchEntityType]bool{}
 	for _, hit := range hits {
 		seen[hit.EntityType] = true
@@ -827,14 +859,6 @@ func TestReindexSearchRepairsAllLogicalAndTriggerDriftAndIsIdempotent(t *testing
 		if !seen[entityType] {
 			t.Fatalf("Search after repair missing physical type %s: %+v", entityType, hits)
 		}
-	}
-
-	second, err := store.reindexSearchWithPolicy(ctx, checkSearchIndex, true)
-	if err != nil {
-		t.Fatalf("second ReindexSearch: %v", err)
-	}
-	if !second.Before.Healthy || !second.After.Healthy || second.BackupRecommended {
-		t.Fatalf("idempotent result = %+v", second)
 	}
 }
 
@@ -1088,29 +1112,30 @@ func TestReindexSearchPreservesSearchSemantics(t *testing.T) {
 		t.Fatalf("CreateTask project B: %v", err)
 	}
 
-	assertSearch := func(stage string) {
-		t.Helper()
-		hits, err := store.Search(ctx, "needle", projectA.ID, []domain.SearchEntityType{domain.SearchEntityTask})
-		if err != nil {
-			t.Fatalf("Search %s: %v", stage, err)
-		}
-		if len(hits) != 2 || hits[0].ID != best.ID {
-			t.Fatalf("Search %s ranking/filter = %+v", stage, hits)
-		}
-		if !strings.Contains(hits[0].Snippet, "<mark>needle</mark>") {
-			t.Fatalf("Search %s snippet = %q", stage, hits[0].Snippet)
-		}
-		for _, hit := range hits {
-			if hit.ProjectID != projectA.ID || hit.ID == archived.ID {
-				t.Fatalf("Search %s leaked project/archive row: %+v", stage, hit)
-			}
-		}
-	}
-	assertSearch("before")
+	assertSearchSemantics(t, ctx, store, projectA.ID, best.ID, archived.ID, "before")
 	if _, err := store.reindexSearchWithPolicy(ctx, checkSearchIndex, true); err != nil {
 		t.Fatalf("ReindexSearch: %v", err)
 	}
-	assertSearch("after")
+	assertSearchSemantics(t, ctx, store, projectA.ID, best.ID, archived.ID, "after")
+}
+
+func assertSearchSemantics(t *testing.T, ctx context.Context, store *storeFixture, projectID, bestID, archivedID int64, stage string) {
+	t.Helper()
+	hits, err := store.Search(ctx, "needle", projectID, []domain.SearchEntityType{domain.SearchEntityTask})
+	if err != nil {
+		t.Fatalf("Search %s: %v", stage, err)
+	}
+	if len(hits) != 2 || hits[0].ID != bestID {
+		t.Fatalf("Search %s ranking/filter = %+v", stage, hits)
+	}
+	if !strings.Contains(hits[0].Snippet, "<mark>needle</mark>") {
+		t.Fatalf("Search %s snippet = %q", stage, hits[0].Snippet)
+	}
+	for _, hit := range hits {
+		if hit.ProjectID != projectID || hit.ID == archivedID {
+			t.Fatalf("Search %s leaked project/archive row: %+v", stage, hit)
+		}
+	}
 }
 
 func TestReindexSearchCanceledContextPreservesIndex(t *testing.T) {
@@ -1173,113 +1198,103 @@ func TestReindexSearchConfirmedRechecksDestructiveRowsInTransaction(t *testing.T
 }
 
 func TestReindexSearchConfirmedProtectsAllDiscardedIndexEvidence(t *testing.T) {
-	tests := []struct {
-		name      string
-		corrupt   func(*testing.T, context.Context, *storeFixture, int64, int64)
-		preserved func(*testing.T, context.Context, *storeFixture, int64, int64)
-	}{
-		{
-			name: "orphaned row",
-			corrupt: func(t *testing.T, ctx context.Context, store *storeFixture, projectID, taskID int64) {
-				execIntegritySQL(t, ctx, store, `INSERT INTO search_index(content, entity_type, entity_id, project_id) VALUES ('unique orphan evidence', 'task', ?, ?)`, taskID+1000, projectID)
-			},
-			preserved: func(t *testing.T, ctx context.Context, store *storeFixture, _, taskID int64) {
-				var count int
-				if err := store.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM search_index WHERE entity_type = 'task' AND entity_id = ? AND content = 'unique orphan evidence'`, taskID+1000).Scan(&count); err != nil || count != 1 {
-					t.Fatalf("orphan evidence after refusal = %d, %v", count, err)
-				}
-			},
-		},
-		{
-			name: "unsupported row",
-			corrupt: func(t *testing.T, ctx context.Context, store *storeFixture, projectID, taskID int64) {
-				execIntegritySQL(t, ctx, store, `INSERT INTO search_index(content, entity_type, entity_id, project_id) VALUES ('unique unsupported evidence', 'retired_private_type', ?, ?)`, taskID, projectID)
-			},
-			preserved: func(t *testing.T, ctx context.Context, store *storeFixture, _, taskID int64) {
-				var count int
-				if err := store.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM search_index WHERE entity_type = 'retired_private_type' AND entity_id = ? AND content = 'unique unsupported evidence'`, taskID).Scan(&count); err != nil || count != 1 {
-					t.Fatalf("unsupported evidence after refusal = %d, %v", count, err)
-				}
-			},
-		},
-		{
-			name: "malformed row",
-			corrupt: func(t *testing.T, ctx context.Context, store *storeFixture, projectID, taskID int64) {
-				execIntegritySQL(t, ctx, store, `INSERT INTO search_index(content, entity_type, entity_id, project_id) VALUES ('unique malformed evidence', 'task', CAST(? AS TEXT), ?)`, taskID+1000, projectID)
-			},
-			preserved: func(t *testing.T, ctx context.Context, store *storeFixture, _, taskID int64) {
-				var count int
-				if err := store.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM search_index WHERE typeof(entity_id) = 'text' AND entity_id = CAST(? AS TEXT) AND content = 'unique malformed evidence'`, taskID+1000).Scan(&count); err != nil || count != 1 {
-					t.Fatalf("malformed evidence after refusal = %d, %v", count, err)
-				}
-			},
-		},
-		{
-			name: "duplicate unique text",
-			corrupt: func(t *testing.T, ctx context.Context, store *storeFixture, projectID, taskID int64) {
-				execIntegritySQL(t, ctx, store, `INSERT INTO search_index(content, entity_type, entity_id, project_id) VALUES ('unique duplicate evidence', 'task', ?, ?)`, taskID, projectID)
-			},
-			preserved: func(t *testing.T, ctx context.Context, store *storeFixture, _, taskID int64) {
-				var count int
-				if err := store.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM search_index WHERE entity_type = 'task' AND entity_id = ? AND content = 'unique duplicate evidence'`, taskID).Scan(&count); err != nil || count != 1 {
-					t.Fatalf("unique duplicate evidence after refusal = %d, %v", count, err)
-				}
-			},
-		},
-		{
-			name: "content mismatch",
-			corrupt: func(t *testing.T, ctx context.Context, store *storeFixture, _, taskID int64) {
-				execIntegritySQL(t, ctx, store, `UPDATE search_index SET content = 'unique mismatched evidence' WHERE entity_type = 'task' AND entity_id = ?`, taskID)
-			},
-			preserved: func(t *testing.T, ctx context.Context, store *storeFixture, _, taskID int64) {
-				var content string
-				if err := store.db.QueryRowContext(ctx, `SELECT content FROM search_index WHERE entity_type = 'task' AND entity_id = ?`, taskID).Scan(&content); err != nil || content != "unique mismatched evidence" {
-					t.Fatalf("mismatched evidence after refusal = %q, %v", content, err)
-				}
-			},
-		},
-		{
-			name: "project mismatch",
-			corrupt: func(t *testing.T, ctx context.Context, store *storeFixture, _, taskID int64) {
-				other := mustUpsertProject(t, store, "Other", "other", "/work/other")
-				execIntegritySQL(t, ctx, store, `UPDATE search_index SET project_id = ? WHERE entity_type = 'task' AND entity_id = ?`, other.ID, taskID)
-			},
-			preserved: func(t *testing.T, ctx context.Context, store *storeFixture, projectID, taskID int64) {
-				var indexedProjectID int64
-				if err := store.db.QueryRowContext(ctx, `SELECT project_id FROM search_index WHERE entity_type = 'task' AND entity_id = ?`, taskID).Scan(&indexedProjectID); err != nil || indexedProjectID == projectID {
-					t.Fatalf("mismatched project evidence after refusal = %d, %v", indexedProjectID, err)
-				}
-			},
-		},
-	}
-
-	for _, test := range tests {
+	for _, test := range discardedSearchEvidenceCases() {
 		t.Run(test.name, func(t *testing.T) {
-			ctx := context.Background()
-			store := openTestStore(t)
-			project := mustUpsertProject(t, store, "P", "p", "/work/p")
-			task, err := store.CreateTask(ctx, project.ID, "canonical evidence", "body", domain.Priority(2), "backlog", nil, store.snap())
-			if err != nil {
-				t.Fatalf("CreateTask: %v", err)
-			}
-			test.corrupt(t, ctx, store, project.ID, task.ID)
-			before, err := store.CheckSearchIndex(ctx)
-			if err != nil || !before.RequiresBackupBeforeRepair() {
-				t.Fatalf("destructive preflight = requires:%v error:%v report:%+v", before.RequiresBackupBeforeRepair(), err, before)
-			}
-
-			result, err := store.ReindexSearchConfirmed(ctx, false)
-			var coded *domain.CodedError
-			if !errors.As(err, &coded) || coded.Code != domain.ErrValidation || result.BackupRecommended != true {
-				t.Fatalf("unconfirmed repair = result:%+v error:%v", result, err)
-			}
-			test.preserved(t, ctx, store, project.ID, task.ID)
-
-			confirmed, err := store.ReindexSearchConfirmed(ctx, true)
-			if err != nil || !confirmed.After.Healthy || !confirmed.BackupRecommended {
-				t.Fatalf("confirmed repair = result:%+v error:%v", confirmed, err)
-			}
+			runDiscardedSearchEvidenceCase(t, test)
 		})
+	}
+}
+
+func runDiscardedSearchEvidenceCase(t *testing.T, test discardedSearchEvidenceCase) {
+	t.Helper()
+	ctx := context.Background()
+	store := openTestStore(t)
+	project := mustUpsertProject(t, store, "P", "p", "/work/p")
+	task, err := store.CreateTask(ctx, project.ID, "canonical evidence", "body", domain.Priority(2), "backlog", nil, store.snap())
+	if err != nil {
+		t.Fatalf("CreateTask: %v", err)
+	}
+	corruptDiscardedSearchEvidence(t, ctx, store, project.ID, task.ID, test)
+	before, err := store.CheckSearchIndex(ctx)
+	if err != nil || !before.RequiresBackupBeforeRepair() {
+		t.Fatalf("destructive preflight = requires:%v error:%v report:%+v", before.RequiresBackupBeforeRepair(), err, before)
+	}
+	result, err := store.ReindexSearchConfirmed(ctx, false)
+	var coded *domain.CodedError
+	if !errors.As(err, &coded) || coded.Code != domain.ErrValidation || result.BackupRecommended != true {
+		t.Fatalf("unconfirmed repair = result:%+v error:%v", result, err)
+	}
+	assertDiscardedSearchEvidence(t, ctx, store, project.ID, task.ID, test.kind)
+	confirmed, err := store.ReindexSearchConfirmed(ctx, true)
+	if err != nil || !confirmed.After.Healthy || !confirmed.BackupRecommended {
+		t.Fatalf("confirmed repair = result:%+v error:%v", confirmed, err)
+	}
+}
+
+type discardedSearchEvidenceCase struct {
+	name string
+	kind string
+}
+
+func discardedSearchEvidenceCases() []discardedSearchEvidenceCase {
+	return []discardedSearchEvidenceCase{
+		{name: "orphaned row", kind: "orphan"},
+		{name: "unsupported row", kind: "unsupported"},
+		{name: "malformed row", kind: "malformed"},
+		{name: "duplicate unique text", kind: "duplicate"},
+		{name: "content mismatch", kind: "content"},
+		{name: "project mismatch", kind: "project"},
+	}
+}
+
+func corruptDiscardedSearchEvidence(t *testing.T, ctx context.Context, store *storeFixture, projectID, taskID int64, test discardedSearchEvidenceCase) {
+	t.Helper()
+	switch test.kind {
+	case "orphan":
+		execIntegritySQL(t, ctx, store, `INSERT INTO search_index(content, entity_type, entity_id, project_id) VALUES ('unique orphan evidence', 'task', ?, ?)`, taskID+1000, projectID)
+	case "unsupported":
+		execIntegritySQL(t, ctx, store, `INSERT INTO search_index(content, entity_type, entity_id, project_id) VALUES ('unique unsupported evidence', 'retired_private_type', ?, ?)`, taskID, projectID)
+	case "malformed":
+		execIntegritySQL(t, ctx, store, `INSERT INTO search_index(content, entity_type, entity_id, project_id) VALUES ('unique malformed evidence', 'task', CAST(? AS TEXT), ?)`, taskID+1000, projectID)
+	case "duplicate":
+		execIntegritySQL(t, ctx, store, `INSERT INTO search_index(content, entity_type, entity_id, project_id) VALUES ('unique duplicate evidence', 'task', ?, ?)`, taskID, projectID)
+	case "content":
+		execIntegritySQL(t, ctx, store, `UPDATE search_index SET content = 'unique mismatched evidence' WHERE entity_type = 'task' AND entity_id = ?`, taskID)
+	case "project":
+		other := mustUpsertProject(t, store, "Other", "other", "/work/other")
+		execIntegritySQL(t, ctx, store, `UPDATE search_index SET project_id = ? WHERE entity_type = 'task' AND entity_id = ?`, other.ID, taskID)
+	}
+}
+
+func assertDiscardedSearchEvidence(t *testing.T, ctx context.Context, store *storeFixture, projectID, taskID int64, kind string) {
+	t.Helper()
+	switch kind {
+	case "orphan":
+		assertDiscardedEvidenceCount(t, ctx, store, `SELECT COUNT(*) FROM search_index WHERE entity_type = 'task' AND entity_id = ? AND content = 'unique orphan evidence'`, "orphan evidence", taskID+1000)
+	case "unsupported":
+		assertDiscardedEvidenceCount(t, ctx, store, `SELECT COUNT(*) FROM search_index WHERE entity_type = 'retired_private_type' AND entity_id = ? AND content = 'unique unsupported evidence'`, "unsupported evidence", taskID)
+	case "malformed":
+		assertDiscardedEvidenceCount(t, ctx, store, `SELECT COUNT(*) FROM search_index WHERE typeof(entity_id) = 'text' AND entity_id = CAST(? AS TEXT) AND content = 'unique malformed evidence'`, "malformed evidence", taskID+1000)
+	case "duplicate":
+		assertDiscardedEvidenceCount(t, ctx, store, `SELECT COUNT(*) FROM search_index WHERE entity_type = 'task' AND entity_id = ? AND content = 'unique duplicate evidence'`, "duplicate evidence", taskID)
+	case "content":
+		var content string
+		if err := store.db.QueryRowContext(ctx, `SELECT content FROM search_index WHERE entity_type = 'task' AND entity_id = ?`, taskID).Scan(&content); err != nil || content != "unique mismatched evidence" {
+			t.Fatalf("mismatched evidence after refusal = %q, %v", content, err)
+		}
+	case "project":
+		var indexedProjectID int64
+		if err := store.db.QueryRowContext(ctx, `SELECT project_id FROM search_index WHERE entity_type = 'task' AND entity_id = ?`, taskID).Scan(&indexedProjectID); err != nil || indexedProjectID == projectID {
+			t.Fatalf("mismatched project evidence after refusal = %d, %v", indexedProjectID, err)
+		}
+	}
+}
+
+func assertDiscardedEvidenceCount(t *testing.T, ctx context.Context, store *storeFixture, query, label string, value int64) {
+	t.Helper()
+	var count int
+	if err := store.db.QueryRowContext(ctx, query, value).Scan(&count); err != nil || count != 1 {
+		t.Fatalf("%s after refusal = %d, %v", label, count, err)
 	}
 }
 
@@ -1346,89 +1361,84 @@ func TestReindexSearchConfirmedAllowsCanonicalInternalRebuild(t *testing.T) {
 }
 
 func TestReindexSearchConfirmedWithBackupRetriesUntilGenerationIsExact(t *testing.T) {
-	tests := []struct {
-		name  string
-		hooks func(*sql.DB) reindexBackupHooks
-	}{
-		{
-			name: "external commit during backup",
-			hooks: func(writer *sql.DB) reindexBackupHooks {
-				return reindexBackupHooks{Generation: exactGenerationHooks{AfterBackup: func(attempt int) {
-					if attempt == 1 {
-						done := make(chan error, 1)
-						go func() {
-							_, err := writer.Exec(`INSERT INTO search_index(content, entity_type, entity_id, project_id) VALUES ('late evidence', 'retired_private_type', 202, 0)`)
-							done <- err
-						}()
-						if err := <-done; err != nil {
-							t.Fatalf("external commit during backup: %v", err)
-						}
-					}
-				}}}
-			},
-		},
-		{
-			name: "external commit between backup and begin",
-			hooks: func(writer *sql.DB) reindexBackupHooks {
-				return reindexBackupHooks{Generation: exactGenerationHooks{BeforeBegin: func(attempt int) {
-					if attempt == 1 {
-						if _, err := writer.Exec(`INSERT INTO search_index(content, entity_type, entity_id, project_id) VALUES ('late evidence', 'retired_private_type', 202, 0)`); err != nil {
-							t.Fatalf("external commit before BEGIN IMMEDIATE: %v", err)
-						}
-					}
-				}}}
-			},
-		},
-	}
-
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			ctx := context.Background()
-			dir := t.TempDir()
-			path := filepath.Join(dir, "maintenance.db")
-			setup := openStoreFixture(t, path)
-			execIntegritySQL(t, ctx, setup, `INSERT INTO search_index(content, entity_type, entity_id, project_id) VALUES ('initial evidence', 'retired_private_type', 101, 0)`)
-			if err := setup.Close(); err != nil {
-				t.Fatalf("close setup: %v", err)
-			}
-			maintenance, err := OpenSearchMaintenance(ctx, path)
-			if err != nil {
-				t.Fatalf("OpenSearchMaintenance: %v", err)
-			}
-			defer func() { _ = maintenance.Close() }()
-			writer, err := sql.Open("sqlite", path)
-			if err != nil {
-				t.Fatalf("open external writer: %v", err)
-			}
-			defer func() { _ = writer.Close() }()
-
-			var attemptedPaths []string
-			createBackup := func(attemptCtx context.Context, write func(string) error) (string, error) {
-				backupPath := filepath.Join(dir, fmt.Sprintf("attempt-%d.db", len(attemptedPaths)+1))
-				attemptedPaths = append(attemptedPaths, backupPath)
-				return backupPath, write(backupPath)
-			}
-			result, backupPath, err := maintenance.reindexSearchConfirmedWithBackup(ctx, createBackup, os.Remove, func() error { return nil }, test.hooks(writer))
-			if err != nil {
-				t.Fatalf("reindexSearchConfirmedWithBackup: %v", err)
-			}
-			if len(attemptedPaths) != 2 || backupPath != attemptedPaths[1] || !result.After.Healthy {
-				t.Fatalf("generation retry = attempts:%v retained:%q result:%+v", attemptedPaths, backupPath, result)
-			}
-			if _, err := os.Stat(attemptedPaths[0]); !errors.Is(err, os.ErrNotExist) {
-				t.Fatalf("stale generation backup survived: %v", err)
-			}
-			backup, err := sql.Open("sqlite", backupPath)
-			if err != nil {
-				t.Fatalf("open retained backup: %v", err)
-			}
-			defer func() { _ = backup.Close() }()
-			var retainedEvidence int
-			if err := backup.QueryRowContext(ctx, `SELECT COUNT(*) FROM search_index WHERE content IN ('initial evidence', 'late evidence')`).Scan(&retainedEvidence); err != nil || retainedEvidence != 2 {
-				t.Fatalf("retained generation evidence = %d, %v; want 2", retainedEvidence, err)
-			}
+	for _, name := range []string{"external commit during backup", "external commit between backup and begin"} {
+		t.Run(name, func(t *testing.T) {
+			runExactGenerationRetryCase(t, name)
 		})
 	}
+}
+
+func runExactGenerationRetryCase(t *testing.T, name string) {
+	t.Helper()
+	ctx := context.Background()
+	dir := t.TempDir()
+	path := filepath.Join(dir, "maintenance.db")
+	setup := openStoreFixture(t, path)
+	execIntegritySQL(t, ctx, setup, `INSERT INTO search_index(content, entity_type, entity_id, project_id) VALUES ('initial evidence', 'retired_private_type', 101, 0)`)
+	if err := setup.Close(); err != nil {
+		t.Fatalf("close setup: %v", err)
+	}
+	maintenance, err := OpenSearchMaintenance(ctx, path)
+	if err != nil {
+		t.Fatalf("OpenSearchMaintenance: %v", err)
+	}
+	defer func() { _ = maintenance.Close() }()
+	writer, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatalf("open external writer: %v", err)
+	}
+	defer func() { _ = writer.Close() }()
+	var attemptedPaths []string
+	createBackup := func(_ context.Context, write func(string) error) (string, error) {
+		backupPath := filepath.Join(dir, fmt.Sprintf("attempt-%d.db", len(attemptedPaths)+1))
+		attemptedPaths = append(attemptedPaths, backupPath)
+		return backupPath, write(backupPath)
+	}
+	result, backupPath, err := maintenance.reindexSearchConfirmedWithBackup(ctx, createBackup, os.Remove, func() error { return nil }, exactGenerationRetryHooks(t, writer, name))
+	if err != nil {
+		t.Fatalf("reindexSearchConfirmedWithBackup: %v", err)
+	}
+	if len(attemptedPaths) != 2 || backupPath != attemptedPaths[1] || !result.After.Healthy {
+		t.Fatalf("generation retry = attempts:%v retained:%q result:%+v", attemptedPaths, backupPath, result)
+	}
+	if _, err := os.Stat(attemptedPaths[0]); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("stale generation backup survived: %v", err)
+	}
+	backup, err := sql.Open("sqlite", backupPath)
+	if err != nil {
+		t.Fatalf("open retained backup: %v", err)
+	}
+	defer func() { _ = backup.Close() }()
+	var retainedEvidence int
+	if err := backup.QueryRowContext(ctx, `SELECT COUNT(*) FROM search_index WHERE content IN ('initial evidence', 'late evidence')`).Scan(&retainedEvidence); err != nil || retainedEvidence != 2 {
+		t.Fatalf("retained generation evidence = %d, %v; want 2", retainedEvidence, err)
+	}
+}
+
+func exactGenerationRetryHooks(t *testing.T, writer *sql.DB, name string) reindexBackupHooks {
+	t.Helper()
+	if name == "external commit during backup" {
+		return reindexBackupHooks{Generation: exactGenerationHooks{AfterBackup: func(attempt int) {
+			if attempt != 1 {
+				return
+			}
+			done := make(chan error, 1)
+			go func() {
+				_, err := writer.Exec(`INSERT INTO search_index(content, entity_type, entity_id, project_id) VALUES ('late evidence', 'retired_private_type', 202, 0)`)
+				done <- err
+			}()
+			if err := <-done; err != nil {
+				t.Fatalf("external commit during backup: %v", err)
+			}
+		}}}
+	}
+	return reindexBackupHooks{Generation: exactGenerationHooks{BeforeBegin: func(attempt int) {
+		if attempt == 1 {
+			if _, err := writer.Exec(`INSERT INTO search_index(content, entity_type, entity_id, project_id) VALUES ('late evidence', 'retired_private_type', 202, 0)`); err != nil {
+				t.Fatalf("external commit before BEGIN IMMEDIATE: %v", err)
+			}
+		}
+	}}}
 }
 
 func TestReindexSearchConfirmedWithBackupRejectsPathReplacementAfterBackup(t *testing.T) {
@@ -1453,16 +1463,7 @@ func TestReindexSearchConfirmedWithBackupRejectsPathReplacementAfterBackup(t *te
 	movedPath := path + ".original"
 	var replacementErr error
 	hooks := reindexBackupHooks{Generation: exactGenerationHooks{AfterBackup: func(int) {
-		if err := os.Rename(path, movedPath); err != nil {
-			replacementErr = err
-			return
-		}
-		replacement, err := Open(ctx, path)
-		if err != nil {
-			replacementErr = err
-			return
-		}
-		replacementErr = replacement.Close()
+		replaceMaintenancePath(ctx, path, movedPath, &replacementErr)
 	}}}
 
 	result, retainedPath, err := maintenance.reindexSearchConfirmedWithBackup(ctx, createBackup, os.Remove, func() error { return nil }, hooks)
@@ -1479,11 +1480,28 @@ func TestReindexSearchConfirmedWithBackupRejectsPathReplacementAfterBackup(t *te
 	if retainedPath != "" {
 		t.Fatalf("removed stale backup returned as retained path: %q", retainedPath)
 	}
+	assertBackupReplacementState(t, ctx, movedPath, path, backupPath)
+}
+
+func replaceMaintenancePath(ctx context.Context, path, movedPath string, replacementErr *error) {
+	if err := os.Rename(path, movedPath); err != nil {
+		*replacementErr = err
+		return
+	}
+	replacement, err := Open(ctx, path)
+	if err != nil {
+		*replacementErr = err
+		return
+	}
+	*replacementErr = replacement.Close()
+}
+
+func assertBackupReplacementState(t *testing.T, ctx context.Context, originalPath, replacementPath, backupPath string) {
+	t.Helper()
 	if _, statErr := os.Stat(backupPath); !errors.Is(statErr, os.ErrNotExist) {
 		t.Fatalf("stale generated backup survived replacement abort: %v", statErr)
 	}
-
-	originalDB, err := sql.Open("sqlite", movedPath)
+	originalDB, err := sql.Open("sqlite", originalPath)
 	if err != nil {
 		t.Fatalf("open moved original: %v", err)
 	}
@@ -1492,7 +1510,7 @@ func TestReindexSearchConfirmedWithBackupRejectsPathReplacementAfterBackup(t *te
 	if err := originalDB.QueryRowContext(ctx, `SELECT COUNT(*) FROM search_index WHERE content = 'preserved private evidence'`).Scan(&evidence); err != nil || evidence != 1 {
 		t.Fatalf("original evidence after replacement abort = %d, %v", evidence, err)
 	}
-	replacementDB, err := sql.Open("sqlite", path)
+	replacementDB, err := sql.Open("sqlite", replacementPath)
 	if err != nil {
 		t.Fatalf("open replacement: %v", err)
 	}
@@ -1514,68 +1532,81 @@ func TestReindexSearchConfirmedWithBackupRevalidatesPathDuringTransaction(t *tes
 	}
 	for name, installHook := range tests {
 		t.Run(name, func(t *testing.T) {
-			ctx := context.Background()
-			dir := t.TempDir()
-			path := filepath.Join(dir, "maintenance.db")
-			setup := openStoreFixture(t, path)
-			execIntegritySQL(t, ctx, setup, `INSERT INTO search_index(content, entity_type, entity_id, project_id) VALUES ('transaction identity evidence', 'retired_private_type', 303, 0)`)
-			if err := setup.Close(); err != nil {
-				t.Fatalf("close setup: %v", err)
-			}
-			maintenance, err := OpenSearchMaintenance(ctx, path)
-			if err != nil {
-				t.Fatalf("OpenSearchMaintenance: %v", err)
-			}
-			backupPath := filepath.Join(dir, "generated.db")
-			createBackup := func(_ context.Context, write func(string) error) (string, error) {
-				return backupPath, write(backupPath)
-			}
-			movedPath := path + ".original"
-			var replacementErr error
-			replace := func() {
-				if replacementErr != nil {
-					return
-				}
-				if err := os.Rename(path, movedPath); err != nil {
-					replacementErr = err
-					return
-				}
-				replacementErr = os.WriteFile(path, []byte("replacement pathname"), 0o600)
-			}
-			hooks := reindexBackupHooks{}
-			installHook(&hooks, replace)
-
-			result, retainedPath, err := maintenance.reindexSearchConfirmedWithBackup(ctx, createBackup, os.Remove, func() error { return nil }, hooks)
-			if replacementErr != nil {
-				t.Fatalf("replace maintenance pathname: %v", replacementErr)
-			}
-			if err == nil {
-				t.Fatalf("transaction pathname replacement succeeded: result=%+v retained=%q", result, retainedPath)
-			}
-			var coded *domain.CodedError
-			if !errors.As(err, &coded) || coded.Code != domain.ErrValidation {
-				t.Fatalf("transaction replacement error = %v, want validation_error", err)
-			}
-			if retainedPath != "" {
-				t.Fatalf("removed stale backup returned as retained path: %q", retainedPath)
-			}
-			if _, statErr := os.Stat(backupPath); !errors.Is(statErr, os.ErrNotExist) {
-				t.Fatalf("stale generated backup survived transaction abort: %v", statErr)
-			}
-			if err := maintenance.Close(); err != nil {
-				t.Fatalf("close maintenance: %v", err)
-			}
-			originalDB, err := sql.Open("sqlite", movedPath)
-			if err != nil {
-				t.Fatalf("open moved original: %v", err)
-			}
-			defer func() { _ = originalDB.Close() }()
-			var evidence int
-			if err := originalDB.QueryRowContext(ctx, `SELECT COUNT(*) FROM search_index WHERE content = 'transaction identity evidence'`).Scan(&evidence); err != nil || evidence != 1 {
-				t.Fatalf("transaction rollback evidence = %d, %v", evidence, err)
-			}
+			runTransactionIdentityReplacementCase(t, installHook)
 		})
 	}
+}
+
+func runTransactionIdentityReplacementCase(t *testing.T, installHook func(*reindexBackupHooks, func())) {
+	t.Helper()
+	ctx := context.Background()
+	dir := t.TempDir()
+	path := filepath.Join(dir, "maintenance.db")
+	setup := openStoreFixture(t, path)
+	execIntegritySQL(t, ctx, setup, `INSERT INTO search_index(content, entity_type, entity_id, project_id) VALUES ('transaction identity evidence', 'retired_private_type', 303, 0)`)
+	if err := setup.Close(); err != nil {
+		t.Fatalf("close setup: %v", err)
+	}
+	maintenance, err := OpenSearchMaintenance(ctx, path)
+	if err != nil {
+		t.Fatalf("OpenSearchMaintenance: %v", err)
+	}
+	backupPath := filepath.Join(dir, "generated.db")
+	createBackup := func(_ context.Context, write func(string) error) (string, error) {
+		return backupPath, write(backupPath)
+	}
+	movedPath := path + ".original"
+	var replacementErr error
+	replace := func() {
+		replaceMaintenancePathWithContent(path, movedPath, []byte("replacement pathname"), &replacementErr)
+	}
+	hooks := reindexBackupHooks{}
+	installHook(&hooks, replace)
+	result, retainedPath, err := maintenance.reindexSearchConfirmedWithBackup(ctx, createBackup, os.Remove, func() error { return nil }, hooks)
+	if replacementErr != nil {
+		t.Fatalf("replace maintenance pathname: %v", replacementErr)
+	}
+	if err == nil {
+		t.Fatalf("transaction pathname replacement succeeded: result=%+v retained=%q", result, retainedPath)
+	}
+	var coded *domain.CodedError
+	if !errors.As(err, &coded) || coded.Code != domain.ErrValidation {
+		t.Fatalf("transaction replacement error = %v, want validation_error", err)
+	}
+	if retainedPath != "" {
+		t.Fatalf("removed stale backup returned as retained path: %q", retainedPath)
+	}
+	if _, statErr := os.Stat(backupPath); !errors.Is(statErr, os.ErrNotExist) {
+		t.Fatalf("stale generated backup survived transaction abort: %v", statErr)
+	}
+	if err := maintenance.Close(); err != nil {
+		t.Fatalf("close maintenance: %v", err)
+	}
+	assertTransactionIdentityEvidence(t, ctx, movedPath)
+}
+
+func assertTransactionIdentityEvidence(t *testing.T, ctx context.Context, movedPath string) {
+	t.Helper()
+	originalDB, err := sql.Open("sqlite", movedPath)
+	if err != nil {
+		t.Fatalf("open moved original: %v", err)
+	}
+	defer func() { _ = originalDB.Close() }()
+	var evidence int
+	if err := originalDB.QueryRowContext(ctx, `SELECT COUNT(*) FROM search_index WHERE content = 'transaction identity evidence'`).Scan(&evidence); err != nil || evidence != 1 {
+		t.Fatalf("transaction rollback evidence = %d, %v", evidence, err)
+	}
+}
+
+func replaceMaintenancePathWithContent(path, movedPath string, content []byte, replacementErr *error) {
+	if *replacementErr != nil {
+		return
+	}
+	if err := os.Rename(path, movedPath); err != nil {
+		*replacementErr = err
+		return
+	}
+	*replacementErr = os.WriteFile(path, content, 0o600)
 }
 
 func TestReindexSearchConfirmedWithBackupRetainsCandidateAfterBeginFailure(t *testing.T) {
@@ -1659,11 +1690,26 @@ func TestReindexSearchBeginFailureRejectsReplacedRecoveryCandidate(t *testing.T)
 	}
 	defer func() { _ = locker.Close() }()
 	backupPath := filepath.Join(dir, "replaced-recovery.db")
+	create, validate, hooks := replacedRecoveryCandidateSetup(t, ctx, backupPath, locker)
+
+	_, retainedPath, err := maintenance.reindexSearchConfirmedWithBackup(ctx, create, os.Remove, validate, hooks)
+	_, _ = locker.ExecContext(ctx, `ROLLBACK`)
+	if err == nil || retainedPath != "" {
+		t.Fatalf("replaced BEGIN-failure candidate = retained:%q error:%v", retainedPath, err)
+	}
+	if _, statErr := os.Stat(backupPath); !errors.Is(statErr, os.ErrNotExist) {
+		t.Fatalf("replaced recovery candidate survived rejection: %v", statErr)
+	}
+}
+
+func replacedRecoveryCandidateSetup(t *testing.T, ctx context.Context, backupPath string, locker *sql.Conn) (MaintenanceBackupCreator, func() error, reindexBackupHooks) {
+	t.Helper()
 	var backupIdentity os.FileInfo
 	create := func(_ context.Context, write func(string) error) (string, error) {
 		if err := write(backupPath); err != nil {
 			return backupPath, err
 		}
+		var err error
 		backupIdentity, err = os.Lstat(backupPath)
 		return backupPath, err
 	}
@@ -1687,71 +1733,67 @@ func TestReindexSearchBeginFailureRejectsReplacedRecoveryCandidate(t *testing.T)
 			t.Errorf("acquire competing writer lock: %v", err)
 		}
 	}}}
-
-	_, retainedPath, err := maintenance.reindexSearchConfirmedWithBackup(ctx, create, os.Remove, validate, hooks)
-	_, _ = locker.ExecContext(ctx, `ROLLBACK`)
-	if err == nil || retainedPath != "" {
-		t.Fatalf("replaced BEGIN-failure candidate = retained:%q error:%v", retainedPath, err)
-	}
-	if _, statErr := os.Stat(backupPath); !errors.Is(statErr, os.ErrNotExist) {
-		t.Fatalf("replaced recovery candidate survived rejection: %v", statErr)
-	}
+	return create, validate, hooks
 }
 
 func TestReindexSearchConfirmedWithBackupRetainsCandidateAfterVersionReadFailure(t *testing.T) {
 	t.Parallel()
 
-	tests := map[string]func(*reindexBackupHooks, func()){
-		"after snapshot": func(hooks *reindexBackupHooks, closeConn func()) {
-			hooks.Generation.AfterBackup = func(int) { closeConn() }
-		},
-		"under writer lock": func(hooks *reindexBackupHooks, closeConn func()) {
-			hooks.Generation.AfterBegin = func(int) { closeConn() }
-		},
-	}
-	for name, install := range tests {
+	for _, name := range []string{"after snapshot", "under writer lock"} {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
-			ctx := context.Background()
-			dir := t.TempDir()
-			path := filepath.Join(dir, "maintenance.db")
-			setup := openStoreFixture(t, path)
-			execIntegritySQL(t, ctx, setup, `INSERT INTO search_index(content, entity_type, entity_id, project_id) VALUES ('read failure evidence', 'retired_private_type', 402, 0)`)
-			if err := setup.Close(); err != nil {
-				t.Fatalf("close setup: %v", err)
-			}
-			maintenance, err := OpenSearchMaintenance(ctx, path)
-			if err != nil {
-				t.Fatalf("OpenSearchMaintenance: %v", err)
-			}
-			defer func() { _ = maintenance.Close() }()
-			backupPath := filepath.Join(dir, "read-failure.db")
-			create := func(_ context.Context, write func(string) error) (string, error) {
-				return backupPath, write(backupPath)
-			}
-			var closeErr error
-			hooks := reindexBackupHooks{}
-			install(&hooks, func() {
-				if closeErr == nil {
-					closeErr = maintenance.maintenanceConn.Close()
-				}
-			})
-
-			_, retainedPath, err := maintenance.reindexSearchConfirmedWithBackup(ctx, create, os.Remove, func() error { return nil }, hooks)
-			if closeErr != nil {
-				t.Fatalf("close search maintenance connection: %v", closeErr)
-			}
-			if err == nil {
-				t.Fatal("reindex survived injected data_version read failure")
-			}
-			if retainedPath != backupPath {
-				t.Fatalf("data_version read failure retained %q, want %q", retainedPath, backupPath)
-			}
-			if _, statErr := os.Stat(backupPath); statErr != nil {
-				t.Fatalf("retained read-failure candidate: %v", statErr)
-			}
+			runSearchVersionReadFailureCase(t, name)
 		})
 	}
+}
+
+func runSearchVersionReadFailureCase(t *testing.T, name string) {
+	t.Helper()
+	ctx := context.Background()
+	dir := t.TempDir()
+	path := filepath.Join(dir, "maintenance.db")
+	setup := openStoreFixture(t, path)
+	execIntegritySQL(t, ctx, setup, `INSERT INTO search_index(content, entity_type, entity_id, project_id) VALUES ('read failure evidence', 'retired_private_type', 402, 0)`)
+	if err := setup.Close(); err != nil {
+		t.Fatalf("close setup: %v", err)
+	}
+	maintenance, err := OpenSearchMaintenance(ctx, path)
+	if err != nil {
+		t.Fatalf("OpenSearchMaintenance: %v", err)
+	}
+	defer func() { _ = maintenance.Close() }()
+	backupPath := filepath.Join(dir, "read-failure.db")
+	create := func(_ context.Context, write func(string) error) (string, error) {
+		return backupPath, write(backupPath)
+	}
+	var closeErr error
+	hooks := reindexBackupHooks{}
+	installVersionReadFailureHook(&hooks, name, func() {
+		if closeErr == nil {
+			closeErr = maintenance.maintenanceConn.Close()
+		}
+	})
+	_, retainedPath, err := maintenance.reindexSearchConfirmedWithBackup(ctx, create, os.Remove, func() error { return nil }, hooks)
+	if closeErr != nil {
+		t.Fatalf("close search maintenance connection: %v", closeErr)
+	}
+	if err == nil {
+		t.Fatal("reindex survived injected data_version read failure")
+	}
+	if retainedPath != backupPath {
+		t.Fatalf("data_version read failure retained %q, want %q", retainedPath, backupPath)
+	}
+	if _, statErr := os.Stat(backupPath); statErr != nil {
+		t.Fatalf("retained read-failure candidate: %v", statErr)
+	}
+}
+
+func installVersionReadFailureHook(hooks *reindexBackupHooks, name string, closeConn func()) {
+	if name == "after snapshot" {
+		hooks.Generation.AfterBackup = func(int) { closeConn() }
+		return
+	}
+	hooks.Generation.AfterBegin = func(int) { closeConn() }
 }
 
 func TestReindexSearchLockTimeoutPreservesIndex(t *testing.T) {
@@ -1838,20 +1880,27 @@ func TestReindexSearchConcurrentReaderNeverSeesEmptyIndex(t *testing.T) {
 	}()
 	<-postCheckReached
 
-	hits, err := readerStore.Search(ctx, "concurrent", project.ID, []domain.SearchEntityType{domain.SearchEntityTask})
-	if err != nil {
-		t.Fatalf("reader Search before commit: %v", err)
-	}
-	if len(hits) != 1 || hits[0].ID != first.ID {
-		t.Fatalf("reader saw uncommitted/empty index: %+v", hits)
-	}
+	assertConcurrentReaderSearch(t, ctx, readerStore, project.ID, "before commit", first.ID)
 	release()
 	if err := <-reindexDone; err != nil {
 		t.Fatalf("reindexSearch: %v", err)
 	}
-	after, err := readerStore.Search(ctx, "concurrent", project.ID, []domain.SearchEntityType{domain.SearchEntityTask})
-	if err != nil || len(after) != 2 {
-		t.Fatalf("reader Search after commit = %+v, %v", after, err)
+	assertConcurrentReaderSearch(t, ctx, readerStore, project.ID, "after commit", first.ID, second.ID)
+}
+
+func assertConcurrentReaderSearch(t *testing.T, ctx context.Context, store *Store, projectID int64, stage string, wantIDs ...int64) {
+	t.Helper()
+	hits, err := store.Search(ctx, "concurrent", projectID, []domain.SearchEntityType{domain.SearchEntityTask})
+	if err != nil {
+		t.Fatalf("reader Search %s: %v", stage, err)
+	}
+	if len(hits) != len(wantIDs) {
+		t.Fatalf("reader Search %s = %+v, want %d hits", stage, hits, len(wantIDs))
+	}
+	for index, wantID := range wantIDs {
+		if hits[index].ID != wantID {
+			t.Fatalf("reader Search %s hit %d = %+v, want task %d", stage, index, hits[index], wantID)
+		}
 	}
 }
 

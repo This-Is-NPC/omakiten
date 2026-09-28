@@ -5,13 +5,12 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"omakiten/internal/app"
 	"omakiten/internal/config"
 	"omakiten/internal/domain"
-	"omakiten/internal/testfixtures"
 	"omakiten/internal/testfixtures/runtimecache"
 	"omakiten/internal/testfixtures/snapstore"
 	"omakiten/internal/token"
+	"omakiten/internal/tui/screens/taskdetail"
 )
 
 // stubWatermark is a deterministic DataVersionReader for the tick-gate tests.
@@ -32,13 +31,13 @@ func (s *stubWatermark) DataVersion(context.Context) (int64, error) {
 // ListTasks calls — the board reload's signature query. An idle tick that is
 // correctly gated never reloads the board, so this counter must not move.
 type countingTaskRepo struct {
-	app.TaskRepository
+	*snapstore.Store
 	listCalls atomic.Int64
 }
 
 func (c *countingTaskRepo) ListTasks(ctx context.Context, projectID int64, filter domain.TaskFilter, buckets domain.BucketResolver) ([]domain.Task, error) {
 	c.listCalls.Add(1)
-	return c.TaskRepository.ListTasks(ctx, projectID, filter, buckets)
+	return c.Store.ListTasks(ctx, projectID, filter, buckets)
 }
 
 // TestRealtimeTickIdleSkipsReload proves the success metric: across N idle
@@ -59,7 +58,7 @@ func TestRealtimeTickIdleSkipsReload(t *testing.T) {
 		t.Fatalf("CreateTask() error = %v", err)
 	}
 
-	tasks := &countingTaskRepo{TaskRepository: store}
+	tasks := &countingTaskRepo{Store: store}
 	watermark := &stubWatermark{version: 42}
 
 	model, err := NewModel(ctx, project.Context(), Repositories{
@@ -68,8 +67,7 @@ func TestRealtimeTickIdleSkipsReload(t *testing.T) {
 		Dependencies: store,
 		Events:       store,
 		Watermark:    watermark,
-		Cache:        runtimecache.Install(0, store.Snapshot()),
-		Workflow:     app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot()),
+		Cache:        runtimecache.InstallWithStore(0, tasks),
 	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
 	if err != nil {
 		t.Fatalf("NewModel() error = %v", err)
@@ -119,7 +117,7 @@ func TestRealtimeTickReloadsWhenWatermarkAdvances(t *testing.T) {
 		t.Fatalf("CreateTask() error = %v", err)
 	}
 
-	tasks := &countingTaskRepo{TaskRepository: store}
+	tasks := &countingTaskRepo{Store: store}
 	watermark := &stubWatermark{version: 1}
 
 	model, err := NewModel(ctx, project.Context(), Repositories{
@@ -128,8 +126,7 @@ func TestRealtimeTickReloadsWhenWatermarkAdvances(t *testing.T) {
 		Dependencies: store,
 		Events:       store,
 		Watermark:    watermark,
-		Cache:        runtimecache.Install(0, store.Snapshot()),
-		Workflow:     app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot()),
+		Cache:        runtimecache.InstallWithStore(0, tasks),
 	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
 	if err != nil {
 		t.Fatalf("NewModel() error = %v", err)
@@ -191,8 +188,7 @@ func TestSelfWriteRepaintsInlineWithoutTick(t *testing.T) {
 		Dependencies: store,
 		Events:       store,
 		Watermark:    watermark,
-		Cache:        runtimecache.Install(0, store.Snapshot()),
-		Workflow:     app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot()),
+		Cache:        runtimecache.InstallWithStore(0, store),
 	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
 	if err != nil {
 		t.Fatalf("NewModel() error = %v", err)
@@ -203,8 +199,8 @@ func TestSelfWriteRepaintsInlineWithoutTick(t *testing.T) {
 		t.Fatalf("refresh() error = %v", err)
 	}
 	model.openTaskView(task)
-	model.applyTaskFocus(taskFocusActivity)
-	before := len(model.activity)
+	model.taskDetailScreen = model.taskDetailScreen.WithFocus(taskdetail.FocusActivity)
+	before := len(model.taskDetailScreen.Payload().Activity)
 
 	// Simulate the self-write path: write then call the synchronous refresh
 	// that input.go / render_comment.go invoke inline after a self-write.
@@ -214,12 +210,16 @@ func TestSelfWriteRepaintsInlineWithoutTick(t *testing.T) {
 	if err := model.refresh(); err != nil {
 		t.Fatalf("inline refresh() error = %v", err)
 	}
-	if err := model.refreshTaskActivity(task.ID); err != nil {
-		t.Fatalf("refreshTaskActivity() error = %v", err)
+	activity, err := model.loadTaskActivity(task.ID)
+	if err != nil {
+		t.Fatalf("loadTaskActivity() error = %v", err)
 	}
+	payload := model.taskDetailScreen.Payload()
+	payload.Activity = activity
+	model.taskDetailScreen = model.taskDetailScreen.Replace(payload)
 
-	if len(model.activity) <= before {
-		t.Fatalf("self-write not visible after inline refresh: activity len = %d, want > %d", len(model.activity), before)
+	if len(model.taskDetailScreen.Payload().Activity) <= before {
+		t.Fatalf("self-write not visible after inline refresh: activity len = %d, want > %d", len(model.taskDetailScreen.Payload().Activity), before)
 	}
 	// And the watermark never moved — proving the repaint did NOT depend on it.
 	if len(model.dataVersionBaselines) != 0 {

@@ -17,6 +17,12 @@
 * **cli:** `okt logs` is now a generic event inspector backed by `ListEvents`. The JSON envelope shape changed: each row carries the unified `EventRow` projection (`event_type`, `entity_type`, `author_type`, `category`, `summary`) instead of the legacy `domain.ActivityLog` columns. The `summary` field is the same one-line text the TUI Logs inspector renders. Downstream tooling that scraped `source`-only rows must switch to the new shape; the legacy `ListActivityLogs` repo method is retained for now and is not affected.
 * **events:** event `error.searched` renamed to `errors.researched`; `entity_type` for these rows shifted from `error` to `search`. Migration `030_rename_errors_researched.sql` backfills historical rows. Consumers querying the activity log by event_type must update their filter. The metrics bucket id `error_searched` (in `/metrics.summary buckets`) is unchanged.
 
+
+### Bug Fixes
+
+* **mcp:** `okt mcp setup --harness claude-code` writes project-scope `<project>/.mcp.json` with the `mcpServers.omakiten` envelope (same shape as Cursor and Claude Desktop). The previous `~/.claude/.mcp.json` flat-root entry was never read by Claude Code and can be deleted.
+* **sqlite:** standalone `SnapshotDatabase` / `okt db backup` source opens pin the requested file through the platform path boundary (Windows reparse/junction rejection, Unix descriptor-relative open, unsupported platforms fail closed) instead of lexical `validateMaintenancePath` + generic `sql.Open`.
+
 ### Features
 
 * **config:** unified `config.events.retention` policy for every row in the `events` table — category defaults, per-type overrides, generic SQLite prune on insert and at `ApplyConfig`, and a TUI Logs footer that contrasts storage retention with `views.logs.window_days`.

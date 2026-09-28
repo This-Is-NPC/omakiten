@@ -9,15 +9,16 @@ package agentruntime
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 
-	"omakiten/internal/agent"
 	"omakiten/internal/config"
 	"omakiten/internal/configstore"
 	"omakiten/internal/events"
 	"omakiten/internal/hooks"
 	"omakiten/internal/hooks/actions"
+	"omakiten/internal/operation"
 	"omakiten/internal/paths"
 	project_ "omakiten/internal/project"
 	"omakiten/internal/sqlite"
@@ -28,7 +29,7 @@ import (
 // load) so the registry is populated before any path that consumes
 // it — including ImportBundle's own resolve-label-to-id step.
 
-// Options mirrors agent.Open's old signature so call sites only swap the
+// Options mirrors operation.Open's old signature so call sites only swap the
 // import path.
 type Options struct {
 	DBPath     string
@@ -39,7 +40,7 @@ type Options struct {
 }
 
 // Runtime owns the long-lived resources the MCP server needs: the sqlite
-// connection, the resolved paths, and the agent.Service that handlers
+// connection, the resolved paths, and the operation.Service that handlers
 // dispatch through. Phase 3a hoisted the per-bundle resources
 // (service, hooks engine, registry, notification snapshot) into the
 // BundleCache; Runtime keeps thin accessors so consumers do not need
@@ -67,9 +68,9 @@ type Runtime struct {
 	notificationAction *actions.NotificationShowAction
 }
 
-// Open materializes the runtime: resolves paths, runs config layout
-// migration + default-file seeding, opens the sqlite store, imports the
-// bundle, and wires the agent.Service with template snapshots.
+// Open materializes the runtime: resolves paths, seeds missing default files,
+// opens the sqlite store, imports the
+// bundle, and wires the operation.Service with template snapshots.
 func Open(ctx context.Context, opts Options) (*Runtime, error) {
 	dbPath, err := resolvedDBPath(opts.DBPath)
 	if err != nil {
@@ -81,16 +82,10 @@ func Open(ctx context.Context, opts Options) (*Runtime, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := cs.MigrateLayout(rootDir); err != nil {
-		return nil, err
-	}
 	if err := cs.EnsureDefaultFiles(rootDir); err != nil {
 		return nil, err
 	}
 
-	// Resolve configPath AFTER MigrateLayout has had a chance to relocate
-	// renamed kits — otherwise the snapshot points at a just-moved root
-	// copy and Import fails with ENOENT.
 	configPath, err := resolvedConfigPath(opts.ConfigPath)
 	if err != nil {
 		return nil, err
@@ -142,7 +137,7 @@ func Open(ctx context.Context, opts Options) (*Runtime, error) {
 	// project / CWD. SetProjectSelector must precede Resolve so the
 	// initial build picks it up.
 	cache := NewBundleCache(store, bus, cs)
-	cache.SetProjectSelector(agent.ProjectSelector{ProjectID: opts.ProjectID, Project: opts.Project, CWD: cwd})
+	cache.SetProjectSelector(operation.ProjectSelector{ProjectID: opts.ProjectID, Project: opts.Project, CWD: cwd})
 	rt, err := cache.Resolve(ctx, opts.ProjectID, configPath)
 	if err != nil {
 		_ = store.Close()
@@ -164,10 +159,11 @@ func Open(ctx context.Context, opts Options) (*Runtime, error) {
 }
 
 func (r *Runtime) Close() error {
+	var hookErr error
 	if pr := r.cache.Get(r.defaultProjectID); pr != nil && pr.HooksEngine != nil {
-		pr.HooksEngine.Stop()
+		hookErr = pr.HooksEngine.Stop()
 	}
-	return r.store.Close()
+	return errors.Join(hookErr, r.store.Close())
 }
 
 // Cache exposes the BundleCache so consumers (TUI hot-reload, future
@@ -188,7 +184,7 @@ func (r *Runtime) Snapshot() *config.Snapshot {
 	return nil
 }
 
-// ResolveServiceForProject returns the agent.Service the BundleCache
+// ResolveServiceForProject returns the operation.Service the BundleCache
 // has wired for the given project. The lookup is best-effort: when
 // the project slug / id resolve to an entry without a per-project
 // `.omakiten/` install, or when any step in the resolution chain
@@ -200,7 +196,7 @@ func (r *Runtime) Snapshot() *config.Snapshot {
 // the project the caller declared in `project` / `project_id`. Phase
 // 3c+ will extend the same routing to CLI and TUI without touching
 // this method's surface.
-func (r *Runtime) ResolveServiceForProject(ctx context.Context, project string, projectID int64) (*agent.Service, error) {
+func (r *Runtime) ResolveServiceForProject(ctx context.Context, project string, projectID int64) (*operation.Service, error) {
 	if project == "" && projectID == 0 {
 		return nil, nil
 	}
@@ -310,36 +306,15 @@ func (r *Runtime) Bus() events.Bus {
 	return r.bus
 }
 
-func (r *Runtime) Service() *agent.Service {
+func (r *Runtime) Service() *operation.Service {
 	if r == nil || r.cache == nil {
 		return nil
 	}
 	ctx := context.Background()
-	configPath := r.configPath
-	// Per-call stat cost is intentional: for default installs Service()
-	// re-resolves the active-profile marker (resolvedConfigPath) and, via
-	// the trailing Resolve, stats every watched source on every MCP call.
-	// This makes the active marker authoritative on each call (so an
-	// out-of-band `okt config use` is picked up immediately) at the price
-	// of a handful of stat()s. Acceptable at the current single-bundle
-	// scale; revisit only if the cache grows to many concurrent projects.
-	if !r.configPathExplicit {
-		if activePath, err := resolvedConfigPath(""); err == nil && activePath != "" {
-			configPath = activePath
-			// Active-profile SWITCH: the marker now points at a different
-			// bundle file than the cached entry's SourcePath, so reload
-			// against the new path. Same-file (in-place) edits are NOT
-			// handled here — pr.SourcePath == activePath skips this block
-			// and falls through to the trailing Resolve below, which
-			// rebuilds on the source's mtime change.
-			if pr := r.cache.Get(r.defaultProjectID); pr != nil && pr.SourcePath != "" && pr.SourcePath != activePath {
-				if next, err := r.cache.Reload(ctx, r.defaultProjectID, activePath); err == nil && next != nil {
-					return next.Service
-				}
-				return pr.Service
-			}
-		}
+	if service, resolved := r.serviceForActiveProfile(ctx); resolved {
+		return service
 	}
+	configPath := r.configPath
 	if pr, err := r.cache.Resolve(ctx, r.defaultProjectID, configPath); err == nil && pr != nil {
 		return pr.Service
 	}
@@ -347,6 +322,25 @@ func (r *Runtime) Service() *agent.Service {
 		return pr.Service
 	}
 	return nil
+}
+
+func (r *Runtime) serviceForActiveProfile(ctx context.Context) (*operation.Service, bool) {
+	if r.configPathExplicit {
+		return nil, false
+	}
+	activePath, err := resolvedConfigPath("")
+	if err != nil || activePath == "" {
+		return nil, false
+	}
+	r.configPath = activePath
+	pr := r.cache.Get(r.defaultProjectID)
+	if pr == nil || pr.SourcePath == "" || pr.SourcePath == activePath {
+		return nil, false
+	}
+	if next, err := r.cache.Reload(ctx, r.defaultProjectID, activePath); err == nil && next != nil {
+		return next.Service, true
+	}
+	return pr.Service, true
 }
 
 func (r *Runtime) Store() *sqlite.Store {
@@ -368,11 +362,9 @@ func resolvedConfigPath(path string) (string, error) {
 	return paths.ConfigFile()
 }
 
-// resolvedConfigRoot mirrors the CLI helper of the same intent: compute the
-// migration root without consulting ActiveConfigFile, so MigrateLayout can
-// run before path resolution. When the agent runtime is invoked with an
-// explicit ConfigPath, root is derived from that path; otherwise from XDG /
-// OMAKITEN_HOME defaults.
+// resolvedConfigRoot computes the default-file root. When the agent runtime
+// is invoked with an explicit ConfigPath, root is derived from that path;
+// otherwise from XDG / OMAKITEN_HOME defaults.
 func resolvedConfigRoot(path string) (string, error) {
 	if path != "" {
 		abs, err := filepath.Abs(path)

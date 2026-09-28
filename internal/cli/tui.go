@@ -13,7 +13,6 @@ import (
 	"github.com/spf13/cobra"
 
 	"omakiten/internal/activity"
-	"omakiten/internal/app"
 	"omakiten/internal/config"
 	"omakiten/internal/configstore"
 	"omakiten/internal/domain"
@@ -56,7 +55,7 @@ func runTUI(ctx context.Context, opts *runtimeOptions, version string) error {
 		}
 	}
 	// Boot-time health check (#365 AC 5). `opts.open(_, true)`
-	// already ran MigrateLayout + EnsureDefaultFiles + LoadBundle +
+	// already ran EnsureDefaultFiles + LoadBundle +
 	// ValidateBundle and wrapped any failure with the structured
 	// envelope at root.go:299. The bundle handle below is consumed
 	// only for the active-theme snapshot guard — if `opts.open`
@@ -93,25 +92,17 @@ func runTUI(ctx context.Context, opts *runtimeOptions, version string) error {
 	theme := snap.Theme()
 
 	bundleStore := configstore.New()
-	editor := app.NewBundleEditor(bundleStore, rt.configPath)
-	model, err := tui.NewModel(ctx, project, tui.Repositories{
+	model, err := tui.NewModel(ctx, project, tui.WireAppServices(tui.Repositories{
 		Tasks:        rt.store,
 		Projects:     rt.store,
-		Workflow:     app.NewWorkflowServiceFromStore(rt.store, rt.activeRegistry(), rt.activeSnapshot()),
 		Comments:     rt.store,
 		Dependencies: rt.store,
 		Tags:         rt.store,
-		Editor:       editor,
 		BundleStore:  bundleStore,
-		EntityFiles:  bundleStore,
-		Slugger:      bundleStore,
 		ActivityLogs: rt.store,
 		Events:       rt.store,
-		Metrics:      app.NewMetricsService(rt.store),
-		Insights:     app.NewInsightsService(rt.store),
 		Orphans:      rt.store,
 		Plans:        rt.store,
-		Search:       app.NewSearchService(rt.store, rt.store),
 		Checkpointer: rt.store,
 		SnapshotWriter: func(snapshotCtx context.Context, _, destinationPath string) error {
 			return rt.store.Snapshot(snapshotCtx, destinationPath)
@@ -134,7 +125,7 @@ func runTUI(ctx context.Context, opts *runtimeOptions, version string) error {
 		Cache:        rt.cache,
 		ProjectID:    rt.projectID,
 		Catalog:      rt.activeSnapshot().Catalog(config.SurfaceTUI),
-	}, theme, token.NewCounter(), bundle.Config.TUI.TokenBadge, bundle.Config.EffectivePriorities(), bundle.Config.EffectiveSeverities(), tui.NotificationBinding{
+	}, rt.store, rt.configPath), theme, token.NewCounter(), bundle.Config.TUI.TokenBadge, bundle.Config.EffectivePriorities(), bundle.Config.EffectiveSeverities(), tui.NotificationBinding{
 		Notifications: bundle.Notifications,
 	})
 	if err != nil {

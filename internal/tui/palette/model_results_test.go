@@ -4,11 +4,13 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"unicode"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
 
 	"omakiten/internal/domain"
+	"omakiten/internal/tui/components/screenkit"
 )
 
 func upKey() tea.KeyMsg     { return tea.KeyMsg{Type: tea.KeyUp} }
@@ -244,13 +246,64 @@ func TestCleanSnippetStripsANSIEscapes(t *testing.T) {
 		{"bold reset", "\x1b[1mhello\x1b[0m", "hello"},
 		{"color sequence", "\x1b[38;5;196mred text\x1b[0m world", "red text world"},
 		{"clear screen", "\x1b[2Joh no", "oh no"},
+		{"OSC sequence", "\x1b]0;palette\ahello", "hello"},
+		{"C0 controls", "safe\x00\x01text", "safetext"},
+		{"C1 CSI", "safe\x9b31mtext", "safetext"},
+		{"C1 OSC", "safe\x9d0;palette\x07text", "safetext"},
 		{"mark + ansi mix", "<mark>\x1b[31mfoo\x1b[0m</mark> bar", "foo bar"},
+		{"harmless Unicode", "café 漢字 🐈", "café 漢字 🐈"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			got := cleanSnippet(c.in)
 			if got != c.want {
 				t.Errorf("cleanSnippet(%q) = %q, want %q", c.in, got, c.want)
+			}
+		})
+	}
+}
+
+func TestRenderResultListSanitizesControlsBeforeTruncation(t *testing.T) {
+	snippet := strings.Repeat("x", colWidthResult/2) + "漢字\x9b31m\x1b]0;palette\a"
+	m := seedSearchModel([]domain.SearchHit{
+		{EntityType: domain.SearchEntityTask, ID: 1, Snippet: snippet},
+	})
+	view := m.View()
+	if strings.Contains(view, "\x9b") || strings.Contains(view, "\x1b]0;palette") {
+		t.Fatalf("result view contains terminal controls: %q", view)
+	}
+	if !strings.Contains(view, screenkit.Sanitize("漢字")) {
+		t.Fatalf("result view lost harmless Unicode: %q", view)
+	}
+}
+
+func TestFormatResultRowSanitizesEntityTypeBeforeFormatting(t *testing.T) {
+	cases := map[string]struct {
+		marker string
+		value  string
+		want   string
+	}{
+		"compact selected ESC": {"▸ ", "\x1b[31mselected\x1b[0m", "selected"},
+		"wide unselected OSC":  {"  ", "\x1b]0;palette\aerror", "error"},
+		"C0 controls":          {"▸ ", "safe\x00\x01type", "safetype"},
+		"C1 CSI":               {"  ", "safe\x9b31mtype", "safetype"},
+		"C1 OSC Unicode":       {"▸ ", "safe\x9d0;palette\x07漢字", "safe漢字"},
+		"wide type truncates":  {"  ", strings.Repeat("w", colWidthType*3), "wwwwwww…"},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			row := formatResultRow(tc.marker, domain.SearchHit{
+				EntityType: domain.SearchEntityType(tc.value),
+				ID:         7,
+				Snippet:    "漢字",
+			})
+			if !strings.Contains(row, tc.want) {
+				t.Fatalf("row = %q, want %q", row, tc.want)
+			}
+			for _, r := range row {
+				if unicode.IsControl(r) {
+					t.Fatalf("row contains control U+%04X: %q", r, row)
+				}
 			}
 		})
 	}
@@ -430,5 +483,18 @@ func TestRenderResultListEmitsHeader(t *testing.T) {
 	rule := strings.Repeat("─", resultListMaxWidth)
 	if !strings.Contains(view, rule) {
 		t.Fatalf("horizontal rule of width %d missing under header; view=\n%s", resultListMaxWidth, view)
+	}
+}
+
+func TestChromeRowsForResultsBudgetMatchesViewMinusResultRows(t *testing.T) {
+	m := NewModel()
+	got := m.ChromeRowsForResultsBudget()
+	t.Logf("ChromeRowsForResultsBudget = %d", got)
+	// tabs + input + blanks + count/header/rule + ↑ + ↓ + status = the
+	// non-result chrome the budget reserves. A hand-counted 8 was the
+	// old inner share of the magic 13; the measured value must stay in
+	// that neighbourhood so a runaway View cannot silently reclaim rows.
+	if got < 8 || got > 14 {
+		t.Fatalf("ChromeRowsForResultsBudget = %d, want 8..14", got)
 	}
 }

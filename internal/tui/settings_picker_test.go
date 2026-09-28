@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -11,14 +12,15 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"omakiten/internal/agentruntime"
-	"omakiten/internal/app"
 	"omakiten/internal/config"
 	"omakiten/internal/configstore"
 	"omakiten/internal/events"
 	"omakiten/internal/paths"
-	"omakiten/internal/testfixtures"
+	"omakiten/internal/testfixtures/bundleeditor"
 	"omakiten/internal/testfixtures/snapstore"
 	"omakiten/internal/token"
+	"omakiten/internal/tui/screenhost"
+	"omakiten/internal/tui/screens/settingspicker"
 )
 
 const minimalThemeYAML = `version: 1
@@ -66,8 +68,8 @@ func newPickerModel(t *testing.T) (Model, string) {
 	store := snapstore.Open(t, dbPath)
 
 	files := configstore.New()
-	editor := app.NewBundleEditor(files, configPath)
-	if _, err := editor.Apply(ctx, nil); err != nil {
+	editor := bundleeditor.New(files, configPath)
+	if _, err := applyBundleEditor(ctx, editor, nil); err != nil {
 		t.Fatalf("editor.Apply() error = %v", err)
 	}
 	project, err := store.UpsertProject(ctx, "Project", "project", "/work/project")
@@ -83,12 +85,12 @@ func newPickerModel(t *testing.T) (Model, string) {
 
 	model, err := NewModel(ctx, project.Context(), Repositories{
 		Tasks:    store,
-		Workflow: app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot()), Comments: store, Dependencies: store, Editor: editor,
-		BundleStore: files, EntityFiles: files, Slugger: files,
-		Events:    store,
-		Orphans:   store,
-		Cache:     cache,
-		ProjectID: project.ID,
+		Comments: store, Dependencies: store, Editor: editor,
+		BundleStore: files,
+		Events:      store,
+		Orphans:     store,
+		Cache:       cache,
+		ProjectID:   project.ID,
 	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
 	if err != nil {
 		t.Fatalf("NewModel() error = %v", err)
@@ -107,19 +109,42 @@ func writeThemeFile(t *testing.T, path, key, name string) {
 	}
 }
 
+func TestSettingsPickersOpenAsRegisteredChildScreens(t *testing.T) {
+	model, _ := newPickerModel(t)
+	for _, tc := range []struct {
+		open func(*Model)
+		id   screenhost.ID
+		kind settingspicker.Kind
+	}{
+		{(*Model).openThemePicker, screenhost.ThemePicker, settingspicker.Theme},
+		{(*Model).openConfigPicker, screenhost.ConfigPicker, settingspicker.Config},
+		{(*Model).openSubtaskKitPicker, screenhost.SubtaskKitPicker, settingspicker.SubtaskKit},
+	} {
+		t.Run(string(tc.kind), func(t *testing.T) {
+			candidate := model
+			tc.open(&candidate)
+			if len(candidate.screenStack) != 1 || candidate.screenStack[0] != tc.id {
+				t.Fatalf("screen stack = %v, want [%s]", candidate.screenStack, tc.id)
+			}
+			hosted, ok := candidate.hostedScreen(tc.id)
+			pickerScreen, typed := hosted.(settingspicker.Screen)
+			if !ok || !typed || pickerScreen.Payload().Kind != tc.kind || len(pickerScreen.Payload().Options) == 0 {
+				t.Fatalf("hosted picker = %T/%+v ok=%v", hosted, pickerScreen.Payload(), ok)
+			}
+		})
+	}
+}
+
 func TestThemePickerListsDefaultsAndCustom(t *testing.T) {
 	model, _ := newPickerModel(t)
 	model.openThemePicker()
 
-	if model.entityForm.mode != entityScreenThemePicker {
-		t.Fatalf("picker mode = %v, want theme picker", model.entityForm.mode)
-	}
-
-	slugs := make([]string, len(model.themePickerOptions))
+	options := model.themePickerScreen.Payload().Options
+	slugs := make([]string, len(options))
 	customByIndex := map[int]bool{}
-	for i, opt := range model.themePickerOptions {
-		slugs[i] = opt.Slug
-		customByIndex[i] = opt.IsCustom
+	for i, opt := range options {
+		slugs[i] = opt.Value
+		customByIndex[i] = opt.Custom
 	}
 	if len(slugs) != 2 {
 		t.Fatalf("themePickerOptions = %v, want [catppuccin ocean]", slugs)
@@ -134,18 +159,18 @@ func TestThemePickerListsDefaultsAndCustom(t *testing.T) {
 
 func TestThemePickerHotReloadsOnEnter(t *testing.T) {
 	model, _ := newPickerModel(t)
-	model = pressRune(t, model, '3') // switch to config view
+	model = pressRune(t, model, '4') // switch to config view
 	model = pressRune(t, model, 't')
-	if model.entityForm.mode != entityScreenThemePicker {
-		t.Fatalf("expected theme picker open, got %v", model.entityForm.mode)
+	if !pickerRouteOpen(model, screenhost.ThemePicker) {
+		t.Fatalf("expected theme picker open, stack=%v", model.screenStack)
 	}
 
 	// Move to ocean (second row) and apply.
 	model = pressStringKey(t, model, "down")
 	model = pressKey(t, model, tea.KeyEnter)
 
-	if model.entityForm.mode != entityScreenClosed {
-		t.Fatalf("picker should close after selection, mode = %v", model.entityForm.mode)
+	if pickerRouteOpen(model, screenhost.ThemePicker) {
+		t.Fatalf("picker should close after selection, stack=%v", model.screenStack)
 	}
 	if model.theme.Key != "ocean" {
 		t.Fatalf("model.theme.Key = %q, want ocean (hot-reload failed)", model.theme.Key)
@@ -173,13 +198,10 @@ func TestConfigPickerListsProfilesExcludingStateFile(t *testing.T) {
 	}
 
 	model.openConfigPicker()
-	if model.entityForm.mode != entityScreenConfigPicker {
-		t.Fatalf("picker mode = %v, want config picker", model.entityForm.mode)
-	}
-
-	files := make([]string, len(model.configPickerOptions))
-	for i, opt := range model.configPickerOptions {
-		files[i] = opt.Filename
+	options := model.configPickerScreen.Payload().Options
+	files := make([]string, len(options))
+	for i, opt := range options {
+		files[i] = opt.Value
 	}
 	if len(files) != 3 {
 		t.Fatalf("configPickerOptions = %v, want 3 entries (.active filtered)", files)
@@ -194,13 +216,13 @@ func TestConfigPickerListsProfilesExcludingStateFile(t *testing.T) {
 	if files[2] != "config-experiment.yaml" {
 		t.Fatalf("third option = %q, want config-experiment.yaml", files[2])
 	}
-	if model.configPickerOptions[0].IsCustom {
+	if options[0].Custom {
 		t.Fatalf("default profile incorrectly tagged as custom")
 	}
-	if model.configPickerOptions[1].IsCustom {
+	if options[1].Custom {
 		t.Fatalf("default profile incorrectly tagged as custom")
 	}
-	if !model.configPickerOptions[2].IsCustom {
+	if !options[2].Custom {
 		t.Fatalf("user profile under custom/ not tagged as custom")
 	}
 }
@@ -209,10 +231,10 @@ func TestThemePickerEscRestoresNavTabs(t *testing.T) {
 	model, _ := newPickerModel(t)
 	model.width = 200
 	model.height = 60
-	model = pressRune(t, model, '3')
+	model = pressRune(t, model, '4')
 
 	before := model.View()
-	if !strings.Contains(before, "// SETTINGS") {
+	if !strings.Contains(before, "SETTINGS") {
 		t.Fatalf("nav bar missing before opening picker:\n%s", before)
 	}
 
@@ -220,12 +242,12 @@ func TestThemePickerEscRestoresNavTabs(t *testing.T) {
 	model = pressKey(t, model, tea.KeyEsc)
 
 	after := model.View()
-	if !strings.Contains(after, "// SETTINGS") {
+	if !strings.Contains(after, "SETTINGS") {
 		t.Fatalf("nav bar missing after esc — bug repro:\n%s", after)
 	}
 	// Ensure every top-zone label is present so a degraded narrow-fallback
 	// rendering does not pass as a successful restore.
-	for _, want := range []string{"// TASKS", "// STATS", "// SETTINGS"} {
+	for _, want := range []string{"TASKS", "STATS", "SETTINGS"} {
 		if !strings.Contains(after, want) {
 			t.Fatalf("nav zone %q missing after esc — visual degradation:\n%s", want, after)
 		}
@@ -238,7 +260,7 @@ func TestViewIsClampedToTerminalHeightPreservingHeaderAndFooter(t *testing.T) {
 	// renderer would otherwise scroll the header off the top.
 	model.width = 200
 	model.height = 18
-	model = pressRune(t, model, '3')
+	model = pressRune(t, model, '4')
 
 	out := model.View()
 	lines := strings.Split(out, "\n")
@@ -262,17 +284,17 @@ func TestThemePickerEnterRestoresNavTabs(t *testing.T) {
 	model, _ := newPickerModel(t)
 	model.width = 200
 	model.height = 60
-	model = pressRune(t, model, '3')
+	model = pressRune(t, model, '4')
 	model = pressRune(t, model, 't')
 	// Move to the second option then apply via enter.
 	model = pressStringKey(t, model, "down")
 	model = pressKey(t, model, tea.KeyEnter)
 
-	if model.entityScreen != entityScreenClosed {
-		t.Fatalf("entityScreen = %v after enter, want closed", model.entityScreen)
+	if pickerRouteOpen(model, screenhost.ThemePicker) {
+		t.Fatalf("theme picker remained open after enter: %v", model.screenStack)
 	}
 	out := model.View()
-	for _, want := range []string{"// TASKS", "// STATS", "// SETTINGS"} {
+	for _, want := range []string{"TASKS", "STATS", "SETTINGS"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("nav zone %q missing after apply:\n%s", want, out)
 		}
@@ -281,35 +303,69 @@ func TestThemePickerEnterRestoresNavTabs(t *testing.T) {
 
 func TestThemePickerEscRestoresEntityScreenClosed(t *testing.T) {
 	model, _ := newPickerModel(t)
-	model = pressRune(t, model, '3')
+	model = pressRune(t, model, '4')
 	model = pressRune(t, model, 't')
-	if model.entityScreen == entityScreenClosed {
-		t.Fatalf("expected entityScreen != closed after opening picker")
-	}
-	if model.entityForm.mode != entityScreenThemePicker {
-		t.Fatalf("expected theme picker mode, got %v", model.entityForm.mode)
+	if !pickerRouteOpen(model, screenhost.ThemePicker) {
+		t.Fatalf("expected theme picker route, stack=%v", model.screenStack)
 	}
 
 	model = pressKey(t, model, tea.KeyEsc)
-	if model.entityScreen != entityScreenClosed {
-		t.Fatalf("entityScreen = %v after esc, want closed (header would hide nav)", model.entityScreen)
+	if pickerRouteOpen(model, screenhost.ThemePicker) {
+		t.Fatalf("theme picker remained open after esc: %v", model.screenStack)
 	}
-	if model.entityForm.mode != entityScreenClosed {
-		t.Fatalf("entityForm.mode = %v after esc, want closed", model.entityForm.mode)
+	if !strings.Contains(strings.ToLower(model.status), "cancel") {
+		t.Fatalf("cancel status = %q", model.status)
+	}
+}
+
+func TestThemePickerRefreshReprojectsCandidatesWithoutIOInScreen(t *testing.T) {
+	model, root := newPickerModel(t)
+	model.openThemePicker()
+	writeThemeFile(t, filepath.Join(root, "themes", "new-theme.yaml"), "new-theme", "New Theme")
+	model = pressRune(t, model, 'r')
+	var found bool
+	for _, option := range model.themePickerScreen.Payload().Options {
+		found = found || option.Value == "new-theme"
+	}
+	if !found || !pickerRouteOpen(model, screenhost.ThemePicker) {
+		t.Fatalf("refresh payload/route = %+v / %v", model.themePickerScreen.Payload(), model.screenStack)
+	}
+	if !strings.Contains(strings.ToLower(model.status), "refresh") {
+		t.Fatalf("refresh status = %q", model.status)
+	}
+}
+
+func TestThemePickerInvalidThemeKeepsPublishedSelection(t *testing.T) {
+	model, root := newPickerModel(t)
+	brokenPath := filepath.Join(root, "themes", "broken.yaml")
+	if err := os.WriteFile(brokenPath, []byte("version: nope\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	model.openThemePicker()
+	model.applySettingsPicker(screenhost.Action{EntityKind: string(settingspicker.Theme), Value: "broken"})
+	bundle, err := model.repos.Editor.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bundle.Config.Theme.Active != "broken" || model.theme.Key != "catppuccin" {
+		t.Fatalf("invalid theme state: yaml=%q runtime=%q", bundle.Config.Theme.Active, model.theme.Key)
+	}
+	if !pickerRouteOpen(model, screenhost.ThemePicker) || model.status == "" {
+		t.Fatalf("invalid theme should stay open with status: stack=%v status=%q", model.screenStack, model.status)
 	}
 }
 
 func TestConfigPickerEscRestoresEntityScreenClosed(t *testing.T) {
 	model, _ := newPickerModel(t)
-	model = pressRune(t, model, '3')
+	model = pressRune(t, model, '4')
 	model = pressRune(t, model, 'c')
-	if model.entityScreen == entityScreenClosed {
-		t.Fatalf("expected entityScreen != closed after opening picker")
+	if !pickerRouteOpen(model, screenhost.ConfigPicker) {
+		t.Fatalf("expected config picker route, stack=%v", model.screenStack)
 	}
 
 	model = pressKey(t, model, tea.KeyEsc)
-	if model.entityScreen != entityScreenClosed {
-		t.Fatalf("entityScreen = %v after esc, want closed (header would hide nav)", model.entityScreen)
+	if pickerRouteOpen(model, screenhost.ConfigPicker) {
+		t.Fatalf("config picker remained open after esc: %v", model.screenStack)
 	}
 }
 
@@ -330,17 +386,17 @@ func TestConfigPickerHotReloadsOnEnter(t *testing.T) {
 		t.Fatalf("SaveFullBundle(experiment) error = %v", err)
 	}
 
-	model = pressRune(t, model, '3')
+	model = pressRune(t, model, '4')
 	model = pressRune(t, model, 'c')
-	if model.entityForm.mode != entityScreenConfigPicker {
-		t.Fatalf("expected config picker open, got %v", model.entityForm.mode)
+	if !pickerRouteOpen(model, screenhost.ConfigPicker) {
+		t.Fatalf("expected config picker open, stack=%v", model.screenStack)
 	}
 
 	model = pressStringKey(t, model, "down")
 	model = pressKey(t, model, tea.KeyEnter)
 
-	if model.entityForm.mode != entityScreenClosed {
-		t.Fatalf("picker should close after successful selection, mode = %v; status=%q", model.entityForm.mode, model.status)
+	if pickerRouteOpen(model, screenhost.ConfigPicker) {
+		t.Fatalf("picker should close after successful selection, stack=%v; status=%q", model.screenStack, model.status)
 	}
 	if strings.Contains(strings.ToLower(model.status), "restart") {
 		t.Fatalf("status must not mention restart after hot-reload, got %q", model.status)
@@ -359,6 +415,62 @@ func TestConfigPickerHotReloadsOnEnter(t *testing.T) {
 	if got != want {
 		t.Fatalf("ActiveConfigFile() = %q, want %q", got, want)
 	}
+	local, err := paths.ActiveConfigFileInDir(filepath.Join(root, "config"))
+	if err != nil {
+		t.Fatalf("ActiveConfigFileInDir() error: %v", err)
+	}
+	if local != want {
+		t.Fatalf("repo-local active config = %q, want %q after restart resolution", local, want)
+	}
+}
+
+func TestConfigPickerMarkerFailureKeepsOldRuntimeAndRestartMarker(t *testing.T) {
+	model, root := newPickerModel(t)
+	t.Setenv(paths.HomeEnv, root)
+	t.Setenv("XDG_CONFIG_HOME", "")
+
+	experiment := tuiTestBundle(t)
+	experiment.Kit.Key = "experiment"
+	experiment.Config.Theme.Active = "ocean"
+	experimentPath := filepath.Join(root, "config", "custom", "config-experiment.yaml")
+	if err := config.SaveFullBundle(experimentPath, experiment); err != nil {
+		t.Fatalf("SaveFullBundle(experiment): %v", err)
+	}
+	if err := paths.SetActiveConfigInDir(filepath.Join(root, "config"), "omakase.yaml"); err != nil {
+		t.Fatalf("SetActiveConfigInDir(old): %v", err)
+	}
+	oldMarker, err := os.ReadFile(filepath.Join(root, "config", paths.ActiveConfigStateFile))
+	if err != nil {
+		t.Fatalf("Read old marker: %v", err)
+	}
+	oldRuntime := model.repos.Cache.Get(model.project.ID)
+	oldPath := model.repos.Editor.Path()
+	oldTheme := model.theme.Key
+
+	previousSetter := setActiveConfigInDir
+	setActiveConfigInDir = func(string, string) error { return errors.New("marker is unwritable") }
+	t.Cleanup(func() { setActiveConfigInDir = previousSetter })
+
+	model.openConfigPicker()
+	model = pressStringKey(t, model, "down")
+	model = pressKey(t, model, tea.KeyEnter)
+
+	if model.repos.Cache.Get(model.project.ID) != oldRuntime {
+		t.Fatal("marker failure changed the live runtime")
+	}
+	if model.repos.Editor.Path() != oldPath || model.theme.Key != oldTheme {
+		t.Fatalf("marker failure changed live model: path=%q theme=%q", model.repos.Editor.Path(), model.theme.Key)
+	}
+	gotMarker, err := os.ReadFile(filepath.Join(root, "config", paths.ActiveConfigStateFile))
+	if err != nil {
+		t.Fatalf("Read restored marker: %v", err)
+	}
+	if string(gotMarker) != string(oldMarker) {
+		t.Fatalf("marker after failure = %q, want %q", gotMarker, oldMarker)
+	}
+	if !pickerRouteOpen(model, screenhost.ConfigPicker) || model.status == "" {
+		t.Fatalf("marker failure should keep picker open with status: stack=%v status=%q", model.screenStack, model.status)
+	}
 }
 
 func TestConfigPickerKeepsStateOnInvalidBundle(t *testing.T) {
@@ -369,19 +481,20 @@ func TestConfigPickerKeepsStateOnInvalidBundle(t *testing.T) {
 	originalPath := model.repos.Editor.Path()
 	originalThemeKey := model.theme.Key
 
-	model = pressRune(t, model, '3')
+	model = pressRune(t, model, '4')
 	model = pressRune(t, model, 'c')
-	if model.entityForm.mode != entityScreenConfigPicker {
-		t.Fatalf("expected config picker open, got %v", model.entityForm.mode)
+	if !pickerRouteOpen(model, screenhost.ConfigPicker) {
+		t.Fatalf("expected config picker open, stack=%v", model.screenStack)
 	}
 
 	// The experiment file from newPickerModel is "# placeholder\n" — an
-	// invalid bundle. Hot-reload must reject it without mutating state.
+	// invalid bundle. Hot-reload rejects it while the current path remains
+	// published.
 	model = pressStringKey(t, model, "down")
 	model = pressKey(t, model, tea.KeyEnter)
 
-	if model.entityForm.mode != entityScreenConfigPicker {
-		t.Fatalf("picker must stay open on invalid bundle, got mode %v", model.entityForm.mode)
+	if !pickerRouteOpen(model, screenhost.ConfigPicker) {
+		t.Fatalf("picker must stay open on invalid bundle, stack=%v", model.screenStack)
 	}
 	if !strings.Contains(strings.ToLower(model.status), "config switch failed") {
 		t.Fatalf("status should describe the failure, got %q", model.status)
@@ -392,9 +505,25 @@ func TestConfigPickerKeepsStateOnInvalidBundle(t *testing.T) {
 	if model.theme.Key != originalThemeKey {
 		t.Fatalf("theme.Key changed despite import failure: %q != %q", model.theme.Key, originalThemeKey)
 	}
-	// The .active state file must not be written on failure — otherwise a
-	// next startup would also try to load the broken bundle.
-	if _, err := os.Stat(filepath.Join(root, "config", paths.ActiveConfigStateFile)); err == nil {
-		t.Fatalf(".active was written despite import failure")
+	marker, err := os.ReadFile(filepath.Join(root, "config", paths.ActiveConfigStateFile))
+	if err != nil || !strings.Contains(string(marker), "experiment") {
+		t.Fatalf(".active was not published for the selected path: err=%v marker=%q", err, marker)
 	}
+}
+
+func TestConfigPickerRejectsValueOutsideDiscoveredCandidates(t *testing.T) {
+	model, _ := newPickerModel(t)
+	original := model.repos.Editor.Path()
+	model.openConfigPicker()
+	model.applySettingsPicker(screenhost.Action{EntityKind: string(settingspicker.Config), Value: "../../outside.yaml"})
+	if model.repos.Editor.Path() != original || !pickerRouteOpen(model, screenhost.ConfigPicker) {
+		t.Fatalf("forged candidate changed host state: path=%q stack=%v", model.repos.Editor.Path(), model.screenStack)
+	}
+	if model.status != "invalid config picker selection" {
+		t.Fatalf("forged candidate reached host I/O, status = %q", model.status)
+	}
+}
+
+func pickerRouteOpen(model Model, id screenhost.ID) bool {
+	return len(model.screenStack) > 0 && model.screenStack[len(model.screenStack)-1] == id
 }

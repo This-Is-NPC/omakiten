@@ -11,13 +11,16 @@ import (
 	"github.com/charmbracelet/x/ansi"
 
 	"omakiten/internal/activity"
-	"omakiten/internal/app"
 	"omakiten/internal/config"
 	"omakiten/internal/domain"
 	"omakiten/internal/testfixtures"
 	"omakiten/internal/testfixtures/runtimecache"
 	"omakiten/internal/testfixtures/snapstore"
 	"omakiten/internal/token"
+	"omakiten/internal/tui/screenhost"
+	"omakiten/internal/tui/screens/commentdetail"
+	"omakiten/internal/tui/screens/plannetwork"
+	"omakiten/internal/tui/screens/taskdetail"
 )
 
 func TestModelSwitchesViews(t *testing.T) {
@@ -35,7 +38,7 @@ func TestModelSwitchesViews(t *testing.T) {
 		t.Fatalf("CreateTask() error = %v", err)
 	}
 
-	model, err := NewModel(ctx, project.Context(), Repositories{Tasks: store, Comments: store, Dependencies: store, Cache: runtimecache.Install(0, store.Snapshot()), Workflow: app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot())}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
+	model, err := NewModel(ctx, project.Context(), Repositories{Tasks: store, Comments: store, Dependencies: store, Cache: runtimecache.InstallWithStore(0, store)}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
 	if err != nil {
 		t.Fatalf("NewModel() error = %v", err)
 	}
@@ -69,19 +72,19 @@ func TestModelTableAndGraphShowCounts(t *testing.T) {
 		t.Fatalf("AddTaskDependency() error = %v", err)
 	}
 
-	model, err := NewModel(ctx, project.Context(), Repositories{Tasks: store, Comments: store, Dependencies: store, Cache: runtimecache.Install(0, store.Snapshot()), Workflow: app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot())}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
+	model, err := NewModel(ctx, project.Context(), Repositories{Tasks: store, Comments: store, Dependencies: store, Cache: runtimecache.InstallWithStore(0, store)}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
 	if err != nil {
 		t.Fatalf("NewModel() error = %v", err)
 	}
 
 	table := ansi.Strip(pressStringKey(t, model, "/").View())
-	if !strings.Contains(table, "// TASKS · 2") {
+	if !strings.Contains(table, "TASKS · 2") {
 		t.Fatalf("table missing task count\n%s", table)
 	}
 
 	graphModel := pressStringKey(t, pressStringKey(t, model, "/"), "/")
 	graph := ansi.Strip(graphModel.View())
-	if !strings.Contains(graph, "// DEPENDENCY GRAPH · 1") {
+	if !strings.Contains(graph, "DEPENDENCY GRAPH · 1") {
 		t.Fatalf("graph missing dependency count\n%s", graph)
 	}
 }
@@ -115,59 +118,55 @@ func TestModelTablesUseWideTerminalSpace(t *testing.T) {
 	if err != nil {
 		t.Fatalf("BeginActivityLog() error = %v", err)
 	}
-	if err := store.FinishActivityLog(ctx, logID, "ok", 12, ""); err != nil {
-		t.Fatalf("FinishActivityLog() error = %v", err)
-	}
+	finishActivityLog(t, store, ctx, logID, 12)
 
-	model, err := NewModel(ctx, project.Context(), Repositories{Tasks: store, Comments: store, Dependencies: store, Cache: runtimecache.Install(0, store.Snapshot()), Workflow: app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot()), Events: store, ActivityLogs: store}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
+	model, err := NewModel(ctx, project.Context(), Repositories{Tasks: store, Comments: store, Dependencies: store, Cache: runtimecache.InstallWithStore(0, store), Events: store, ActivityLogs: store}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
 	if err != nil {
 		t.Fatalf("NewModel() error = %v", err)
 	}
 	model.width = 180
-	// The Stats › Logs view now stacks two narrow summary grid tables on
-	// top of the wide activity panel, so the *first* ┌...┐ line belongs
-	// to the summary, not the panel. Walk every match and take the widest
-	// — that is the panel itself.
-	panelWidth := func(view string) int {
-		widest := 0
-		for _, line := range strings.Split(view, "\n") {
-			if strings.Contains(line, "┌") && strings.Contains(line, "┐") {
-				if w := lipgloss.Width(line); w > widest {
-					widest = w
-				}
+	assertWideModelViews(t, model, longTitle)
+}
+
+func finishActivityLog(t *testing.T, store *snapstore.Store, ctx context.Context, id int64, duration int) {
+	t.Helper()
+	if err := store.FinishActivityLog(ctx, id, "ok", duration, ""); err != nil {
+		t.Fatalf("FinishActivityLog() error = %v", err)
+	}
+}
+
+func widestPanelWidth(view string) int {
+	widest := 0
+	for _, line := range strings.Split(view, "\n") {
+		if strings.Contains(line, "┌") && strings.Contains(line, "┐") {
+			if w := lipgloss.Width(line); w > widest {
+				widest = w
 			}
 		}
-		return widest
 	}
+	return widest
+}
 
-	tableModel := pressStringKey(t, model, "/")
-	table := ansi.Strip(tableModel.View())
+func assertWideModelViews(t *testing.T, model Model, longTitle string) {
+	t.Helper()
+	table := ansi.Strip(pressStringKey(t, model, "/").View())
 	if !strings.Contains(table, longTitle) {
 		t.Fatalf("wide table truncated task title\n%s", table)
 	}
-
-	logsModel := pressStringKey(t, pressRune(t, model, '2'), "/")
-	logs := ansi.Strip(logsModel.View())
-	// The unified Logs inspector renders TIME · TYPE · ENTITY · WHO ·
-	// DETAIL — args JSON no longer surfaces directly. Instead the
-	// SummarizeEvent detail column carries source/tool/status, so the
-	// operation name still appears.
-	if !strings.Contains(logs, "app.ProjectService.Init") {
-		t.Fatalf("wide logs missing operation name\n%s", logs)
-	}
-	// The unified Logs inspector surfaces every event_type — the
-	// tool_call row above plus the task.created row from CreateTask
-	// above land as two activity rows.
-	if !strings.Contains(logs, "// ACTIVITY · 2") {
-		t.Fatalf("wide logs missing 2-row activity count\n%s", logs)
+	logs := ansi.Strip(pressStringKey(t, pressRune(t, model, '2'), "/").View())
+	for _, want := range []string{"app.ProjectService.Init", "ACTIVITY · 2"} {
+		if !strings.Contains(logs, want) {
+			t.Fatalf("wide logs missing %q\n%s", want, logs)
+		}
 	}
 	for _, header := range []string{"TIME", "TYPE", "ENTITY", "WHO", "DETAIL"} {
 		if !strings.Contains(logs, header) {
 			t.Fatalf("wide logs missing 5-column header %q\n%s", header, logs)
 		}
 	}
-	if tablePanelWidth, logsPanelWidth := panelWidth(table), panelWidth(logs); tablePanelWidth == 0 || logsPanelWidth == 0 || tablePanelWidth != logsPanelWidth {
-		t.Fatalf("table/log panel widths = %d/%d, want matching non-zero widths\nTABLE:\n%s\nLOGS:\n%s", tablePanelWidth, logsPanelWidth, table, logs)
+	tableWidth, logsWidth := widestPanelWidth(table), widestPanelWidth(logs)
+	if tableWidth == 0 || logsWidth == 0 || tableWidth != logsWidth {
+		t.Fatalf("table/log panel widths = %d/%d, want matching non-zero widths\nTABLE:\n%s\nLOGS:\n%s", tableWidth, logsWidth, table, logs)
 	}
 }
 
@@ -198,7 +197,7 @@ func TestModelLoadsActivityLogsWhenOpeningLogsView(t *testing.T) {
 		t.Fatalf("FinishActivityLog() error = %v", err)
 	}
 
-	model, err := NewModel(ctx, project.Context(), Repositories{Tasks: store, Comments: store, Dependencies: store, Cache: runtimecache.Install(0, store.Snapshot()), Workflow: app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot()), Events: store, ActivityLogs: store}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
+	model, err := NewModel(ctx, project.Context(), Repositories{Tasks: store, Comments: store, Dependencies: store, Cache: runtimecache.InstallWithStore(0, store), Events: store, ActivityLogs: store}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
 	if err != nil {
 		t.Fatalf("NewModel() error = %v", err)
 	}
@@ -233,7 +232,7 @@ func TestModelRefreshKeyUpdatesActivityLogs(t *testing.T) {
 		t.Fatalf("UpsertProject() error = %v", err)
 	}
 
-	model, err := NewModel(ctx, project.Context(), Repositories{Tasks: store, Comments: store, Dependencies: store, Cache: runtimecache.Install(0, store.Snapshot()), Workflow: app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot()), Events: store, ActivityLogs: store}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
+	model, err := NewModel(ctx, project.Context(), Repositories{Tasks: store, Comments: store, Dependencies: store, Cache: runtimecache.InstallWithStore(0, store), Events: store, ActivityLogs: store}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
 	if err != nil {
 		t.Fatalf("NewModel() error = %v", err)
 	}
@@ -285,7 +284,7 @@ func TestModelRealtimeTickRefreshesBoardTasks(t *testing.T) {
 		t.Fatalf("UpsertProject() error = %v", err)
 	}
 
-	model, err := NewModel(ctx, project.Context(), Repositories{Tasks: store, Comments: store, Dependencies: store, Cache: runtimecache.Install(0, store.Snapshot()), Workflow: app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot())}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
+	model, err := NewModel(ctx, project.Context(), Repositories{Tasks: store, Comments: store, Dependencies: store, Cache: runtimecache.InstallWithStore(0, store)}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
 	if err != nil {
 		t.Fatalf("NewModel() error = %v", err)
 	}
@@ -332,17 +331,17 @@ func TestModelOpensExistingTaskScreen(t *testing.T) {
 		t.Fatalf("AddComment(agent) error = %v", err)
 	}
 
-	model, err := NewModel(ctx, project.Context(), Repositories{Tasks: store, Comments: store, Dependencies: store, Cache: runtimecache.Install(0, store.Snapshot()), Workflow: app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot())}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
+	model, err := NewModel(ctx, project.Context(), Repositories{Tasks: store, Comments: store, Dependencies: store, Cache: runtimecache.InstallWithStore(0, store)}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
 	if err != nil {
 		t.Fatalf("NewModel() error = %v", err)
 	}
 
 	got := pressKey(t, model, tea.KeyEnter)
-	if got.taskScreen != taskScreenView {
-		t.Fatalf("taskScreen = %v, want %v", got.taskScreen, taskScreenView)
+	if !got.inTaskDetail() {
+		t.Fatal("task detail did not open")
 	}
-	if got.taskID != task.ID {
-		t.Fatalf("taskID = %d, want %d", got.taskID, task.ID)
+	if got.taskDetailScreen.Payload().Task.ID != task.ID {
+		t.Fatalf("taskID = %d, want %d", got.taskDetailScreen.Payload().Task.ID, task.ID)
 	}
 	view := got.View()
 	for _, hidden := range []string{"01 // BOARD", "02 // TABLE", "03 // GRAPH", "04 // CONFIG"} {
@@ -351,14 +350,19 @@ func TestModelOpensExistingTaskScreen(t *testing.T) {
 		}
 	}
 	plain := stripANSI(view)
+	// The details zone holds a window of its own since the screenlayout
+	// migration (#2425), so its tail is REACHABLE from that zone rather than
+	// unconditionally on the first frame. Paging it down brings the description
+	// into the same view as everything else asserted here.
+	plain += "\n" + taskDetailZoneSweep(t, got)
 	for _, want := range []string{
 		"▸ TASK · #",
-		"// TITLE",
+		"TITLE",
 		"Existing task",
-		"// DESCRIPTION",
+		"DESCRIPTION",
 		"First line",
 		"Second line",
-		"// ACTIVITY · 2",
+		"ACTIVITY · 2",
 		"human",
 		humanComment.CreatedAt,
 		"Looks good to me.",
@@ -388,18 +392,18 @@ func TestModelAddsMultilineCommentInsideTaskCommentsPanel(t *testing.T) {
 		t.Fatalf("CreateTask() error = %v", err)
 	}
 
-	model, err := NewModel(ctx, project.Context(), Repositories{Tasks: store, Comments: store, Dependencies: store, Cache: runtimecache.Install(0, store.Snapshot()), Workflow: app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot())}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
+	model, err := NewModel(ctx, project.Context(), Repositories{Tasks: store, Comments: store, Dependencies: store, Cache: runtimecache.InstallWithStore(0, store)}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
 	if err != nil {
 		t.Fatalf("NewModel() error = %v", err)
 	}
 
 	got := pressKey(t, model, tea.KeyEnter)
 	got = pressRune(t, got, 'c')
-	if !got.isEmbeddedCommentInput() {
-		t.Fatalf("isEmbeddedCommentInput() = false, want true")
+	if got.taskDetailScreen.State().Mode != taskdetail.ModeComment {
+		t.Fatalf("detail mode = %v, want comment", got.taskDetailScreen.State().Mode)
 	}
 	view := got.View()
-	for _, want := range []string{"// ACTIVITY · 0", "// NEW COMMENT", "enter saves", "alt+enter/shift+enter", "newline"} {
+	for _, want := range []string{"ACTIVITY · 0", "NEW COMMENT", "enter saves", "alt+enter/shift+enter", "newline"} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("View() missing %q\n%s", want, view)
 		}
@@ -429,9 +433,14 @@ func TestModelAddsMultilineCommentInsideTaskCommentsPanel(t *testing.T) {
 	if comments[0].Body != wantBody {
 		t.Fatalf("comment body = %q, want %q", comments[0].Body, wantBody)
 	}
-	view = got.View()
+	assertMultilineCommentView(t, got, comments[0].CreatedAt)
+}
+
+func assertMultilineCommentView(t *testing.T, model Model, createdAt string) {
+	t.Helper()
+	view := model.View()
 	plainView := stripANSI(view)
-	for _, want := range []string{"// ACTIVITY · 1", "human", comments[0].CreatedAt, "First line", "Second line", "Third line"} {
+	for _, want := range []string{"ACTIVITY · 1", "human", createdAt, "First line", "Second line", "Third line"} {
 		if !strings.Contains(plainView, want) {
 			t.Fatalf("View() missing %q\n%s", want, view)
 		}
@@ -450,14 +459,14 @@ func TestModelCreatesTaskFromDedicatedScreen(t *testing.T) {
 		t.Fatalf("UpsertProject() error = %v", err)
 	}
 
-	model, err := NewModel(ctx, project.Context(), Repositories{Tasks: store, Comments: store, Dependencies: store, Cache: runtimecache.Install(0, store.Snapshot()), Workflow: app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot())}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
+	model, err := NewModel(ctx, project.Context(), Repositories{Tasks: store, Comments: store, Dependencies: store, Cache: runtimecache.InstallWithStore(0, store)}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
 	if err != nil {
 		t.Fatalf("NewModel() error = %v", err)
 	}
 
 	got := sendText(t, pressRune(t, model, 'n'), "Created from TUI")
-	if got.taskScreen != taskScreenCreate {
-		t.Fatalf("taskScreen = %v, want %v", got.taskScreen, taskScreenCreate)
+	if len(got.screenStack) == 0 || got.screenStack[len(got.screenStack)-1] != screenhost.TaskForm {
+		t.Fatalf("screenStack = %v, want task form", got.screenStack)
 	}
 	count, err := store.TaskCount(ctx, project.ID)
 	if err != nil {
@@ -468,64 +477,41 @@ func TestModelCreatesTaskFromDedicatedScreen(t *testing.T) {
 	}
 
 	got = pressKey(t, got, tea.KeyTab)
-	descriptionInput := got.renderTaskDescriptionField(got.taskFormWidth())
-	if lipgloss.Width(descriptionInput) < taskFormInputWidth || lipgloss.Height(descriptionInput) < taskDescriptionInputHeight {
-		t.Fatalf("description input size = %dx%d, want at least %dx%d", lipgloss.Width(descriptionInput), lipgloss.Height(descriptionInput), taskFormInputWidth, taskDescriptionInputHeight)
-	}
 	got = sendText(t, got, "First line")
 	got = pressAltKey(t, got, tea.KeyEnter)
 	got = sendText(t, got, "Second line")
 	got = pressKey(t, got, tea.KeyTab)
-	if got.taskField != taskFieldPriority {
-		t.Fatalf("taskField = %v, want priority", got.taskField)
-	}
 	got = pressKey(t, got, tea.KeyRight)
-	if got.taskPriority != domain.Priority(3) {
-		t.Fatalf("taskPriority = %d, want high (id 3)", got.taskPriority)
+	if got.taskFormScreen.Values().Priority != "3" {
+		t.Fatalf("task priority = %q, want high (id 3)", got.taskFormScreen.Values().Priority)
 	}
 	got = pressKey(t, got, tea.KeyCtrlS)
+	assertCreatedTask(t, got, store, ctx, project.ID)
+}
 
-	if got.taskScreen != taskScreenView {
-		t.Fatalf("taskScreen = %v, want %v", got.taskScreen, taskScreenView)
+func assertCreatedTask(t *testing.T, model Model, store *snapstore.Store, ctx context.Context, projectID int64) {
+	t.Helper()
+	if !model.inTaskDetail() || model.mode != modeNormal || model.boardScreen.Column() != 0 || model.boardScreen.Card() != 0 {
+		t.Fatalf("created task model did not return to the expected detail selection")
 	}
-	if got.mode != modeNormal {
-		t.Fatalf("mode = %v, want %v", got.mode, modeNormal)
-	}
-	if got.selected != 0 || got.colIdx != 0 || got.cardIdx != 0 {
-		t.Fatalf("selection = selected %d col %d card %d, want 0/0/0", got.selected, got.colIdx, got.cardIdx)
-	}
-	task, ok := got.selectedTask()
+	task, ok := model.selectedTask()
 	if !ok {
 		t.Fatalf("selectedTask() ok = false, want true")
 	}
-	title := "Created from TUI"
-	description := "First line\nSecond line"
-	if task.Title != title || task.Description != description || task.Priority != domain.Priority(3) || task.BucketKey != "backlog" {
-		t.Fatalf("selected task = %#v, want title %q description %q priority high in backlog", task, title, description)
+	if task.Title != "Created from TUI" || task.Description != "First line\nSecond line" || task.Priority != domain.Priority(3) || task.BucketKey != "backlog" {
+		t.Fatalf("selected task = %#v, want created task in backlog", task)
 	}
-	count, err = store.TaskCount(ctx, project.ID)
+	count, err := store.TaskCount(ctx, projectID)
 	if err != nil {
 		t.Fatalf("TaskCount() error = %v", err)
 	}
 	if count != 1 {
 		t.Fatalf("TaskCount() = %d, want 1", count)
 	}
-
-	view := got.View()
-	for _, want := range []string{
-		"// TITLE",
-		title,
-		"// BUCKET",
-		"backlog",
-		"// PRIORITY",
-		"high",
-		"// BLOCKERS",
-		"// COMMENTS",
-		"// DESCRIPTION",
-		"First line",
-		"Second line",
-	} {
-		if !strings.Contains(stripANSI(view), want) {
+	view := model.View()
+	painted := stripANSI(view) + "\n" + taskDetailZoneSweep(t, model)
+	for _, want := range []string{"TITLE", "Created from TUI", "BUCKET", "backlog", "PRIORITY", "high", "BLOCKERS", "COMMENTS", "DESCRIPTION", "First line", "Second line"} {
+		if !strings.Contains(painted, want) {
 			t.Fatalf("View() missing %q\n%s", want, view)
 		}
 	}
@@ -546,15 +532,15 @@ func TestModelEditsTaskAndReturnsToView(t *testing.T) {
 		t.Fatalf("CreateTask() error = %v", err)
 	}
 
-	model, err := NewModel(ctx, project.Context(), Repositories{Tasks: store, Comments: store, Dependencies: store, Cache: runtimecache.Install(0, store.Snapshot()), Workflow: app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot())}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
+	model, err := NewModel(ctx, project.Context(), Repositories{Tasks: store, Comments: store, Dependencies: store, Cache: runtimecache.InstallWithStore(0, store)}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
 	if err != nil {
 		t.Fatalf("NewModel() error = %v", err)
 	}
 
 	got := pressKey(t, model, tea.KeyEnter)
 	got = pressRune(t, got, 'e')
-	if got.taskScreen != taskScreenEdit {
-		t.Fatalf("taskScreen = %v, want %v", got.taskScreen, taskScreenEdit)
+	if len(got.screenStack) == 0 || got.screenStack[len(got.screenStack)-1] != screenhost.TaskForm {
+		t.Fatalf("screenStack = %v, want task form", got.screenStack)
 	}
 	got = pressBackspace(t, got, len("Old title"))
 	got = sendText(t, got, "New title")
@@ -565,8 +551,8 @@ func TestModelEditsTaskAndReturnsToView(t *testing.T) {
 	got = sendText(t, got, "Line two")
 	got = pressKey(t, got, tea.KeyCtrlS)
 
-	if got.taskScreen != taskScreenView {
-		t.Fatalf("taskScreen = %v, want %v", got.taskScreen, taskScreenView)
+	if !got.inTaskDetail() {
+		t.Fatal("task detail did not remain open after edit")
 	}
 	task, ok := got.selectedTask()
 	if !ok {
@@ -574,70 +560,6 @@ func TestModelEditsTaskAndReturnsToView(t *testing.T) {
 	}
 	if task.Title != "New title" || task.Description != "Line one\nLine two" {
 		t.Fatalf("selected task = %#v, want edited title and multiline description", task)
-	}
-}
-
-// TestOpenTaskEditCalibratesDescriptionTextarea locks the fix for the
-// "field empties on first keystroke" bug. Pre-fix, openTaskEdit loaded
-// the description into a textarea that still carried the bubbles
-// package-default geometry (Width=40, Height=6 after Prompt/LineNumbers
-// reservations resolve). Subsequent Update(msg) calls — typing,
-// arrow-key navigation — wrapped against that stale 40-col width even
-// though the render path sized a per-frame copy to ~68 cols. The
-// resulting yOffset desync visually emptied the field for users
-// running terminals where the form's inner width and the bubbles
-// default diverge.
-//
-// The fix calls multilineform.Resize on the persistent textarea so
-// every Update operates on the same wrap width Render uses. This test
-// asserts the persistent geometry after openTaskEdit matches what
-// renderTaskDescriptionField will pass downstream — pre-fix Width()
-// would still report the bubbles default and Height() would still be
-// the default viewport rows.
-func TestOpenTaskEditCalibratesDescriptionTextarea(t *testing.T) {
-	ctx := context.Background()
-	store := snapstore.Open(t, t.TempDir()+"/omakiten.db")
-
-	if err := store.ImportBundle(ctx, tuiTestBundle(t), "test.yaml", "hash"); err != nil {
-		t.Fatalf("ImportBundle() error = %v", err)
-	}
-	project, err := store.UpsertProject(ctx, "Project", "project", "/work/project")
-	if err != nil {
-		t.Fatalf("UpsertProject() error = %v", err)
-	}
-	if _, err := store.CreateTask(ctx, project.ID, "Task with body", "Existing description across\nmultiple lines.", domain.Priority(2), "backlog", nil, store.Snapshot()); err != nil {
-		t.Fatalf("CreateTask() error = %v", err)
-	}
-
-	model, err := NewModel(ctx, project.Context(), Repositories{Tasks: store, Comments: store, Dependencies: store, Cache: runtimecache.Install(0, store.Snapshot()), Workflow: app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot())}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
-	if err != nil {
-		t.Fatalf("NewModel() error = %v", err)
-	}
-
-	updated, _ := model.Update(tea.WindowSizeMsg{Width: 100, Height: 40})
-	got, ok := updated.(Model)
-	if !ok {
-		t.Fatalf("Update(WindowSizeMsg) returned %T, want Model", updated)
-	}
-
-	got = pressKey(t, got, tea.KeyEnter) // enter task view
-	got = pressRune(t, got, 'e')         // open edit form
-	if got.taskScreen != taskScreenEdit {
-		t.Fatalf("taskScreen = %v, want %v", got.taskScreen, taskScreenEdit)
-	}
-
-	// Persistent textarea must be sized to the form's actual geometry.
-	// renderTaskDescriptionField passes taskFormWidth and
-	// taskDescriptionInputHeight down to multilineform.Render, which
-	// derives the inner width by subtracting the formMultiline
-	// horizontal padding (4 cols). The persistent model has to mirror
-	// that or Update operates on a different wrap.
-	wantInnerWidth := got.taskFormWidth() - got.styles.formMultiline.GetHorizontalPadding()
-	if w := got.taskDescriptionInput.Width(); w != wantInnerWidth {
-		t.Fatalf("taskDescriptionInput.Width() = %d, want %d (taskFormWidth %d minus padding %d) — Resize at openTaskEdit not applied", w, wantInnerWidth, got.taskFormWidth(), got.styles.formMultiline.GetHorizontalPadding())
-	}
-	if h := got.taskDescriptionInput.Height(); h != taskDescriptionInputHeight {
-		t.Fatalf("taskDescriptionInput.Height() = %d, want %d — Resize at openTaskEdit not applied", h, taskDescriptionInputHeight)
 	}
 }
 
@@ -661,33 +583,24 @@ func TestModelSetsTaskBlockersFromPicker(t *testing.T) {
 		t.Fatalf("CreateTask(blocked) error = %v", err)
 	}
 
-	model, err := NewModel(ctx, project.Context(), Repositories{Tasks: store, Comments: store, Dependencies: store, Cache: runtimecache.Install(0, store.Snapshot()), Workflow: app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot())}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
-	if err != nil {
-		t.Fatalf("NewModel() error = %v", err)
-	}
+	model := newBlockerPickerModel(t, ctx, project, store)
 
 	got := pressKey(t, model, tea.KeyDown)
 	got = pressKey(t, got, tea.KeyEnter)
-	if got.taskID != blocked.ID || got.taskScreen != taskScreenView {
-		t.Fatalf("task screen = %v taskID = %d, want blocked task #%d", got.taskScreen, got.taskID, blocked.ID)
+	if !got.inTaskDetail() || got.taskDetailScreen.Payload().Task.ID != blocked.ID {
+		t.Fatalf("task detail = %v taskID = %d, want blocked task #%d", got.screenStack, got.taskDetailScreen.Payload().Task.ID, blocked.ID)
 	}
 	got = pressRune(t, got, 'e')
-	if got.taskScreen != taskScreenEdit {
-		t.Fatalf("taskScreen = %v, want edit", got.taskScreen)
+	if len(got.screenStack) == 0 || got.screenStack[len(got.screenStack)-1] != screenhost.TaskForm {
+		t.Fatalf("screenStack = %v, want task form", got.screenStack)
 	}
 	got = pressKey(t, got, tea.KeyCtrlB)
-	if !got.blockerPickerOpen {
-		t.Fatalf("blockerPickerOpen = false, want true")
-	}
-	if !strings.Contains(got.View(), "Design dependency") {
-		t.Fatalf("blocker picker view missing candidate\n%s", got.View())
-	}
-	got = pressKey(t, got, tea.KeySpace)
-	got = pressKey(t, got, tea.KeyCtrlS)
-
-	if got.blockerPickerOpen {
-		t.Fatalf("blockerPickerOpen = true, want false after save")
-	}
+	assertBlockerPickerOpen(t, got)
+	got = pressKey(t, got, tea.KeyEsc)
+	assertBlockerPickerClosed(t, got)
+	got = pressKey(t, got, tea.KeyCtrlB)
+	got = pressKey(t, pressKey(t, got, tea.KeySpace), tea.KeyCtrlS)
+	assertBlockerPickerClosed(t, got)
 	deps, err := store.ListTaskDependencies(ctx, project.ID, blocked.ID)
 	if err != nil {
 		t.Fatalf("ListTaskDependencies() error = %v", err)
@@ -700,10 +613,45 @@ func TestModelSetsTaskBlockersFromPicker(t *testing.T) {
 	}
 	got = pressKey(t, got, tea.KeyEsc)
 	view := got.View()
-	for _, want := range []string{"// BLOCKERS · 1", "Design dependency", "backlog · normal"} {
+	for _, want := range []string{"BLOCKERS · 1", "Design dependency", "backlog · normal"} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("task view missing blocker detail %q\n%s", want, view)
 		}
+	}
+}
+
+func newBlockerPickerModel(t *testing.T, ctx context.Context, project domain.Project, store *snapstore.Store) Model {
+	t.Helper()
+	model, err := NewModel(ctx, project.Context(), Repositories{Tasks: store, Comments: store, Dependencies: store, Cache: runtimecache.InstallWithStore(0, store)}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
+	if err != nil {
+		t.Fatalf("NewModel() error = %v", err)
+	}
+	return model
+}
+
+func assertBlockerPickerOpen(t *testing.T, model Model) {
+	t.Helper()
+	if !model.inTaskFormBlockerOverlay() || model.taskDetailScreen.State().Mode != taskdetail.ModeBlockers {
+		t.Fatalf("task detail mode = %v stack = %v, want Task Form blocker overlay", model.taskDetailScreen.State().Mode, model.screenStack)
+	}
+	if descriptor, ok := model.activeScreenDescriptor(); !ok || descriptor.ID != screenhost.TaskDetail {
+		t.Fatalf("blocker picker active screen = %v, %v; want task detail", descriptor.ID, ok)
+	}
+	if !strings.Contains(model.View(), "Design dependency") {
+		t.Fatalf("blocker picker view missing candidate\n%s", model.View())
+	}
+	if titles := model.currentHelpTitles(); len(titles) != 1 || titles[0] != "blocker_picker" {
+		t.Fatalf("currentHelpTitles() = %v, want blocker_picker", titles)
+	}
+	if footer := model.footerTokens(); len(footer) == 0 || footer[0].key != "space" {
+		t.Fatalf("footerTokens() = %#v, want hosted blocker picker footer", footer)
+	}
+}
+
+func assertBlockerPickerClosed(t *testing.T, model Model) {
+	t.Helper()
+	if model.inTaskFormBlockerOverlay() || model.taskDetailScreen.State().Mode != taskdetail.ModeNormal {
+		t.Fatalf("task detail mode = %v stack = %v, want blocker overlay closed", model.taskDetailScreen.State().Mode, model.screenStack)
 	}
 }
 
@@ -726,25 +674,25 @@ func TestModelBoardMoveSurfacesWorkflowBlock(t *testing.T) {
 		t.Fatalf("MoveTask(setup) error = %v", err)
 	}
 
-	model, err := NewModel(ctx, project.Context(), Repositories{Tasks: store, Comments: store, Dependencies: store, Cache: runtimecache.Install(0, store.Snapshot()), Workflow: app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot())}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
+	model, err := NewModel(ctx, project.Context(), Repositories{Tasks: store, Comments: store, Dependencies: store, Cache: runtimecache.InstallWithStore(0, store)}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
 	if err != nil {
 		t.Fatalf("NewModel() error = %v", err)
 	}
 
 	got := pressStringKey(t, model, "right")
-	if got.colIdx != 1 {
-		t.Fatalf("colIdx = %d, want 1 (dev column)", got.colIdx)
+	if got.boardScreen.Column() != 1 {
+		t.Fatalf("column = %d, want 1 (dev column)", got.boardScreen.Column())
 	}
 	got = pressRune(t, got, 'm')
-	if !got.moveMode {
+	if !got.boardScreen.MoveMode() {
 		t.Fatalf("moveMode = false, want true")
 	}
 	got = pressStringKey(t, got, "left")
 
-	if got.colIdx != 1 {
-		t.Fatalf("colIdx after blocked move = %d, want 1 (task should not move visually)", got.colIdx)
+	if got.boardScreen.Column() != 1 {
+		t.Fatalf("column after blocked move = %d, want 1 (task should not move visually)", got.boardScreen.Column())
 	}
-	if got.moveMode {
+	if got.boardScreen.MoveMode() {
 		t.Fatalf("moveMode = true, want false (clears after blocked attempt)")
 	}
 	if !strings.Contains(got.status, "transition not allowed") {
@@ -777,18 +725,45 @@ func TestModelTaskViewWrapsLongPropertyTextWithoutBreakingGrid(t *testing.T) {
 		t.Fatalf("CreateTask() error = %v", err)
 	}
 
-	model, err := NewModel(ctx, project.Context(), Repositories{Tasks: store, Comments: store, Dependencies: store, Cache: runtimecache.Install(0, store.Snapshot()), Workflow: app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot())}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
+	model, err := NewModel(ctx, project.Context(), Repositories{Tasks: store, Comments: store, Dependencies: store, Cache: runtimecache.InstallWithStore(0, store)}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
 	if err != nil {
 		t.Fatalf("NewModel() error = %v", err)
 	}
 
 	got := pressKey(t, model, tea.KeyEnter)
-	view := got.View()
-	plain := ansi.Strip(view)
-	lines := strings.Split(plain, "\n")
+	assertWrappedTaskGrid(t, got)
+}
 
+func assertWrappedTaskGrid(t *testing.T, model Model) {
+	t.Helper()
+	plain := ansi.Strip(model.View())
+	lines := strings.Split(plain, "\n")
+	start, end := findTaskGridRows(t, lines, plain)
+	edge := strings.Index(lines[start], "┐")
+	if edge < 0 {
+		t.Fatalf("grid top border has no right corner\n%s", plain)
+	}
+	column := len([]rune(lines[start][:edge]))
+	for i := start; i <= end; i++ {
+		row := []rune(lines[i])
+		if column >= len(row) {
+			t.Fatalf("grid row %d is %d cells wide, the box's right edge is at %d\n%s", i, len(row), column, plain)
+		}
+		if !strings.ContainsRune("┐┤┘│┴", row[column]) {
+			t.Fatalf("grid row %d carries %q where the box's right edge should be\n%s", i, string(row[column]), plain)
+		}
+	}
+	painted := plain + "\n" + taskDetailZoneSweep(t, model)
+	for _, want := range []string{"TITLE", "DESCRIPTION", "comportamento", "projeto"} {
+		if !strings.Contains(painted, want) {
+			t.Fatalf("View() missing %q\n%s", want, plain)
+		}
+	}
+}
+
+func findTaskGridRows(t *testing.T, lines []string, plain string) (int, int) {
+	t.Helper()
 	start := -1
-	end := -1
 	for i, line := range lines {
 		if strings.Contains(line, "┌") && strings.Contains(line, "┐") {
 			start = i
@@ -798,33 +773,17 @@ func TestModelTaskViewWrapsLongPropertyTextWithoutBreakingGrid(t *testing.T) {
 	if start == -1 {
 		t.Fatalf("task view grid top border not found\n%s", plain)
 	}
-	// Scan forward from the form column's top border to the first
-	// closing └┘ row — that bounds the form column box. The detail
-	// view now stacks a sub-tasks pane below the form, so the older
-	// "last └┘ in the output" probe wandered into a different box
-	// and asserted against blank separator rows in between.
+	end := -1
 	for i := start + 1; i < len(lines); i++ {
-		if strings.Contains(lines[i], "└") && strings.Contains(lines[i], "┘") {
-			end = i
+		if !strings.Contains(lines[i], "│") {
 			break
 		}
+		end = i
 	}
 	if end == -1 {
-		t.Fatalf("task view grid bottom border not found\n%s", plain)
+		t.Fatalf("task view grid has no rows under its top border\n%s", plain)
 	}
-
-	wantWidth := lipgloss.Width(lines[start])
-	for i := start; i <= end; i++ {
-		if gotWidth := lipgloss.Width(lines[i]); gotWidth != wantWidth {
-			t.Fatalf("grid row %d width = %d, want %d\n%s", i, gotWidth, wantWidth, plain)
-		}
-	}
-
-	for _, want := range []string{"// TITLE", "// DESCRIPTION", "comportamento", "projeto"} {
-		if !strings.Contains(plain, want) {
-			t.Fatalf("View() missing %q\n%s", want, plain)
-		}
-	}
+	return start, end
 }
 
 func TestModelBoardCollapsesToFocusedColumnWhenNarrow(t *testing.T) {
@@ -849,7 +808,7 @@ func TestModelBoardCollapsesToFocusedColumnWhenNarrow(t *testing.T) {
 		t.Fatalf("MoveTask(dev) error = %v", err)
 	}
 
-	model, err := NewModel(ctx, project.Context(), Repositories{Tasks: store, Comments: store, Dependencies: store, Cache: runtimecache.Install(0, store.Snapshot()), Workflow: app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot())}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
+	model, err := NewModel(ctx, project.Context(), Repositories{Tasks: store, Comments: store, Dependencies: store, Cache: runtimecache.InstallWithStore(0, store)}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
 	if err != nil {
 		t.Fatalf("NewModel() error = %v", err)
 	}
@@ -884,7 +843,7 @@ func TestModelBoardShowsMultipleColumnsWhenTheyFit(t *testing.T) {
 	if err != nil {
 		t.Fatalf("UpsertProject() error = %v", err)
 	}
-	model, err := NewModel(ctx, project.Context(), Repositories{Tasks: store, Comments: store, Dependencies: store, Cache: runtimecache.Install(0, store.Snapshot()), Workflow: app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot())}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
+	model, err := NewModel(ctx, project.Context(), Repositories{Tasks: store, Comments: store, Dependencies: store, Cache: runtimecache.InstallWithStore(0, store)}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
 	if err != nil {
 		t.Fatalf("NewModel() error = %v", err)
 	}
@@ -918,7 +877,7 @@ func TestModelBoardLaneNavigationWrapsAround(t *testing.T) {
 	if err != nil {
 		t.Fatalf("UpsertProject() error = %v", err)
 	}
-	model, err := NewModel(ctx, project.Context(), Repositories{Tasks: store, Comments: store, Dependencies: store, Cache: runtimecache.Install(0, store.Snapshot()), Workflow: app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot())}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
+	model, err := NewModel(ctx, project.Context(), Repositories{Tasks: store, Comments: store, Dependencies: store, Cache: runtimecache.InstallWithStore(0, store)}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
 	if err != nil {
 		t.Fatalf("NewModel() error = %v", err)
 	}
@@ -933,14 +892,14 @@ func TestModelBoardLaneNavigationWrapsAround(t *testing.T) {
 	for i := 0; i < n; i++ {
 		got = pressStringKey(t, got, "right")
 	}
-	if got.colIdx != 0 {
-		t.Fatalf("after %d rights colIdx = %d, want 0 (wrap)", n, got.colIdx)
+	if got.boardScreen.Column() != 0 {
+		t.Fatalf("after %d rights column = %d, want 0 (wrap)", n, got.boardScreen.Column())
 	}
 
 	// Left from the first lane wraps to the last.
 	got = pressStringKey(t, got, "left")
-	if got.colIdx != n-1 {
-		t.Fatalf("left from first colIdx = %d, want %d (wrap)", got.colIdx, n-1)
+	if got.boardScreen.Column() != n-1 {
+		t.Fatalf("left from first column = %d, want %d (wrap)", got.boardScreen.Column(), n-1)
 	}
 }
 
@@ -961,20 +920,20 @@ func TestModelSettingsLawsRendersOwnColumnWhenNarrow(t *testing.T) {
 		t.Fatalf("UpsertProject() error = %v", err)
 	}
 
-	model, err := NewModel(ctx, project.Context(), Repositories{Tasks: store, Comments: store, Dependencies: store, Cache: runtimecache.Install(0, store.Snapshot()), Workflow: app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot())}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
+	model, err := NewModel(ctx, project.Context(), Repositories{Tasks: store, Comments: store, Dependencies: store, Cache: runtimecache.InstallWithStore(0, store)}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
 	if err != nil {
 		t.Fatalf("NewModel() error = %v", err)
 	}
 	model.width = 50
 	// Settings/general first, then advance to Settings/laws.
-	got := pressRune(t, model, '3')
+	got := pressRune(t, model, '4')
 	got = pressStringKey(t, got, "/")
 
 	view := ansi.Strip(got.View())
-	if !strings.Contains(view, "// LAWS") {
+	if !strings.Contains(view, "LAWS") {
 		t.Fatalf("Settings › Laws column header missing on narrow terminal:\n%s", view)
 	}
-	for _, leaked := range []string{"// PERSONAS", "// SKILLS", "// TEMPLATES", "// TAGS"} {
+	for _, leaked := range []string{"PERSONAS", "SKILLS", "TEMPLATES", "TAGS"} {
 		if strings.Contains(view, leaked) {
 			t.Fatalf("Settings › Laws should not co-render sibling kind %q:\n%s", leaked, view)
 		}
@@ -993,25 +952,25 @@ func TestModelHelpDefaultsToCurrentContext(t *testing.T) {
 		t.Fatalf("UpsertProject() error = %v", err)
 	}
 
-	model, err := NewModel(ctx, project.Context(), Repositories{Tasks: store, Comments: store, Dependencies: store, Cache: runtimecache.Install(0, store.Snapshot()), Workflow: app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot())}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
+	model, err := NewModel(ctx, project.Context(), Repositories{Tasks: store, Comments: store, Dependencies: store, Cache: runtimecache.InstallWithStore(0, store)}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
 	if err != nil {
 		t.Fatalf("NewModel() error = %v", err)
 	}
 
 	got := pressStringKey(t, model, "?")
 	view := ansi.Strip(got.View())
-	for _, want := range []string{"KEYBINDINGS · CURRENT CONTEXT", "// GLOBAL", "// TASKS · BOARD LENS"} {
+	for _, want := range []string{"KEYBINDINGS · CURRENT CONTEXT", "GLOBAL", "TASKS · BOARD LENS"} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("context help missing %q\n%s", want, view)
 		}
 	}
-	if strings.Contains(view, "// SKILL PICKER") {
+	if strings.Contains(view, "SKILL PICKER") {
 		t.Fatalf("context help rendered unrelated skill picker group\n%s", view)
 	}
 
 	got = pressRune(t, got, 'a')
 	view = ansi.Strip(got.View())
-	for _, want := range []string{"KEYBINDINGS · ALL CONTEXTS", "// SKILL PICKER"} {
+	for _, want := range []string{"KEYBINDINGS · ALL CONTEXTS", "SKILL PICKER"} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("all help missing %q\n%s", want, view)
 		}
@@ -1030,15 +989,15 @@ func TestModelCancelsTaskCreateWithoutPersisting(t *testing.T) {
 		t.Fatalf("UpsertProject() error = %v", err)
 	}
 
-	model, err := NewModel(ctx, project.Context(), Repositories{Tasks: store, Comments: store, Dependencies: store, Cache: runtimecache.Install(0, store.Snapshot()), Workflow: app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot())}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
+	model, err := NewModel(ctx, project.Context(), Repositories{Tasks: store, Comments: store, Dependencies: store, Cache: runtimecache.InstallWithStore(0, store)}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
 	if err != nil {
 		t.Fatalf("NewModel() error = %v", err)
 	}
 
 	got := sendText(t, pressRune(t, model, 'n'), "Draft title")
 	got = pressKey(t, got, tea.KeyEsc)
-	if got.taskScreen != taskScreenClosed {
-		t.Fatalf("taskScreen = %v, want %v", got.taskScreen, taskScreenClosed)
+	if got.inTaskDetail() {
+		t.Fatal("task detail opened while cancelling create")
 	}
 	count, err := store.TaskCount(ctx, project.ID)
 	if err != nil {
@@ -1050,10 +1009,10 @@ func TestModelCancelsTaskCreateWithoutPersisting(t *testing.T) {
 }
 
 // TestNavHeaderRendersTopAndSubKickers locks in the T1 navigation refactor:
-// the per-project header renders the three top zones as `01 // TASKS`,
-// `02 // STATS`, `03 // SETTINGS`, and surfaces a sub-menu strip when the
-// active top has more than one sub. The strip is suppressed on Settings
-// (single sub).
+// the per-project header renders the top zones as `01 // TASKS`,
+// `02 // STATS`, `03 // STUDIO`, `04 // SETTINGS`, and surfaces a sub-menu
+// strip when the active top has more than one sub. The strip is suppressed
+// on Settings (single sub).
 func TestNavHeaderRendersTopAndSubKickers(t *testing.T) {
 	ctx := context.Background()
 	store := snapstore.Open(t, t.TempDir()+"/omakiten.db")
@@ -1064,40 +1023,40 @@ func TestNavHeaderRendersTopAndSubKickers(t *testing.T) {
 	if err != nil {
 		t.Fatalf("UpsertProject() error = %v", err)
 	}
-	model, err := NewModel(ctx, project.Context(), Repositories{Tasks: store, Comments: store, Dependencies: store, Cache: runtimecache.Install(0, store.Snapshot()), Workflow: app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot()), ActivityLogs: store, Metrics: app.NewMetricsService(store)}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
+	model, err := NewModel(ctx, project.Context(), Repositories{Tasks: store, Comments: store, Dependencies: store, Cache: runtimecache.InstallWithStore(0, store), ActivityLogs: store}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
 	if err != nil {
 		t.Fatalf("NewModel() error = %v", err)
 	}
 	model.width = 200
 
 	tasksHeader := ansi.Strip(model.View())
-	for _, want := range []string{"01 // TASKS", "02 // STATS", "03 // SETTINGS", "// board", "// table", "// graph"} {
-		if !strings.Contains(tasksHeader, want) {
-			t.Fatalf("tasks header missing %q\n%s", want, tasksHeader)
-		}
-	}
+	assertHeaderContains(t, tasksHeader, "tasks", "01 // TASKS", "02 // STATS", "03 // STUDIO", "04 // SETTINGS", "// board", "// table", "// graph")
 
 	statsModel := pressRune(t, model, '2')
 	statsHeader := ansi.Strip(statsModel.View())
-	for _, want := range []string{"01 // TASKS", "02 // STATS", "03 // SETTINGS", "// general", "// logs"} {
-		if !strings.Contains(statsHeader, want) {
-			t.Fatalf("stats header missing %q\n%s", want, statsHeader)
-		}
-	}
-	if strings.Contains(statsHeader, "// board") || strings.Contains(statsHeader, "// graph") {
-		t.Fatalf("stats header leaked tasks subs:\n%s", statsHeader)
-	}
+	assertHeaderContains(t, statsHeader, "stats", "01 // TASKS", "02 // STATS", "03 // STUDIO", "04 // SETTINGS", "// general", "// logs")
+	assertHeaderMissing(t, statsHeader, "stats", "// board", "// graph")
 
-	settingsModel := pressRune(t, model, '3')
+	settingsModel := pressRune(t, model, '4')
 	settingsHeader := ansi.Strip(settingsModel.View())
-	for _, want := range []string{"01 // TASKS", "02 // STATS", "03 // SETTINGS", "// general", "// laws", "// personas", "// skills", "// templates", "// tags"} {
-		if !strings.Contains(settingsHeader, want) {
-			t.Fatalf("settings header missing %q\n%s", want, settingsHeader)
+	assertHeaderContains(t, settingsHeader, "settings", "01 // TASKS", "02 // STATS", "03 // STUDIO", "04 // SETTINGS", "// general", "// laws", "// personas", "// skills", "// templates", "// tags")
+	assertHeaderMissing(t, settingsHeader, "settings", "// board", "// table", "// graph")
+}
+
+func assertHeaderContains(t *testing.T, header, name string, values ...string) {
+	t.Helper()
+	for _, value := range values {
+		if !strings.Contains(header, value) {
+			t.Fatalf("%s header missing %q\n%s", name, value, header)
 		}
 	}
-	for _, leaked := range []string{"// board", "// table", "// graph"} {
-		if strings.Contains(settingsHeader, leaked) {
-			t.Fatalf("settings header leaked tasks subs %q:\n%s", leaked, settingsHeader)
+}
+
+func assertHeaderMissing(t *testing.T, header, name string, values ...string) {
+	t.Helper()
+	for _, value := range values {
+		if strings.Contains(header, value) {
+			t.Fatalf("%s header leaked %q\n%s", name, value, header)
 		}
 	}
 }
@@ -1115,7 +1074,7 @@ func TestSubCycleBindings(t *testing.T) {
 	if err != nil {
 		t.Fatalf("UpsertProject() error = %v", err)
 	}
-	model, err := NewModel(ctx, project.Context(), Repositories{Tasks: store, Comments: store, Dependencies: store, Cache: runtimecache.Install(0, store.Snapshot()), Workflow: app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot())}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
+	model, err := NewModel(ctx, project.Context(), Repositories{Tasks: store, Comments: store, Dependencies: store, Cache: runtimecache.InstallWithStore(0, store)}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
 	if err != nil {
 		t.Fatalf("NewModel() error = %v", err)
 	}
@@ -1141,13 +1100,58 @@ func TestSubCycleBindings(t *testing.T) {
 		t.Fatalf("after ',' from board: sub = %d, want subPlans (wrap-around)", got.sub)
 	}
 
-	got = pressRune(t, model, '3')
+	got = pressRune(t, model, '4')
 	if got.top != topSettings || got.sub != subSettingsGeneral {
-		t.Fatalf("after '3': (top, sub) = (%d, %d), want (topSettings, subSettingsGeneral)", got.top, got.sub)
+		t.Fatalf("after '4': (top, sub) = (%d, %d), want (topSettings, subSettingsGeneral)", got.top, got.sub)
 	}
 	got = pressStringKey(t, got, "/")
 	if got.top != topSettings || got.sub != subSettingsLaws {
 		t.Fatalf("'/' on Settings/general should advance to Settings/laws: (top, sub) = (%d, %d)", got.top, got.sub)
+	}
+}
+
+// TestShiftTabCyclesTops pins the tops ring: shift+tab advances
+// Tasks → Stats → Studio → Settings and wraps, and tab on the board
+// does not steal that ring (board OwnsKey does not claim tab).
+func TestShiftTabCyclesTops(t *testing.T) {
+	ctx := context.Background()
+	store := snapstore.Open(t, t.TempDir()+"/omakiten.db")
+	if err := store.ImportBundle(ctx, tuiTestBundle(t), "test.yaml", "hash"); err != nil {
+		t.Fatalf("ImportBundle() error = %v", err)
+	}
+	project, err := store.UpsertProject(ctx, "Project", "project", "/work/project")
+	if err != nil {
+		t.Fatalf("UpsertProject() error = %v", err)
+	}
+	model, err := NewModel(ctx, project.Context(), Repositories{Tasks: store, Comments: store, Dependencies: store, Cache: runtimecache.InstallWithStore(0, store)}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
+	if err != nil {
+		t.Fatalf("NewModel() error = %v", err)
+	}
+
+	if model.top != topTasks || model.sub != subBoard {
+		t.Fatalf("start: (top, sub) = (%d, %d), want (topTasks, subBoard)", model.top, model.sub)
+	}
+
+	unchanged := pressKey(t, model, tea.KeyTab)
+	if unchanged.top != topTasks || unchanged.sub != subBoard {
+		t.Fatalf("tab on board mutated nav: (top, sub) = (%d, %d), want (topTasks, subBoard)", unchanged.top, unchanged.sub)
+	}
+
+	got := pressKey(t, model, tea.KeyShiftTab)
+	if got.top != topStats || got.sub != subStatsGeneral {
+		t.Fatalf("after shift+tab from board: (top, sub) = (%d, %d), want (topStats, subStatsGeneral)", got.top, got.sub)
+	}
+	got = pressKey(t, got, tea.KeyShiftTab)
+	if got.top != topStudio {
+		t.Fatalf("after second shift+tab: top = %d, want topStudio", got.top)
+	}
+	got = pressKey(t, got, tea.KeyShiftTab)
+	if got.top != topSettings {
+		t.Fatalf("after third shift+tab: top = %d, want topSettings", got.top)
+	}
+	got = pressKey(t, got, tea.KeyShiftTab)
+	if got.top != topTasks || got.sub != subBoard {
+		t.Fatalf("after wrap shift+tab: (top, sub) = (%d, %d), want (topTasks, subBoard)", got.top, got.sub)
 	}
 }
 
@@ -1165,7 +1169,7 @@ func TestCtrlOPopsBackStack(t *testing.T) {
 	if err != nil {
 		t.Fatalf("UpsertProject() error = %v", err)
 	}
-	model, err := NewModel(ctx, project.Context(), Repositories{Tasks: store, Comments: store, Dependencies: store, Cache: runtimecache.Install(0, store.Snapshot()), Workflow: app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot()), ActivityLogs: store, Metrics: app.NewMetricsService(store)}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
+	model, err := NewModel(ctx, project.Context(), Repositories{Tasks: store, Comments: store, Dependencies: store, Cache: runtimecache.InstallWithStore(0, store), ActivityLogs: store}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
 	if err != nil {
 		t.Fatalf("NewModel() error = %v", err)
 	}
@@ -1181,9 +1185,9 @@ func TestCtrlOPopsBackStack(t *testing.T) {
 	if got.top != topStats || got.sub != subStatsGeneral {
 		t.Fatalf("'2' should jump to Stats/general: (top, sub) = (%d, %d)", got.top, got.sub)
 	}
-	got = pressRune(t, got, '3')
+	got = pressRune(t, got, '4')
 	if got.top != topSettings || got.sub != subSettingsGeneral {
-		t.Fatalf("'3' should jump to Settings/general: (top, sub) = (%d, %d)", got.top, got.sub)
+		t.Fatalf("'4' should jump to Settings/general: (top, sub) = (%d, %d)", got.top, got.sub)
 	}
 	got = pressStringKey(t, got, "ctrl+o")
 	if got.top != topStats || got.sub != subStatsGeneral {
@@ -1212,13 +1216,13 @@ func TestHomeTileEmbeddedInTopStrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("UpsertProject() error = %v", err)
 	}
-	model, err := NewModel(ctx, project.Context(), Repositories{Tasks: store, Comments: store, Dependencies: store, Cache: runtimecache.Install(0, store.Snapshot()), Workflow: app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot()), ActivityLogs: store, Metrics: app.NewMetricsService(store)}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
+	model, err := NewModel(ctx, project.Context(), Repositories{Tasks: store, Comments: store, Dependencies: store, Cache: runtimecache.InstallWithStore(0, store), ActivityLogs: store}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
 	if err != nil {
 		t.Fatalf("NewModel() error = %v", err)
 	}
 	model.width = 200
 	view := ansi.Strip(model.View())
-	for _, want := range []string{"00 // HOME", "│", "01 // TASKS", "02 // STATS", "03 // SETTINGS"} {
+	for _, want := range []string{"00 // HOME", "│", "01 // TASKS", "02 // STATS", "03 // STUDIO", "04 // SETTINGS"} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("top strip missing %q:\n%s", want, view)
 		}
@@ -1250,14 +1254,14 @@ func TestModelDeletesTaskFromTaskViewWithDoubleD(t *testing.T) {
 		t.Fatalf("CreateTask() error = %v", err)
 	}
 
-	model, err := NewModel(ctx, project.Context(), Repositories{Tasks: store, Comments: store, Dependencies: store, Cache: runtimecache.Install(0, store.Snapshot()), Workflow: app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot()), Events: store, ActivityLogs: store}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
+	model, err := NewModel(ctx, project.Context(), Repositories{Tasks: store, Comments: store, Dependencies: store, Cache: runtimecache.InstallWithStore(0, store), Events: store, ActivityLogs: store}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
 	if err != nil {
 		t.Fatalf("NewModel() error = %v", err)
 	}
 
 	got := pressKey(t, model, tea.KeyEnter) // open task view
-	if got.taskScreen != taskScreenView {
-		t.Fatalf("taskScreen = %v, want taskScreenView (must enter the task before deleting)", got.taskScreen)
+	if !got.inTaskDetail() {
+		t.Fatal("task detail must open before deleting")
 	}
 
 	armed := pressRune(t, got, 'd')
@@ -1304,7 +1308,7 @@ func TestModelBlocksTaskEditOnPressWhenBucketForbids(t *testing.T) {
 		t.Fatalf("CreateTask() error = %v", err)
 	}
 
-	model, err := NewModel(ctx, project.Context(), Repositories{Tasks: store, Comments: store, Dependencies: store, Cache: runtimecache.Install(0, store.Snapshot()), Workflow: app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot()), Events: store}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
+	model, err := NewModel(ctx, project.Context(), Repositories{Tasks: store, Comments: store, Dependencies: store, Cache: runtimecache.InstallWithStore(0, store), Events: store}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
 	if err != nil {
 		t.Fatalf("NewModel() error = %v", err)
 	}
@@ -1313,12 +1317,12 @@ func TestModelBlocksTaskEditOnPressWhenBucketForbids(t *testing.T) {
 	// right to land on the dev column where the task lives.
 	got := pressKey(t, model, tea.KeyRight)
 	got = pressKey(t, got, tea.KeyEnter)
-	if got.taskScreen != taskScreenView {
-		t.Fatalf("taskScreen = %v, want taskScreenView", got.taskScreen)
+	if !got.inTaskDetail() {
+		t.Fatal("task detail did not open")
 	}
 	got = pressRune(t, got, 'e')
-	if got.taskScreen != taskScreenView {
-		t.Fatalf("taskScreen = %v after blocked edit; want taskScreen unchanged (edit must not open)", got.taskScreen)
+	if !got.inTaskDetail() || got.screenStack[len(got.screenStack)-1] != screenhost.TaskDetail {
+		t.Fatalf("task detail changed after blocked edit: %v", got.screenStack)
 	}
 	if !strings.Contains(got.status, "policy:") || !strings.Contains(got.status, "task.edit") {
 		t.Fatalf("status = %q, want a policy hint mentioning task.edit", got.status)
@@ -1344,7 +1348,7 @@ func TestModelBlocksTaskDeleteArmWhenBucketForbids(t *testing.T) {
 	if _, err := store.CreateTask(ctx, project.ID, "Locked", "", domain.Priority(2), "backlog", nil, store.Snapshot()); err != nil {
 		t.Fatalf("CreateTask() error = %v", err)
 	}
-	model, err := NewModel(ctx, project.Context(), Repositories{Tasks: store, Comments: store, Dependencies: store, Cache: runtimecache.Install(0, store.Snapshot()), Workflow: app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot()), Events: store}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
+	model, err := NewModel(ctx, project.Context(), Repositories{Tasks: store, Comments: store, Dependencies: store, Cache: runtimecache.InstallWithStore(0, store), Events: store}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
 	if err != nil {
 		t.Fatalf("NewModel() error = %v", err)
 	}
@@ -1375,7 +1379,7 @@ func TestModelBoardDoesNotArmDeleteOnD(t *testing.T) {
 	if _, err := store.CreateTask(ctx, project.ID, "Survives", "", domain.Priority(2), "backlog", nil, store.Snapshot()); err != nil {
 		t.Fatalf("CreateTask() error = %v", err)
 	}
-	model, err := NewModel(ctx, project.Context(), Repositories{Tasks: store, Comments: store, Dependencies: store, Cache: runtimecache.Install(0, store.Snapshot()), Workflow: app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot())}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
+	model, err := NewModel(ctx, project.Context(), Repositories{Tasks: store, Comments: store, Dependencies: store, Cache: runtimecache.InstallWithStore(0, store)}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
 	if err != nil {
 		t.Fatalf("NewModel() error = %v", err)
 	}
@@ -1408,7 +1412,7 @@ func TestModelCancelsArmedTaskDeleteOnNavigation(t *testing.T) {
 		t.Fatalf("CreateTask() error = %v", err)
 	}
 
-	model, err := NewModel(ctx, project.Context(), Repositories{Tasks: store, Comments: store, Dependencies: store, Cache: runtimecache.Install(0, store.Snapshot()), Workflow: app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot()), Events: store}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
+	model, err := NewModel(ctx, project.Context(), Repositories{Tasks: store, Comments: store, Dependencies: store, Cache: runtimecache.InstallWithStore(0, store), Events: store}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
 	if err != nil {
 		t.Fatalf("NewModel() error = %v", err)
 	}
@@ -1455,39 +1459,36 @@ func TestModelDeletesCommentFromCommentScreen(t *testing.T) {
 		t.Fatalf("AddComment() error = %v", err)
 	}
 
-	model, err := NewModel(ctx, project.Context(), Repositories{Tasks: store, Comments: store, Dependencies: store, Cache: runtimecache.Install(0, store.Snapshot()), Workflow: app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot()), Events: store, ActivityLogs: store}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
+	model, err := NewModel(ctx, project.Context(), Repositories{Tasks: store, Comments: store, Dependencies: store, Cache: runtimecache.InstallWithStore(0, store), Events: store, ActivityLogs: store}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
 	if err != nil {
 		t.Fatalf("NewModel() error = %v", err)
 	}
 
 	got := pressKey(t, model, tea.KeyEnter) // open task view
-	got = pressKey(t, got, tea.KeyTab)      // focus activity column
-	if got.taskFocus != taskFocusActivity {
-		t.Fatalf("taskFocus = %v, want activity", got.taskFocus)
+	got = pressKey(t, got, tea.KeyTab)      // details -> activity
+	if got.taskDetailScreen.State().Focus != taskdetail.FocusActivity {
+		t.Fatalf("task focus = %v, want activity", got.taskDetailScreen.State().Focus)
 	}
 	// Activity feed is chronological: events[0] is the task.created system
 	// event, events[1] is the comment we just added. Advance past the
 	// system event so Enter lands on the comment.
 	got = pressStringKey(t, got, "J")
-	if got.activityCursor != 1 {
-		t.Fatalf("activityCursor = %d, want 1 (comment row)", got.activityCursor)
+	if got.taskDetailScreen.State().ActivityCursor != 1 {
+		t.Fatalf("activity cursor = %d, want 1 (comment row)", got.taskDetailScreen.State().ActivityCursor)
 	}
 	got = pressKey(t, got, tea.KeyEnter)
-	if !got.commentScreenOpen || got.commentScreenID != comment.ID {
-		t.Fatalf("commentScreenOpen = %v, commentScreenID = %d, want true / %d", got.commentScreenOpen, got.commentScreenID, comment.ID)
+	if len(got.screenStack) == 0 || got.screenStack[len(got.screenStack)-1] != screenhost.CommentDetail || got.commentDetailScreen.Payload().Comment.ID != comment.ID {
+		t.Fatalf("comment route/payload = %v/%+v", got.screenStack, got.commentDetailScreen.Payload())
 	}
 
 	armed := pressRune(t, got, 'd')
-	if armed.commentDeletePendingID != comment.ID {
-		t.Fatalf("commentDeletePendingID = %d, want %d", armed.commentDeletePendingID, comment.ID)
+	if !armed.commentDetailScreen.DeleteArmed() {
+		t.Fatalf("comment delete was not armed: footer=%v", armed.commentDetailScreen.Footer(armed.screenFrame()))
 	}
 
 	confirmed := pressRune(t, armed, 'd')
-	if confirmed.commentDeletePendingID != 0 {
-		t.Fatalf("commentDeletePendingID = %d, want cleared after confirm", confirmed.commentDeletePendingID)
-	}
-	if confirmed.commentScreenOpen {
-		t.Fatalf("commentScreenOpen = true, want auto-closed after delete")
+	if len(confirmed.screenStack) > 0 && confirmed.screenStack[len(confirmed.screenStack)-1] == screenhost.CommentDetail {
+		t.Fatalf("comment route remained after delete: %v", confirmed.screenStack)
 	}
 	remaining, err := store.ListComments(ctx, project.ID, task.ID)
 	if err != nil {
@@ -1522,35 +1523,26 @@ func TestModelEditsCommentFromCommentScreen(t *testing.T) {
 		t.Fatalf("AddComment() error = %v", err)
 	}
 
-	model, err := NewModel(ctx, project.Context(), Repositories{Tasks: store, Comments: store, Dependencies: store, Cache: runtimecache.Install(0, store.Snapshot()), Workflow: app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot()), Events: store, ActivityLogs: store}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
+	model, err := NewModel(ctx, project.Context(), Repositories{Tasks: store, Comments: store, Dependencies: store, Cache: runtimecache.InstallWithStore(0, store), Events: store, ActivityLogs: store}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
 	if err != nil {
 		t.Fatalf("NewModel() error = %v", err)
 	}
 
 	got := pressKey(t, model, tea.KeyEnter)
-	got = pressKey(t, got, tea.KeyTab)
+	got = pressKey(t, got, tea.KeyTab) // details -> activity
 	// Skip past the chronologically-first task.created system event so
 	// Enter on the activity card opens the comment we want to edit.
 	got = pressStringKey(t, got, "J")
 	got = pressKey(t, got, tea.KeyEnter)
-	if !got.commentScreenOpen {
-		t.Fatalf("commentScreenOpen = false, want true after entering the comment")
+	if len(got.screenStack) == 0 || got.screenStack[len(got.screenStack)-1] != screenhost.CommentDetail {
+		t.Fatalf("comment route stack = %v", got.screenStack)
 	}
 	got = pressRune(t, got, 'e')
-	if !got.commentScreenEditing {
-		t.Fatalf("commentScreenEditing = false, want true after pressing 'e'")
+	if got.commentDetailScreen.Mode() != commentdetail.ModeEdit || got.commentDetailScreen.Payload().Comment.ID != comment.ID {
+		t.Fatalf("comment edit state = mode %v payload %+v", got.commentDetailScreen.Mode(), got.commentDetailScreen.Payload())
 	}
-	if got.commentEditID != comment.ID {
-		t.Fatalf("commentEditID = %d, want %d", got.commentEditID, comment.ID)
-	}
-	if !got.commentScreenOpen {
-		t.Fatalf("commentScreenOpen = false, want the dedicated overlay to stay open while editing")
-	}
-	if got.isEmbeddedCommentInput() {
-		t.Fatalf("isEmbeddedCommentInput() = true, want false — edit lives in the dedicated overlay now")
-	}
-	if got.commentInput.Value() != "Original body" {
-		t.Fatalf("commentInput.Value() = %q, want pre-filled with original body", got.commentInput.Value())
+	if got.commentDetailScreen.Value() != "Original body" {
+		t.Fatalf("comment value = %q, want pre-filled with original body", got.commentDetailScreen.Value())
 	}
 
 	// Erase the original body via repeated backspace so we test caret
@@ -1560,14 +1552,8 @@ func TestModelEditsCommentFromCommentScreen(t *testing.T) {
 	got = sendText(t, got, "Rewritten body")
 	got = pressKey(t, got, tea.KeyCtrlS)
 
-	if got.commentScreenEditing {
-		t.Fatalf("commentScreenEditing = true after ctrl+s, want false (back to read view)")
-	}
-	if got.commentEditID != 0 {
-		t.Fatalf("commentEditID = %d, want cleared after save", got.commentEditID)
-	}
-	if !got.commentScreenOpen {
-		t.Fatalf("commentScreenOpen = false after save, want true (still in read view)")
+	if got.commentDetailScreen.Mode() != commentdetail.ModeRead || len(got.screenStack) == 0 || got.screenStack[len(got.screenStack)-1] != screenhost.CommentDetail {
+		t.Fatalf("after save: mode=%v stack=%v", got.commentDetailScreen.Mode(), got.screenStack)
 	}
 	comments, err := store.ListComments(ctx, project.ID, task.ID)
 	if err != nil {
@@ -1672,7 +1658,7 @@ func tuiTestBundle(t *testing.T) config.Bundle {
 	t.Helper()
 	bundle, _ := testfixtures.LoadBundle(t, "default_workflow.yaml")
 	bundle.Skills = []config.Skill{{Slug: "go", Name: "Go"}}
-	bundle.Personas = []config.Persona{{Slug: "agent", Name: "Agent", Skills: []string{"go"}}}
+	bundle.Personas = []config.Persona{{Slug: "agent", Name: "Agent", SkillRepertoire: []string{"go"}}}
 	bundle.Laws = []config.Law{{Slug: "scope", Severity: "error", Body: "Stay in scope.", Scope: "global"}}
 	return bundle
 }
@@ -1683,7 +1669,7 @@ func tuiPermissiveBundle(t *testing.T) config.Bundle {
 	t.Helper()
 	bundle, _ := testfixtures.LoadBundle(t, "permissive.yaml")
 	bundle.Skills = []config.Skill{{Slug: "go", Name: "Go"}}
-	bundle.Personas = []config.Persona{{Slug: "agent", Name: "Agent", Skills: []string{"go"}}}
+	bundle.Personas = []config.Persona{{Slug: "agent", Name: "Agent", SkillRepertoire: []string{"go"}}}
 	bundle.Laws = []config.Law{{Slug: "scope", Severity: "error", Body: "Stay in scope.", Scope: "global"}}
 	return bundle
 }
@@ -1695,7 +1681,7 @@ func multiBucketBundle(t *testing.T) config.Bundle {
 	t.Helper()
 	bundle, _ := testfixtures.LoadBundle(t, "multi_bucket.yaml")
 	bundle.Skills = []config.Skill{{Slug: "go", Name: "Go"}}
-	bundle.Personas = []config.Persona{{Slug: "agent", Name: "Agent", Skills: []string{"go"}}}
+	bundle.Personas = []config.Persona{{Slug: "agent", Name: "Agent", SkillRepertoire: []string{"go"}}}
 	bundle.Laws = []config.Law{{Slug: "scope", Severity: "error", Body: "Stay in scope.", Scope: "global"}}
 	return bundle
 }
@@ -1715,6 +1701,22 @@ func tuiTestTheme() config.Theme {
 			"error":      "#ED8796",
 		},
 	}
+}
+
+func openPlansList(t *testing.T, model Model) Model {
+	t.Helper()
+	got := pressStringKey(t, model, "/")
+	got = pressStringKey(t, got, "/")
+	got = pressStringKey(t, got, "/")
+	if got.sub != subPlans {
+		t.Fatalf("third '/': sub = %d, want subPlans", got.sub)
+	}
+	return got
+}
+
+func openPlanNetwork(t *testing.T, model Model) Model {
+	t.Helper()
+	return pressKey(t, openPlansList(t, model), tea.KeyEnter)
 }
 
 // TestPlansSubTabRendersRollups exercises the new Tasks › plans list
@@ -1762,8 +1764,7 @@ func TestPlansSubTabRendersRollups(t *testing.T) {
 		Comments:     store,
 		Dependencies: store,
 		Plans:        store,
-		Cache:        runtimecache.Install(0, snap),
-		Workflow:     app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), snap),
+		Cache:        runtimecache.InstallWithStoreSnap(0, store, snap),
 	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
 	if err != nil {
 		t.Fatalf("NewModel() error = %v", err)
@@ -1771,38 +1772,39 @@ func TestPlansSubTabRendersRollups(t *testing.T) {
 	model.height = 40
 	model.width = 160
 
-	// Cycle board → table → graph → plans.
-	got := pressStringKey(t, model, "/")
-	got = pressStringKey(t, got, "/")
-	got = pressStringKey(t, got, "/")
-	if got.sub != subPlans {
-		t.Fatalf("third '/': sub = %d, want subPlans", got.sub)
-	}
-	if len(got.plans) != 2 {
-		t.Fatalf("len(plans) = %d, want 2", len(got.plans))
-	}
+	got := openPlansList(t, model)
+	assertPlansRollups(t, got)
+}
 
-	view := ansi.Strip(got.View())
-	if !strings.Contains(view, "// PLANS") {
-		t.Fatalf("plans view missing kicker\n%s", view)
+func assertPlansRollups(t *testing.T, model Model) {
+	t.Helper()
+	if len(model.plansScreen.Rollups()) != 2 {
+		t.Fatalf("len(plans) = %d, want 2", len(model.plansScreen.Rollups()))
 	}
-	if !strings.Contains(view, "rollout-a") || !strings.Contains(view, "rollout-b") {
-		t.Fatalf("plans view missing plan rows\n%s", view)
+	view := ansi.Strip(model.View())
+	for _, want := range []string{"PLANS", "rollout-a", "rollout-b", "Wave 1"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("plans view missing %q\n%s", want, view)
+		}
 	}
-	if !strings.Contains(view, "Wave 1") {
-		t.Fatalf("plans view missing active wave name\n%s", view)
-	}
-
-	// j moves the plans cursor; k restores it. The cursor is owned
-	// by the plansCursor cursorwindow.Model — its Cursor() accessor
-	// is the read-only view onto the unexported field.
-	advanced := pressRune(t, got, 'j')
-	if got := advanced.plansCursor.Cursor(); got != 1 {
-		t.Fatalf("after 'j': plansCursor = %d, want 1", got)
+	advanced := pressRune(t, model, 'j')
+	if advanced.plansScreen.Cursor() != 1 {
+		t.Fatalf("after 'j': plansCursor = %d, want 1", advanced.plansScreen.Cursor())
 	}
 	back := pressRune(t, advanced, 'k')
-	if got := back.plansCursor.Cursor(); got != 0 {
-		t.Fatalf("after 'k': plansCursor = %d, want 0", got)
+	if back.plansScreen.Cursor() != 0 {
+		t.Fatalf("after 'k': plansCursor = %d, want 0", back.plansScreen.Cursor())
+	}
+	goal := pressRune(t, back, 'f')
+	if len(goal.screenStack) != 1 || goal.screenStack[0] != screenhost.PlanGoal {
+		t.Fatalf("goal route stack = %v, want [%s]", goal.screenStack, screenhost.PlanGoal)
+	}
+	if descriptor, ok := goal.activeScreenDescriptor(); !ok || descriptor.ID != screenhost.PlanGoal {
+		t.Fatalf("active goal descriptor = %+v/%v", descriptor, ok)
+	}
+	closed := pressKey(t, goal, tea.KeyEsc)
+	if len(closed.screenStack) != 0 || closed.plansScreen.Cursor() != 0 {
+		t.Fatalf("goal pop stack/cursor = %v/%d", closed.screenStack, closed.plansScreen.Cursor())
 	}
 }
 
@@ -1856,8 +1858,7 @@ func TestPlansSubTabEnterOpensNetwork(t *testing.T) {
 		Comments:     store,
 		Dependencies: store,
 		Plans:        store,
-		Cache:        runtimecache.Install(0, snap),
-		Workflow:     app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), snap),
+		Cache:        runtimecache.InstallWithStoreSnap(0, store, snap),
 	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
 	if err != nil {
 		t.Fatalf("NewModel() error = %v", err)
@@ -1865,50 +1866,33 @@ func TestPlansSubTabEnterOpensNetwork(t *testing.T) {
 	model.height = 40
 	model.width = 160
 
-	got := pressStringKey(t, model, "/")
-	got = pressStringKey(t, got, "/")
-	got = pressStringKey(t, got, "/")
-	if got.sub != subPlans {
-		t.Fatalf("third '/': sub = %d, want subPlans", got.sub)
-	}
+	got := openPlansList(t, model)
 
-	opened := pressKey(t, got, tea.KeyEnter)
-	if !opened.planNetworkOpen {
-		t.Fatalf("after enter: planNetworkOpen = false, want true")
-	}
-	if len(opened.planNetworkShow.Waves) != 2 {
-		t.Fatalf("planNetworkShow.Waves = %d, want 2", len(opened.planNetworkShow.Waves))
-	}
+	assertPlanNetworkView(t, pressKey(t, got, tea.KeyEnter))
+}
 
+func assertPlanNetworkView(t *testing.T, opened Model) {
+	t.Helper()
+	if !opened.inPlanNetwork() || len(opened.planNetworkScreen.Show().Waves) != 2 {
+		t.Fatalf("plan network open/waves = %v/%d, want true/2", opened.inPlanNetwork(), len(opened.planNetworkScreen.Show().Waves))
+	}
 	view := ansi.Strip(opened.View())
-	if !strings.Contains(view, "// PLAN · rollout") {
-		t.Fatalf("network header missing\n%s", view)
+	for _, want := range []string{"// PLAN · rollout", "W1", "W2", "‹active›", "foundation-task", "migration-task"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("network missing %q\n%s", want, view)
+		}
 	}
-	if !strings.Contains(view, "W1") || !strings.Contains(view, "W2") {
-		t.Fatalf("network missing wave headers\n%s", view)
-	}
-	if !strings.Contains(view, "‹active›") {
-		t.Fatalf("network missing active wave tag\n%s", view)
-	}
-	if !strings.Contains(view, "foundation-task") || !strings.Contains(view, "migration-task") {
-		t.Fatalf("network missing task titles\n%s", view)
-	}
-
-	// j advances the linear cursor one row; k walks it back. The
-	// rails+filaments outline collapses the multi-axis cursor of the
-	// old column view into a single index into the flat row list.
-	startCursor := opened.planNetworkCursor.Cursor()
+	startCursor := opened.planNetworkScreen.Cursor()
 	advanced := pressRune(t, opened, 'j')
-	if got := advanced.planNetworkCursor.Cursor(); got != startCursor+1 {
-		t.Fatalf("after 'j': planNetworkCursor = %d, want %d", got, startCursor+1)
+	if advanced.planNetworkScreen.Cursor() != startCursor+1 {
+		t.Fatalf("after 'j': planNetworkCursor = %d, want %d", advanced.planNetworkScreen.Cursor(), startCursor+1)
 	}
 	back := pressRune(t, advanced, 'k')
-	if got := back.planNetworkCursor.Cursor(); got != startCursor {
-		t.Fatalf("after 'k': planNetworkCursor = %d, want %d", got, startCursor)
+	if back.planNetworkScreen.Cursor() != startCursor {
+		t.Fatalf("after 'k': planNetworkCursor = %d, want %d", back.planNetworkScreen.Cursor(), startCursor)
 	}
-
 	closed := pressKey(t, opened, tea.KeyEsc)
-	if closed.planNetworkOpen {
+	if closed.inPlanNetwork() {
 		t.Fatalf("after esc: planNetworkOpen = true, want false")
 	}
 }
@@ -1952,8 +1936,7 @@ func TestPlansSubTabNetworkAssignOpensInputAndStampsAssignee(t *testing.T) {
 		Comments:     store,
 		Dependencies: store,
 		Plans:        store,
-		Cache:        runtimecache.Install(0, snap),
-		Workflow:     app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), snap),
+		Cache:        runtimecache.InstallWithStoreSnap(0, store, snap),
 	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
 	if err != nil {
 		t.Fatalf("NewModel() error = %v", err)
@@ -1961,25 +1944,19 @@ func TestPlansSubTabNetworkAssignOpensInputAndStampsAssignee(t *testing.T) {
 	model.height = 40
 	model.width = 160
 
-	got := pressStringKey(t, model, "/")
-	got = pressStringKey(t, got, "/")
-	got = pressStringKey(t, got, "/")
-	opened := pressKey(t, got, tea.KeyEnter)
-	if !opened.planNetworkOpen {
+	assertPlanAssignmentFlow(t, openPlansList(t, model), store, ctx, project.ID, task.ID, snap)
+}
+
+func assertPlanAssignmentFlow(t *testing.T, plans Model, store *snapstore.Store, ctx context.Context, projectID, taskID int64, snap domain.BucketResolver) {
+	t.Helper()
+	opened := pressKey(t, plans, tea.KeyEnter)
+	if !opened.inPlanNetwork() {
 		t.Fatalf("network did not open")
 	}
-	// Cursor sits on the wave header by default; step once so the
-	// task row is focused before triggering the assign modal.
-	opened = pressRune(t, opened, 'j')
-
-	editing := pressRune(t, opened, 'c')
-	if editing.mode != modePlanAssign {
-		t.Fatalf("after 'c' mode = %v, want modePlanAssign (text input open)", editing.mode)
+	editing := pressRune(t, pressRune(t, opened, 'j'), 'c')
+	if editing.planNetworkScreen.Mode() != plannetwork.ModeAssign || editing.planNetworkScreen.AssignTaskID() != taskID {
+		t.Fatalf("assignment mode/target = %v/%d, want assign/%d", editing.planNetworkScreen.Mode(), editing.planNetworkScreen.AssignTaskID(), taskID)
 	}
-	if editing.planAssignTaskID != task.ID {
-		t.Fatalf("planAssignTaskID = %d, want %d (cursor row task)", editing.planAssignTaskID, task.ID)
-	}
-
 	typed := editing
 	for _, r := range "alice" {
 		typed = pressRune(t, typed, r)
@@ -1988,31 +1965,18 @@ func TestPlansSubTabNetworkAssignOpensInputAndStampsAssignee(t *testing.T) {
 	if submitted.mode != modeNormal {
 		t.Fatalf("after submit mode = %v, want modeNormal", submitted.mode)
 	}
-
-	tasksFilter, err := store.ListTasks(ctx, project.ID, domain.TaskFilter{}, snap)
-	if err != nil {
-		t.Fatalf("ListTasks after assign: %v", err)
+	tasks, err := store.ListTasks(ctx, projectID, domain.TaskFilter{}, snap)
+	if err != nil || len(tasks) != 1 || tasks[0].BucketKey != "backlog" {
+		t.Fatalf("assigned task state = %#v, err=%v; want one backlog task", tasks, err)
 	}
-	if len(tasksFilter) != 1 {
-		t.Fatalf("ListTasks returned %d tasks, want 1", len(tasksFilter))
-	}
-	if tasksFilter[0].BucketKey != "backlog" {
-		t.Fatalf("bucket after assign = %q, want backlog (assign must NOT move the task)", tasksFilter[0].BucketKey)
-	}
-
 	view := ansi.Strip(submitted.View())
-	if !strings.Contains(view, "@alice") {
-		t.Fatalf("network view missing @alice marker\n%s", view)
-	}
-	// Task stays in the first bucket (backlog) — assign no longer moves
-	// it, so the badge must read `assigned` (claimed, not started), NOT
-	// `in-progress` (which is reserved for tasks already past the first
-	// bucket).
-	if !strings.Contains(view, "assigned") {
-		t.Fatalf("network view missing `assigned` badge after assign\n%s", view)
+	for _, want := range []string{"@alice", "assigned"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("network view missing %q\n%s", want, view)
+		}
 	}
 	if strings.Contains(view, "in-progress") {
-		t.Fatalf("network view should NOT show `in-progress` for a backlog-staying assignment\n%s", view)
+		t.Fatalf("network view should not show in-progress for a backlog assignment\n%s", view)
 	}
 }
 
@@ -2041,8 +2005,7 @@ func TestPlansSubTabNetworkClaimReportsEmpty(t *testing.T) {
 		Comments:     store,
 		Dependencies: store,
 		Plans:        store,
-		Cache:        runtimecache.Install(0, snap),
-		Workflow:     app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), snap),
+		Cache:        runtimecache.InstallWithStoreSnap(0, store, snap),
 	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
 	if err != nil {
 		t.Fatalf("NewModel() error = %v", err)
@@ -2054,7 +2017,7 @@ func TestPlansSubTabNetworkClaimReportsEmpty(t *testing.T) {
 	got = pressStringKey(t, got, "/")
 	got = pressStringKey(t, got, "/")
 	opened := pressKey(t, got, tea.KeyEnter)
-	if !opened.planNetworkOpen {
+	if !opened.inPlanNetwork() {
 		t.Fatalf("network did not open")
 	}
 
@@ -2062,7 +2025,7 @@ func TestPlansSubTabNetworkClaimReportsEmpty(t *testing.T) {
 	if !strings.Contains(claimed.status, "no task selected") {
 		t.Fatalf("status after 'c' on empty plan = %q, want no-task-selected message", claimed.status)
 	}
-	if claimed.mode == modePlanAssign {
+	if claimed.planNetworkScreen.Mode() == plannetwork.ModeAssign {
 		t.Fatalf("modePlanAssign opened on empty plan; the input must not engage when there is no task to assign")
 	}
 }
@@ -2113,8 +2076,7 @@ func TestPlansSubTabNetworkRendersBlockerMarkers(t *testing.T) {
 		Comments:     store,
 		Dependencies: store,
 		Plans:        store,
-		Cache:        runtimecache.Install(0, snap),
-		Workflow:     app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), snap),
+		Cache:        runtimecache.InstallWithStoreSnap(0, store, snap),
 	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
 	if err != nil {
 		t.Fatalf("NewModel() error = %v", err)
@@ -2122,29 +2084,18 @@ func TestPlansSubTabNetworkRendersBlockerMarkers(t *testing.T) {
 	model.height = 40
 	model.width = 160
 
-	got := pressStringKey(t, model, "/")
-	got = pressStringKey(t, got, "/")
-	got = pressStringKey(t, got, "/")
-	opened := pressKey(t, got, tea.KeyEnter)
-	if !opened.planNetworkOpen {
-		t.Fatalf("network did not open")
-	}
+	assertPlanDependencyRail(t, openPlanNetwork(t, model), blocker.ID, dependent.ID)
+}
 
+func assertPlanDependencyRail(t *testing.T, opened Model, blockerID, dependentID int64) {
+	t.Helper()
 	view := ansi.Strip(opened.View())
-	// Intra-wave blocker → dependent edges now surface as a rail
-	// terminal (├─ or └─) on the dependent's line directly under the
-	// blocker, rather than the prior "← #N" inline annotation. The
-	// rail tree is the source of truth for the parent-child edge;
-	// duplicating the marker on the dependent's line would be noise.
-	blockerStr := "#" + strconv.FormatInt(blocker.ID, 10)
-	dependentStr := "#" + strconv.FormatInt(dependent.ID, 10)
+	blockerStr := "#" + strconv.FormatInt(blockerID, 10)
+	dependentStr := "#" + strconv.FormatInt(dependentID, 10)
 	blockerIdx := strings.Index(view, blockerStr)
 	dependentIdx := strings.Index(view, dependentStr)
-	if blockerIdx < 0 || dependentIdx < 0 {
-		t.Fatalf("network missing blocker/dependent ids\n%s", view)
-	}
-	if blockerIdx >= dependentIdx {
-		t.Fatalf("dependent %s should render below blocker %s\n%s", dependentStr, blockerStr, view)
+	if blockerIdx < 0 || dependentIdx < 0 || blockerIdx >= dependentIdx {
+		t.Fatalf("network dependency order invalid for %s/%s\n%s", blockerStr, dependentStr, view)
 	}
 	lineStart := strings.LastIndex(view[:dependentIdx], "\n") + 1
 	depLine := view[lineStart:dependentIdx]
@@ -2185,8 +2136,7 @@ func TestPlansSubTabNetworkScrollsVertically(t *testing.T) {
 		Comments:     store,
 		Dependencies: store,
 		Plans:        store,
-		Cache:        runtimecache.Install(0, snap),
-		Workflow:     app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), snap),
+		Cache:        runtimecache.InstallWithStoreSnap(0, store, snap),
 	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
 	if err != nil {
 		t.Fatalf("NewModel: %v", err)
@@ -2197,7 +2147,7 @@ func TestPlansSubTabNetworkScrollsVertically(t *testing.T) {
 	got = pressStringKey(t, got, "/")
 	got = pressStringKey(t, got, "/")
 	opened := pressKey(t, got, tea.KeyEnter)
-	if !opened.planNetworkOpen {
+	if !opened.inPlanNetwork() {
 		t.Fatalf("network did not open")
 	}
 
@@ -2210,12 +2160,12 @@ func TestPlansSubTabNetworkScrollsVertically(t *testing.T) {
 	for i := 0; i < 6; i++ {
 		cursor = pressRune(t, cursor, 'j')
 	}
-	rows := cursor.planNetworkBuildRows()
-	if len(rows) == 0 {
+	rowCount := cursor.planNetworkScreen.RowCount()
+	if rowCount == 0 {
 		t.Fatalf("plan network produced no rows")
 	}
-	if got := cursor.planNetworkCursor.Cursor(); got != len(rows)-1 {
-		t.Fatalf("planNetworkCursor = %d, want %d (last row)", got, len(rows)-1)
+	if got := cursor.planNetworkScreen.Cursor(); got != rowCount-1 {
+		t.Fatalf("plan network cursor = %d, want %d", got, rowCount-1)
 	}
 }
 
@@ -2258,38 +2208,27 @@ func TestPlansSubTabNetworkRendersDirectionalMarkers(t *testing.T) {
 		Comments:     store,
 		Dependencies: store,
 		Plans:        store,
-		Cache:        runtimecache.Install(0, snap),
-		Workflow:     app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), snap),
+		Cache:        runtimecache.InstallWithStoreSnap(0, store, snap),
 	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
 	if err != nil {
 		t.Fatalf("NewModel: %v", err)
 	}
 	model.height = 40
 	model.width = 160
-	got := pressStringKey(t, model, "/")
-	got = pressStringKey(t, got, "/")
-	got = pressStringKey(t, got, "/")
-	opened := pressKey(t, got, tea.KeyEnter)
-	view := ansi.Strip(opened.View())
+	assertDirectionalPlanView(t, openPlanNetwork(t, model), b.ID)
+}
 
-	// New design: intra-wave blocker → dependent surfaces as a rail
-	// terminal (└─ when there is only one child) on the dependent's
-	// line, not as a "← #N" / "→ #N" text marker.
-	bravoStr := "#" + strconv.FormatInt(b.ID, 10)
-	bravoIdx := strings.Index(view, bravoStr)
-	if bravoIdx < 0 {
-		t.Fatalf("network missing bravo id %s\n%s", bravoStr, view)
+func assertDirectionalPlanView(t *testing.T, opened Model, taskID int64) {
+	t.Helper()
+	view := ansi.Strip(opened.View())
+	line := planTestLineFor(t, view, "#"+strconv.FormatInt(taskID, 10))
+	if !strings.Contains(line, "└─") && !strings.Contains(line, "├─") {
+		t.Fatalf("dependent line missing rail glyph: %q", line)
 	}
-	lineStart := strings.LastIndex(view[:bravoIdx], "\n") + 1
-	depLine := view[lineStart:bravoIdx]
-	if !strings.Contains(depLine, "└─") && !strings.Contains(depLine, "├─") {
-		t.Fatalf("dependent line missing rail glyph: %q", depLine)
-	}
-	if !strings.Contains(view, "Dependencies:") {
-		t.Fatalf("missing deps footer\n%s", view)
-	}
-	if !strings.Contains(view, "▶ next claimable:") {
-		t.Fatalf("missing next-claimable indicator\n%s", view)
+	for _, want := range []string{"Dependencies:", "▶ next claimable:"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("missing %s footer\n%s", want, view)
+		}
 	}
 }
 
@@ -2339,8 +2278,7 @@ func TestPlansSubTabNetworkRendersCriticalPath(t *testing.T) {
 		Comments:     store,
 		Dependencies: store,
 		Plans:        store,
-		Cache:        runtimecache.Install(0, snap),
-		Workflow:     app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), snap),
+		Cache:        runtimecache.InstallWithStoreSnap(0, store, snap),
 	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
 	if err != nil {
 		t.Fatalf("NewModel: %v", err)
@@ -2348,20 +2286,17 @@ func TestPlansSubTabNetworkRendersCriticalPath(t *testing.T) {
 	model.height = 40
 	model.width = 160
 
-	got := pressStringKey(t, model, "/")
-	got = pressStringKey(t, got, "/")
-	got = pressStringKey(t, got, "/")
-	opened := pressKey(t, got, tea.KeyEnter)
+	assertCriticalPathView(t, openPlanNetwork(t, model))
+}
 
+func assertCriticalPathView(t *testing.T, opened Model) {
+	t.Helper()
 	view := ansi.Strip(opened.View())
-	// Each task surfaces as a single outline row with its id + title.
 	for _, title := range []string{"alpha", "bravo", "charlie", "delta"} {
 		if !strings.Contains(view, title) {
 			t.Fatalf("task %q missing from outline\n%s", title, view)
 		}
 	}
-	// The blocker chain renders as rail glyphs: bravo and charlie
-	// inherit └─ / ├─ prefixes; isolated delta does not.
 	railed := strings.Count(view, "└─") + strings.Count(view, "├─")
 	if railed < 2 {
 		t.Fatalf("chain should produce at least 2 rail glyphs (bravo + charlie), got %d\n%s", railed, view)
@@ -2411,7 +2346,7 @@ func TestPlansSubTabNetworkEditsGoalBody(t *testing.T) {
 	}
 	snap := store.Snapshot()
 
-	plan, err := store.CreatePlan(ctx, project.ID, "rollout", "Rollout", "original goal")
+	_, err = store.CreatePlan(ctx, project.ID, "rollout", "Rollout", "original goal")
 	if err != nil {
 		t.Fatalf("CreatePlan() error = %v", err)
 	}
@@ -2421,8 +2356,7 @@ func TestPlansSubTabNetworkEditsGoalBody(t *testing.T) {
 		Comments:     store,
 		Dependencies: store,
 		Plans:        store,
-		Cache:        runtimecache.Install(0, snap),
-		Workflow:     app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), snap),
+		Cache:        runtimecache.InstallWithStoreSnap(0, store, snap),
 	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
 	if err != nil {
 		t.Fatalf("NewModel() error = %v", err)
@@ -2434,33 +2368,26 @@ func TestPlansSubTabNetworkEditsGoalBody(t *testing.T) {
 	got = pressStringKey(t, got, "/")
 	got = pressStringKey(t, got, "/")
 	opened := pressKey(t, got, tea.KeyEnter)
-	if !opened.planNetworkOpen {
+	if !opened.inPlanNetwork() {
 		t.Fatalf("network did not open")
 	}
 
 	editing := pressRune(t, opened, 'e')
-	if editing.mode != modePlanGoal {
-		t.Fatalf("after 'e': mode = %d, want modePlanGoal", editing.mode)
+	if editing.planNetworkScreen.Mode() != plannetwork.ModeGoal {
+		t.Fatalf("after 'e': mode = %d, want goal editor", editing.planNetworkScreen.Mode())
 	}
-	if editing.planGoalEditingID != plan.ID {
-		t.Fatalf("planGoalEditingID = %d, want %d", editing.planGoalEditingID, plan.ID)
-	}
-	if got := editing.commentInput.Value(); got != "original goal" {
+	if got := editing.planNetworkScreen.EditorValue(); got != "original goal" {
 		t.Fatalf("textarea prefill = %q, want %q", got, "original goal")
 	}
 
-	editing.commentInput.SetValue("rewritten goal body")
+	editing.planNetworkScreen = editing.planNetworkScreen.WithEditorValue("rewritten goal body")
 	saved, _ := editing.Update(tea.KeyMsg{Type: tea.KeyCtrlS})
 	savedModel := saved.(Model)
-	if savedModel.mode != modeNormal {
-		t.Fatalf("after ctrl+s: mode = %d, want modeNormal", savedModel.mode)
+	if savedModel.planNetworkScreen.Mode() != plannetwork.ModeBrowse {
+		t.Fatalf("after ctrl+s: mode = %d, want browse", savedModel.planNetworkScreen.Mode())
 	}
-	if savedModel.planGoalEditingID != 0 {
-		t.Fatalf("planGoalEditingID after save = %d, want 0", savedModel.planGoalEditingID)
-	}
-	if savedModel.planNetworkShow.Plan.GoalBody != "rewritten goal body" {
-		t.Fatalf("planNetworkShow.Plan.GoalBody = %q, want %q",
-			savedModel.planNetworkShow.Plan.GoalBody, "rewritten goal body")
+	if savedModel.planNetworkScreen.Show().Plan.GoalBody != "rewritten goal body" {
+		t.Fatalf("plan goal = %q, want %q", savedModel.planNetworkScreen.Show().Plan.GoalBody, "rewritten goal body")
 	}
 
 	stored, err := store.GetPlanBySlug(ctx, project.ID, "rollout")
@@ -2497,8 +2424,7 @@ func TestPlansSubTabNetworkGoalEditorCancels(t *testing.T) {
 		Comments:     store,
 		Dependencies: store,
 		Plans:        store,
-		Cache:        runtimecache.Install(0, snap),
-		Workflow:     app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), snap),
+		Cache:        runtimecache.InstallWithStoreSnap(0, store, snap),
 	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
 	if err != nil {
 		t.Fatalf("NewModel() error = %v", err)
@@ -2547,8 +2473,7 @@ func TestPlansSubTabEmptyState(t *testing.T) {
 		Comments:     store,
 		Dependencies: store,
 		Plans:        store,
-		Cache:        runtimecache.Install(0, snap),
-		Workflow:     app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), snap),
+		Cache:        runtimecache.InstallWithStoreSnap(0, store, snap),
 	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
 	if err != nil {
 		t.Fatalf("NewModel() error = %v", err)
@@ -2566,4 +2491,26 @@ func TestPlansSubTabEmptyState(t *testing.T) {
 	if !strings.Contains(view, "No plans yet") {
 		t.Fatalf("plans view missing empty-state hint\n%s", view)
 	}
+}
+
+// taskDetailZoneSweep drives the task detail body down each of its zones and
+// returns every frame it painted, joined.
+//
+// The three zones hold independent windows since the screenlayout migration
+// (#2425), so "the screen paints X" is a claim about what is REACHABLE from the
+// zone that owns X rather than about the first frame. This is the host-level
+// twin of the per-zone reachability the property in
+// content_reachability_test.go drives.
+func taskDetailZoneSweep(t *testing.T, model Model) string {
+	t.Helper()
+	var painted []string
+	for zone := 0; zone < 3; zone++ {
+		current := model
+		for press := 0; press < 12; press++ {
+			painted = append(painted, stripANSI(current.View()))
+			current = pressKey(t, current, tea.KeyPgDown)
+		}
+		model = pressKey(t, model, tea.KeyTab)
+	}
+	return strings.Join(painted, "\n")
 }

@@ -1,12 +1,17 @@
 package paths
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
 )
+
+var errNoYAMLFiles = errors.New("no yaml files")
+
+var errUnsupportedActiveMarker = errors.New("active config marker requires a platform no-follow filesystem backend")
 
 // ActiveConfigStateFile is the basename of the one-line state file that
 // records which yaml profile is currently active. Lives next to the yaml
@@ -128,30 +133,74 @@ func ActiveConfigFile() (string, error) {
 // install behaves identically to the global ConfigRoot: same .active rules,
 // same custom/ shadow, same fall-through to discovery on a vanished kit.
 func ActiveConfigFileInDir(dir string) (string, error) {
-	data, err := os.ReadFile(filepath.Join(dir, ActiveConfigStateFile))
+	if err := validateNoSymlinkComponents(dir); err != nil {
+		return "", err
+	}
+	if path, found, err := activeConfigFromMarker(dir); err != nil {
+		return "", err
+	} else if found {
+		return path, nil
+	}
+	return discoverConfigFile(dir)
+}
+
+func activeConfigFromMarker(dir string) (string, bool, error) {
+	markerPath := filepath.Join(dir, ActiveConfigStateFile)
+	markerInfo, err := os.Lstat(markerPath)
 	if err == nil {
+		if markerInfo.Mode()&os.ModeSymlink != 0 {
+			return "", false, fmt.Errorf("refusing active config marker %s: symlink", markerPath)
+		}
+		if !markerInfo.Mode().IsRegular() {
+			return "", false, fmt.Errorf("refusing active config marker %s: not a regular file", markerPath)
+		}
+		marker, readErr := readActiveConfigFile(dir)
+		if readErr != nil {
+			return "", false, readErr
+		}
 		// A traversal payload in .active ("../secret.yaml", "/abs/path",
 		// "..") would otherwise resolve outside <dir>; reject and fall
 		// through to discovery so a tampered state file degrades to the
 		// same behaviour as a stale one.
-		if name := strings.TrimSpace(string(data)); validActiveConfigName(name) {
-			customPath := filepath.Join(dir, "custom", name)
-			if _, statErr := os.Stat(customPath); statErr == nil {
-				return customPath, nil
-			}
-			rootPath := filepath.Join(dir, name)
-			if _, statErr := os.Stat(rootPath); statErr == nil {
-				return rootPath, nil
-			}
+		if name := strings.TrimSpace(string(marker)); validActiveConfigName(name) {
+			return activeConfigNamedPath(dir, name)
 		}
 	} else if !os.IsNotExist(err) {
-		return "", err
+		return "", false, err
 	}
-	if name, err := firstYAMLInDir(dir); err == nil {
+	return "", false, nil
+}
+
+func activeConfigNamedPath(dir, name string) (string, bool, error) {
+	for _, path := range []string{
+		filepath.Join(dir, "custom", name),
+		filepath.Join(dir, name),
+	} {
+		exists, err := regularConfigFile(path)
+		if err != nil {
+			return "", false, err
+		}
+		if exists {
+			return path, true, nil
+		}
+	}
+	return "", false, nil
+}
+
+func discoverConfigFile(dir string) (string, error) {
+	name, firstErr := firstYAMLInDir(dir)
+	if firstErr == nil {
 		return filepath.Join(dir, name), nil
 	}
-	if name, err := firstYAMLInDir(filepath.Join(dir, "custom")); err == nil {
+	if !errors.Is(firstErr, errNoYAMLFiles) && !os.IsNotExist(firstErr) {
+		return "", firstErr
+	}
+	name, customErr := firstYAMLInDir(filepath.Join(dir, "custom"))
+	if customErr == nil {
 		return filepath.Join(dir, "custom", name), nil
+	}
+	if !errors.Is(customErr, errNoYAMLFiles) && !os.IsNotExist(customErr) {
+		return "", customErr
 	}
 	return "", fmt.Errorf("no config yaml found in %s or %s/custom", dir, dir)
 }
@@ -160,13 +209,24 @@ func ActiveConfigFileInDir(dir string) (string, error) {
 // sorted alphabetically. Returns an error if dir does not exist or no .yaml
 // is found.
 func firstYAMLInDir(dir string) (string, error) {
+	if err := validateNoSymlinkComponents(dir); err != nil {
+		return "", err
+	}
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return "", err
 	}
 	var names []string
 	for _, entry := range entries {
-		if entry.IsDir() {
+		path := filepath.Join(dir, entry.Name())
+		info, err := os.Lstat(path)
+		if err != nil {
+			return "", err
+		}
+		if info.Mode()&os.ModeSymlink != 0 {
+			return "", fmt.Errorf("refusing config path %s: symlink", path)
+		}
+		if info.IsDir() || !info.Mode().IsRegular() {
 			continue
 		}
 		name := entry.Name()
@@ -175,7 +235,7 @@ func firstYAMLInDir(dir string) (string, error) {
 		}
 	}
 	if len(names) == 0 {
-		return "", fmt.Errorf("no yaml files in %s", dir)
+		return "", fmt.Errorf("%w in %s", errNoYAMLFiles, dir)
 	}
 	sort.Strings(names)
 	return names[0], nil
@@ -215,10 +275,59 @@ func SetActiveConfigInDir(dir, filename string) error {
 	if !validActiveConfigName(filename) {
 		return fmt.Errorf("active config filename must be a clean basename, got %q", filename)
 	}
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	return setActiveConfigFile(dir, filename)
+}
+
+func regularConfigFile(path string) (bool, error) {
+	if err := validateNoSymlinkComponents(path); err != nil {
+		return false, err
+	}
+	info, err := os.Lstat(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return false, nil
+		}
+		return false, err
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		return false, fmt.Errorf("refusing config path %s: symlink", path)
+	}
+	if !info.Mode().IsRegular() {
+		return false, fmt.Errorf("refusing config path %s: not a regular file", path)
+	}
+	return true, nil
+}
+
+// validateNoSymlinkComponents rejects links in an explicit config path. The
+// repo-local walker has the same check in internal/config, while this copy
+// keeps the paths package independent of that adapter.
+func validateNoSymlinkComponents(path string) error {
+	abs, err := filepath.Abs(path)
+	if err != nil {
 		return err
 	}
-	return os.WriteFile(filepath.Join(dir, ActiveConfigStateFile), []byte(filename+"\n"), 0o644)
+	var components []string
+	for cur := filepath.Clean(abs); ; cur = filepath.Dir(cur) {
+		components = append(components, cur)
+		parent := filepath.Dir(cur)
+		if parent == cur {
+			break
+		}
+	}
+	for index := len(components) - 1; index >= 0; index-- {
+		component := components[index]
+		info, err := os.Lstat(component)
+		if err != nil {
+			if os.IsNotExist(err) {
+				continue
+			}
+			return fmt.Errorf("inspect path component %s: %w", component, err)
+		}
+		if info.Mode()&os.ModeSymlink != 0 {
+			return fmt.Errorf("refusing path through symlink component %s", component)
+		}
+	}
+	return nil
 }
 
 // validActiveConfigName reports whether name is safe to use as a yaml

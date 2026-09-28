@@ -1,8 +1,6 @@
 package config
 
 import (
-	"os"
-
 	"gopkg.in/yaml.v3"
 )
 
@@ -41,7 +39,7 @@ import (
 // by name so a rename of its CLI/TUI fields (or their yaml tags)
 // propagates here at compile time rather than drifting silently.
 func ProbeLanguageSetting(path string) (LanguageSettings, bool) {
-	raw, err := os.ReadFile(path)
+	raw, err := readFileBounded(path, MaxWiringFileBytes)
 	if err != nil {
 		return LanguageSettings{}, false
 	}

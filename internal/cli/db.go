@@ -10,7 +10,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"omakiten/internal/app"
+	"omakiten/internal/agentruntime"
 	"omakiten/internal/domain"
 	"omakiten/internal/sqlite"
 )
@@ -71,63 +71,64 @@ func newDBReindexCommand(opts *runtimeOptions) *cobra.Command {
 		Long:  opts.t("cli.db.reindex.long"),
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return runJSON(cmd, func(ctx context.Context) (any, error) {
-				dbPath, err := opts.resolvedDBPath()
-				if err != nil {
-					return nil, err
-				}
-				store, err := openExistingSearchStoreAt(ctx, opts, dbPath)
-				if err != nil {
-					return nil, err
-				}
-				defer func() { _ = store.Close() }()
-				backupPath := ""
-				var result domain.SearchIndexReindexReport
-				if confirm {
-					backup, _, err := buildCLIBackupService(cmd, opts, dbPath, false)
-					if err != nil {
-						return nil, err
-					}
-					operation, leaseErr := app.RunLeasedDestructiveOperation(ctx, backup, func(lease app.RecoveryLease) app.DestructiveOperationResult {
-						createBackup := func(backupCtx context.Context, write func(string) error) (string, error) {
-							return lease.WriteSnapshot(backupCtx, write)
-						}
-						var operationErr error
-						result, backupPath, operationErr = store.ReindexSearchConfirmedWithBackup(ctx, createBackup, lease.Discard, lease.Validate)
-						return app.DestructiveOperationResult{
-							BackupPath:        backupPath,
-							MutationCompleted: operationErr == nil,
-							Err:               operationErr,
-						}
-					})
-					backupPath = operation.BackupPath
-					if !operation.MutationCompleted {
-						if operation.Err != nil {
-							return nil, fmt.Errorf("verified backup and search reindex: %w", errors.Join(operation.Err, leaseErr))
-						}
-						return nil, fmt.Errorf("acquire reindex backup lease: %w", leaseErr)
-					}
-					if leaseErr != nil {
-						fmt.Fprintf(cmd.ErrOrStderr(), "warning: backup lease release failed after reindex committed (%s)\n", leaseErr.Error())
-					}
-				} else {
-					result, err = store.ReindexSearchConfirmed(ctx, false)
-					if err != nil {
-						return nil, reindexConfirmationErrorWithRetryGuidance(err, dbPath, opts.t("cli.db.reindex.error.confirm_required"))
-					}
-				}
-				if result.BackupRecommended && backupPath != "" {
-					fmt.Fprintf(cmd.ErrOrStderr(), opts.t("cli.db.reindex.warning.backup")+"\n", backupPath)
-				}
-				return dbReindexResponse{
-					SearchIndexReindexReport: result,
-					DatabasePath:             dbPath,
-					BackupPath:               backupPath,
-				}, nil
+				return runDBReindex(ctx, cmd, opts, confirm)
 			})
 		},
 	}
 	cmd.Flags().BoolVar(&confirm, "confirm", false, opts.t("cli.db.reindex.flag.confirm"))
 	return cmd
+}
+
+func runDBReindex(ctx context.Context, cmd *cobra.Command, opts *runtimeOptions, confirm bool) (any, error) {
+	dbPath, err := opts.resolvedDBPath()
+	if err != nil {
+		return nil, err
+	}
+	store, err := openExistingSearchStoreAt(ctx, opts, dbPath)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = store.Close() }()
+	if !confirm {
+		result, err := store.ReindexSearchConfirmed(ctx, false)
+		if err != nil {
+			return nil, reindexConfirmationErrorWithRetryGuidance(err, dbPath, opts.t("cli.db.reindex.error.confirm_required"))
+		}
+		return dbReindexResponse{SearchIndexReindexReport: result, DatabasePath: dbPath}, nil
+	}
+
+	backup, _, err := buildCLIBackupService(cmd, opts, dbPath, false)
+	if err != nil {
+		return nil, err
+	}
+	var result domain.SearchIndexReindexReport
+	backupPath, operation, leaseErr := runConfirmedDBReindex(ctx, store, backup, &result)
+	if !operation.MutationCompleted {
+		if operation.Err != nil {
+			return nil, fmt.Errorf("verified backup and search reindex: %w", errors.Join(operation.Err, leaseErr))
+		}
+		return nil, fmt.Errorf("acquire reindex backup lease: %w", leaseErr)
+	}
+	if leaseErr != nil {
+		fmt.Fprintf(cmd.ErrOrStderr(), "warning: backup lease release failed after reindex committed (%s)\n", leaseErr.Error())
+	}
+	if result.BackupRecommended && backupPath != "" {
+		fmt.Fprintf(cmd.ErrOrStderr(), opts.t("cli.db.reindex.warning.backup")+"\n", backupPath)
+	}
+	return dbReindexResponse{SearchIndexReindexReport: result, DatabasePath: dbPath, BackupPath: backupPath}, nil
+}
+
+func runConfirmedDBReindex(ctx context.Context, store *sqlite.Store, backup *agentruntime.Backup, result *domain.SearchIndexReindexReport) (string, agentruntime.DestructiveResult, error) {
+	var backupPath string
+	operation, leaseErr := agentruntime.RunLeased(ctx, backup, func(lease agentruntime.RecoveryLease) agentruntime.DestructiveResult {
+		createBackup := func(backupCtx context.Context, write func(string) error) (string, error) {
+			return lease.WriteSnapshot(backupCtx, write)
+		}
+		var operationErr error
+		*result, backupPath, operationErr = store.ReindexSearchConfirmedWithBackup(ctx, createBackup, lease.Discard, lease.Validate)
+		return agentruntime.DestructiveResult{BackupPath: backupPath, MutationCompleted: operationErr == nil, Err: operationErr}
+	})
+	return operation.BackupPath, operation, leaseErr
 }
 
 type dbReindexResponse struct {
@@ -225,38 +226,7 @@ func runDBBackup(ctx context.Context, cmd *cobra.Command, opts *runtimeOptions, 
 	}
 
 	if out != "" {
-		finalPath, err := filepath.Abs(out)
-		if err != nil {
-			return nil, err
-		}
-		finalPath = filepath.Clean(finalPath)
-		if root, blocked := blockedBackupOutRoot(finalPath); blocked {
-			return nil, domain.NewError(
-				domain.ErrValidation,
-				fmt.Sprintf(opts.t("cli.db.backup.error.system_path_fmt"), finalPath, root),
-				map[string]any{"path": finalPath, "root": root},
-			)
-		}
-		if !force {
-			if _, statErr := os.Stat(finalPath); statErr == nil {
-				return nil, domain.NewError(
-					domain.ErrValidation,
-					fmt.Sprintf(opts.t("cli.db.backup.error.exists_fmt"), finalPath),
-					map[string]any{"path": finalPath},
-				)
-			} else if !errors.Is(statErr, os.ErrNotExist) {
-				return nil, fmt.Errorf("backup --out stat: %w", statErr)
-			}
-		}
-		snapshot := sqlite.SnapshotDatabase
-		if force {
-			snapshot = sqlite.SnapshotDatabaseReplace
-		}
-		if err := snapshot(ctx, dbPath, finalPath); err != nil {
-			return nil, err
-		}
-		fmt.Fprintf(cmd.ErrOrStderr(), opts.t("cli.db.backup.success_fmt")+"\n", finalPath)
-		return map[string]any{"path": finalPath, "pruned": false}, nil
+		return runDBBackupToPath(ctx, cmd, opts, dbPath, out, force)
 	}
 
 	svc, retention, err := buildCLIBackupService(cmd, opts, dbPath, false)
@@ -269,6 +239,33 @@ func runDBBackup(ctx context.Context, cmd *cobra.Command, opts *runtimeOptions, 
 	}
 	fmt.Fprintf(cmd.ErrOrStderr(), opts.t("cli.db.backup.success_fmt")+"\n", finalPath)
 	return map[string]any{"path": finalPath, "pruned": true, "retention": retention}, nil
+}
+
+func runDBBackupToPath(ctx context.Context, cmd *cobra.Command, opts *runtimeOptions, dbPath, out string, force bool) (any, error) {
+	finalPath, err := filepath.Abs(out)
+	if err != nil {
+		return nil, err
+	}
+	finalPath = filepath.Clean(finalPath)
+	if root, blocked := blockedBackupOutRoot(finalPath); blocked {
+		return nil, domain.NewError(domain.ErrValidation, fmt.Sprintf(opts.t("cli.db.backup.error.system_path_fmt"), finalPath, root), map[string]any{"path": finalPath, "root": root})
+	}
+	if !force {
+		if _, statErr := os.Stat(finalPath); statErr == nil {
+			return nil, domain.NewError(domain.ErrValidation, fmt.Sprintf(opts.t("cli.db.backup.error.exists_fmt"), finalPath), map[string]any{"path": finalPath})
+		} else if !errors.Is(statErr, os.ErrNotExist) {
+			return nil, fmt.Errorf("backup --out stat: %w", statErr)
+		}
+	}
+	snapshot := sqlite.SnapshotDatabase
+	if force {
+		snapshot = sqlite.SnapshotDatabaseReplace
+	}
+	if err := snapshot(ctx, dbPath, finalPath); err != nil {
+		return nil, err
+	}
+	fmt.Fprintf(cmd.ErrOrStderr(), opts.t("cli.db.backup.success_fmt")+"\n", finalPath)
+	return map[string]any{"path": finalPath, "pruned": false}, nil
 }
 
 // blockedBackupOutRoot reports whether the cleaned absolute path lives

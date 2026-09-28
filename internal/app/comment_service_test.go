@@ -170,86 +170,86 @@ func TestCommentServiceScopeAwareGuards(t *testing.T) {
 	workflow := NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot())
 	service := NewCommentServiceWithWorkflow(store, workflow, store.Snapshot())
 
-	// task comment in the backlog bucket (permissions.comment.edit=false).
 	taskSvc := NewTaskServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot())
-	task, err := taskSvc.Add(ctx, project.Context(), "T", "", "", "backlog")
+	projectCtx := project.Context()
+	taskComment := addScopedTaskComment(t, ctx, taskSvc, service, projectCtx)
+	assertCommentEditDenied(t, ctx, service, projectCtx, taskComment)
+	projComment := addAndEditProjectComment(t, ctx, service, projectCtx)
+	assertUniversalCommentEditDenied(t, ctx, service, projectCtx)
+	devComment := addAndDenyDevComment(t, ctx, taskSvc, service, projectCtx)
+	assertCommentDeleteDenied(t, ctx, service, projectCtx, devComment, projComment)
+}
+
+func addScopedTaskComment(t *testing.T, ctx context.Context, taskSvc *TaskService, service *CommentService, project domain.ProjectContext) domain.Comment {
+	task, err := taskSvc.Add(ctx, project, "T", "", "", "backlog")
 	if err != nil {
 		t.Fatalf("Add(task) = %v", err)
 	}
-	taskComment, err := service.AddScoped(ctx, project.Context(), domain.CommentWrite{
-		Scope: domain.CommentScopeTask, TaskID: task.ID, Body: "task note",
-	})
+	comment, err := service.AddScoped(ctx, project, domain.CommentWrite{Scope: domain.CommentScopeTask, TaskID: task.ID, Body: "task note"})
 	if err != nil {
 		t.Fatalf("AddScoped(task) = %v", err)
 	}
+	return comment
+}
 
-	// task comment edit must be blocked by the bucket policy.
-	if _, err := service.Edit(ctx, project.Context(), taskComment.ID, "edited", nil); err == nil {
+func assertCommentEditDenied(t *testing.T, ctx context.Context, service *CommentService, project domain.ProjectContext, comment domain.Comment) {
+	if _, err := service.Edit(ctx, project, comment.ID, "edited", nil); err == nil {
 		t.Fatal("Edit(task comment) = nil error, want guard violation")
 	} else {
 		assertCodedError(t, err, domain.ErrGuardViolation)
 	}
+}
 
-	// project comment edit must be allowed (defaults.comment.project.edit=true).
-	projComment, err := service.AddScoped(ctx, project.Context(), domain.CommentWrite{
-		Scope: domain.CommentScopeProject, Body: "project note",
-	})
+func addAndEditProjectComment(t *testing.T, ctx context.Context, service *CommentService, project domain.ProjectContext) domain.Comment {
+	comment, err := service.AddScoped(ctx, project, domain.CommentWrite{Scope: domain.CommentScopeProject, Body: "project note"})
 	if err != nil {
 		t.Fatalf("AddScoped(project) = %v", err)
 	}
-	if _, err := service.Edit(ctx, project.Context(), projComment.ID, "edited project", nil); err != nil {
+	if _, err := service.Edit(ctx, project, comment.ID, "edited project", nil); err != nil {
 		t.Fatalf("Edit(project comment) = %v, want allowed", err)
 	}
+	return comment
+}
 
-	// universal comment edit must be blocked (defaults.comment.universal.edit=false).
-	uniComment, err := service.AddScoped(ctx, project.Context(), domain.CommentWrite{
-		Scope: domain.CommentScopeUniversal, Body: "universal note",
-	})
+func assertUniversalCommentEditDenied(t *testing.T, ctx context.Context, service *CommentService, project domain.ProjectContext) {
+	comment, err := service.AddScoped(ctx, project, domain.CommentWrite{Scope: domain.CommentScopeUniversal, Body: "universal note"})
 	if err != nil {
 		t.Fatalf("AddScoped(universal) = %v", err)
 	}
-	if _, err := service.Edit(ctx, project.Context(), uniComment.ID, "edited universal", nil); err == nil {
+	if _, err := service.Edit(ctx, project, comment.ID, "edited universal", nil); err == nil {
 		t.Fatal("Edit(universal comment) = nil error, want guard violation")
 	} else {
 		assertCodedError(t, err, domain.ErrGuardViolation)
 	}
+}
 
-	// Bucket-free chain: a task in the "dev" bucket (which declares NO
-	// permissions) must still be denied a comment edit purely by
-	// defaults.comment.task.edit=false. This exercises #389's designed chain
-	// itself, not a bucket override. Fails before the ResolveCommentPermission
-	// fix, where defaults.comment.task was never consulted.
-	devTask, err := taskSvc.Add(ctx, project.Context(), "Dev", "", "", "backlog")
+func addAndDenyDevComment(t *testing.T, ctx context.Context, taskSvc *TaskService, service *CommentService, project domain.ProjectContext) domain.Comment {
+	task, err := taskSvc.Add(ctx, project, "Dev", "", "", "backlog")
 	if err != nil {
 		t.Fatalf("Add(dev task) = %v", err)
 	}
-	if _, err := taskSvc.Move(ctx, project.Context(), devTask.ID, "dev"); err != nil {
+	if _, err := taskSvc.Move(ctx, project, task.ID, "dev"); err != nil {
 		t.Fatalf("Move(dev task -> dev) = %v", err)
 	}
-	devComment, err := service.AddScoped(ctx, project.Context(), domain.CommentWrite{
-		Scope: domain.CommentScopeTask, TaskID: devTask.ID, Body: "dev note",
-	})
+	comment, err := service.AddScoped(ctx, project, domain.CommentWrite{Scope: domain.CommentScopeTask, TaskID: task.ID, Body: "dev note"})
 	if err != nil {
 		t.Fatalf("AddScoped(dev task) = %v", err)
 	}
-	if _, err := service.Edit(ctx, project.Context(), devComment.ID, "edited dev", nil); err == nil {
+	if _, err := service.Edit(ctx, project, comment.ID, "edited dev", nil); err == nil {
 		t.Fatal("Edit(dev-bucket task comment) = nil error, want guard violation via defaults.comment.task")
 	} else {
 		assertCodedError(t, err, domain.ErrGuardViolation)
 	}
+	return comment
+}
 
-	// Delete-scope coverage (was previously untested at the service layer):
-	// task delete denied by defaults.comment.task.delete=false (dev bucket has
-	// no override), project delete denied by defaults.comment.project.delete=false.
-	if _, err := service.Remove(ctx, project.Context(), devComment.ID); err == nil {
-		t.Fatal("Remove(task comment) = nil error, want guard violation")
-	} else {
-		assertCodedError(t, err, domain.ErrGuardViolation)
-	}
-	if _, err := service.Remove(ctx, project.Context(), projComment.ID); err == nil {
-		t.Fatal("Remove(project comment) = nil error, want guard violation")
-	} else {
-		assertCodedError(t, err, domain.ErrGuardViolation)
+func assertCommentDeleteDenied(t *testing.T, ctx context.Context, service *CommentService, project domain.ProjectContext, taskComment, projectComment domain.Comment) {
+	for _, comment := range []domain.Comment{taskComment, projectComment} {
+		if _, err := service.Remove(ctx, project, comment.ID); err == nil {
+			t.Fatalf("Remove(comment %d) = nil error, want guard violation", comment.ID)
+		} else {
+			assertCodedError(t, err, domain.ErrGuardViolation)
+		}
 	}
 }
 

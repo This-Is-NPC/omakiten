@@ -33,7 +33,7 @@ func appTestBundle(t *testing.T) config.Bundle {
 	t.Helper()
 	bundle, _ := testfixtures.LoadBundle(t, "default.yaml")
 	bundle.Skills = []config.Skill{{Slug: "go", Name: "Go"}}
-	bundle.Personas = []config.Persona{{Slug: "agent", Name: "Agent", Skills: []string{"go"}}}
+	bundle.Personas = []config.Persona{{Slug: "agent", Name: "Agent", SkillRepertoire: []string{"go"}}}
 	bundle.Laws = []config.Law{{Slug: "scope", Severity: "error", Body: "Stay in scope.", Scope: "global"}}
 	return bundle
 }

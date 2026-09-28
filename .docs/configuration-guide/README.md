@@ -6,6 +6,7 @@ How to configure Omakiten through the active profile yaml plus the sibling entit
 |---|---|
 | [system.md](system.md) | Runtime knobs — `config.{output,context,workflow,mcp,tui,sqlite,solutions,backup,events,search,tag_synonyms}` plus top-level shape and validation. |
 | [workflows.md](workflows.md) | `workflows[]` schema — buckets, transitions, operations, task/comment permissions. |
+| [studio.md](studio.md) | Studio TUI workbench — IA, supported/blocked edits, preview/apply flow, bucket impact warnings, imported-block blocking, prompt preview composition. |
 | [command-bindings.md](command-bindings.md) | `mcp_commands` and persona skill-repertoire bindings for MCP prompt composition. |
 | [entities.md](entities.md) | Entity asset loaders — skills, laws, personas, projects, templates, frontmatter, autoload/custom rules. |
 | [enums.md](enums.md) | `config.template_defaults`, `config.priorities`, and `config.severities`. |
@@ -22,7 +23,7 @@ How to configure Omakiten through the active profile yaml plus the sibling entit
 
 ## Where to start
 
-- **Picked a preset and want to change one knob.** → [system.md](system.md) for runtime knobs, [workflows.md](workflows.md) for buckets/guards, [command-bindings.md](command-bindings.md) for prompt roles, or [entities.md](entities.md) for asset wiring.
+- **Picked a preset and want to change one knob.** → [system.md](system.md) for runtime knobs, [workflows.md](workflows.md) for buckets/guards, [studio.md](studio.md) for Studio preview/apply edit rules, [command-bindings.md](command-bindings.md) for prompt roles, or [entities.md](entities.md) for asset wiring.
 - **Adding a project-local override.** → [project-overrides.md](project-overrides.md) for the layering model, [path-resolution.md](path-resolution.md) for the `.omakiten/` walk-up.
 - **Building a hook or wiring a notification.** → [hooks.md](hooks.md) → [notifications.md](notifications.md).
 - **Authoring a custom theme or translation.** → [themes.md](themes.md) / [languages.md](languages.md).

@@ -8,7 +8,7 @@ import (
 )
 
 func TestSkillFileBytes(t *testing.T) {
-	bytes, err := SkillFileBytes(Skill{Slug: "go", Name: "Go", Description: "Go lang", Body: "Body text"})
+	bytes, err := SkillFileBytes(Skill{Slug: "go", Name: "Go", Description: "Go lang", SchemaVersion: 2, RoleAffinity: []string{"builder"}, Body: "Body text"})
 	if err != nil {
 		t.Fatalf("SkillFileBytes() error = %v", err)
 	}
@@ -40,7 +40,7 @@ func TestLawFileBytes(t *testing.T) {
 }
 
 func TestPersonaFileBytes(t *testing.T) {
-	bytes, err := PersonaFileBytes(Persona{Slug: "agent", Name: "Agent", Description: "AI agent", Body: "Instructions."})
+	bytes, err := PersonaFileBytes(Persona{Slug: "agent", Name: "Agent", Description: "AI agent", SchemaVersion: 2, SkillRepertoire: []string{"go"}, Body: "Instructions."})
 	if err != nil {
 		t.Fatalf("PersonaFileBytes() error = %v", err)
 	}
@@ -58,7 +58,7 @@ func TestEntityFilePath(t *testing.T) {
 
 func TestSaveBundleAndLoadRoundTrip(t *testing.T) {
 	tmp := t.TempDir()
-	configPath := filepath.Join(tmp, "omakiten.yaml")
+	configPath := filepath.Join(tmp, "config", "omakiten.yaml")
 
 	tru := true
 	bundle := Bundle{
@@ -94,10 +94,9 @@ func TestSaveBundleAndLoadRoundTrip(t *testing.T) {
 				Logs:         LogsViewSettings{Sort: SortSettings{Order: "desc"}, Limit: 50, WindowDays: 30},
 				TaskActivity: TaskActivityViewSettings{Sort: SortSettings{Order: "asc"}},
 			},
-			SQLite:      SQLiteSettings{BusyTimeoutMs: 5000, CacheSizeKB: 1024, MmapSizeBytes: 0},
-			ActivityLog: ActivityLogSettings{MaxRows: 500, MaxAgeDays: 7},
-			Solutions:   SolutionsSettings{DefaultTopLimit: 10, MaxTopLimit: 100},
-			Backup:      BackupSettings{RetentionCount: 5},
+			SQLite:    SQLiteSettings{BusyTimeoutMs: 5000, CacheSizeKB: 1024, MmapSizeBytes: 0},
+			Solutions: SolutionsSettings{DefaultTopLimit: 10, MaxTopLimit: 100},
+			Backup:    BackupSettings{RetentionCount: 5},
 			Events: EventsSettings{
 				DefaultRecentLimit: 50,
 				Defaults:           EventChannelSettings{Log: &tru, Broadcast: &tru, Hook: &tru},
@@ -106,8 +105,9 @@ func TestSaveBundleAndLoadRoundTrip(t *testing.T) {
 			TagSynonyms: map[string]string{"golang": "go"},
 		},
 		Skills:   []Skill{{Slug: "go", Name: "Go"}},
-		Personas: []Persona{{Slug: "agent", Name: "Agent", Skills: []string{"go"}}},
+		Personas: []Persona{{Slug: "agent", Name: "Agent", SchemaVersion: 2, SkillRepertoire: []string{"go"}}},
 		Laws:     []Law{{Slug: "scope", Severity: "error", Body: "Stay scoped.", Scope: "global"}},
+		Surfaces: CanonicalSurfaceTable(),
 		Workflows: []Workflow{{
 			ID:   1,
 			Key:  "default",
@@ -151,7 +151,7 @@ func TestSaveBundleAndLoadRoundTrip(t *testing.T) {
 
 func TestSaveFullBundle(t *testing.T) {
 	tmp := t.TempDir()
-	configPath := filepath.Join(tmp, "omakiten.yaml")
+	configPath := filepath.Join(tmp, "config", "omakiten.yaml")
 
 	bundle := Bundle{
 		Version: 1,
@@ -162,15 +162,15 @@ func TestSaveFullBundle(t *testing.T) {
 			Theme:    ThemeSettings{Active: "catppuccin"},
 		},
 		Skills:   []Skill{{Slug: "go", Name: "Go", Body: "Go body"}},
-		Personas: []Persona{{Slug: "agent", Name: "Agent", Body: "Agent body"}},
+		Personas: []Persona{{Slug: "agent", Name: "Agent", SchemaVersion: 2, SkillRepertoire: []string{"go"}, Body: "Agent body"}},
 		Laws:     []Law{{Slug: "scope", Severity: "error", Body: "Stay scoped.", Scope: "global"}},
 		Workflows: []Workflow{{
 			ID:   1,
 			Key:  "default",
 			Name: "Default",
-		Buckets: []Bucket{
-			{ID: 1, Key: "backlog", Name: "Backlog", Position: 1},
-		},
+			Buckets: []Bucket{
+				{ID: 1, Key: "backlog", Name: "Backlog", Position: 1},
+			},
 		}},
 	}
 

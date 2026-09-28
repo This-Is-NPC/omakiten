@@ -4,16 +4,17 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"unicode"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/x/ansi"
 
-	"omakiten/internal/app"
 	"omakiten/internal/config"
 	"omakiten/internal/domain"
-	"omakiten/internal/testfixtures"
 	"omakiten/internal/testfixtures/runtimecache"
 	"omakiten/internal/testfixtures/snapstore"
 	"omakiten/internal/token"
+	"omakiten/internal/tui/screens/taskdetail"
 )
 
 // moveInputFixture returns a Model parked on a parent task that owns
@@ -65,6 +66,37 @@ func moveInputFixture(t *testing.T) Model {
 	}
 	m.openTaskView(parent)
 	return m
+}
+
+func subtaskMoveSubmitFixture(t *testing.T) (context.Context, *snapstore.Store, domain.Project, domain.Task, domain.Task, Model) {
+	t.Helper()
+	ctx := context.Background()
+	store := snapstore.Open(t, t.TempDir()+"/omakiten.db")
+	if err := store.ImportBundle(ctx, tuiPermissiveBundle(t), "test.yaml", "hash"); err != nil {
+		t.Fatalf("ImportBundle: %v", err)
+	}
+	project, err := store.UpsertProject(ctx, "Project", "project", "/work/project")
+	if err != nil {
+		t.Fatalf("UpsertProject: %v", err)
+	}
+	parent, err := store.CreateTask(ctx, project.ID, "Parent", "", domain.Priority(2), "backlog", nil, store.Snapshot())
+	if err != nil {
+		t.Fatalf("CreateTask parent: %v", err)
+	}
+	parentID := parent.ID
+	child, err := store.CreateTask(ctx, project.ID, "Child", "", domain.Priority(2), "backlog", &parentID, store.Snapshot())
+	if err != nil {
+		t.Fatalf("CreateTask child: %v", err)
+	}
+	model, err := NewModel(ctx, project.Context(), Repositories{
+		Tasks: store, Comments: store, Dependencies: store,
+		Cache: runtimecache.InstallWithStore(0, store), Events: store,
+		ActivityLogs: store,
+	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
+	if err != nil {
+		t.Fatalf("NewModel: %v", err)
+	}
+	return ctx, store, project, parent, child, model
 }
 
 // TestBeginMoveInputForTask_CapturesTargetID locks the routing fix:
@@ -135,6 +167,32 @@ func TestMoveInputPromptListsResolvedKitBuckets(t *testing.T) {
 	}
 }
 
+func TestMoveInputRouteSanitizesWorkflowBucketPrompt(t *testing.T) {
+	m := moveInputFixture(t)
+	hostile := "dev 漢字 \x1b[31mred\x1b]0;owned\a \x00\u009b31m\u009d"
+	m.repos.Cache = runtimecache.Install(0, config.BuildSnapshot(config.Bundle{
+		Kit:    config.Kit{Key: "root"},
+		Config: config.Settings{Workflow: config.WorkflowSettings{Active: "root"}},
+		Workflows: []config.Workflow{{
+			Key:     "root",
+			Buckets: []config.Bucket{{Key: hostile, Position: 1}},
+		}},
+	}))
+	m.beginMoveInputForTask(domain.Task{ID: 100})
+	plain := ansi.Strip(m.renderInput())
+	if strings.Contains(plain, "owned") {
+		t.Fatalf("move prompt retained OSC payload: %q", plain)
+	}
+	for _, r := range plain {
+		if r != '\n' && unicode.IsControl(r) {
+			t.Fatalf("move prompt retained control U+%04X: %q", r, plain)
+		}
+	}
+	if !strings.Contains(plain, "漢字") {
+		t.Fatalf("move prompt lost harmless Unicode: %q", plain)
+	}
+}
+
 // TestTaskViewMOnSubtasksPaneTargetsFocusedChild pins the focus-based
 // routing: pressing `m` while the sub-tasks pane owns focus must set
 // moveInputTargetID to the focused child id, NOT the open task id.
@@ -143,12 +201,8 @@ func TestMoveInputPromptListsResolvedKitBuckets(t *testing.T) {
 // while the task screen is up.
 func TestTaskViewMOnSubtasksPaneTargetsFocusedChild(t *testing.T) {
 	m := moveInputFixture(t)
-	m.applyTaskFocus(taskFocusSubtasks)
-	m.refreshSubtaskList()
-	if m.subtasks.Cursor() < 0 {
-		m.subtasks = m.subtasks.JumpFirst()
-	}
-	child, ok := m.activeSubtask()
+	m.storeScreen(m.taskDetailScreen.WithFocus(taskdetail.FocusSubtasks))
+	child, ok := m.taskDetailScreen.FocusedSubtask()
 	if !ok {
 		t.Fatal("activeSubtask returned ok=false (fixture should have at least one child)")
 	}
@@ -158,14 +212,15 @@ func TestTaskViewMOnSubtasksPaneTargetsFocusedChild(t *testing.T) {
 	if !ok {
 		t.Fatalf("Update returned %T, want Model", got)
 	}
-	if gotModel.mode != modeMove {
-		t.Fatalf("mode = %v, want modeMove after pressing m on sub-tasks pane", gotModel.mode)
+	if gotModel.taskDetailScreen.State().Mode != taskdetail.ModeMove {
+		t.Fatalf("mode = %v, want move after pressing m on sub-tasks pane", gotModel.taskDetailScreen.State().Mode)
 	}
-	if gotModel.moveInputTargetID != child.ID {
-		t.Fatalf("moveInputTargetID = %d, want %d (focused child) — m routed to parent instead of child", gotModel.moveInputTargetID, child.ID)
+	if gotModel.taskDetailScreen.MoveTaskID() != child.ID {
+		t.Fatalf("move target = %d, want %d (focused child)", gotModel.taskDetailScreen.MoveTaskID(), child.ID)
 	}
-	if gotModel.moveInputTargetID == m.taskID {
-		t.Fatalf("moveInputTargetID matches parent id %d — sub-task routing regressed", m.taskID)
+	parentID := m.taskDetailScreen.Payload().Task.ID
+	if gotModel.taskDetailScreen.MoveTaskID() == parentID {
+		t.Fatalf("move target matches parent id %d", parentID)
 	}
 }
 
@@ -175,18 +230,19 @@ func TestTaskViewMOnSubtasksPaneTargetsFocusedChild(t *testing.T) {
 // preserved for parent-task moves.
 func TestTaskViewMOnFormPaneTargetsOpenTask(t *testing.T) {
 	m := moveInputFixture(t)
-	m.applyTaskFocus(taskFocusForm)
+	m.storeScreen(m.taskDetailScreen.WithFocus(taskdetail.FocusDetails))
 
 	got, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'m'}})
 	gotModel, ok := got.(Model)
 	if !ok {
 		t.Fatalf("Update returned %T, want Model", got)
 	}
-	if gotModel.mode != modeMove {
-		t.Fatalf("mode = %v, want modeMove", gotModel.mode)
+	if gotModel.taskDetailScreen.State().Mode != taskdetail.ModeMove {
+		t.Fatalf("mode = %v, want move", gotModel.taskDetailScreen.State().Mode)
 	}
-	if gotModel.moveInputTargetID != m.taskID {
-		t.Fatalf("moveInputTargetID = %d, want %d (open parent) — form-pane m no longer routes to parent", gotModel.moveInputTargetID, m.taskID)
+	parentID := m.taskDetailScreen.Payload().Task.ID
+	if gotModel.taskDetailScreen.MoveTaskID() != parentID {
+		t.Fatalf("move target = %d, want %d (open parent)", gotModel.taskDetailScreen.MoveTaskID(), parentID)
 	}
 }
 
@@ -196,71 +252,40 @@ func TestTaskViewMOnFormPaneTargetsOpenTask(t *testing.T) {
 // moveInputTargetID fix this test would surface the regression as the
 // parent landing in `dev` while the child stayed put.
 func TestModeMoveSubmitMovesSubtaskNotParent(t *testing.T) {
-	ctx := context.Background()
-	store := snapstore.Open(t, t.TempDir()+"/omakiten.db")
-
-	if err := store.ImportBundle(ctx, tuiPermissiveBundle(t), "test.yaml", "hash"); err != nil {
-		t.Fatalf("ImportBundle: %v", err)
-	}
-	project, err := store.UpsertProject(ctx, "Project", "project", "/work/project")
-	if err != nil {
-		t.Fatalf("UpsertProject: %v", err)
-	}
-	parent, err := store.CreateTask(ctx, project.ID, "Parent", "", domain.Priority(2), "backlog", nil, store.Snapshot())
-	if err != nil {
-		t.Fatalf("CreateTask parent: %v", err)
-	}
-	pid := parent.ID
-	child, err := store.CreateTask(ctx, project.ID, "Child", "", domain.Priority(2), "backlog", &pid, store.Snapshot())
-	if err != nil {
-		t.Fatalf("CreateTask child: %v", err)
-	}
-
-	model, err := NewModel(ctx, project.Context(), Repositories{
-		Tasks:        store,
-		Comments:     store,
-		Dependencies: store,
-		Workflow:     app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot()),
-		Cache:        runtimecache.Install(0, store.Snapshot()),
-		Events:       store,
-		ActivityLogs: store,
-	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
-	if err != nil {
-		t.Fatalf("NewModel: %v", err)
-	}
+	ctx, store, project, parent, child, model := subtaskMoveSubmitFixture(t)
 
 	// Open the parent task screen via the table lens so taskID is set.
 	got := pressStringKey(t, model, "/")
 	got = pressKey(t, got, tea.KeyEnter)
-	if got.taskID != parent.ID {
-		t.Fatalf("taskID after open = %d, want parent %d", got.taskID, parent.ID)
+	if got.taskDetailScreen.Payload().Task.ID != parent.ID {
+		t.Fatalf("taskID after open = %d, want parent %d", got.taskDetailScreen.Payload().Task.ID, parent.ID)
 	}
 
 	// Focus the sub-tasks pane, ensure cursor lands on the child, then
 	// trigger the move flow.
 	got = pressStringKey(t, got, "s")
-	if got.taskFocus != taskFocusSubtasks {
-		t.Fatalf("taskFocus = %v, want subtasks", got.taskFocus)
+	if got.taskDetailScreen.State().Focus != taskdetail.FocusSubtasks {
+		t.Fatalf("task focus = %v, want subtasks", got.taskDetailScreen.State().Focus)
 	}
-	focused, ok := got.activeSubtask()
+	focused, ok := got.taskDetailScreen.FocusedSubtask()
 	if !ok || focused.ID != child.ID {
 		t.Fatalf("activeSubtask = (%+v, %v), want the only child id %d", focused, ok, child.ID)
 	}
 
 	got = pressRune(t, got, 'm')
-	if got.mode != modeMove {
-		t.Fatalf("mode after m = %v, want modeMove", got.mode)
+	if got.taskDetailScreen.State().Mode != taskdetail.ModeMove {
+		t.Fatalf("mode after m = %v, want move", got.taskDetailScreen.State().Mode)
 	}
-	if got.moveInputTargetID != child.ID {
-		t.Fatalf("moveInputTargetID = %d, want child %d (routing regression)", got.moveInputTargetID, child.ID)
+	if got.taskDetailScreen.MoveTaskID() != child.ID {
+		t.Fatalf("move target = %d, want child %d", got.taskDetailScreen.MoveTaskID(), child.ID)
 	}
 	got = sendText(t, got, "dev")
 	got = pressKey(t, got, tea.KeyEnter)
-	if got.mode != modeNormal {
-		t.Fatalf("mode after enter = %v, want modeNormal (submit failed: status=%q)", got.mode, got.status)
+	if got.taskDetailScreen.State().Mode != taskdetail.ModeNormal {
+		t.Fatalf("mode after enter = %v, want normal (status=%q)", got.taskDetailScreen.State().Mode, got.status)
 	}
-	if got.moveInputTargetID != 0 {
-		t.Fatalf("moveInputTargetID = %d after submit, want 0 (not reset)", got.moveInputTargetID)
+	if got.taskDetailScreen.MoveTaskID() != 0 {
+		t.Fatalf("move target = %d after submit, want 0", got.taskDetailScreen.MoveTaskID())
 	}
 
 	rows, err := store.ListTasks(ctx, project.ID, domain.TaskFilter{}, store.Snapshot())

@@ -35,18 +35,32 @@ import (
 // The test enumerates the inverse direction too (handler key not in
 // footer) only for *primary* actions — scroll/global keys live on the
 // handler without footer hints by design.
+type settingsFooterCase struct {
+	name            string
+	sub             subID
+	kind            entityKind
+	bindings        map[string]bool
+	primaryRequired []string
+}
+
 func TestSettingsFooterTokensMatchHandlerKeys(t *testing.T) {
 	catalog := newTestCatalog(t)
 
 	// Global-nav keys handled by handleCommonKey — every footer is
 	// free to advertise these regardless of the active sub.
+	// tab left this set: it is the zone ring, consumed by screens that
+	// have one (or left inert). shift+tab is tops.
 	globalNav := stringSet(
-		"tab", "shift+tab",
+		"shift+tab",
 		",", "/", ".",
 		"ctrl+o", "ctrl+h",
 		"esc", "?", "q",
 		"1", "2", "3",
 	)
+
+	// Zone-ring advance advertised on the global trailer. handleCommonKey
+	// does not consume it; screens with a zone ring do.
+	zoneNav := stringSet("tab")
 
 	// Scroll-style keys are read-only motion. Handlers may bind some
 	// of them; the renderer is allowed to surface the full motion
@@ -59,16 +73,7 @@ func TestSettingsFooterTokensMatchHandlerKeys(t *testing.T) {
 		"left", "right",
 	)
 
-	cases := []struct {
-		name     string
-		sub      subID
-		kind     entityKind
-		bindings map[string]bool
-		// primaryRequired lists keys the handler binds that MUST also
-		// appear in the footer (because the audit found these to be
-		// invisible primary actions).
-		primaryRequired []string
-	}{
+	cases := []settingsFooterCase{
 		{
 			name: "general",
 			sub:  subSettingsGeneral,
@@ -133,54 +138,63 @@ func TestSettingsFooterTokensMatchHandlerKeys(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			m := Model{
-				styles:     newStyles(config.Theme{}),
-				width:      160,
-				height:     40,
-				top:        topSettings,
-				sub:        tc.sub,
-				entityKind: tc.kind,
-				languages:  config.LanguageSettings{CLI: "en", TUI: "en"},
-				repos:      Repositories{Catalog: catalog},
-			}
-
-			tokens := m.footerTokens()
-			if len(tokens) == 0 {
-				t.Fatalf("%s: footerTokens returned empty list", tc.name)
-			}
-
-			footerKeys := map[string]struct{}{}
-			for _, tok := range tokens {
-				for _, frag := range splitKeyToken(tok.key) {
-					footerKeys[frag] = struct{}{}
-					if _, ok := globalNav[frag]; ok {
-						continue
-					}
-					if _, ok := scrollKeys[frag]; ok {
-						continue
-					}
-					if _, ok := tc.bindings[frag]; ok {
-						continue
-					}
-					t.Errorf("%s footer advertises %q (token %q label %q) that has no handler binding", tc.name, frag, tok.key, tok.label)
-				}
-			}
-
-			for _, want := range tc.primaryRequired {
-				if _, ok := footerKeys[want]; !ok {
-					t.Errorf("%s footer is missing required primary key %q", tc.name, want)
-				}
-			}
-
-			if tc.sub == subSettingsLaws || tc.sub == subSettingsSkills {
-				for forbidden := range forbiddenForLawsAndSkills {
-					if _, ok := footerKeys[forbidden]; ok {
-						t.Errorf("%s footer must not advertise %q — handler gates it to Persona only", tc.name, forbidden)
-					}
-				}
-			}
+			assertSettingsFooterParity(t, tc, catalog, globalNav, zoneNav, scrollKeys, forbiddenForLawsAndSkills)
 		})
 	}
+}
+
+func assertSettingsFooterParity(t *testing.T, tc settingsFooterCase, catalog *config.Catalog, globalNav, zoneNav, scrollKeys, forbidden map[string]bool) {
+	t.Helper()
+	m := Model{
+		styles:    newStyles(config.Theme{}),
+		width:     160,
+		height:    40,
+		top:       topSettings,
+		sub:       tc.sub,
+		languages: config.LanguageSettings{CLI: "en", TUI: "en"},
+		repos:     Repositories{Catalog: catalog},
+	}
+	tokens := m.footerTokens()
+	if len(tokens) == 0 {
+		t.Fatalf("%s: footerTokens returned empty list", tc.name)
+	}
+	footerKeys := settingsFooterKeys(t, tc, tokens, globalNav, zoneNav, scrollKeys)
+	for _, want := range tc.primaryRequired {
+		if _, ok := footerKeys[want]; !ok {
+			t.Errorf("%s footer is missing required primary key %q", tc.name, want)
+		}
+	}
+	if tc.sub == subSettingsLaws || tc.sub == subSettingsSkills {
+		for key := range forbidden {
+			if _, ok := footerKeys[key]; ok {
+				t.Errorf("%s footer must not advertise %q — handler gates it to Persona only", tc.name, key)
+			}
+		}
+	}
+}
+
+func settingsFooterKeys(t *testing.T, tc settingsFooterCase, tokens []footerToken, globalNav, zoneNav, scrollKeys map[string]bool) map[string]struct{} {
+	t.Helper()
+	keys := map[string]struct{}{}
+	for _, tok := range tokens {
+		for _, frag := range splitKeyToken(tok.key) {
+			keys[frag] = struct{}{}
+			if _, ok := globalNav[frag]; ok {
+				continue
+			}
+			if _, ok := zoneNav[frag]; ok {
+				continue
+			}
+			if _, ok := scrollKeys[frag]; ok {
+				continue
+			}
+			if _, ok := tc.bindings[frag]; ok {
+				continue
+			}
+			t.Errorf("%s footer advertises %q (token %q label %q) that has no handler binding", tc.name, frag, tok.key, tok.label)
+		}
+	}
+	return keys
 }
 
 // configHandlerBindings returns the key set that `handleConfigKey`
@@ -189,9 +203,10 @@ func TestSettingsFooterTokensMatchHandlerKeys(t *testing.T) {
 // surfaces as a parity test failure.
 func configHandlerBindings(kind entityKind) map[string]bool {
 	keys := stringSet("esc", "up", "k", "down", "j", "t", "c")
-	// `D` (orphan-delete) is tag-only.
+	// `D` (orphan-delete) and `m` (merge) are tag-only.
 	if kind == entityKindTag {
 		keys["D"] = true
+		keys["m"] = true
 	}
 	// `enter` opens entity view for everything except tag.
 	if kind != entityKindTag {
@@ -255,4 +270,3 @@ func stringSet(keys ...string) map[string]bool {
 	}
 	return out
 }
-

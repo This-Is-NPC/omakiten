@@ -75,16 +75,16 @@ dismiss:
   keys: [esc]
 
 # Actions -------------------------------------------------------------
-# Pressing `m` runs `okt workflow orphans --confirm` in-process against
-# the same runtime store; the rebind primitive (#100) handles the
-# migration plus emits per-task task.migrated events. Pressing `s`
-# dismisses with no side effect — the user can re-trigger via the CLI
-# later if they change their mind.
+# `command` is left empty: the TUI intercepts the ActionMsg by slug
+# (kitten_orphan_migration) and invokes operation.Service.MigrateOrphans
+# in-process against the ProjectRuntime already held by the model —
+# same facade contract as MCP orphans.migrate / the CLI preview path,
+# without the DispatchCommand re-open of the SQLite handle. Pressing
+# `s` dismisses with no side effect — the user can re-trigger later.
 actions:
   - key: m
     id: migrate
     label: "${{intl:notifications.kitten_orphan_migration.migrate_label}}"
-    command: ["workflow", "orphans", "--confirm"]
   - key: s
     id: skip
     label: "${{intl:notifications.kitten_orphan_migration.skip_label}}"

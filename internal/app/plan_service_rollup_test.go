@@ -16,7 +16,7 @@ import (
 // reference per-plan loop touch are implemented; the rest panic so an
 // accidental dependency on an un-fixtured method is caught loudly.
 type rollupFakeRepo struct {
-	plans     []domain.Plan
+	plans       []domain.Plan
 	wavesByPlan map[int64][]domain.PlanWave
 	tasksByPlan map[int64][]domain.PlanTaskRow
 

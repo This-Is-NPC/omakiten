@@ -10,7 +10,7 @@ import (
 )
 
 // TestSearchIndexCoversCoreEntities runs against a store that has no
-// pre-existing data; the assertion is that migration 022's CREATE
+// pre-existing data; the assertion is that the current schema's CREATE
 // triggers fire from the very first INSERT so the index is populated
 // without any explicit backfill step at runtime.
 func TestSearchIndexCoversCoreEntities(t *testing.T) {
@@ -193,6 +193,37 @@ func TestSearchProjectFilter(t *testing.T) {
 	}
 	if !projects[projectA.ID] || !projects[projectB.ID] {
 		t.Fatalf("Search cross-project missing one project: %v", projects)
+	}
+}
+
+func TestSearchSameProjectOrderingIsDeterministic(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	store := openTestStore(t)
+	project := mustUpsertProject(t, store, "P", "p", "/work/p")
+	wantIDs := make([]int64, 0, 3)
+	for range 3 {
+		task, err := store.CreateTask(ctx, project.ID, "shared ordering marker", "", domain.Priority(2), "backlog", nil, store.snap())
+		if err != nil {
+			t.Fatalf("CreateTask: %v", err)
+		}
+		wantIDs = append(wantIDs, task.ID)
+	}
+
+	for attempt := 0; attempt < 3; attempt++ {
+		hits, err := store.Search(ctx, "shared", project.ID, []domain.SearchEntityType{domain.SearchEntityTask})
+		if err != nil {
+			t.Fatalf("Search attempt %d: %v", attempt, err)
+		}
+		if len(hits) != len(wantIDs) {
+			t.Fatalf("Search attempt %d returned %d hits, want %d", attempt, len(hits), len(wantIDs))
+		}
+		for i, hit := range hits {
+			if hit.ProjectID != project.ID || hit.ID != wantIDs[i] {
+				t.Fatalf("Search attempt %d hit %d = %+v, want task %d in project %d", attempt, i, hit, wantIDs[i], project.ID)
+			}
+		}
 	}
 }
 

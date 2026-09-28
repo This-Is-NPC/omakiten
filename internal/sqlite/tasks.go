@@ -75,52 +75,39 @@ RETURNING id, project_id, bucket_id, title, description, priority_id, state, cre
 }
 
 func (s *Store) ListTasks(ctx context.Context, projectID int64, filter domain.TaskFilter, buckets domain.BucketResolver) ([]domain.Task, error) {
-	// `workflow_buckets` was dropped in migration 020; the join previously
-	// resolved bucket.key for filter and projection. We now resolve
-	// key→id via the caller-supplied resolver before issuing the SQL so
-	// the query stays a pure tasks-table read, and resolve id→key in Go
-	// after the scan. When buckets is nil any filter that needs a
-	// resolver short-circuits to an empty result and the post-scan key
-	// resolution returns empty strings — matches the pre-migration JOIN
-	// semantics for orphaned rows.
+	query, args, ok := taskListQuery(filter, buckets, projectID)
+	if !ok {
+		return nil, nil
+	}
+	rows, err := s.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	return scanTaskList(s, rows, buckets)
+}
+
+func taskListQuery(filter domain.TaskFilter, buckets domain.BucketResolver, projectID int64) (string, []any, bool) {
 	query := `
 SELECT tasks.id, tasks.project_id, COALESCE(tasks.bucket_id, 0), tasks.title, tasks.description, tasks.priority_id, tasks.state, tasks.created_at, tasks.parent_id, tasks.depth
 FROM tasks
 WHERE tasks.project_id = ?`
 	args := []any{projectID}
+	query, args, ok := appendTaskFilters(query, args, filter, buckets)
+	if !ok {
+		return "", nil, false
+	}
+	return query + " ORDER BY " + taskOrderClause(filter.Sort), args, true
+}
+
+func appendTaskFilters(query string, args []any, filter domain.TaskFilter, buckets domain.BucketResolver) (string, []any, bool) {
 	if !filter.IncludeArchived {
 		query += " AND tasks.state = 'active'"
 	}
-	if filter.BucketKey != "" {
-		if isNilResolver(buckets) {
-			return nil, nil
-		}
-		b, ok := buckets.BucketByKey(filter.BucketKey)
-		if !ok {
-			// unknown bucket — return empty result rather than error;
-			// matches the pre-migration JOIN semantics (no rows match).
-			return nil, nil
-		}
-		query += " AND tasks.bucket_id = ?"
-		args = append(args, b.ID)
-	}
-	if len(filter.BucketKeys) > 0 {
-		if isNilResolver(buckets) {
-			return nil, nil
-		}
-		ids := make([]int64, 0, len(filter.BucketKeys))
-		for _, key := range filter.BucketKeys {
-			if b, ok := buckets.BucketByKey(key); ok {
-				ids = append(ids, b.ID)
-			}
-		}
-		if len(ids) == 0 {
-			return nil, nil
-		}
-		query += " AND tasks.bucket_id IN (" + placeholders(len(ids)) + ")"
-		for _, id := range ids {
-			args = append(args, id)
-		}
+	var ok bool
+	query, args, ok = appendTaskBucketFilters(query, args, filter, buckets)
+	if !ok {
+		return "", nil, false
 	}
 	if len(filter.Priorities) > 0 {
 		query += " AND tasks.priority_id IN (" + placeholders(len(filter.Priorities)) + ")"
@@ -135,14 +122,44 @@ WHERE tasks.project_id = ?`
 		query += " AND tasks.parent_id = ?"
 		args = append(args, filter.ParentValue)
 	}
-	query += " ORDER BY " + taskOrderClause(filter.Sort)
+	return query, args, true
+}
 
-	rows, err := s.db.QueryContext(ctx, query, args...)
-	if err != nil {
-		return nil, err
+func appendTaskBucketFilters(query string, args []any, filter domain.TaskFilter, buckets domain.BucketResolver) (string, []any, bool) {
+	if filter.BucketKey != "" {
+		if isNilResolver(buckets) {
+			return "", nil, false
+		}
+		bucket, ok := buckets.BucketByKey(filter.BucketKey)
+		if !ok {
+			return "", nil, false
+		}
+		query += " AND tasks.bucket_id = ?"
+		args = append(args, bucket.ID)
 	}
-	defer func() { _ = rows.Close() }()
+	if len(filter.BucketKeys) == 0 {
+		return query, args, true
+	}
+	if isNilResolver(buckets) {
+		return "", nil, false
+	}
+	ids := make([]int64, 0, len(filter.BucketKeys))
+	for _, key := range filter.BucketKeys {
+		if bucket, ok := buckets.BucketByKey(key); ok {
+			ids = append(ids, bucket.ID)
+		}
+	}
+	if len(ids) == 0 {
+		return "", nil, false
+	}
+	query += " AND tasks.bucket_id IN (" + placeholders(len(ids)) + ")"
+	for _, id := range ids {
+		args = append(args, id)
+	}
+	return query, args, true
+}
 
+func scanTaskList(s *Store, rows *sql.Rows, buckets domain.BucketResolver) ([]domain.Task, error) {
 	var tasks []domain.Task
 	for rows.Next() {
 		var (
@@ -198,19 +215,41 @@ func (s *Store) MoveTask(ctx context.Context, projectID, taskID int64, targetBuc
 		return domain.Task{}, err
 	}
 	defer func() { _ = tx.Rollback() }()
+	result, err := s.moveTaskTx(ctx, tx, projectID, taskID, targetBucketKey, buckets)
+	if err != nil {
+		return domain.Task{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return domain.Task{}, err
+	}
+	if result.moveEvent.EventType != "" {
+		s.publishEvent(ctx, result.moveEvent)
+	}
+	if result.unassignEvent.EventType != "" {
+		s.publishEvent(ctx, result.unassignEvent)
+	}
+	return result.task, nil
+}
 
+type taskMoveResult struct {
+	task          domain.Task
+	moveEvent     domain.Event
+	unassignEvent domain.Event
+}
+
+func (s *Store) moveTaskTx(ctx context.Context, tx *sql.Tx, projectID, taskID int64, targetBucketKey string, buckets domain.BucketResolver) (taskMoveResult, error) {
 	var currentBucketID int64
 	var prevAssignedTo sql.NullString
 	if err := tx.QueryRowContext(ctx, "SELECT COALESCE(bucket_id, 0), assigned_to FROM tasks WHERE project_id = ? AND id = ?", projectID, taskID).Scan(&currentBucketID, &prevAssignedTo); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			return domain.Task{}, domain.NewError(domain.ErrTaskNotFound, "task not found in active project", map[string]any{"task_id": taskID, "project_id": projectID})
+			return taskMoveResult{}, domain.NewError(domain.ErrTaskNotFound, "task not found in active project", map[string]any{"task_id": taskID, "project_id": projectID})
 		}
-		return domain.Task{}, err
+		return taskMoveResult{}, err
 	}
 
 	targetBucketID, err := s.activeBucketID(ctx, targetBucketKey, buckets)
 	if err != nil {
-		return domain.Task{}, err
+		return taskMoveResult{}, err
 	}
 
 	currentBucketKey := s.bucketKeyByID(currentBucketID, buckets)
@@ -241,49 +280,51 @@ RETURNING id, project_id, bucket_id, title, description, priority_id, state, cre
 
 	task, err := scanTask(row, targetBucketKey)
 	if err != nil {
-		return domain.Task{}, err
+		return taskMoveResult{}, err
 	}
+	moveEv, unassignEv, err := s.taskMoveEvents(ctx, tx, projectID, taskID, task, buckets, currentBucketID, currentBucketKey, targetBucketID, targetBucketKey, prevAssignedTo)
+	if err != nil {
+		return taskMoveResult{}, err
+	}
+	return taskMoveResult{task: task, moveEvent: moveEv, unassignEvent: unassignEv}, nil
+}
 
+func (s *Store) taskMoveEvents(ctx context.Context, tx *sql.Tx, projectID, taskID int64, task domain.Task, buckets domain.BucketResolver, currentBucketID int64, currentBucketKey string, targetBucketID int64, targetBucketKey string, prevAssignedTo sql.NullString) (domain.Event, domain.Event, error) {
 	var moveEv domain.Event
 	var unassignEv domain.Event
+	var err error
 	if currentBucketID != targetBucketID {
 		movePayload, payloadErr := taskEventPayload(task, buckets, map[string]any{"from": currentBucketKey, "to": targetBucketKey})
 		if payloadErr != nil {
-			return domain.Task{}, payloadErr
+			return domain.Event{}, domain.Event{}, payloadErr
 		}
-		if s.shouldLogEvent(domain.EventTypeTaskMoved) {
-			var err error
-			moveEv, err = insertTaskEvent(ctx, tx, projectID, taskID, domain.EventTypeTaskMoved, "", movePayload)
-			if err != nil {
-				return domain.Task{}, err
-			}
-		} else {
-			moveEv = domain.Event{EntityType: domain.EventEntityTask, EntityID: taskID, ProjectID: projectID, EventType: domain.EventTypeTaskMoved, Payload: movePayload}
+		moveEv, err = s.persistTaskMoveEvent(ctx, tx, projectID, taskID, movePayload)
+		if err != nil {
+			return domain.Event{}, domain.Event{}, err
 		}
 		if prevAssignedTo.Valid && prevAssignedTo.String != "" {
 			unassignPayload := fmt.Sprintf(`{"former_assignee":%q,"source":"task.moved"}`, prevAssignedTo.String)
-			if s.shouldLogEvent(domain.EventTypeTaskUnassigned) {
-				var err error
-				unassignEv, err = insertEntityEvent(ctx, tx, domain.EventEntityTask, taskID, projectID, domain.EventTypeTaskUnassigned, unassignPayload)
-				if err != nil {
-					return domain.Task{}, err
-				}
-			} else {
-				unassignEv = domain.Event{EntityType: domain.EventEntityTask, EntityID: taskID, ProjectID: projectID, EventType: domain.EventTypeTaskUnassigned, Payload: unassignPayload}
+			unassignEv, err = s.persistTaskUnassignEvent(ctx, tx, projectID, taskID, unassignPayload)
+			if err != nil {
+				return domain.Event{}, domain.Event{}, err
 			}
 		}
 	}
+	return moveEv, unassignEv, nil
+}
 
-	if err := tx.Commit(); err != nil {
-		return domain.Task{}, err
+func (s *Store) persistTaskMoveEvent(ctx context.Context, tx *sql.Tx, projectID, taskID int64, payload string) (domain.Event, error) {
+	if s.shouldLogEvent(domain.EventTypeTaskMoved) {
+		return insertTaskEvent(ctx, tx, projectID, taskID, domain.EventTypeTaskMoved, "", payload)
 	}
-	if moveEv.EventType != "" {
-		s.publishEvent(ctx, moveEv)
+	return domain.Event{EntityType: domain.EventEntityTask, EntityID: taskID, ProjectID: projectID, EventType: domain.EventTypeTaskMoved, Payload: payload}, nil
+}
+
+func (s *Store) persistTaskUnassignEvent(ctx context.Context, tx *sql.Tx, projectID, taskID int64, payload string) (domain.Event, error) {
+	if s.shouldLogEvent(domain.EventTypeTaskUnassigned) {
+		return insertEntityEvent(ctx, tx, domain.EventEntityTask, taskID, projectID, domain.EventTypeTaskUnassigned, payload)
 	}
-	if unassignEv.EventType != "" {
-		s.publishEvent(ctx, unassignEv)
-	}
-	return task, nil
+	return domain.Event{EntityType: domain.EventEntityTask, EntityID: taskID, ProjectID: projectID, EventType: domain.EventTypeTaskUnassigned, Payload: payload}, nil
 }
 
 func (s *Store) UpdateTask(ctx context.Context, projectID, taskID int64, update domain.TaskUpdate, buckets domain.BucketResolver) (domain.Task, error) {

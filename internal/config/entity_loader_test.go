@@ -19,8 +19,8 @@ func writeFile(t *testing.T, path, contents string) {
 
 func TestLoadSkillsHappyPath(t *testing.T) {
 	dir := t.TempDir()
-	writeFile(t, filepath.Join(dir, "go.md"), "---\nname: Go\ndescription: Go lang\n---\nbody\n")
-	writeFile(t, filepath.Join(dir, "sqlite.md"), "---\nname: SQLite\n---\n")
+	writeFile(t, filepath.Join(dir, "go.md"), "---\nname: Go\ndescription: Go lang\nschema_version: 2\nrole_affinity: [builder]\n---\nbody\n")
+	writeFile(t, filepath.Join(dir, "sqlite.md"), "---\nname: SQLite\nschema_version: 2\nrole_affinity: [builder]\n---\n")
 
 	skills, warnings, err := LoadSkills(dir)
 	if err != nil {
@@ -63,7 +63,7 @@ func TestLoadSkillsRejectsUnknownField(t *testing.T) {
 
 func TestLoadSkillsWarnsOnSlugMismatch(t *testing.T) {
 	dir := t.TempDir()
-	writeFile(t, filepath.Join(dir, "wrong-name.md"), "---\nname: Different Name\n---\n")
+	writeFile(t, filepath.Join(dir, "wrong-name.md"), "---\nname: Different Name\nschema_version: 2\n---\n")
 	_, warnings, err := LoadSkills(dir)
 	if err != nil {
 		t.Fatalf("LoadSkills() error = %v", err)
@@ -92,8 +92,8 @@ func TestLoadLawsRequiresSeverityAndBody(t *testing.T) {
 
 func TestLoadBundleRejectsDanglingRef(t *testing.T) {
 	dir := t.TempDir()
-	configPath := filepath.Join(dir, "omakiten.yaml")
-	writeFile(t, configPath, `version: 1
+	configPath := filepath.Join(dir, "config", "omakiten.yaml")
+	writeWiring(t, configPath, `version: 1
 kit: { id: 1, key: default, name: Default }
 config:
   output: { json_minified: true, omit_empty: true }
@@ -124,7 +124,6 @@ config:
     logs: { sort: {order: desc}, limit: 50, window_days: 30 }
     task_activity: { sort: {order: asc} }
   sqlite: { busy_timeout_ms: 5000, cache_size_kb: 1024, mmap_size_bytes: 0 }
-  activity_log: { max_rows: 500, max_age_days: 7 }
   solutions: { default_top_limit: 10, max_top_limit: 100 }
   events: { default_recent_limit: 50, defaults: { log: true, broadcast: true, hook: true } }
   search: { stopwords: [and, the] }
@@ -142,7 +141,7 @@ laws:
   - missing
 personas: []
 `)
-	writeFile(t, filepath.Join(dir, "skills", "go.md"), "---\nname: Go\n---\n")
+	writeFile(t, filepath.Join(dir, "skills", "go.md"), "---\nname: Go\nschema_version: 2\n---\n")
 	writeFile(t, filepath.Join(dir, "laws", "scope.md"), "---\nseverity: error\n---\nbody\n")
 
 	bundle, err := LoadBundle(configPath)

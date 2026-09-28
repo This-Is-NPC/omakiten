@@ -10,10 +10,10 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"omakiten/internal/agent"
 	"omakiten/internal/agentruntime"
 	"omakiten/internal/agentsetup"
 	"omakiten/internal/mcp"
+	"omakiten/internal/operation"
 )
 
 func newMCPCommand(opts *runtimeOptions) *cobra.Command {
@@ -32,7 +32,7 @@ func newMCPCommand(opts *runtimeOptions) *cobra.Command {
 
 // newMCPPromptsCommand renders each `okt-*` prompt's resolved markdown to
 // stdout so users can preview what the agent receives without spinning up
-// an MCP client. With no argument, every prompt in `agent.CommandNames()` is
+// an MCP client. With no argument, every prompt in `operation.CommandNames()` is
 // rendered in handoff order, separated by horizontal rules and annotated
 // with byte/rune counts. A single name argument renders that prompt only.
 //
@@ -49,53 +49,52 @@ func newMCPPromptsCommand(opts *runtimeOptions) *cobra.Command {
 		Short: opts.t("cli.mcp.prompt.short"),
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if list {
-				return printPromptSurface(cmd.OutOrStdout(), opts)
-			}
-
-			ctx := cmd.Context()
-			rt, err := agentruntime.Open(ctx, agentOptions(opts))
-			if err != nil {
-				return err
-			}
-			defer func() { _ = rt.Close() }()
-
-			adapter := newMCPAdapter(rt)
-
-			names := agent.CommandNames()
-			if len(args) == 1 {
-				names = []string{args[0]}
-			}
-
-			out := cmd.OutOrStdout()
-			for i, name := range names {
-				if i > 0 {
-					fmt.Fprint(out, "\n---\n\n")
-				}
-				result, err := adapter.GetPrompt(ctx, name, nil)
-				if err != nil {
-					return fmt.Errorf("get prompt %s: %w", name, err)
-				}
-				if len(result.Messages) == 0 {
-					return fmt.Errorf("prompt %s returned no messages", name)
-				}
-				body := result.Messages[0].Content.Text
-				fmt.Fprintf(out, opts.t("cli.print.prompt_render"), name, len(body), runeCount(body), body)
-			}
-			return nil
+			return runMCPPrompts(cmd, args, list, opts)
 		},
 	}
 	cmd.Flags().BoolVar(&list, "list", false, opts.t("cli.mcp.prompt.flag.list"))
 	return cmd
 }
 
+func runMCPPrompts(cmd *cobra.Command, args []string, list bool, opts *runtimeOptions) error {
+	if list {
+		return printPromptSurface(cmd.OutOrStdout(), opts)
+	}
+	ctx := cmd.Context()
+	rt, err := agentruntime.Open(ctx, agentOptions(opts))
+	if err != nil {
+		return err
+	}
+	defer func() { _ = rt.Close() }()
+	adapter := newMCPAdapter(rt)
+	names := operation.CommandNames()
+	if len(args) == 1 {
+		names = []string{args[0]}
+	}
+	for i, name := range names {
+		if i > 0 {
+			fmt.Fprint(cmd.OutOrStdout(), "\n---\n\n")
+		}
+		result, err := adapter.GetPrompt(ctx, name, nil)
+		if err != nil {
+			return fmt.Errorf("get prompt %s: %w", name, err)
+		}
+		if len(result.Messages) == 0 {
+			return fmt.Errorf("prompt %s returned no messages", name)
+		}
+		body := result.Messages[0].Content.Text
+		fmt.Fprintf(cmd.OutOrStdout(), opts.t("cli.print.prompt_render"), name, len(body), runeCount(body), body)
+	}
+	return nil
+}
+
 // printPromptSurface renders the command-surface listing: the full
-// agent.CommandNames() kit grouped by routing tier, with the granular tier
+// operation.CommandNames() kit grouped by routing tier, with the granular tier
 // sub-grouped by object namespace. Order within each tier follows
 // CommandNames() (the REST-style handoff order) so the listing reads the way a
 // user invokes the commands.
 func printPromptSurface(out io.Writer, opts *runtimeOptions) error {
-	names := agent.CommandNames()
+	names := operation.CommandNames()
 
 	// Descriptions are entity-sourced (the bound okt-<slug>-playbook skill's
 	// frontmatter), so the listing needs a wired runtime to resolve them. Open
@@ -106,59 +105,73 @@ func printPromptSurface(out io.Writer, opts *runtimeOptions) error {
 	}
 	defer func() { _ = rt.Close() }()
 	describe := rt.Service().CommandDescription
+	groups, err := groupPromptSurface(names)
+	if err != nil {
+		return err
+	}
+	writePromptSurface(out, opts, names, describe, groups)
+	return nil
+}
 
-	var orchestrators, system []string
-	granular := map[string][]string{}
-	var objectOrder []string
+type promptSurfaceGroups struct {
+	orchestrators []string
+	system        []string
+	granular      map[string][]string
+	objectOrder   []string
+}
 
+func groupPromptSurface(names []string) (promptSurfaceGroups, error) {
+	groups := promptSurfaceGroups{granular: map[string][]string{}}
 	for _, name := range names {
-		desc, ok := agent.DescribeCommand(name)
+		desc, ok := operation.DescribeCommand(name)
 		if !ok {
 			// A registered command that does not decode is a surface bug; surface
 			// it loudly rather than silently dropping it from the listing.
-			return fmt.Errorf("command %q does not decode into a known tier — the surface and the registry disagree", name)
+			return promptSurfaceGroups{}, fmt.Errorf("command %q does not decode into a known tier — the surface and the registry disagree", name)
 		}
 		switch desc.Tier {
-		case agent.CommandTierOrchestrator:
-			orchestrators = append(orchestrators, name)
-		case agent.CommandTierSystem:
-			system = append(system, name)
-		case agent.CommandTierGranular:
-			if _, seen := granular[desc.Object]; !seen {
-				objectOrder = append(objectOrder, desc.Object)
+		case operation.CommandTierOrchestrator:
+			groups.orchestrators = append(groups.orchestrators, name)
+		case operation.CommandTierSystem:
+			groups.system = append(groups.system, name)
+		case operation.CommandTierGranular:
+			if _, seen := groups.granular[desc.Object]; !seen {
+				groups.objectOrder = append(groups.objectOrder, desc.Object)
 			}
-			granular[desc.Object] = append(granular[desc.Object], name)
+			groups.granular[desc.Object] = append(groups.granular[desc.Object], name)
 		}
 	}
+	return groups, nil
+}
 
+func writePromptSurface(out io.Writer, opts *runtimeOptions, names []string, describe func(string) string, groups promptSurfaceGroups) {
 	fmt.Fprintf(out, opts.t("cli.mcp.prompt.list.title"), len(names))
 
 	writeRow := func(indent, name string) {
 		fmt.Fprintf(out, "%s%-22s %s\n", indent, name, describe(name))
 	}
 
-	fmt.Fprintf(out, opts.t("cli.mcp.prompt.list.orchestrators"), len(orchestrators))
-	for _, name := range orchestrators {
+	fmt.Fprintf(out, opts.t("cli.mcp.prompt.list.orchestrators"), len(groups.orchestrators))
+	for _, name := range groups.orchestrators {
 		writeRow("  ", name)
 	}
 
-	fmt.Fprintf(out, opts.t("cli.mcp.prompt.list.system"), len(system))
-	for _, name := range system {
+	fmt.Fprintf(out, opts.t("cli.mcp.prompt.list.system"), len(groups.system))
+	for _, name := range groups.system {
 		writeRow("  ", name)
 	}
 
 	granularCount := 0
-	for _, names := range granular {
+	for _, names := range groups.granular {
 		granularCount += len(names)
 	}
 	fmt.Fprintf(out, opts.t("cli.mcp.prompt.list.granular"), granularCount)
-	for _, object := range objectOrder {
-		fmt.Fprintf(out, "  "+opts.t("cli.mcp.prompt.list.object"), object, len(granular[object]))
-		for _, name := range granular[object] {
+	for _, object := range groups.objectOrder {
+		fmt.Fprintf(out, "  "+opts.t("cli.mcp.prompt.list.object"), object, len(groups.granular[object]))
+		for _, name := range groups.granular[object] {
 			writeRow("    ", name)
 		}
 	}
-	return nil
 }
 
 func runeCount(s string) int {
@@ -233,7 +246,16 @@ func newMCPServeCommand(opts *runtimeOptions) *cobra.Command {
 			}
 			defer func() { _ = rt.Close() }()
 			adapter := newMCPAdapter(rt)
-			return mcp.Serve(cmd.Context(), cmd.InOrStdin(), cmd.OutOrStdout(), adapter)
+			toolsChanged := make(chan struct{}, 1)
+			if cache := rt.Cache(); cache != nil {
+				cache.SetSurfacesChangedNotify(func() {
+					select {
+					case toolsChanged <- struct{}{}:
+					default:
+					}
+				})
+			}
+			return mcp.ServeNotify(cmd.Context(), cmd.InOrStdin(), cmd.OutOrStdout(), adapter, toolsChanged)
 		},
 	}
 }
@@ -247,12 +269,17 @@ func newMCPSetupCommand(opts *runtimeOptions) *cobra.Command {
 		Short: opts.t("cli.mcp.install.short"),
 		Long:  opts.t("cli.mcp.install.long"),
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			cwd, err := os.Getwd()
+			if err != nil {
+				return writeError(cmd, err)
+			}
 			result, err := agentsetup.Setup(agentsetup.Options{
-				Harness:    harness,
-				ConfigPath: configPath,
-				Command:    command,
-				DryRun:     dryRun,
-				Force:      force,
+				Harness:     harness,
+				ConfigPath:  configPath,
+				ProjectRoot: cwd,
+				Command:     command,
+				DryRun:      dryRun,
+				Force:       force,
 			})
 			if err != nil {
 				return writeError(cmd, err)
@@ -287,10 +314,10 @@ func newMCPAdapter(rt *agentruntime.Runtime) *mcp.Adapter {
 	// Provider lookup keeps the default service fresh across cache
 	// rebuilds — without it, a mtime-driven Reload during a long MCP
 	// session would leave the adapter dispatching against a stale
-	// agent.Service pointer.
+	// operation.Service pointer.
 	adapter.SetDefaultServiceProvider(rt.Service)
 	adapter.SetActivityLogRepository(rt.Store())
-	adapter.SetServiceResolver(func(ctx context.Context, project string, projectID int64) (*agent.Service, error) {
+	adapter.SetServiceResolver(func(ctx context.Context, project string, projectID int64) (*operation.Service, error) {
 		return rt.ResolveServiceForProject(ctx, project, projectID)
 	})
 	return adapter

@@ -262,21 +262,7 @@ func TestClaimNextPlanTaskStampsAssigneeWithoutMovingBucket(t *testing.T) {
 		t.Fatalf("assigned_to = %q, want claude-opus-4-7", assignedTo)
 	}
 
-	// No task.moved event should have been emitted for the claim — the
-	// task did not change buckets. assigned event must be present.
-	var movedCount, assignedCount int
-	if err := store.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM events WHERE entity_type = 'task' AND entity_id = ? AND event_type = ?`, task.ID, domain.EventTypeTaskMoved).Scan(&movedCount); err != nil {
-		t.Fatalf("count task.moved events: %v", err)
-	}
-	if movedCount != 0 {
-		t.Fatalf("task.moved emitted %d times after claim, want 0 (claim does not move buckets)", movedCount)
-	}
-	if err := store.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM events WHERE entity_type = 'task' AND entity_id = ? AND event_type = ?`, task.ID, domain.EventTypeTaskAssigned).Scan(&assignedCount); err != nil {
-		t.Fatalf("count task.assigned events: %v", err)
-	}
-	if assignedCount != 1 {
-		t.Fatalf("task.assigned emitted %d times, want 1", assignedCount)
-	}
+	assertClaimAssignmentEvents(t, ctx, store, task.ID)
 
 	// Second call → nothing left (first task no longer unassigned).
 	_, ok, err = store.ClaimNextPlanTask(ctx, project.ID, plan.ID, store.snap())
@@ -285,6 +271,24 @@ func TestClaimNextPlanTaskStampsAssigneeWithoutMovingBucket(t *testing.T) {
 	}
 	if ok {
 		t.Fatal("second claim succeeded; expected empty (already-claimed task is no longer candidate)")
+	}
+}
+
+func assertClaimAssignmentEvents(t *testing.T, ctx context.Context, store *storeFixture, taskID int64) {
+	t.Helper()
+	counts := map[string]*int{}
+	for _, eventType := range []string{domain.EventTypeTaskMoved, domain.EventTypeTaskAssigned} {
+		counts[eventType] = new(int)
+		query := `SELECT COUNT(*) FROM events WHERE entity_type = 'task' AND entity_id = ? AND event_type = ?`
+		if err := store.db.QueryRowContext(ctx, query, taskID, eventType).Scan(counts[eventType]); err != nil {
+			t.Fatalf("count %s events: %v", eventType, err)
+		}
+	}
+	if *counts[domain.EventTypeTaskMoved] != 0 {
+		t.Fatalf("task.moved emitted %d times after claim, want 0", *counts[domain.EventTypeTaskMoved])
+	}
+	if *counts[domain.EventTypeTaskAssigned] != 1 {
+		t.Fatalf("task.assigned emitted %d times, want 1", *counts[domain.EventTypeTaskAssigned])
 	}
 }
 
@@ -438,19 +442,7 @@ func TestPeekNextClaimableMatchesClaimWithoutMutating(t *testing.T) {
 		t.Fatalf("preview assigned_to = %q, want empty (peek must not assign)", row.AssignedTo)
 	}
 
-	// Confirm the task row in sqlite still untouched: bucket=first,
-	// assigned_to empty. ClaimNext on the same plan still picks it.
-	var bucketID int64
-	var assignedTo string
-	if err := store.db.QueryRowContext(ctx, `SELECT COALESCE(bucket_id,0), COALESCE(assigned_to,'') FROM tasks WHERE id = ?`, task.ID).Scan(&bucketID, &assignedTo); err != nil {
-		t.Fatalf("scan task: %v", err)
-	}
-	if assignedTo != "" {
-		t.Fatalf("post-peek assigned_to = %q, want empty", assignedTo)
-	}
-	if bucketID != store.snap().Workflow().Buckets[0].ID {
-		t.Fatalf("post-peek bucket_id = %d, want first bucket %d", bucketID, store.snap().Workflow().Buckets[0].ID)
-	}
+	assertPeekDoesNotMutateTask(t, ctx, store, task.ID)
 
 	ctx = activity.WithAgent(ctx, "mcp", "plans.claim_next", "claude-opus-4-7", "")
 	claimed, ok, err := store.ClaimNextPlanTask(ctx, project.ID, plan.ID, store.snap())
@@ -461,14 +453,27 @@ func TestPeekNextClaimableMatchesClaimWithoutMutating(t *testing.T) {
 		t.Fatalf("post-peek claim = (%+v, %v), want claim of task %d", claimed, ok, task.ID)
 	}
 
-	// Subsequent peek returns (zero, false) — task is now in dev with
-	// a non-empty assigned_to, so no first-bucket candidate remains.
+	// Subsequent peek returns (zero, false) — the task remains in the first
+	// bucket but now has a non-empty assigned_to, so it is no longer a
+	// claimable candidate.
 	post, ok, err := store.PeekNextClaimable(ctx, project.ID, plan.ID, store.snap())
 	if err != nil {
 		t.Fatalf("post-claim PeekNextClaimable: %v", err)
 	}
 	if ok || post.TaskID != 0 {
 		t.Fatalf("post-claim peek = (%+v, %v), want empty", post, ok)
+	}
+}
+
+func assertPeekDoesNotMutateTask(t *testing.T, ctx context.Context, store *storeFixture, taskID int64) {
+	t.Helper()
+	var bucketID int64
+	var assignedTo string
+	if err := store.db.QueryRowContext(ctx, `SELECT COALESCE(bucket_id,0), COALESCE(assigned_to,'') FROM tasks WHERE id = ?`, taskID).Scan(&bucketID, &assignedTo); err != nil {
+		t.Fatalf("scan task: %v", err)
+	}
+	if assignedTo != "" || bucketID != store.snap().Workflow().Buckets[0].ID {
+		t.Fatalf("post-peek task = bucket %d, assignee %q; want first bucket and empty assignee", bucketID, assignedTo)
 	}
 }
 
@@ -524,38 +529,45 @@ func TestClaimNextPlanTaskGatesAcrossWaves(t *testing.T) {
 
 	ctx = activity.WithAgent(ctx, "mcp", "plans.claim_next", "claude-opus-4-7", "")
 
-	first, ok, err := store.ClaimNextPlanTask(ctx, project.ID, plan.ID, store.snap())
-	if err != nil {
-		t.Fatalf("first claim: %v", err)
-	}
+	first, ok := mustClaimPlanTask(t, ctx, store, project.ID, plan.ID)
 	if !ok || first.ID != t1.ID {
 		t.Fatalf("first claim = (%+v, %v), want wave-1 task %d", first, ok, t1.ID)
 	}
 
-	// Wave 1 still pending (claimed task moved to dev, not done). Wave 2
-	// must not be reachable yet — claim returns empty.
-	_, ok, err = store.ClaimNextPlanTask(ctx, project.ID, plan.ID, store.snap())
-	if err != nil {
-		t.Fatalf("blocked claim: %v", err)
-	}
+	// Wave 1 still has a pending assigned task in backlog. Wave 2 must not
+	// be reachable yet — claim returns empty.
+	_, ok = mustClaimPlanTask(t, ctx, store, project.ID, plan.ID)
 	if ok {
-		t.Fatal("wave 2 claim succeeded while wave 1 still has dev work; expected gate")
+		t.Fatal("wave 2 claim succeeded while wave 1 still has pending assigned work; expected gate")
 	}
 
 	// Move wave-1 task to final bucket → wave 2 becomes claimable.
 	if _, err := store.MoveTask(ctx, project.ID, t1.ID, "done", store.snap()); err != nil {
 		t.Fatalf("MoveTask t1→done: %v", err)
 	}
-	second, ok, err := store.ClaimNextPlanTask(ctx, project.ID, plan.ID, store.snap())
-	if err != nil {
-		t.Fatalf("second claim: %v", err)
-	}
+	second, ok := mustClaimPlanTask(t, ctx, store, project.ID, plan.ID)
 	if !ok || second.ID != t2.ID {
 		t.Fatalf("second claim = (%+v, %v), want wave-2 task %d after wave-1 done", second, ok, t2.ID)
 	}
 }
 
+func mustClaimPlanTask(t *testing.T, ctx context.Context, store *storeFixture, projectID, planID int64) (domain.Task, bool) {
+	t.Helper()
+	task, ok, err := store.ClaimNextPlanTask(ctx, projectID, planID, store.snap())
+	if err != nil {
+		t.Fatalf("ClaimNextPlanTask: %v", err)
+	}
+	return task, ok
+}
+
 func TestClaimNextPlanTaskIsAtomicUnderConcurrency(t *testing.T) {
+	ctx, store, project, plan, taskIDs := setupAtomicClaimPlan(t)
+	seen := concurrentPlanClaims(t, ctx, store, project.ID, plan.ID, len(taskIDs))
+	assertAtomicClaims(t, seen, taskIDs, len(taskIDs))
+}
+
+func setupAtomicClaimPlan(t *testing.T) (context.Context, *storeFixture, domain.ProjectContext, domain.Plan, map[int64]struct{}) {
+	t.Helper()
 	ctx, store, project := setupPlans(t)
 	plan, err := store.CreatePlan(ctx, project.ID, "plan-a", "Plan A", "")
 	if err != nil {
@@ -565,10 +577,8 @@ func TestClaimNextPlanTaskIsAtomicUnderConcurrency(t *testing.T) {
 	if err != nil {
 		t.Fatalf("AddPlanWave: %v", err)
 	}
-
-	const n = 8
 	taskIDs := map[int64]struct{}{}
-	for i := 0; i < n; i++ {
+	for i := 0; i < 8; i++ {
 		task, err := store.CreateTask(ctx, project.ID, "Race", "", domain.Priority(2), "backlog", nil, store.snap())
 		if err != nil {
 			t.Fatalf("CreateTask %d: %v", i, err)
@@ -578,16 +588,19 @@ func TestClaimNextPlanTaskIsAtomicUnderConcurrency(t *testing.T) {
 		}
 		taskIDs[task.ID] = struct{}{}
 	}
+	return ctx, store, project, plan, taskIDs
+}
 
-	results := make(chan int64, n*2)
+func concurrentPlanClaims(t *testing.T, ctx context.Context, store *storeFixture, projectID, planID int64, taskCount int) map[int64]int {
+	t.Helper()
+	results := make(chan int64, taskCount*2)
 	var wg sync.WaitGroup
-	for i := 0; i < n*2; i++ {
+	for i := 0; i < taskCount*2; i++ {
 		wg.Add(1)
 		go func(workerID int) {
 			defer wg.Done()
-			wctx := activity.WithAgent(ctx, "mcp", "plans.claim_next",
-				"claude-opus-4-7-worker", "")
-			claimed, ok, err := store.ClaimNextPlanTask(wctx, project.ID, plan.ID, store.snap())
+			wctx := activity.WithAgent(ctx, "mcp", "plans.claim_next", "claude-opus-4-7-worker", "")
+			claimed, ok, err := store.ClaimNextPlanTask(wctx, projectID, planID, store.snap())
 			if err != nil {
 				t.Errorf("worker %d claim: %v", workerID, err)
 				results <- 0
@@ -602,29 +615,27 @@ func TestClaimNextPlanTaskIsAtomicUnderConcurrency(t *testing.T) {
 	}
 	wg.Wait()
 	close(results)
-
 	seen := map[int64]int{}
-	successes := 0
 	for id := range results {
-		if id == 0 {
-			continue
+		if id != 0 {
+			seen[id]++
 		}
-		seen[id]++
-		successes++
 	}
-	if successes != n {
-		t.Fatalf("successful claims = %d, want %d", successes, n)
+	return seen
+}
+
+func assertAtomicClaims(t *testing.T, seen map[int64]int, taskIDs map[int64]struct{}, want int) {
+	t.Helper()
+	if len(seen) != want {
+		t.Fatalf("unique tasks claimed = %d, want %d", len(seen), want)
 	}
 	for id, count := range seen {
 		if count != 1 {
-			t.Fatalf("task %d claimed %d times, want 1 (double-claim)", id, count)
+			t.Fatalf("task %d claimed %d times, want 1", id, count)
 		}
 		if _, ok := taskIDs[id]; !ok {
 			t.Fatalf("claim returned unknown task id %d", id)
 		}
-	}
-	if len(seen) != n {
-		t.Fatalf("unique tasks claimed = %d, want %d", len(seen), n)
 	}
 }
 
@@ -758,28 +769,7 @@ func TestMoveTaskClearsAssignedToOnBucketChange(t *testing.T) {
 // Two-task plan: completing the first task is a no-op; completing the
 // second triggers plan.done with status='done' and completed_at stamped.
 func TestMaybeFinalizePlanForTaskTransitionsWhenLastTaskCloses(t *testing.T) {
-	ctx, store, project := setupPlans(t)
-	plan, err := store.CreatePlan(ctx, project.ID, "plan-a", "Plan A", "")
-	if err != nil {
-		t.Fatalf("CreatePlan: %v", err)
-	}
-	wave, err := store.AddPlanWave(ctx, project.ID, plan.ID, "wave-one", 0)
-	if err != nil {
-		t.Fatalf("AddPlanWave: %v", err)
-	}
-	t1, err := store.CreateTask(ctx, project.ID, "T1", "", domain.Priority(2), "backlog", nil, store.snap())
-	if err != nil {
-		t.Fatalf("CreateTask t1: %v", err)
-	}
-	t2, err := store.CreateTask(ctx, project.ID, "T2", "", domain.Priority(2), "backlog", nil, store.snap())
-	if err != nil {
-		t.Fatalf("CreateTask t2: %v", err)
-	}
-	for _, id := range []int64{t1.ID, t2.ID} {
-		if err := store.AssignTaskToPlan(ctx, project.ID, id, plan.ID, wave.ID); err != nil {
-			t.Fatalf("AssignTaskToPlan %d: %v", id, err)
-		}
-	}
+	ctx, store, project, plan, t1, t2 := setupFinalizablePlan(t)
 
 	final := store.snap().Workflow().FinalBucketKey()
 
@@ -818,13 +808,7 @@ func TestMaybeFinalizePlanForTaskTransitionsWhenLastTaskCloses(t *testing.T) {
 		t.Fatal("plan completed_at not stamped")
 	}
 
-	events, err := store.ListRecentEvents(ctx, domain.EventTypePlanDone, 10)
-	if err != nil {
-		t.Fatalf("ListRecentEvents plan.done: %v", err)
-	}
-	if len(events) != 1 {
-		t.Fatalf("plan.done events = %d, want 1", len(events))
-	}
+	assertPlanDoneEvent(t, ctx, store)
 
 	// Idempotent: second call is a no-op.
 	finalized, err = store.MaybeFinalizePlanForTask(ctx, project.ID, t2.ID, store.snap())
@@ -836,12 +820,45 @@ func TestMaybeFinalizePlanForTaskTransitionsWhenLastTaskCloses(t *testing.T) {
 	}
 }
 
+func setupFinalizablePlan(t *testing.T) (context.Context, *storeFixture, domain.ProjectContext, domain.Plan, domain.Task, domain.Task) {
+	t.Helper()
+	ctx, store, project := setupPlans(t)
+	plan, err := store.CreatePlan(ctx, project.ID, "plan-a", "Plan A", "")
+	if err != nil {
+		t.Fatalf("CreatePlan: %v", err)
+	}
+	wave, err := store.AddPlanWave(ctx, project.ID, plan.ID, "wave-one", 0)
+	if err != nil {
+		t.Fatalf("AddPlanWave: %v", err)
+	}
+	tasks := make([]domain.Task, 2)
+	for i := range tasks {
+		tasks[i], err = store.CreateTask(ctx, project.ID, "T"+string(rune('1'+i)), "", domain.Priority(2), "backlog", nil, store.snap())
+		if err != nil {
+			t.Fatalf("CreateTask %d: %v", i+1, err)
+		}
+		if err := store.AssignTaskToPlan(ctx, project.ID, tasks[i].ID, plan.ID, wave.ID); err != nil {
+			t.Fatalf("AssignTaskToPlan %d: %v", i+1, err)
+		}
+	}
+	return ctx, store, project, plan, tasks[0], tasks[1]
+}
+
+func assertPlanDoneEvent(t *testing.T, ctx context.Context, store *storeFixture) {
+	t.Helper()
+	events, err := store.ListRecentEvents(ctx, domain.EventTypePlanDone, 10)
+	if err != nil {
+		t.Fatalf("ListRecentEvents plan.done: %v", err)
+	}
+	if len(events) != 1 {
+		t.Fatalf("plan.done events = %d, want 1", len(events))
+	}
+}
+
 // setupTwoBucketPlans installs a workflow whose only two buckets are
-// `backlog` (first) and `done` (final). ClaimNextPlanTask resolves
-// `dev` to "the bucket immediately above first by position" — with
-// just two buckets that resolves to the final bucket, so a claim lands
-// directly in the terminal bucket. Used by the landsInFinal-branch
-// tests to pin the task.completed + plan auto-done behaviour.
+// `backlog` (first) and `done` (final). Tests use it to prove
+// ClaimNextPlanTask remains ownership-only even when any bucket transition
+// would be terminal.
 func setupTwoBucketPlans(t *testing.T) (context.Context, *storeFixture, domain.ProjectContext) {
 	t.Helper()
 	ctx := context.Background()
@@ -887,28 +904,7 @@ func TestClaimNextPlanTaskNeverCompletesEvenInTwoBucketWorkflow(t *testing.T) {
 		t.Fatalf("claim bucket = %q, want backlog (claim must NOT auto-complete the task)", claimed.BucketKey)
 	}
 
-	var completedAt sql.NullString
-	if err := store.db.QueryRowContext(ctx, `SELECT completed_at FROM tasks WHERE id = ?`, claimed.ID).Scan(&completedAt); err != nil {
-		t.Fatalf("read completed_at: %v", err)
-	}
-	if completedAt.Valid && completedAt.String != "" {
-		t.Fatalf("completed_at = %q, want unset (claim does not complete)", completedAt.String)
-	}
-
-	completedEvents, err := store.ListRecentEvents(ctx, domain.EventTypeTaskCompleted, 10)
-	if err != nil {
-		t.Fatalf("ListRecentEvents task.completed: %v", err)
-	}
-	if len(completedEvents) != 0 {
-		t.Fatalf("task.completed events = %d, want 0 (claim no longer transitions to final bucket)", len(completedEvents))
-	}
-	planDoneEvents, err := store.ListRecentEvents(ctx, domain.EventTypePlanDone, 10)
-	if err != nil {
-		t.Fatalf("ListRecentEvents plan.done: %v", err)
-	}
-	if len(planDoneEvents) != 0 {
-		t.Fatalf("plan.done events = %d, want 0 (no terminal move on claim path)", len(planDoneEvents))
-	}
+	assertClaimDoesNotComplete(t, ctx, store, claimed.ID)
 
 	gotPlan, err := store.GetPlanByID(ctx, project.ID, plan.ID)
 	if err != nil {
@@ -916,6 +912,26 @@ func TestClaimNextPlanTaskNeverCompletesEvenInTwoBucketWorkflow(t *testing.T) {
 	}
 	if gotPlan.Status == "done" {
 		t.Fatalf("plan status = %q, want still-active (claim alone must not finalise a plan)", gotPlan.Status)
+	}
+}
+
+func assertClaimDoesNotComplete(t *testing.T, ctx context.Context, store *storeFixture, taskID int64) {
+	t.Helper()
+	var completedAt sql.NullString
+	if err := store.db.QueryRowContext(ctx, `SELECT completed_at FROM tasks WHERE id = ?`, taskID).Scan(&completedAt); err != nil {
+		t.Fatalf("read completed_at: %v", err)
+	}
+	if completedAt.Valid && completedAt.String != "" {
+		t.Fatalf("completed_at = %q, want unset", completedAt.String)
+	}
+	for _, eventType := range []string{domain.EventTypeTaskCompleted, domain.EventTypePlanDone} {
+		events, err := store.ListRecentEvents(ctx, eventType, 10)
+		if err != nil {
+			t.Fatalf("ListRecentEvents %s: %v", eventType, err)
+		}
+		if len(events) != 0 {
+			t.Fatalf("%s events = %d, want 0", eventType, len(events))
+		}
 	}
 }
 
@@ -1199,45 +1215,35 @@ func TestDeletePlanCascadesWavesAndDetachesTasks(t *testing.T) {
 		t.Fatalf("DeletePlan: %v", err)
 	}
 
-	// Plan row gone.
-	var planCount int
+	assertPlanDeleteCascade(t, ctx, store, plan, task)
+}
+
+func assertPlanDeleteCascade(t *testing.T, ctx context.Context, store *storeFixture, plan domain.Plan, task domain.Task) {
+	t.Helper()
+	var planCount, waveCount int
 	if err := store.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM plans WHERE id = ?`, plan.ID).Scan(&planCount); err != nil {
 		t.Fatalf("count plans: %v", err)
 	}
-	if planCount != 0 {
-		t.Fatalf("plan row count = %d, want 0", planCount)
-	}
-	// Waves cascade-deleted.
-	var waveCount int
 	if err := store.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM plan_waves WHERE plan_id = ?`, plan.ID).Scan(&waveCount); err != nil {
 		t.Fatalf("count waves: %v", err)
 	}
-	if waveCount != 0 {
-		t.Fatalf("plan_waves count = %d, want 0 (cascade)", waveCount)
+	if planCount != 0 || waveCount != 0 {
+		t.Fatalf("plan/wave counts = %d/%d, want 0/0", planCount, waveCount)
 	}
-	// Member task survives, detached (plan_id / wave_id NULL).
 	var taskExists int
 	var planID, waveID sql.NullInt64
 	if err := store.db.QueryRowContext(ctx, `SELECT 1, plan_id, wave_id FROM tasks WHERE id = ?`, task.ID).Scan(&taskExists, &planID, &waveID); err != nil {
 		t.Fatalf("scan surviving task: %v", err)
 	}
-	if taskExists != 1 {
-		t.Fatalf("member task vanished after plan delete")
+	if taskExists != 1 || planID.Valid || waveID.Valid {
+		t.Fatalf("surviving task = exists:%d plan:%v wave:%v, want exists and detached", taskExists, planID, waveID)
 	}
-	if planID.Valid || waveID.Valid {
-		t.Fatalf("task plan_id/wave_id = %v/%v, want both NULL after SET NULL cascade", planID, waveID)
-	}
-
-	// plan.deleted event emitted.
 	events, err := store.ListRecentEvents(ctx, domain.EventTypePlanDeleted, 10)
 	if err != nil {
 		t.Fatalf("ListRecentEvents: %v", err)
 	}
-	if len(events) != 1 {
-		t.Fatalf("plan.deleted events = %d, want 1", len(events))
-	}
-	if events[0].EntityType != domain.EventEntityPlan || events[0].EntityID != plan.ID {
-		t.Fatalf("plan.deleted entity = %s/%d, want plan/%d", events[0].EntityType, events[0].EntityID, plan.ID)
+	if len(events) != 1 || events[0].EntityType != domain.EventEntityPlan || events[0].EntityID != plan.ID {
+		t.Fatalf("plan.deleted events = %+v, want one event for plan %d", events, plan.ID)
 	}
 }
 
@@ -1279,37 +1285,31 @@ func TestRemovePlanWaveDetachesMemberTasks(t *testing.T) {
 		t.Fatalf("RemovePlanWave returned %+v, want wave-one/%d", removed, wave.ID)
 	}
 
-	// Wave gone.
-	waves, err := store.ListPlanWaves(ctx, project.ID, plan.ID)
+	assertWaveRemovalCascade(t, ctx, store, plan, task)
+}
+
+func assertWaveRemovalCascade(t *testing.T, ctx context.Context, store *storeFixture, plan domain.Plan, task domain.Task) {
+	t.Helper()
+	waves, err := store.ListPlanWaves(ctx, plan.ProjectID, plan.ID)
 	if err != nil {
 		t.Fatalf("ListPlanWaves: %v", err)
 	}
 	if len(waves) != 0 {
 		t.Fatalf("waves after remove = %d, want 0", len(waves))
 	}
-
-	// Member task survives: wave_id cleared, plan_id intact.
 	var planID, waveID sql.NullInt64
 	if err := store.db.QueryRowContext(ctx, `SELECT plan_id, wave_id FROM tasks WHERE id = ?`, task.ID).Scan(&planID, &waveID); err != nil {
 		t.Fatalf("scan task: %v", err)
 	}
-	if waveID.Valid {
-		t.Fatalf("task wave_id = %v, want NULL after wave removal", waveID)
+	if !planID.Valid || planID.Int64 != plan.ID || waveID.Valid {
+		t.Fatalf("task plan/wave = %v/%v, want plan %d and NULL wave", planID, waveID, plan.ID)
 	}
-	if !planID.Valid || planID.Int64 != plan.ID {
-		t.Fatalf("task plan_id = %v, want %d (plan link must survive)", planID, plan.ID)
-	}
-
-	// plan.wave_removed event emitted, keyed by plan id.
 	events, err := store.ListRecentEvents(ctx, domain.EventTypePlanWaveRemoved, 10)
 	if err != nil {
 		t.Fatalf("ListRecentEvents: %v", err)
 	}
-	if len(events) != 1 {
-		t.Fatalf("plan.wave_removed events = %d, want 1", len(events))
-	}
-	if events[0].EntityType != domain.EventEntityPlan || events[0].EntityID != plan.ID {
-		t.Fatalf("plan.wave_removed entity = %s/%d, want plan/%d", events[0].EntityType, events[0].EntityID, plan.ID)
+	if len(events) != 1 || events[0].EntityType != domain.EventEntityPlan || events[0].EntityID != plan.ID {
+		t.Fatalf("plan.wave_removed events = %+v, want one event for plan %d", events, plan.ID)
 	}
 }
 
@@ -1533,39 +1533,23 @@ func TestUnassignTaskFromPlanNotFound(t *testing.T) {
 // that the bulk reads stay scoped to the active project.
 func TestProjectBulkPlanReadsMatchPerPlan(t *testing.T) {
 	ctx, store, project := setupPlans(t)
+	fixtures, otherPlan := setupBulkPlanFixtures(t, ctx, store, project.ID)
+	assertBulkWaves(t, ctx, store, project.ID, fixtures, otherPlan.ID)
+	assertBulkTasks(t, ctx, store, project.ID, fixtures, otherPlan.ID)
+}
 
-	// Two plans in the active project, each with two waves and assigned tasks.
-	type planFix struct {
-		plan  domain.Plan
-		waves []domain.PlanWave
-	}
-	var fixtures []planFix
+type bulkPlanFixture struct {
+	plan  domain.Plan
+	waves []domain.PlanWave
+}
+
+func setupBulkPlanFixtures(t *testing.T, ctx context.Context, store *storeFixture, projectID int64) ([]bulkPlanFixture, domain.Plan) {
+	t.Helper()
+	var fixtures []bulkPlanFixture
 	for _, slug := range []string{"plan-a", "plan-b"} {
-		plan, err := store.CreatePlan(ctx, project.ID, slug, slug, "")
-		if err != nil {
-			t.Fatalf("CreatePlan %s: %v", slug, err)
-		}
-		w1, err := store.AddPlanWave(ctx, project.ID, plan.ID, "wave-1", 0)
-		if err != nil {
-			t.Fatalf("AddPlanWave: %v", err)
-		}
-		w2, err := store.AddPlanWave(ctx, project.ID, plan.ID, "wave-2", 0)
-		if err != nil {
-			t.Fatalf("AddPlanWave: %v", err)
-		}
-		for i, w := range []domain.PlanWave{w1, w2} {
-			task, err := store.CreateTask(ctx, project.ID, slug+"-t"+string(rune('1'+i)), "", domain.Priority(2), "backlog", nil, store.snap())
-			if err != nil {
-				t.Fatalf("CreateTask: %v", err)
-			}
-			if err := store.AssignTaskToPlan(ctx, project.ID, task.ID, plan.ID, w.ID); err != nil {
-				t.Fatalf("AssignTaskToPlan: %v", err)
-			}
-		}
-		fixtures = append(fixtures, planFix{plan: plan, waves: []domain.PlanWave{w1, w2}})
+		fixtures = append(fixtures, createBulkPlanFixture(t, ctx, store, projectID, slug))
 	}
 
-	// A second project with its own plan that must not leak into the bulk reads.
 	other, err := store.UpsertProject(ctx, "Other", "other", "/work/other")
 	if err != nil {
 		t.Fatalf("UpsertProject other: %v", err)
@@ -1577,21 +1561,47 @@ func TestProjectBulkPlanReadsMatchPerPlan(t *testing.T) {
 	if _, err := store.AddPlanWave(ctx, other.ID, otherPlan.ID, "wave-x", 0); err != nil {
 		t.Fatalf("AddPlanWave other: %v", err)
 	}
+	return fixtures, otherPlan
+}
 
-	// Bulk waves, grouped by plan, equal per-plan ListPlanWaves.
-	bulkWaves, err := store.ListProjectPlanWaves(ctx, project.ID)
+func createBulkPlanFixture(t *testing.T, ctx context.Context, store *storeFixture, projectID int64, slug string) bulkPlanFixture {
+	t.Helper()
+	plan, err := store.CreatePlan(ctx, projectID, slug, slug, "")
+	if err != nil {
+		t.Fatalf("CreatePlan %s: %v", slug, err)
+	}
+	waves := make([]domain.PlanWave, 2)
+	for i := range waves {
+		waves[i], err = store.AddPlanWave(ctx, projectID, plan.ID, "wave-"+string(rune('1'+i)), 0)
+		if err != nil {
+			t.Fatalf("AddPlanWave: %v", err)
+		}
+		task, err := store.CreateTask(ctx, projectID, slug+"-t"+string(rune('1'+i)), "", domain.Priority(2), "backlog", nil, store.snap())
+		if err != nil {
+			t.Fatalf("CreateTask: %v", err)
+		}
+		if err := store.AssignTaskToPlan(ctx, projectID, task.ID, plan.ID, waves[i].ID); err != nil {
+			t.Fatalf("AssignTaskToPlan: %v", err)
+		}
+	}
+	return bulkPlanFixture{plan: plan, waves: waves}
+}
+
+func assertBulkWaves(t *testing.T, ctx context.Context, store *storeFixture, projectID int64, fixtures []bulkPlanFixture, otherPlanID int64) {
+	t.Helper()
+	bulkWaves, err := store.ListProjectPlanWaves(ctx, projectID)
 	if err != nil {
 		t.Fatalf("ListProjectPlanWaves: %v", err)
 	}
 	wavesByPlan := map[int64][]domain.PlanWave{}
 	for _, w := range bulkWaves {
-		if w.PlanID == otherPlan.ID {
+		if w.PlanID == otherPlanID {
 			t.Fatalf("ListProjectPlanWaves leaked a wave from another project: %+v", w)
 		}
 		wavesByPlan[w.PlanID] = append(wavesByPlan[w.PlanID], w)
 	}
 	for _, f := range fixtures {
-		want, err := store.ListPlanWaves(ctx, project.ID, f.plan.ID)
+		want, err := store.ListPlanWaves(ctx, projectID, f.plan.ID)
 		if err != nil {
 			t.Fatalf("ListPlanWaves: %v", err)
 		}
@@ -1599,21 +1609,23 @@ func TestProjectBulkPlanReadsMatchPerPlan(t *testing.T) {
 			t.Fatalf("plan %d bulk waves %+v != per-plan %+v", f.plan.ID, wavesByPlan[f.plan.ID], want)
 		}
 	}
+}
 
-	// Bulk tasks, grouped by plan, equal per-plan ListPlanTasks.
-	bulkTasks, err := store.ListProjectPlanTasks(ctx, project.ID, store.snap())
+func assertBulkTasks(t *testing.T, ctx context.Context, store *storeFixture, projectID int64, fixtures []bulkPlanFixture, otherPlanID int64) {
+	t.Helper()
+	bulkTasks, err := store.ListProjectPlanTasks(ctx, projectID, store.snap())
 	if err != nil {
 		t.Fatalf("ListProjectPlanTasks: %v", err)
 	}
 	tasksByPlan := map[int64][]domain.PlanTaskRow{}
 	for _, tr := range bulkTasks {
-		if tr.PlanID == otherPlan.ID {
+		if tr.PlanID == otherPlanID {
 			t.Fatalf("ListProjectPlanTasks leaked a task from another project: %+v", tr)
 		}
 		tasksByPlan[tr.PlanID] = append(tasksByPlan[tr.PlanID], tr.PlanTaskRow)
 	}
 	for _, f := range fixtures {
-		want, err := store.ListPlanTasks(ctx, project.ID, f.plan.ID, store.snap())
+		want, err := store.ListPlanTasks(ctx, projectID, f.plan.ID, store.snap())
 		if err != nil {
 			t.Fatalf("ListPlanTasks: %v", err)
 		}

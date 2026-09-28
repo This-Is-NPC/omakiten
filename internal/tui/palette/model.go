@@ -8,9 +8,11 @@ import (
 
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 
 	"omakiten/internal/domain"
+	"omakiten/internal/tui/components/screenkit"
 )
 
 // resultListMaxWidth caps each rendered result row at the inner
@@ -225,9 +227,23 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		}
 		return m, cmd
 	}
+	if next, cmd, handled := m.updateKey(key); handled {
+		return next, cmd
+	}
+	var cmd tea.Cmd
+	if m.tab == TabTricks {
+		m.tricks, cmd = m.tricks.Update(msg)
+	} else {
+		m.search, cmd = m.search.Update(msg)
+	}
+	m.status = ""
+	return m, cmd
+}
+
+func (m Model) updateKey(key tea.KeyMsg) (Model, tea.Cmd, bool) {
 	switch key.String() {
 	case "esc":
-		return m, dismissCmd()
+		return m, dismissCmd(), true
 	case "tab":
 		m.tab = toggle(m.tab)
 		m.status = ""
@@ -238,38 +254,32 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 			m.search.Focus()
 			m.tricks.Blur()
 		}
-		return m, nil
+		return m, nil, true
 	case "enter":
-		return m.submit()
+		model, cmd := m.submit()
+		return model, cmd, true
 	case "up", "k":
 		if m.resultsFocused() {
 			m.moveResultsCursor(-1)
-			return m, nil
+			return m, nil, true
 		}
 	case "down", "j":
 		if m.resultsFocused() {
 			m.moveResultsCursor(1)
-			return m, nil
+			return m, nil, true
 		}
 	case "pgup":
 		if m.resultsFocused() {
 			m.moveResultsCursor(-resultListPageStep)
-			return m, nil
+			return m, nil, true
 		}
 	case "pgdown":
 		if m.resultsFocused() {
 			m.moveResultsCursor(resultListPageStep)
-			return m, nil
+			return m, nil, true
 		}
 	}
-	var cmd tea.Cmd
-	if m.tab == TabTricks {
-		m.tricks, cmd = m.tricks.Update(msg)
-	} else {
-		m.search, cmd = m.search.Update(msg)
-	}
-	m.status = ""
-	return m, cmd
+	return m, nil, false
 }
 
 // resultsFocused reports whether the navigable result list owns
@@ -365,6 +375,29 @@ func (m *Model) SetMaxResultRows(n int) {
 	m.followResultsScroll()
 }
 
+// ChromeRowsForResultsBudget measures the non-result rows View paints in the
+// search-results layout, including both ↑/↓ scroll indicators. The parent
+// subtracts this (plus its own overlay frame) from the terminal height to
+// budget SetMaxResultRows. It runs the same painters View uses — a probe with
+// enough hits to force both indicators — so a chrome change cannot silently
+// reopen the overflow the hand-counted 13 used to paper over.
+func (m Model) ChromeRowsForResultsBudget() int {
+	const probeResultRows = 3
+	probe := m
+	probe.tab = TabSearch
+	probe.status = "ok" // reserve the status line the live overlay may show
+	probe.results = make([]domain.SearchHit, 10)
+	for i := range probe.results {
+		probe.results[i] = domain.SearchHit{
+			ID: int64(i + 1), EntityType: domain.SearchEntityTask, Snippet: "x",
+		}
+	}
+	probe.maxResultRows = probeResultRows
+	probe.resultsCursor = 5
+	probe.followResultsScroll() // scroll lands so ↑ and ↓ both paint
+	return lipgloss.Height(probe.View()) - probeResultRows
+}
+
 // markTagPattern strips FTS5 snippet highlight markers. The
 // adapter wraps query-matching tokens in <mark>…</mark>; the
 // terminal renderer cannot honour HTML, so the tags would leak
@@ -384,9 +417,9 @@ func (m Model) View() string {
 		b.WriteString("[ tricks ]  search\n")
 	}
 	if m.tab == TabTricks {
-		b.WriteString(m.tricks.View())
+		b.WriteString(sanitizedInputView(m.tricks))
 	} else {
-		b.WriteString(m.search.View())
+		b.WriteString(sanitizedInputView(m.search))
 		if m.HasResults() {
 			b.WriteString("\n\n")
 			b.WriteString(m.renderResultList())
@@ -394,7 +427,7 @@ func (m Model) View() string {
 	}
 	if m.status != "" {
 		b.WriteByte('\n')
-		b.WriteString(m.status)
+		b.WriteString(screenkit.Sanitize(m.status))
 	}
 	return b.String()
 }
@@ -445,11 +478,12 @@ func (m Model) renderResultList() string {
 // the row width never exceeds resultListMaxWidth.
 func formatResultRow(marker string, hit domain.SearchHit) string {
 	id := fmt.Sprintf("#%d", hit.ID)
+	entityType := ansi.Truncate(screenkit.Sanitize(string(hit.EntityType)), colWidthType, "…")
 	snippet := ansi.Truncate(cleanSnippet(hit.Snippet), colWidthResult, "…")
 	return fmt.Sprintf("%s%-*s %-*s %s",
 		marker,
 		colWidthID, id,
-		colWidthType, string(hit.EntityType),
+		colWidthType, entityType,
 		snippet,
 	)
 }
@@ -477,17 +511,24 @@ func (m Model) resultsWindow() (int, int) {
 	return start, end
 }
 
+// sanitizedInputView renders a text input after sanitising only its display
+// value. The model keeps the original value for SearchMsg so terminal safety
+// does not alter query or generation behavior.
+func sanitizedInputView(input textinput.Model) string {
+	input.SetValue(screenkit.Sanitize(input.Value()))
+	return input.View()
+}
+
 // cleanSnippet sanitises the FTS5 snippet for terminal rendering:
 // strips <mark> highlight tags (they would print verbatim as HTML
 // text), collapses embedded newlines so each hit fits one visual
-// row, and removes ANSI escape sequences carried in upstream task
-// titles / comment bodies (intentional or hostile — protects the
-// terminal from injection per #319 review finding W3).
+// row, and removes ESC, C0, and C1 terminal controls carried in
+// upstream task titles / comment bodies.
 func cleanSnippet(snippet string) string {
 	out := markTagPattern.ReplaceAllString(snippet, "")
 	out = strings.ReplaceAll(out, "\n", " ")
 	out = strings.ReplaceAll(out, "\r", " ")
-	out = ansi.Strip(out)
+	out = screenkit.Sanitize(out)
 	return strings.TrimSpace(out)
 }
 

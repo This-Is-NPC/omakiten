@@ -2,15 +2,22 @@ package agentruntime
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
+	"reflect"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
-	"omakiten/internal/agent"
 	"omakiten/internal/config"
+	"omakiten/internal/domain"
+	"omakiten/internal/events"
+	"omakiten/internal/hooks"
+	"omakiten/internal/operation"
 	"omakiten/internal/paths"
+	"omakiten/internal/sqlite"
 )
 
 // TestBundleCacheHitReturnsSamePointer asserts the Phase 3a invariant:
@@ -79,6 +86,62 @@ func TestBundleCacheMtimeChangeTriggersRebuild(t *testing.T) {
 	}
 }
 
+func TestSurfacesFingerprintChangesWhenMCPFlips(t *testing.T) {
+	a := config.CanonicalSurfaceTable()
+	b := config.CanonicalSurfaceTable()
+	denied := false
+	row := b["task.delete"]
+	row.MCP = &denied
+	row.Reason = "test"
+	b["task.delete"] = row
+
+	snapA := config.BuildSnapshot(config.Bundle{Surfaces: a})
+	snapB := config.BuildSnapshot(config.Bundle{Surfaces: b})
+	if surfacesFingerprint(snapA) == surfacesFingerprint(snapB) {
+		t.Fatal("fingerprint did not change when task.delete mcp flipped")
+	}
+	if surfacesFingerprint(snapA) != surfacesFingerprint(config.BuildSnapshot(config.Bundle{Surfaces: config.CanonicalSurfaceTable()})) {
+		t.Fatal("identical canonical tables produced different fingerprints")
+	}
+}
+
+func TestBundleCacheReloadNotifiesWhenSurfacesChange(t *testing.T) {
+	ctx := context.Background()
+	rt := openTestRuntime(t)
+	defer func() { _ = rt.Close() }()
+
+	cache := rt.Cache()
+	var n atomic.Int32
+	cache.SetSurfacesChangedNotify(func() { n.Add(1) })
+
+	if _, err := cache.Reload(ctx, rt.defaultProjectID, rt.configPath); err != nil {
+		t.Fatalf("Reload (unchanged): %v", err)
+	}
+	if got := n.Load(); got != 0 {
+		t.Fatalf("Reload without surfaces change notified %d times", got)
+	}
+
+	bundle, err := config.LoadBundle(rt.configPath)
+	if err != nil {
+		t.Fatalf("LoadBundle: %v", err)
+	}
+	denied := false
+	row := bundle.Surfaces["task.delete"]
+	row.MCP = &denied
+	row.Reason = "test deny delete"
+	bundle.Surfaces["task.delete"] = row
+	if err := config.SaveBundle(rt.configPath, bundle); err != nil {
+		t.Fatalf("SaveBundle: %v", err)
+	}
+
+	if _, err := cache.Reload(ctx, rt.defaultProjectID, rt.configPath); err != nil {
+		t.Fatalf("Reload (surfaces changed): %v", err)
+	}
+	if got := n.Load(); got != 1 {
+		t.Fatalf("Reload after surfaces change notified %d times, want 1", got)
+	}
+}
+
 func TestRuntimeServiceResolvesMtimeChanges(t *testing.T) {
 	ctx := context.Background()
 	rt := openTestRuntime(t)
@@ -88,7 +151,7 @@ func TestRuntimeServiceResolvesMtimeChanges(t *testing.T) {
 	if first == nil {
 		t.Fatal("Service() = nil")
 	}
-	resp, err := first.ResolveCommand(ctx, agent.ResolveCommandInput{Name: "okt"})
+	resp, err := first.ResolveCommand(ctx, operation.ResolveCommandInput{Name: "okt"})
 	if err != nil {
 		t.Fatalf("ResolveCommand before edit: %v", err)
 	}
@@ -116,7 +179,7 @@ func TestRuntimeServiceResolvesMtimeChanges(t *testing.T) {
 	if second == first {
 		t.Fatal("Service() returned stale service after config mtime changed")
 	}
-	resp, err = second.ResolveCommand(ctx, agent.ResolveCommandInput{Name: "okt"})
+	resp, err = second.ResolveCommand(ctx, operation.ResolveCommandInput{Name: "okt"})
 	if err != nil {
 		t.Fatalf("ResolveCommand after edit: %v", err)
 	}
@@ -130,23 +193,8 @@ func TestRuntimeServiceResolvesActiveProfileSwitch(t *testing.T) {
 	tmp := t.TempDir()
 	t.Setenv(paths.HomeEnv, tmp)
 
-	omakase, err := config.SeedInstall(tmp, "omakase", true)
-	if err != nil {
-		t.Fatalf("SeedInstall omakase: %v", err)
-	}
-	kaiseki, err := config.SeedInstall(tmp, "kaiseki", false)
-	if err != nil {
-		t.Fatalf("SeedInstall kaiseki: %v", err)
-	}
-	bundle, err := config.LoadBundle(kaiseki.Path)
-	if err != nil {
-		t.Fatalf("LoadBundle kaiseki: %v", err)
-	}
-	bundle.Config.Languages.AgentOutput = "Português (Brasil)"
-	if err := config.SaveBundle(kaiseki.Path, bundle); err != nil {
-		t.Fatalf("SaveBundle kaiseki: %v", err)
-	}
-	if err := paths.SetActiveConfigInDir(filepath.Join(tmp, "config"), filepath.Base(omakase.Path)); err != nil {
+	omakasePath, kaisekiPath := seedActiveProfileSwitch(t, tmp)
+	if err := paths.SetActiveConfigInDir(filepath.Join(tmp, "config"), filepath.Base(omakasePath)); err != nil {
 		t.Fatalf("SetActiveConfig omakase: %v", err)
 	}
 
@@ -160,7 +208,7 @@ func TestRuntimeServiceResolvesActiveProfileSwitch(t *testing.T) {
 	if first == nil {
 		t.Fatal("Service() = nil")
 	}
-	resp, err := first.ResolveCommand(ctx, agent.ResolveCommandInput{Name: "okt"})
+	resp, err := first.ResolveCommand(ctx, operation.ResolveCommandInput{Name: "okt"})
 	if err != nil {
 		t.Fatalf("ResolveCommand before active switch: %v", err)
 	}
@@ -168,7 +216,7 @@ func TestRuntimeServiceResolvesActiveProfileSwitch(t *testing.T) {
 		t.Fatalf("initial agent output language = %q, want empty", resp.AgentOutputLanguage)
 	}
 
-	if err := paths.SetActiveConfigInDir(filepath.Join(tmp, "config"), filepath.Base(kaiseki.Path)); err != nil {
+	if err := paths.SetActiveConfigInDir(filepath.Join(tmp, "config"), filepath.Base(kaisekiPath)); err != nil {
 		t.Fatalf("SetActiveConfig kaiseki: %v", err)
 	}
 	second := rt.Service()
@@ -178,13 +226,34 @@ func TestRuntimeServiceResolvesActiveProfileSwitch(t *testing.T) {
 	if second == first {
 		t.Fatal("Service() returned stale service after active profile switched")
 	}
-	resp, err = second.ResolveCommand(ctx, agent.ResolveCommandInput{Name: "okt"})
+	resp, err = second.ResolveCommand(ctx, operation.ResolveCommandInput{Name: "okt"})
 	if err != nil {
 		t.Fatalf("ResolveCommand after active switch: %v", err)
 	}
 	if resp.AgentOutputLanguage != "Português (Brasil)" {
 		t.Fatalf("agent output language after active switch = %q, want Português (Brasil)", resp.AgentOutputLanguage)
 	}
+}
+
+func seedActiveProfileSwitch(t *testing.T, root string) (string, string) {
+	t.Helper()
+	omakase, err := config.SeedInstall(root, "omakase", true)
+	if err != nil {
+		t.Fatalf("SeedInstall omakase: %v", err)
+	}
+	kaiseki, err := config.SeedInstall(root, "kaiseki", false)
+	if err != nil {
+		t.Fatalf("SeedInstall kaiseki: %v", err)
+	}
+	bundle, err := config.LoadBundle(kaiseki.Path)
+	if err != nil {
+		t.Fatalf("LoadBundle kaiseki: %v", err)
+	}
+	bundle.Config.Languages.AgentOutput = "Português (Brasil)"
+	if err := config.SaveBundle(kaiseki.Path, bundle); err != nil {
+		t.Fatalf("SaveBundle kaiseki: %v", err)
+	}
+	return omakase.Path, kaiseki.Path
 }
 
 // TestRuntimeServicePreservesPriorRuntimeOnInvalidInPlaceEdit pins the
@@ -204,7 +273,7 @@ func TestRuntimeServicePreservesPriorRuntimeOnInvalidInPlaceEdit(t *testing.T) {
 	if first == nil {
 		t.Fatal("Service() = nil")
 	}
-	resp, err := first.ResolveCommand(ctx, agent.ResolveCommandInput{Name: "okt"})
+	resp, err := first.ResolveCommand(ctx, operation.ResolveCommandInput{Name: "okt"})
 	if err != nil {
 		t.Fatalf("ResolveCommand before edit: %v", err)
 	}
@@ -231,7 +300,7 @@ func TestRuntimeServicePreservesPriorRuntimeOnInvalidInPlaceEdit(t *testing.T) {
 	}
 	// The prior service still resolves the OLD (empty) language — the
 	// broken bundle was never installed.
-	resp, err = second.ResolveCommand(ctx, agent.ResolveCommandInput{Name: "okt"})
+	resp, err = second.ResolveCommand(ctx, operation.ResolveCommandInput{Name: "okt"})
 	if err != nil {
 		t.Fatalf("ResolveCommand after invalid edit: %v", err)
 	}
@@ -289,7 +358,7 @@ func TestRuntimeServiceExplicitConfigIgnoresActiveSwitch(t *testing.T) {
 	if first == nil {
 		t.Fatal("Service() = nil")
 	}
-	resp, err := first.ResolveCommand(ctx, agent.ResolveCommandInput{Name: "okt"})
+	resp, err := first.ResolveCommand(ctx, operation.ResolveCommandInput{Name: "okt"})
 	if err != nil {
 		t.Fatalf("ResolveCommand before active switch: %v", err)
 	}
@@ -306,7 +375,7 @@ func TestRuntimeServiceExplicitConfigIgnoresActiveSwitch(t *testing.T) {
 	if second == nil {
 		t.Fatal("Service() after active switch = nil")
 	}
-	resp, err = second.ResolveCommand(ctx, agent.ResolveCommandInput{Name: "okt"})
+	resp, err = second.ResolveCommand(ctx, operation.ResolveCommandInput{Name: "okt"})
 	if err != nil {
 		t.Fatalf("ResolveCommand after active switch: %v", err)
 	}
@@ -336,6 +405,181 @@ func TestBundleCacheReloadForcesRebuild(t *testing.T) {
 	if first == second {
 		t.Fatalf("Reload returned cached pointer instead of rebuilding")
 	}
+}
+
+func TestBundleCacheApplyRejectsCandidateAndRetriesSameCandidate(t *testing.T) {
+	ctx := context.Background()
+	rt := openTestRuntime(t)
+	defer func() { _ = rt.Close() }()
+
+	old := rt.Cache().Get(rt.defaultProjectID)
+	candidatePath := writeReloadCandidate(t, rt)
+
+	rebindErr := errors.New("consumer rebind failed")
+	if _, err := rt.Cache().Apply(ctx, rt.defaultProjectID, candidatePath, func(*ProjectRuntime) error {
+		return rebindErr
+	}); !errors.Is(err, rebindErr) {
+		t.Fatalf("failed Apply error = %v, want %v", err, rebindErr)
+	}
+	if got := rt.Cache().Get(rt.defaultProjectID); got != old {
+		t.Fatalf("failed Apply cache entry = %p, want old %p", got, old)
+	}
+	retried, err := rt.Cache().Apply(ctx, rt.defaultProjectID, candidatePath, func(next *ProjectRuntime) error {
+		if next.Snapshot == old.Snapshot {
+			return errors.New("retry reused old snapshot")
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("same candidate retry: %v", err)
+	}
+	if retried == old || rt.Cache().Get(rt.defaultProjectID) != retried {
+		t.Fatal("successful retry did not publish the candidate runtime")
+	}
+	if retried.Service == nil || retried.Snapshot == nil {
+		t.Fatal("successful retry published an incomplete runtime")
+	}
+}
+
+func TestBundleCacheBlockedAcceptQuarantinesHooksAndPreservesConcurrentEvent(t *testing.T) {
+	ctx := context.Background()
+	rt := openTestRuntime(t)
+	defer func() { _ = rt.Close() }()
+
+	marker := filepath.Join(t.TempDir(), "candidate-hook-fired")
+	candidatePath := writeHookReloadCandidate(t, rt, marker)
+	beforeConfig := rt.store.CurrentConfig()
+	baseline := recordCandidateTestEvent(t, rt, `{"candidate":"before"}`)
+	acceptStarted := make(chan struct{})
+	releaseAccept := make(chan struct{})
+	applyDone := make(chan error, 1)
+	go func() {
+		_, err := rt.Cache().ApplyWithCommit(ctx, rt.defaultProjectID, candidatePath, func(*ProjectRuntime) (func() error, error) {
+			close(acceptStarted)
+			<-releaseAccept
+			return nil, errors.New("blocked consumer rejected candidate")
+		})
+		applyDone <- err
+	}()
+	<-acceptStarted
+
+	recordCandidateTestEvent(t, rt, `{"candidate":"concurrent"}`)
+	close(releaseAccept)
+	if err := <-applyDone; err == nil {
+		t.Fatal("blocked acceptance unexpectedly succeeded")
+	}
+	assertCandidateRejected(t, rt, candidatePath, marker, beforeConfig, baseline)
+
+	if _, err := rt.Cache().Apply(ctx, rt.defaultProjectID, candidatePath, nil); err != nil {
+		t.Fatalf("retry same candidate: %v", err)
+	}
+	recordCandidateTestEvent(t, rt, `{"candidate":"retry"}`)
+	waitForCandidateHook(t, marker)
+}
+
+func recordCandidateTestEvent(t *testing.T, rt *Runtime, payload string) domain.Event {
+	t.Helper()
+	if err := rt.store.RecordEntityEvent(context.Background(), domain.EventEntitySystem, 0, rt.defaultProjectID, domain.EventTypeTaskCreated, payload); err != nil {
+		t.Fatalf("publish candidate test event: %v", err)
+	}
+	events, err := rt.store.ListRecentEvents(context.Background(), domain.EventTypeTaskCreated, 10)
+	if err != nil || len(events) == 0 {
+		t.Fatalf("list candidate test events = %+v, err=%v", events, err)
+	}
+	for _, event := range events {
+		if event.Payload == payload {
+			return event
+		}
+	}
+	t.Fatalf("candidate test event %q was not persisted", payload)
+	return domain.Event{}
+}
+
+func assertCandidateRejected(t *testing.T, rt *Runtime, candidatePath, marker string, before sqlite.ConfigKnobs, baseline domain.Event) {
+	t.Helper()
+	if _, err := os.Stat(marker); !os.IsNotExist(err) {
+		t.Fatalf("candidate hook fired before acceptance failed: stat err=%v", err)
+	}
+	if got := rt.Cache().Get(rt.defaultProjectID); got == nil || got.SourcePath == candidatePath {
+		t.Fatal("failed acceptance published candidate runtime")
+	}
+	after := rt.store.CurrentConfig()
+	if before.BusyTimeoutMs != after.BusyTimeoutMs || before.EventsDefaultRecentLimit != after.EventsDefaultRecentLimit || !reflect.DeepEqual(before.EventsPolicy, after.EventsPolicy) {
+		t.Fatal("failed acceptance changed Store settings")
+	}
+	events, err := rt.store.ListRecentEvents(context.Background(), domain.EventTypeTaskCreated, 10)
+	if err != nil || len(events) != 2 {
+		t.Fatalf("events after failed acceptance = %+v, err=%v", events, err)
+	}
+	assertCandidateEventIdentity(t, events, baseline.ID)
+}
+
+func assertCandidateEventIdentity(t *testing.T, events []domain.Event, baselineID int64) {
+	t.Helper()
+	seen := map[string]int64{}
+	for _, event := range events {
+		seen[event.Payload] = event.ID
+	}
+	if seen[`{"candidate":"before"}`] != baselineID || seen[`{"candidate":"concurrent"}`] == 0 {
+		t.Fatalf("event identities after failed acceptance = %+v, want preserved baseline id=%d and concurrent row", seen, baselineID)
+	}
+}
+
+func waitForCandidateHook(t *testing.T, marker string) {
+	t.Helper()
+	deadline := time.Now().Add(time.Second)
+	for {
+		if _, err := os.Stat(marker); err == nil {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("accepted candidate hook did not fire")
+		}
+		time.Sleep(time.Millisecond)
+	}
+}
+
+func writeHookReloadCandidate(t *testing.T, rt *Runtime, marker string) string {
+	t.Helper()
+	candidate, err := config.LoadBundle(rt.configPath)
+	if err != nil {
+		t.Fatalf("LoadBundle: %v", err)
+	}
+	candidate.Config.SQLite.BusyTimeoutMs++
+	candidate.Config.Events.DefaultRecentLimit++
+	trueValue := true
+	candidate.Config.Events.Defaults.Broadcast = &trueValue
+	candidate.Config.Events.Defaults.Hook = &trueValue
+	candidate.Config.Events.Defaults.Log = &trueValue
+	candidate.Config.Hooks = []config.HookSpec{{
+		On:   domain.EventTypeTaskCreated,
+		Do:   "exec",
+		Args: map[string]interface{}{"argv": []string{"touch", marker}},
+	}}
+	path := filepath.Join(filepath.Dir(rt.configPath), "candidate-hook.yaml")
+	if err := config.SaveBundle(path, candidate); err != nil {
+		t.Fatalf("SaveBundle hook candidate: %v", err)
+	}
+	return path
+}
+
+func writeReloadCandidate(t *testing.T, rt *Runtime) string {
+	t.Helper()
+	candidate, err := config.LoadBundle(rt.configPath)
+	if err != nil {
+		t.Fatalf("LoadBundle: %v", err)
+	}
+	candidate.Config.SQLite.BusyTimeoutMs++
+	candidate.Config.SQLite.CacheSizeKB++
+	candidate.Config.SQLite.MmapSizeBytes = 4096
+	candidate.Config.Events.DefaultRecentLimit++
+	falseValue := false
+	candidate.Config.Events.Defaults.Broadcast = &falseValue
+	path := filepath.Join(filepath.Dir(rt.configPath), "candidate.yaml")
+	if err := config.SaveBundle(path, candidate); err != nil {
+		t.Fatalf("SaveBundle candidate: %v", err)
+	}
+	return path
 }
 
 // TestBundleCacheConcurrentResolveSafe runs many goroutines through
@@ -457,7 +701,7 @@ func TestBundleCachePerProjectNotificationActionIsolation(t *testing.T) {
 // TestBundleCacheReloadPreservesProjectSelector pins the Phase 3a
 // invariant the original ship missed: a mtime-driven Reload must
 // carry the boot-resolved ProjectSelector into the freshly built
-// agent.Service. Without it, calls without explicit project args
+// operation.Service. Without it, calls without explicit project args
 // fall to a zero selector after the first rebuild.
 func TestBundleCacheReloadPreservesProjectSelector(t *testing.T) {
 	ctx := context.Background()
@@ -615,28 +859,7 @@ func TestConcurrentAgentsDifferentProjects(t *testing.T) {
 			if i%2 == 1 {
 				projectID = rt.defaultProjectID + 1
 			}
-			for j := 0; j < iters; j++ {
-				pr, err := cache.Resolve(ctx, projectID, rt.configPath)
-				if err != nil {
-					errs <- err
-					return
-				}
-				if pr.Snapshot == nil {
-					errs <- &nilSnapshotErr{projectID: projectID}
-					return
-				}
-				// Read every catalog surface so the race detector
-				// inspects the snapshot's internal maps under
-				// concurrent dispatch.
-				_ = pr.Snapshot.Workflow()
-				_ = pr.Snapshot.Personas()
-				_ = pr.Snapshot.Skills()
-				_ = pr.Snapshot.Laws()
-				_ = pr.Snapshot.Templates()
-				_ = pr.Snapshot.MCPCommands()
-				_ = pr.Snapshot.Synonyms()
-				_ = pr.Snapshot.Stopwords()
-			}
+			readConcurrentSnapshots(ctx, cache, projectID, rt.configPath, iters, errs)
 		}(i)
 	}
 	wg.Wait()
@@ -648,6 +871,368 @@ func TestConcurrentAgentsDifferentProjects(t *testing.T) {
 	}
 	if cache.Size() != 2 {
 		t.Fatalf("cache size after concurrent reads = %d, want 2", cache.Size())
+	}
+}
+
+func readConcurrentSnapshots(ctx context.Context, cache *BundleCache, projectID int64, configPath string, iters int, errs chan<- error) {
+	for i := 0; i < iters; i++ {
+		pr, err := cache.Resolve(ctx, projectID, configPath)
+		if err != nil {
+			errs <- err
+			return
+		}
+		if pr.Snapshot == nil {
+			errs <- &nilSnapshotErr{projectID: projectID}
+			return
+		}
+		// Read every catalog surface so the race detector inspects the
+		// snapshot's internal maps under concurrent dispatch.
+		_ = pr.Snapshot.Workflow()
+		_ = pr.Snapshot.Personas()
+		_ = pr.Snapshot.Skills()
+		_ = pr.Snapshot.Laws()
+		_ = pr.Snapshot.Templates()
+		_ = pr.Snapshot.MCPCommands()
+		_ = pr.Snapshot.Synonyms()
+		_ = pr.Snapshot.Stopwords()
+	}
+}
+
+type lifecycleAction struct {
+	name       string
+	generation int
+	started    chan<- struct{}
+	finished   chan<- struct{}
+	release    <-chan struct{}
+	honorCtx   bool
+	count      *atomic.Int64
+	overlap    *lifecycleOverlapTracker
+	eventsMu   *sync.Mutex
+	events     map[int64]int
+}
+
+func (a lifecycleAction) Name() string { return a.name }
+
+func (a lifecycleAction) Execute(ctx context.Context, ev domain.Event, _ map[string]any) error {
+	if a.overlap != nil {
+		finished := a.overlap.start(a.generation)
+		defer finished()
+	}
+	if a.count != nil {
+		a.count.Add(1)
+	}
+	if a.eventsMu != nil {
+		a.eventsMu.Lock()
+		a.events[ev.ID]++
+		a.eventsMu.Unlock()
+	}
+	if a.started != nil {
+		a.started <- struct{}{}
+	}
+	if a.honorCtx {
+		<-ctx.Done()
+		if a.finished != nil {
+			a.finished <- struct{}{}
+		}
+		return ctx.Err()
+	}
+	if a.release != nil {
+		<-a.release
+	}
+	if a.finished != nil {
+		a.finished <- struct{}{}
+	}
+	return nil
+}
+
+type lifecycleOverlapTracker struct {
+	mu         sync.Mutex
+	active     map[int]int
+	overlapped bool
+}
+
+func (t *lifecycleOverlapTracker) start(generation int) func() {
+	t.mu.Lock()
+	if t.active == nil {
+		t.active = make(map[int]int)
+	}
+	for activeGeneration, count := range t.active {
+		if activeGeneration != generation && count > 0 {
+			t.overlapped = true
+			break
+		}
+	}
+	t.active[generation]++
+	t.mu.Unlock()
+
+	return func() {
+		t.mu.Lock()
+		t.active[generation]--
+		if t.active[generation] == 0 {
+			delete(t.active, generation)
+		}
+		t.mu.Unlock()
+	}
+}
+
+func (t *lifecycleOverlapTracker) didOverlap() bool {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.overlapped
+}
+
+func lifecycleRuntime(bus events.Bus, action hooks.Action, start bool) *ProjectRuntime {
+	registry := hooks.NewActionRegistry()
+	registry.Register(action)
+	engine := hooks.NewEngine(
+		[]hooks.Hook{{On: domain.EventTypeTaskCreated, Do: action.Name()}},
+		registry,
+		config.EventsSettings{Defaults: config.EventChannelSettings{Broadcast: boolPointer(true), Hook: boolPointer(true), Log: boolPointer(true)}},
+		nil,
+	)
+	if start {
+		engine.Start(bus)
+	}
+	return &ProjectRuntime{HooksEngine: engine, ActionRegistry: registry}
+}
+
+func boolPointer(value bool) *bool { return &value }
+
+func TestLifecycleActionOverlapTrackingUsesEngineGeneration(t *testing.T) {
+	started := make(chan struct{}, 2)
+	release := make(chan struct{})
+	var overlap lifecycleOverlapTracker
+	action := lifecycleAction{
+		name: "same-generation", generation: 1, started: started, release: release,
+		overlap: &overlap,
+	}
+
+	var wg sync.WaitGroup
+	wg.Add(2)
+	for range 2 {
+		go func() {
+			defer wg.Done()
+			_ = action.Execute(context.Background(), domain.Event{}, nil)
+		}()
+	}
+	<-started
+	<-started
+	if overlap.didOverlap() {
+		close(release)
+		wg.Wait()
+		t.Fatal("concurrent actions from the same engine reported replacement overlap")
+	}
+	close(release)
+	wg.Wait()
+
+	crossStarted := make(chan struct{}, 2)
+	crossRelease := make(chan struct{})
+	old := lifecycleAction{name: "old", generation: 2, started: crossStarted, release: crossRelease, overlap: &overlap}
+	replacement := lifecycleAction{name: "replacement", generation: 3, started: crossStarted, release: crossRelease, overlap: &overlap}
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		_ = old.Execute(context.Background(), domain.Event{}, nil)
+	}()
+	go func() {
+		defer wg.Done()
+		_ = replacement.Execute(context.Background(), domain.Event{}, nil)
+	}()
+	<-crossStarted
+	<-crossStarted
+	if !overlap.didOverlap() {
+		close(crossRelease)
+		wg.Wait()
+		t.Fatal("concurrent actions from different engines did not report replacement overlap")
+	}
+	close(crossRelease)
+	wg.Wait()
+}
+
+func TestBundleCacheReplacementDrainsOldEngineBeforeStartingNew(t *testing.T) {
+	settings := config.EventsSettings{Defaults: config.EventChannelSettings{Broadcast: boolPointer(true), Hook: boolPointer(true), Log: boolPointer(true)}}
+	bus := events.NewInProcessBus(settings)
+	var oldCount, newCount atomic.Int64
+	var overlap lifecycleOverlapTracker
+	oldStarted := make(chan struct{}, 1)
+	oldFinished := make(chan struct{}, 1)
+	old := lifecycleRuntime(bus, lifecycleAction{
+		name: "old", generation: 1, started: oldStarted, finished: oldFinished, honorCtx: true,
+		count: &oldCount, overlap: &overlap,
+	}, true)
+	next := lifecycleRuntime(bus, lifecycleAction{
+		name: "new", generation: 2, count: &newCount, overlap: &overlap,
+	}, false)
+	cache := NewBundleCache(nil, bus, nil)
+	cache.entries[1] = old
+
+	if err := bus.Publish(context.Background(), domain.Event{ID: 1, EventType: domain.EventTypeTaskCreated}); err != nil {
+		t.Fatalf("Publish old: %v", err)
+	}
+	<-oldStarted
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	if err := cache.replaceRuntime(ctx, 1, next); err != nil {
+		t.Fatalf("replaceRuntime: %v", err)
+	}
+	select {
+	case <-oldFinished:
+	default:
+		t.Fatal("replacement returned before old action finished")
+	}
+	if got := cache.Get(1); got != next {
+		t.Fatalf("cache entry = %p, want replacement %p", got, next)
+	}
+
+	if err := bus.Publish(context.Background(), domain.Event{ID: 2, EventType: domain.EventTypeTaskCreated}); err != nil {
+		t.Fatalf("Publish new: %v", err)
+	}
+	if err := next.HooksEngine.Shutdown(ctx); err != nil {
+		t.Fatalf("new engine Shutdown: %v", err)
+	}
+	if got := oldCount.Load(); got != 1 {
+		t.Fatalf("old action count = %d, want 1", got)
+	}
+	if got := newCount.Load(); got != 1 {
+		t.Fatalf("new action count = %d, want 1", got)
+	}
+	if overlap.didOverlap() {
+		t.Fatal("old and replacement actions overlapped")
+	}
+}
+
+func TestBundleCacheReplacementPublishesRuntimeAfterLifecycleCommit(t *testing.T) {
+	settings := config.EventsSettings{Defaults: config.EventChannelSettings{Broadcast: boolPointer(true), Hook: boolPointer(true), Log: boolPointer(true)}}
+	bus := events.NewInProcessBus(settings)
+	var oldCount, replacementCount atomic.Int64
+	old := lifecycleRuntime(bus, lifecycleAction{name: "old", count: &oldCount}, true)
+	replacement := lifecycleRuntime(bus, lifecycleAction{name: "replacement", count: &replacementCount}, false)
+	cache := NewBundleCache(nil, bus, nil)
+	cache.entries[1] = old
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	if err := cache.replaceRuntime(ctx, 1, replacement); err != nil {
+		t.Fatalf("replaceRuntime: %v", err)
+	}
+	if got := cache.Get(1); got != replacement {
+		t.Fatalf("cache entry = %p, want replacement %p", got, replacement)
+	}
+	if got := replacementCount.Load(); got != 0 {
+		t.Fatalf("replacement action count before publish = %d, want 0", got)
+	}
+}
+
+func TestBundleCacheReplacementTimeoutKeepsNewEngineUnpublished(t *testing.T) {
+	settings := config.EventsSettings{Defaults: config.EventChannelSettings{Broadcast: boolPointer(true), Hook: boolPointer(true), Log: boolPointer(true)}}
+	bus := events.NewInProcessBus(settings)
+	started := make(chan struct{}, 1)
+	finished := make(chan struct{}, 1)
+	release := make(chan struct{})
+	var oldCount, newCount atomic.Int64
+	old := lifecycleRuntime(bus, lifecycleAction{
+		name: "old", started: started, finished: finished, release: release, count: &oldCount,
+	}, true)
+	next := lifecycleRuntime(bus, lifecycleAction{name: "new", count: &newCount}, false)
+	cache := NewBundleCache(nil, bus, nil)
+	cache.entries[1] = old
+
+	if err := bus.Publish(context.Background(), domain.Event{ID: 1, EventType: domain.EventTypeTaskCreated}); err != nil {
+		t.Fatalf("Publish old: %v", err)
+	}
+	<-started
+
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	err := cache.replaceRuntime(ctx, 1, next)
+	cancel()
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("replaceRuntime error = %v, want context deadline exceeded", err)
+	}
+	if got := cache.Get(1); got != old {
+		t.Fatalf("failed replacement published %p; want old entry %p retained", got, old)
+	}
+	if err := bus.Publish(context.Background(), domain.Event{ID: 2, EventType: domain.EventTypeTaskCreated}); err != nil {
+		t.Fatalf("Publish after timeout: %v", err)
+	}
+	if got := oldCount.Load(); got != 1 {
+		t.Fatalf("old action count after timeout = %d, want 1", got)
+	}
+	if got := newCount.Load(); got != 0 {
+		t.Fatalf("unpublished replacement action count = %d, want 0", got)
+	}
+
+	close(release)
+	select {
+	case <-finished:
+	case <-time.After(time.Second):
+		t.Fatal("old action did not finish after release")
+	}
+	retryCtx, retryCancel := context.WithTimeout(context.Background(), time.Second)
+	defer retryCancel()
+	if err := cache.replaceRuntime(retryCtx, 1, next); err != nil {
+		t.Fatalf("replaceRuntime retry: %v", err)
+	}
+	if err := next.HooksEngine.Shutdown(retryCtx); err != nil {
+		t.Fatalf("replacement Shutdown: %v", err)
+	}
+}
+
+func TestBundleCacheConcurrentPublishReplacementThousandIterations(t *testing.T) {
+	const iterations = 1000
+	settings := config.EventsSettings{Defaults: config.EventChannelSettings{Broadcast: boolPointer(true), Hook: boolPointer(true), Log: boolPointer(true)}}
+	bus := events.NewInProcessBus(settings)
+	var overlap lifecycleOverlapTracker
+	var eventsMu sync.Mutex
+	seen := make(map[int64]int, iterations)
+	newAction := func(generation int) lifecycleAction {
+		return lifecycleAction{name: "lifecycle", generation: generation, overlap: &overlap, eventsMu: &eventsMu, events: seen}
+	}
+
+	current := lifecycleRuntime(bus, newAction(0), true)
+	cache := NewBundleCache(nil, bus, nil)
+	cache.entries[1] = current
+	for i := 1; i <= iterations; i++ {
+		next := lifecycleRuntime(bus, newAction(i), false)
+		ready := make(chan struct{})
+		var wg sync.WaitGroup
+		wg.Add(2)
+		go func(eventID int64) {
+			defer wg.Done()
+			<-ready
+			_ = bus.Publish(context.Background(), domain.Event{ID: eventID, EventType: domain.EventTypeTaskCreated})
+		}(int64(i))
+		go func() {
+			defer wg.Done()
+			<-ready
+			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+			defer cancel()
+			if err := cache.replaceRuntime(ctx, 1, next); err != nil {
+				t.Errorf("iteration %d replaceRuntime: %v", i, err)
+			}
+		}()
+		close(ready)
+		wg.Wait()
+		current = next
+	}
+	assertLifecycleReplacementsDone(t, current, &overlap, &eventsMu, seen)
+}
+
+func assertLifecycleReplacementsDone(t *testing.T, current *ProjectRuntime, overlap *lifecycleOverlapTracker, eventsMu *sync.Mutex, seen map[int64]int) {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	if err := current.HooksEngine.Shutdown(ctx); err != nil {
+		t.Fatalf("final Shutdown: %v", err)
+	}
+	if overlap.didOverlap() {
+		t.Fatal("actions from old and replacement engines overlapped")
+	}
+	eventsMu.Lock()
+	defer eventsMu.Unlock()
+	for eventID, count := range seen {
+		if count > 1 {
+			t.Fatalf("event %d dispatched %d times, want at most once", eventID, count)
+		}
 	}
 }
 

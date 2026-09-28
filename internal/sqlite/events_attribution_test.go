@@ -144,11 +144,11 @@ func TestTaskEventCharacterizationUnchanged(t *testing.T) {
 // stamping is single-source, every path inherits it for free by passing its
 // existing ctx:
 //
-//	1. RecordTaskEvent      (events.go)
-//	2. CreateTask -> txevent (txevent.go, EventScopeTask)
-//	3. MoveTask             (tasks.go)
-//	4. SetTaskState         (tasks_lifecycle.go)
-//	5. RebindOrphanedTasks  (orphans.go)
+//  1. RecordTaskEvent      (events.go)
+//  2. CreateTask -> txevent (txevent.go, EventScopeTask)
+//  3. MoveTask             (tasks.go)
+//  4. SetTaskState         (tasks_lifecycle.go)
+//  5. RebindOrphanedTasks  (orphans.go)
 func TestTaskEventPathsStampAttribution(t *testing.T) {
 	const (
 		wantModel   = "claude-opus-4-8"
@@ -167,78 +167,88 @@ func TestTaskEventPathsStampAttribution(t *testing.T) {
 		}
 	}
 
-	t.Run("RecordTaskEvent", func(t *testing.T) {
-		store, project := openStoreWithProject(ctx, t)
-		task, err := store.CreateTask(context.Background(), project.ID, "t", "", domain.Priority(2), "backlog", nil, store.snap())
-		if err != nil {
-			t.Fatalf("CreateTask: %v", err)
-		}
-		if _, err := store.RecordTaskEvent(ctx, project.ID, task.ID, domain.EventTypeTaskMoved, "", `{}`); err != nil {
-			t.Fatalf("RecordTaskEvent: %v", err)
-		}
-		assertStamped(t, store, project.ID, task.ID, domain.EventTypeTaskMoved)
-	})
+	t.Run("RecordTaskEvent", func(t *testing.T) { testRecordTaskEvent(t, ctx, assertStamped) })
 
-	t.Run("CreateTaskThroughTxEvent", func(t *testing.T) {
-		store, project := openStoreWithProject(ctx, t)
-		task, err := store.CreateTask(ctx, project.ID, "t", "", domain.Priority(2), "backlog", nil, store.snap())
-		if err != nil {
-			t.Fatalf("CreateTask: %v", err)
-		}
-		assertStamped(t, store, project.ID, task.ID, domain.EventTypeTaskCreated)
-	})
+	t.Run("CreateTaskThroughTxEvent", func(t *testing.T) { testCreateTaskThroughTxEvent(t, ctx, assertStamped) })
 
-	t.Run("MoveTask", func(t *testing.T) {
-		store, project := openStoreWithFullTransitions(context.Background(), t)
-		task, err := store.CreateTask(context.Background(), project.ID, "t", "", domain.Priority(2), "backlog", nil, store.snap())
-		if err != nil {
-			t.Fatalf("CreateTask: %v", err)
-		}
-		if _, err := store.MoveTask(ctx, project.ID, task.ID, "dev", store.snap()); err != nil {
-			t.Fatalf("MoveTask: %v", err)
-		}
-		assertStamped(t, store, project.ID, task.ID, domain.EventTypeTaskMoved)
-	})
+	t.Run("MoveTask", func(t *testing.T) { testMoveTaskAttribution(t, ctx, assertStamped) })
 
-	t.Run("SetTaskState", func(t *testing.T) {
-		store, project := openStoreWithProject(ctx, t)
-		task, err := store.CreateTask(context.Background(), project.ID, "t", "", domain.Priority(2), "backlog", nil, store.snap())
-		if err != nil {
-			t.Fatalf("CreateTask: %v", err)
-		}
-		if _, _, err := store.SetTaskState(ctx, project.ID, task.ID, domain.TaskStateArchived, "", store.snap()); err != nil {
-			t.Fatalf("SetTaskState: %v", err)
-		}
-		assertStamped(t, store, project.ID, task.ID, domain.EventTypeTaskArchived)
-	})
+	t.Run("SetTaskState", func(t *testing.T) { testSetTaskStateAttribution(t, ctx, assertStamped) })
 
 	t.Run("RebindOrphanedTasks", func(t *testing.T) {
-		store := newTestStore(t)
-		bundleA := bundleWithKeys(t, "preset_a", []string{"docs"}, []int{1})
-		bundleA.Kit.Key = "preset_a"
-		bundleA.Kit.Name = "Preset A"
-		store.applyBundle(bundleA)
-		project := mustUpsertProject(t, store, "p", "p", "/p")
-		task, err := store.CreateTask(context.Background(), project.ID, "doc work", "", domain.Priority(2), "docs", nil, store.snap())
-		if err != nil {
-			t.Fatalf("CreateTask: %v", err)
-		}
-
-		bundleB := bundleWithKeys(t, "preset_b", []string{"backlog"}, []int{1})
-		bundleB.Kit.Key = "preset_b"
-		bundleB.Kit.Name = "Preset B"
-		store.applyBundle(bundleB)
-
-		report, err := store.RebindOrphanedTasks(ctx, project.ID, store.snap(), store.prev())
-		if err != nil {
-			t.Fatalf("RebindOrphanedTasks: %v", err)
-		}
-		if report.Total != 1 {
-			t.Fatalf("orphan Total = %d, want 1", report.Total)
-		}
-		_, _, model, session := taskEventAttribution(t, store, project.ID, task.ID, domain.EventTypeTaskMigrated)
-		if model != wantModel || session != wantSession {
-			t.Errorf("orphan event attribution = (%q,%q), want (%q,%q)", model, session, wantModel, wantSession)
-		}
+		testRebindOrphanedTasksAttribution(t, ctx, wantModel, wantSession)
 	})
+}
+
+func testRecordTaskEvent(t *testing.T, ctx context.Context, assertStamped func(*testing.T, *storeFixture, int64, int64, string)) {
+	store, project := openStoreWithProject(ctx, t)
+	task, err := store.CreateTask(context.Background(), project.ID, "t", "", domain.Priority(2), "backlog", nil, store.snap())
+	if err != nil {
+		t.Fatalf("CreateTask: %v", err)
+	}
+	if _, err := store.RecordTaskEvent(ctx, project.ID, task.ID, domain.EventTypeTaskMoved, "", `{}`); err != nil {
+		t.Fatalf("RecordTaskEvent: %v", err)
+	}
+	assertStamped(t, store, project.ID, task.ID, domain.EventTypeTaskMoved)
+}
+
+func testCreateTaskThroughTxEvent(t *testing.T, ctx context.Context, assertStamped func(*testing.T, *storeFixture, int64, int64, string)) {
+	store, project := openStoreWithProject(ctx, t)
+	task, err := store.CreateTask(ctx, project.ID, "t", "", domain.Priority(2), "backlog", nil, store.snap())
+	if err != nil {
+		t.Fatalf("CreateTask: %v", err)
+	}
+	assertStamped(t, store, project.ID, task.ID, domain.EventTypeTaskCreated)
+}
+
+func testMoveTaskAttribution(t *testing.T, ctx context.Context, assertStamped func(*testing.T, *storeFixture, int64, int64, string)) {
+	store, project := openStoreWithFullTransitions(context.Background(), t)
+	task, err := store.CreateTask(context.Background(), project.ID, "t", "", domain.Priority(2), "backlog", nil, store.snap())
+	if err != nil {
+		t.Fatalf("CreateTask: %v", err)
+	}
+	if _, err := store.MoveTask(ctx, project.ID, task.ID, "dev", store.snap()); err != nil {
+		t.Fatalf("MoveTask: %v", err)
+	}
+	assertStamped(t, store, project.ID, task.ID, domain.EventTypeTaskMoved)
+}
+
+func testSetTaskStateAttribution(t *testing.T, ctx context.Context, assertStamped func(*testing.T, *storeFixture, int64, int64, string)) {
+	store, project := openStoreWithProject(context.Background(), t)
+	task, err := store.CreateTask(context.Background(), project.ID, "t", "", domain.Priority(2), "backlog", nil, store.snap())
+	if err != nil {
+		t.Fatalf("CreateTask: %v", err)
+	}
+	if _, _, err := store.SetTaskState(ctx, project.ID, task.ID, domain.TaskStateArchived, "", store.snap()); err != nil {
+		t.Fatalf("SetTaskState: %v", err)
+	}
+	assertStamped(t, store, project.ID, task.ID, domain.EventTypeTaskArchived)
+}
+
+func testRebindOrphanedTasksAttribution(t *testing.T, ctx context.Context, wantModel, wantSession string) {
+	store := newTestStore(t)
+	bundleA := bundleWithKeys(t, "preset_a", []string{"docs"}, []int{1})
+	bundleA.Kit.Key = "preset_a"
+	bundleA.Kit.Name = "Preset A"
+	store.applyBundle(bundleA)
+	project := mustUpsertProject(t, store, "p", "p", "/p")
+	task, err := store.CreateTask(context.Background(), project.ID, "doc work", "", domain.Priority(2), "docs", nil, store.snap())
+	if err != nil {
+		t.Fatalf("CreateTask: %v", err)
+	}
+	bundleB := bundleWithKeys(t, "preset_b", []string{"backlog"}, []int{1})
+	bundleB.Kit.Key = "preset_b"
+	bundleB.Kit.Name = "Preset B"
+	store.applyBundle(bundleB)
+	report, err := store.RebindOrphanedTasks(ctx, project.ID, store.snap(), store.prev())
+	if err != nil {
+		t.Fatalf("RebindOrphanedTasks: %v", err)
+	}
+	if report.Total != 1 {
+		t.Fatalf("orphan Total = %d, want 1", report.Total)
+	}
+	_, _, model, session := taskEventAttribution(t, store, project.ID, task.ID, domain.EventTypeTaskMigrated)
+	if model != wantModel || session != wantSession {
+		t.Errorf("orphan event attribution = (%q,%q), want (%q,%q)", model, session, wantModel, wantSession)
+	}
 }

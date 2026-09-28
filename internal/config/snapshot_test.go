@@ -169,10 +169,10 @@ func TestSnapshotLogsWindowDays(t *testing.T) {
 		windowDays int
 		want       time.Duration
 	}{
-		"kit default 30":     {windowDays: 30, want: 30 * 24 * time.Hour},
-		"short window 7":     {windowDays: 7, want: 7 * 24 * time.Hour},
-		"long window 365":    {windowDays: 365, want: 365 * 24 * time.Hour},
-		"single day":         {windowDays: 1, want: 24 * time.Hour},
+		"kit default 30":  {windowDays: 30, want: 30 * 24 * time.Hour},
+		"short window 7":  {windowDays: 7, want: 7 * 24 * time.Hour},
+		"long window 365": {windowDays: 365, want: 365 * 24 * time.Hour},
+		"single day":      {windowDays: 1, want: 24 * time.Hour},
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {

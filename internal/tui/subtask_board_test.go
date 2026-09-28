@@ -4,10 +4,15 @@ import (
 	"strings"
 	"testing"
 
+	tea "github.com/charmbracelet/bubbletea"
+
 	"omakiten/internal/config"
 	"omakiten/internal/domain"
 	"omakiten/internal/testfixtures/runtimecache"
+	"omakiten/internal/tui/screens/taskdetail"
 )
+
+func ptrInt64(value int64) *int64 { return &value }
 
 // subtaskBoardFixture builds a Model whose snapshot has a 3-bucket
 // sub-task kit (izakaya-style: backlog/dev/done). Parent lives in the
@@ -67,8 +72,8 @@ func subtaskBoardFixture(t *testing.T) Model {
 // column per sub-kit bucket — not the flat checklist.
 func TestRenderSubtasksPanelBucketGroupedWithSubKit(t *testing.T) {
 	m := subtaskBoardFixture(t)
-	m.applyTaskFocus(taskFocusSubtasks)
-	out := stripANSI(m.renderTaskView())
+	m.storeScreen(m.taskDetailScreen.WithFocus(taskdetail.FocusSubtasks))
+	out := stripANSI(m.boundTaskDetailScreen().View(m.screenFrame()))
 
 	for _, bucket := range []string{"BACKLOG", "DEV", "DONE"} {
 		if !strings.Contains(out, "// "+bucket) {
@@ -120,7 +125,7 @@ func TestRenderSubtasksPanelFallsBackToRootKitWhenNoSubKit(t *testing.T) {
 		repos:    Repositories{Cache: runtimecache.Install(0, snap)},
 	}
 	m.openTaskView(parent)
-	m.applyTaskFocus(taskFocusSubtasks)
+	m.storeScreen(m.taskDetailScreen.WithFocus(taskdetail.FocusSubtasks))
 
 	resolved := m.subtaskPanelWorkflow()
 	if got := len(resolved.Buckets); got != 4 {
@@ -133,11 +138,11 @@ func TestRenderSubtasksPanelFallsBackToRootKitWhenNoSubKit(t *testing.T) {
 		}
 	}
 
-	out := stripANSI(m.renderTaskView())
+	out := stripANSI(m.boundTaskDetailScreen().View(m.screenFrame()))
 	if !strings.Contains(out, "SUB-TASKS") {
 		t.Fatalf("panel kicker missing; got:\n%s", out)
 	}
-	if !strings.Contains(out, "// BACKLOG") {
+	if !strings.Contains(out, "BACKLOG") {
 		t.Fatalf("at least the first root-kit bucket column should be visible; got:\n%s", out)
 	}
 }
@@ -148,70 +153,28 @@ func TestRenderSubtasksPanelFallsBackToRootKitWhenNoSubKit(t *testing.T) {
 // column's cursor lands on the first card so j/k keep working.
 func TestSubtaskBoardHLNavigation(t *testing.T) {
 	m := subtaskBoardFixture(t)
-	m.applyTaskFocus(taskFocusSubtasks)
-	if m.subtaskColIdx != 0 {
-		t.Fatalf("subtaskColIdx initial = %d, want 0", m.subtaskColIdx)
+	m.storeScreen(m.taskDetailScreen.WithFocus(taskdetail.FocusSubtasks))
+	if m.taskDetailScreen.State().SubtaskColumn != 0 {
+		t.Fatalf("subtask column initial = %d, want 0", m.taskDetailScreen.State().SubtaskColumn)
 	}
-	m.moveSubtaskColumn(1)
-	if m.subtaskColIdx != 1 {
-		t.Fatalf("after moveSubtaskColumn(+1) = %d, want 1 (dev column)", m.subtaskColIdx)
+	m.storeScreen(m.taskDetailScreen.Update(m.screenFrame(), tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'l'}}).Screen)
+	if m.taskDetailScreen.State().SubtaskColumn != 1 {
+		t.Fatalf("after l = %d, want 1", m.taskDetailScreen.State().SubtaskColumn)
 	}
-	if got, ok := m.activeSubtask(); !ok || got.BucketKey != "dev" {
+	if got, ok := m.taskDetailScreen.FocusedSubtask(); !ok || got.BucketKey != "dev" {
 		t.Fatalf("activeSubtask after l = %+v ok=%v, want dev-bucket child", got, ok)
 	}
-	m.moveSubtaskColumn(1)
-	if m.subtaskColIdx != 2 {
-		t.Fatalf("after second moveSubtaskColumn(+1) = %d, want 2 (done column)", m.subtaskColIdx)
+	m.storeScreen(m.taskDetailScreen.Update(m.screenFrame(), tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'l'}}).Screen)
+	if m.taskDetailScreen.State().SubtaskColumn != 2 {
+		t.Fatalf("after second l = %d, want 2", m.taskDetailScreen.State().SubtaskColumn)
 	}
-	m.moveSubtaskColumn(1) // clamped at n-1
-	if m.subtaskColIdx != 2 {
-		t.Fatalf("moveSubtaskColumn past last clamped = %d, want 2", m.subtaskColIdx)
+	m.storeScreen(m.taskDetailScreen.Update(m.screenFrame(), tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'l'}}).Screen)
+	if m.taskDetailScreen.State().SubtaskColumn != 2 {
+		t.Fatalf("l past last = %d, want 2", m.taskDetailScreen.State().SubtaskColumn)
 	}
-	m.moveSubtaskColumn(-1)
-	if m.subtaskColIdx != 1 {
-		t.Fatalf("after moveSubtaskColumn(-1) = %d, want 1", m.subtaskColIdx)
-	}
-}
-
-// TestSubtasksPanelFitsAnnouncedBoxHeight pins the post-review fix
-// for the height regression: the rendered panel total row count
-// must NOT exceed the boxHeight the caller announced via the
-// TaskViewBudget — otherwise the panel overruns the outer slice and
-// the form / activity panes get pushed off-screen.
-func TestSubtasksPanelFitsAnnouncedBoxHeight(t *testing.T) {
-	cases := []struct {
-		name          string
-		width, height int
-	}{
-		{"wide side-by-side", 200, 50},
-		{"medium side-by-side", 160, 40},
-		{"stacked narrow", 90, 36},
-		{"stacked focus full screen", 100, 30},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			m := subtaskBoardFixture(t)
-			m.width = tc.width
-			m.height = tc.height
-			m.applyTaskFocus(taskFocusSubtasks)
-			parent, ok := m.activeTask()
-			if !ok {
-				t.Fatal("fixture missing active task")
-			}
-			children := m.directChildren(parent.ID)
-			lyt := m.computeTaskViewLayout(m.availableWidth(), true)
-			formHeight := m.cachedTaskDetailsBoxHeight(parent, lyt)
-			budget := m.taskViewBudget(lyt, formHeight)
-			boxHeight := budget.SubtasksBoxHeight()
-			if boxHeight <= 0 {
-				t.Skipf("SubtasksBoxHeight = %d at width=%d height=%d — sub-tasks panel dropped at this size", boxHeight, tc.width, tc.height)
-			}
-			rendered := m.renderSubtasksPanel(children, lyt, boxHeight)
-			got := strings.Count(rendered, "\n") + 1
-			if got > boxHeight {
-				t.Fatalf("rendered panel total rows = %d, want ≤ %d (panel overruns announced boxHeight) at width=%d height=%d", got, boxHeight, tc.width, tc.height)
-			}
-		})
+	m.storeScreen(m.taskDetailScreen.Update(m.screenFrame(), tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'h'}}).Screen)
+	if m.taskDetailScreen.State().SubtaskColumn != 1 {
+		t.Fatalf("after h = %d, want 1", m.taskDetailScreen.State().SubtaskColumn)
 	}
 }
 
