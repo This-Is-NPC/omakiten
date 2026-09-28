@@ -67,7 +67,7 @@ RETURNING id, project_id, slug, name, goal_body, status, created_at, updated_at,
 // GetPlanBySlug resolves a plan by its (project_id, slug) pair. Errors with
 // ErrPlanNotFound when no row matches.
 func (s *Store) GetPlanBySlug(ctx context.Context, projectID int64, slug string) (domain.Plan, error) {
-	row := s.db.QueryRowContext(ctx, `
+	row := s.query(ctx).QueryRowContext(ctx, `
 SELECT id, project_id, slug, name, goal_body, status, created_at, updated_at, completed_at
 FROM plans WHERE project_id = ? AND slug = ?
 `, projectID, slug)
@@ -85,7 +85,7 @@ FROM plans WHERE project_id = ? AND slug = ?
 // GetPlanByID resolves a plan by its primary key, still scoped to the active
 // project so cross-project leaks stay impossible.
 func (s *Store) GetPlanByID(ctx context.Context, projectID, planID int64) (domain.Plan, error) {
-	row := s.db.QueryRowContext(ctx, `
+	row := s.query(ctx).QueryRowContext(ctx, `
 SELECT id, project_id, slug, name, goal_body, status, created_at, updated_at, completed_at
 FROM plans WHERE project_id = ? AND id = ?
 `, projectID, planID)
@@ -104,7 +104,7 @@ FROM plans WHERE project_id = ? AND id = ?
 // creation order is preserved without depending on string comparison of
 // generated slugs.
 func (s *Store) ListPlans(ctx context.Context, projectID int64) ([]domain.Plan, error) {
-	rows, err := s.db.QueryContext(ctx, `
+	rows, err := s.query(ctx).QueryContext(ctx, `
 SELECT id, project_id, slug, name, goal_body, status, created_at, updated_at, completed_at
 FROM plans WHERE project_id = ? ORDER BY id ASC
 `, projectID)
@@ -174,14 +174,14 @@ func (s *Store) UpdatePlan(ctx context.Context, projectID, planID int64, name, s
 	if err != nil {
 		return domain.Plan{}, err
 	}
-	tx, err := s.db.BeginTx(ctx, nil)
+	tx, err := s.beginTransaction(ctx)
 	if err != nil {
 		return domain.Plan{}, err
 	}
 	committed := false
 	defer func() {
 		if !committed {
-			_ = tx.Rollback()
+			_ = s.rollbackTransaction(ctx, tx)
 		}
 	}()
 
@@ -209,7 +209,7 @@ FROM plans WHERE project_id = ? AND id = ?
 	if err != nil {
 		return domain.Plan{}, err
 	}
-	if err := tx.Commit(); err != nil {
+	if err := s.commitTransaction(ctx, tx); err != nil {
 		return domain.Plan{}, err
 	}
 	committed = true
@@ -390,7 +390,7 @@ func (s *Store) DeletePlan(ctx context.Context, projectID, planID int64) (domain
 // depends_on_task_id) for stable rendering across refreshes.
 func (s *Store) ListPlanTaskDependencies(ctx context.Context, projectID, planID int64) ([]domain.TaskDependency, error) {
 	var ownerProjectID int64
-	if err := s.db.QueryRowContext(ctx, `SELECT project_id FROM plans WHERE id = ?`, planID).Scan(&ownerProjectID); err != nil {
+	if err := s.query(ctx).QueryRowContext(ctx, `SELECT project_id FROM plans WHERE id = ?`, planID).Scan(&ownerProjectID); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, domain.NewError(domain.ErrPlanNotFound, "plan not found",
 				map[string]any{"plan_id": planID})
@@ -402,7 +402,7 @@ func (s *Store) ListPlanTaskDependencies(ctx context.Context, projectID, planID 
 			map[string]any{"plan_id": planID, "project_id": projectID})
 	}
 
-	rows, err := s.db.QueryContext(ctx, `
+	rows, err := s.query(ctx).QueryContext(ctx, `
 SELECT d.project_id, d.task_id, d.depends_on_task_id
 FROM task_dependencies d
 JOIN tasks t  ON t.id  = d.task_id           AND t.plan_id  = ?
@@ -452,7 +452,7 @@ func (s *Store) PeekNextClaimable(ctx context.Context, projectID, planID int64, 
 	}
 
 	var ownerProjectID int64
-	if err := s.db.QueryRowContext(ctx, `SELECT project_id FROM plans WHERE id = ?`, planID).Scan(&ownerProjectID); err != nil {
+	if err := s.query(ctx).QueryRowContext(ctx, `SELECT project_id FROM plans WHERE id = ?`, planID).Scan(&ownerProjectID); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return domain.PlanTaskRow{}, false, domain.NewError(domain.ErrPlanNotFound, "plan not found",
 				map[string]any{"plan_id": planID})
@@ -465,7 +465,7 @@ func (s *Store) PeekNextClaimable(ctx context.Context, projectID, planID int64, 
 	}
 
 	var activeWavePos sql.NullInt64
-	if err := s.db.QueryRowContext(ctx, `
+	if err := s.query(ctx).QueryRowContext(ctx, `
 SELECT MIN(w.position)
 FROM plan_waves w
 WHERE w.plan_id = ?
@@ -484,7 +484,7 @@ WHERE w.plan_id = ?
 
 	var row domain.PlanTaskRow
 	var bucketID int64
-	err := s.db.QueryRowContext(ctx, `
+	err := s.query(ctx).QueryRowContext(ctx, `
 SELECT t.id, COALESCE(t.wave_id, 0), t.title, COALESCE(t.bucket_id, 0), t.state, COALESCE(t.assigned_to, '')
 FROM tasks t
 JOIN plan_waves w ON w.id = t.wave_id
@@ -589,7 +589,7 @@ RETURNING id, plan_id, name, position
 // read for cache friendliness and to keep the current schema's
 // "no workflow_buckets join" invariant intact.
 func (s *Store) ListPlanTasks(ctx context.Context, projectID, planID int64, buckets domain.BucketResolver) ([]domain.PlanTaskRow, error) {
-	rows, err := s.db.QueryContext(ctx, `
+	rows, err := s.query(ctx).QueryContext(ctx, `
 SELECT t.id, COALESCE(t.wave_id, 0), t.title, COALESCE(t.bucket_id, 0), t.state, COALESCE(t.assigned_to, '')
 FROM tasks t
 LEFT JOIN plan_waves w ON w.id = t.wave_id
@@ -619,7 +619,7 @@ ORDER BY COALESCE(w.position, 1<<30) ASC, t.id ASC
 func (s *Store) ListPlanWaves(ctx context.Context, projectID, planID int64) ([]domain.PlanWave, error) {
 	// Project scope: join plans so a caller cannot enumerate waves belonging
 	// to a plan in a different project even if they guess the plan id.
-	rows, err := s.db.QueryContext(ctx, `
+	rows, err := s.query(ctx).QueryContext(ctx, `
 SELECT pw.id, pw.plan_id, pw.name, pw.position
 FROM plan_waves pw
 JOIN plans p ON p.id = pw.plan_id
@@ -648,7 +648,7 @@ ORDER BY pw.position ASC
 // instead of issuing one ListPlanWaves per plan. The per-plan ordering matches
 // ListPlanWaves (position ASC) so the grouped sub-slices are byte-identical.
 func (s *Store) ListProjectPlanWaves(ctx context.Context, projectID int64) ([]domain.PlanWave, error) {
-	rows, err := s.db.QueryContext(ctx, `
+	rows, err := s.query(ctx).QueryContext(ctx, `
 SELECT pw.id, pw.plan_id, pw.name, pw.position
 FROM plan_waves pw
 JOIN plans p ON p.id = pw.plan_id
@@ -678,7 +678,7 @@ ORDER BY pw.plan_id ASC, pw.position ASC
 // NULL waves last) mirror ListPlanTasks so the rollup counts match the
 // per-plan path exactly.
 func (s *Store) ListProjectPlanTasks(ctx context.Context, projectID int64, buckets domain.BucketResolver) ([]domain.ProjectPlanTaskRow, error) {
-	rows, err := s.db.QueryContext(ctx, `
+	rows, err := s.query(ctx).QueryContext(ctx, `
 SELECT t.plan_id, t.id, COALESCE(t.wave_id, 0), t.title, COALESCE(t.bucket_id, 0), t.state, COALESCE(t.assigned_to, '')
 FROM tasks t
 LEFT JOIN plan_waves w ON w.id = t.wave_id
@@ -713,11 +713,11 @@ ORDER BY t.plan_id ASC, COALESCE(w.position, 1<<30) ASC, t.id ASC
 // changes show up indirectly via the unified activity feed when a wave
 // task transitions.
 func (s *Store) AssignTaskToPlan(ctx context.Context, projectID, taskID, planID, waveID int64) error {
-	tx, err := s.db.BeginTx(ctx, nil)
+	tx, err := s.beginTransaction(ctx)
 	if err != nil {
 		return err
 	}
-	defer func() { _ = tx.Rollback() }()
+	defer func() { _ = s.rollbackTransaction(ctx, tx) }()
 
 	// Verify task exists in project.
 	var taskExists int
@@ -743,28 +743,22 @@ func (s *Store) AssignTaskToPlan(ctx context.Context, projectID, taskID, planID,
 			map[string]any{"plan_id": planID, "project_id": projectID})
 	}
 
-	// Verify wave belongs to plan.
-	var wavePlan int64
-	if err := tx.QueryRowContext(ctx, `SELECT plan_id FROM plan_waves WHERE id = ?`, waveID).Scan(&wavePlan); err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return domain.NewError(domain.ErrPlanWaveNotFound, "wave not found",
-				map[string]any{"wave_id": waveID})
-		}
+	if err := validatePlanWave(ctx, tx, planID, waveID); err != nil {
 		return err
 	}
-	if wavePlan != planID {
-		return domain.NewError(domain.ErrPlanWaveNotFound, "wave does not belong to the given plan",
-			map[string]any{"wave_id": waveID, "plan_id": planID})
+	var waveArg any
+	if waveID != 0 {
+		waveArg = waveID
 	}
 
 	if _, err := tx.ExecContext(ctx, `
 UPDATE tasks SET plan_id = ?, wave_id = ?, updated_at = CURRENT_TIMESTAMP
 WHERE project_id = ? AND id = ?
-`, planID, waveID, projectID, taskID); err != nil {
+`, planID, waveArg, projectID, taskID); err != nil {
 		return err
 	}
 
-	return tx.Commit()
+	return s.commitTransaction(ctx, tx)
 }
 
 // RemovePlanWave deletes a wave from a plan. Member tasks survive: the
@@ -978,21 +972,21 @@ func (s *Store) UnassignTaskFromPlan(ctx context.Context, projectID, taskID int6
 	}
 	// Probe first: a no-op detach (no plan link) neither mutates nor
 	// emits, which txMutateAndEmit's always-emit contract cannot model.
-	tx, err := s.db.BeginTx(ctx, nil)
+	tx, err := s.beginTransaction(ctx)
 	if err != nil {
 		return domain.Event{}, err
 	}
 	var probe detachResult
 	if err := tx.QueryRowContext(ctx, `SELECT plan_id, wave_id FROM tasks WHERE project_id = ? AND id = ?`,
 		projectID, taskID).Scan(&probe.planID, &probe.waveID); err != nil {
-		_ = tx.Rollback()
+		_ = s.rollbackTransaction(ctx, tx)
 		if errors.Is(err, sql.ErrNoRows) {
 			return domain.Event{}, domain.NewError(domain.ErrTaskNotFound, "task not found in active project",
 				map[string]any{"task_id": taskID, "project_id": projectID})
 		}
 		return domain.Event{}, err
 	}
-	_ = tx.Rollback()
+	_ = s.rollbackTransaction(ctx, tx)
 	if !probe.planID.Valid {
 		// Already detached from any plan — nothing to do.
 		return domain.Event{}, nil
@@ -1330,13 +1324,13 @@ func (s *Store) AssignTask(ctx context.Context, projectID, taskID int64, assigne
 }
 
 func (s *Store) probeTaskAssignment(ctx context.Context, projectID, taskID int64, assignee string, buckets domain.BucketResolver) (domain.Task, string, bool, error) {
-	tx, err := s.db.BeginTx(ctx, nil)
+	tx, err := s.beginTransaction(ctx)
 	if err != nil {
 		return domain.Task{}, "", false, err
 	}
 	var prev sql.NullString
 	if err := tx.QueryRowContext(ctx, `SELECT assigned_to FROM tasks WHERE project_id = ? AND id = ?`, projectID, taskID).Scan(&prev); err != nil {
-		_ = tx.Rollback()
+		_ = s.rollbackTransaction(ctx, tx)
 		if errors.Is(err, sql.ErrNoRows) {
 			return domain.Task{}, "", false, domain.NewError(domain.ErrTaskNotFound, "task not found in active project",
 				map[string]any{"task_id": taskID, "project_id": projectID})
@@ -1345,15 +1339,15 @@ func (s *Store) probeTaskAssignment(ctx context.Context, projectID, taskID int64
 	}
 	prevStr := sqlutil.NullStringOr(prev, "")
 	if prevStr != assignee {
-		_ = tx.Rollback()
+		_ = s.rollbackTransaction(ctx, tx)
 		return domain.Task{}, prevStr, false, nil
 	}
 	task, err := s.taskByIDTx(ctx, tx, projectID, taskID, buckets)
 	if err != nil {
-		_ = tx.Rollback()
+		_ = s.rollbackTransaction(ctx, tx)
 		return domain.Task{}, "", false, err
 	}
-	if err := tx.Commit(); err != nil {
+	if err := s.commitTransaction(ctx, tx); err != nil {
 		return domain.Task{}, "", false, err
 	}
 	return task, prevStr, true, nil
@@ -1430,7 +1424,7 @@ func finalBucketFor(buckets domain.BucketResolver) (domain.Bucket, bool) {
 
 func (s *Store) planIDForTask(ctx context.Context, projectID, taskID int64) (sql.NullInt64, error) {
 	var planID sql.NullInt64
-	err := s.db.QueryRowContext(ctx, `SELECT plan_id FROM tasks WHERE project_id = ? AND id = ?`, projectID, taskID).Scan(&planID)
+	err := s.query(ctx).QueryRowContext(ctx, `SELECT plan_id FROM tasks WHERE project_id = ? AND id = ?`, projectID, taskID).Scan(&planID)
 	return planID, err
 }
 
@@ -1494,7 +1488,7 @@ func (s *Store) CountPriorWavesPending(ctx context.Context, projectID, taskID in
 		return 0, nil
 	}
 	var count int
-	err := s.db.QueryRowContext(ctx, `
+	err := s.query(ctx).QueryRowContext(ctx, `
 WITH cur AS (
   SELECT t.plan_id AS plan_id, w.position AS position
   FROM tasks t
@@ -1552,4 +1546,25 @@ func decodePlan(scan func(...any) error) (domain.Plan, error) {
 	plan.GoalBody = sqlutil.NullStringOr(goalBody, "")
 	plan.CompletedAt = sqlutil.NullStringOr(completedAt, "")
 	return plan, nil
+}
+
+func validatePlanWave(ctx context.Context, tx *sql.Tx, planID, waveID int64) error {
+	if waveID == 0 {
+		return nil
+	}
+	// Verify wave belongs to plan.
+	var wavePlan int64
+	if err := tx.QueryRowContext(ctx, `SELECT plan_id FROM plan_waves WHERE id = ?`, waveID).Scan(&wavePlan); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return domain.NewError(domain.ErrPlanWaveNotFound, "wave not found",
+				map[string]any{"wave_id": waveID})
+		}
+		return err
+	}
+	if wavePlan != planID {
+		return domain.NewError(domain.ErrPlanWaveNotFound, "wave does not belong to the given plan",
+			map[string]any{"wave_id": waveID, "plan_id": planID})
+	}
+
+	return nil
 }

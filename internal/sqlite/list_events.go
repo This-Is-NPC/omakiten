@@ -90,7 +90,7 @@ func (s *Store) ListEvents(ctx context.Context, filter domain.EventFilter) ([]do
 		return nil, nil
 	}
 
-	rows, err := s.db.QueryContext(ctx, query, args...)
+	rows, err := s.query(ctx).QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -221,7 +221,7 @@ func (s *Store) EventCategoryCounts(ctx context.Context, projectID int64, since 
 	}
 	query += " GROUP BY project_id, event_type"
 
-	rows, err := s.db.QueryContext(ctx, query, args...)
+	rows, err := s.query(ctx).QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}

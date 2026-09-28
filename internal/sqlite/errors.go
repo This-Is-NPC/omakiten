@@ -24,11 +24,11 @@ func agentAttribution(ctx context.Context) (source, entrypoint, agentModel strin
 }
 
 func (s *Store) RecordError(ctx context.Context, projectID int64, description, errContext string, tags []domain.Tag) (domain.ErrorRecord, error) {
-	tx, err := s.db.BeginTx(ctx, nil)
+	tx, err := s.beginTransaction(ctx)
 	if err != nil {
 		return domain.ErrorRecord{}, err
 	}
-	defer func() { _ = tx.Rollback() }()
+	defer func() { _ = s.rollbackTransaction(ctx, tx) }()
 
 	var record domain.ErrorRecord
 	var projectIDArg any
@@ -51,14 +51,14 @@ RETURNING id, description, context, COALESCE(project_id, 0), created_at, COALESC
 	}
 	record.Tags = attached
 
-	return record, tx.Commit()
+	return record, s.commitTransaction(ctx, tx)
 }
 
 func (s *Store) AddErrorTag(ctx context.Context, errorID, tagID int64) error {
 	if err := s.ensureErrorExists(ctx, errorID); err != nil {
 		return err
 	}
-	_, err := s.db.ExecContext(ctx, `
+	_, err := s.query(ctx).ExecContext(ctx, `
 INSERT INTO error_tags(error_id, tag_id)
 VALUES (?, ?)
 ON CONFLICT(error_id, tag_id) DO NOTHING
@@ -67,12 +67,12 @@ ON CONFLICT(error_id, tag_id) DO NOTHING
 }
 
 func (s *Store) RemoveErrorTag(ctx context.Context, errorID, tagID int64) error {
-	_, err := s.db.ExecContext(ctx, `DELETE FROM error_tags WHERE error_id = ? AND tag_id = ?`, errorID, tagID)
+	_, err := s.query(ctx).ExecContext(ctx, `DELETE FROM error_tags WHERE error_id = ? AND tag_id = ?`, errorID, tagID)
 	return err
 }
 
 func (s *Store) ListErrorTags(ctx context.Context, errorID int64) ([]domain.Tag, error) {
-	rows, err := s.db.QueryContext(ctx, `
+	rows, err := s.query(ctx).QueryContext(ctx, `
 SELECT t.id, t.name, t.label
 FROM tags t
 JOIN error_tags et ON et.tag_id = t.id
@@ -106,7 +106,7 @@ func (s *Store) ListTopSolutions(ctx context.Context, limit int) ([]domain.Solut
 	if limit <= 0 {
 		return nil, fmt.Errorf("ListTopSolutions: limit must be > 0 (caller forgot to apply config.solutions clamps)")
 	}
-	rows, err := s.db.QueryContext(ctx, `
+	rows, err := s.query(ctx).QueryContext(ctx, `
 SELECT s.id, s.error_id, s.description, s.steps, s.success, s.task_id, COALESCE(s.tried_at, ''), s.created_at, s.likes,
        COALESCE(e.project_id, 0), COALESCE(p.slug, ''),
        COALESCE(s.source, ''), COALESCE(s.entrypoint, ''), COALESCE(s.agent_model, ''), COALESCE(s.agent_session_id, '')
@@ -144,7 +144,7 @@ func (s *Store) AddSolution(ctx context.Context, errorID int64, description, ste
 		return domain.Solution{}, err
 	}
 	source, entrypoint, agentModel, agentSessionID := agentAttribution(ctx)
-	row := s.db.QueryRowContext(ctx, `
+	row := s.query(ctx).QueryRowContext(ctx, `
 INSERT INTO solutions(error_id, description, steps, task_id, source, entrypoint, agent_model, agent_session_id)
 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 RETURNING id, error_id, description, steps, success, task_id, COALESCE(tried_at, ''), created_at, likes, COALESCE(source, ''), COALESCE(entrypoint, ''), COALESCE(agent_model, ''), COALESCE(agent_session_id, '')
@@ -163,7 +163,7 @@ func (s *Store) ConfirmSolution(ctx context.Context, solutionID int64, success b
 		successInt = 1
 		likesIncrement = 1
 	}
-	row := s.db.QueryRowContext(ctx, `
+	row := s.query(ctx).QueryRowContext(ctx, `
 UPDATE solutions
 SET success = ?, tried_at = CURRENT_TIMESTAMP, likes = likes + ?
 WHERE id = ?
@@ -181,7 +181,7 @@ RETURNING id, error_id, description, steps, success, task_id, COALESCE(tried_at,
 
 func (s *Store) ensureErrorExists(ctx context.Context, errorID int64) error {
 	var exists int
-	if err := s.db.QueryRowContext(ctx, "SELECT COUNT(1) FROM errors WHERE id = ?", errorID).Scan(&exists); err != nil {
+	if err := s.query(ctx).QueryRowContext(ctx, "SELECT COUNT(1) FROM errors WHERE id = ?", errorID).Scan(&exists); err != nil {
 		return err
 	}
 	if exists == 0 {

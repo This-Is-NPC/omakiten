@@ -16,8 +16,10 @@ func newTaskCommand(opts *runtimeOptions) *cobra.Command {
 		Short: opts.t("cli.task.short"),
 	}
 	cmd.AddCommand(newTaskContinueCommand(opts))
-	cmd.AddCommand(newTaskCreateIntentCommand(opts))
+	cmd.AddCommand(newTaskCreateCommand(opts))
 	cmd.AddCommand(newTaskActivityCommand(opts))
+	cmd.AddCommand(newWorkImportCommand(opts, "task"))
+	cmd.AddCommand(newWorkExportCommand(opts, "task"))
 	return cmd
 }
 
@@ -51,55 +53,6 @@ func newTaskContinueCommand(opts *runtimeOptions) *cobra.Command {
 		},
 	}
 	cmd.Flags().BoolVar(&includeWorkflow, "include-workflow", true, opts.t("cli.task.continue.flag.include-workflow"))
-	return cmd
-}
-
-func newTaskCreateIntentCommand(opts *runtimeOptions) *cobra.Command {
-	var (
-		title        string
-		description  string
-		priority     string
-		templateSlug string
-		parentID     int64
-		confirmed    bool
-	)
-	cmd := &cobra.Command{
-		Use:   "create-intent",
-		Short: opts.t("cli.task.create_intent.short"),
-		Long:  opts.t("cli.task.create_intent.long"),
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			return runJSON(cmd, func(ctx context.Context) (any, error) {
-				rt, err := opts.open(ctx, true)
-				if err != nil {
-					return nil, err
-				}
-				defer rt.close()
-
-				input := contract.CreateTaskInput{
-					ProjectSelector: opts.projectSelector(),
-					Title:           title,
-					Description:     description,
-					Priority:        priority,
-					TemplateSlug:    templateSlug,
-					Confirmed:       confirmed,
-					// Never skip the similarity gate on this surface — that is
-					// what distinguishes create-intent from okt add / CreateTask.
-					SkipSimilarityCheck: false,
-				}
-				if cmd.Flags().Changed("parent") {
-					input.ParentID = &parentID
-				}
-				return rt.operationService().CreateTaskIntent(ctx, input)
-			})
-		},
-	}
-	cmd.Flags().StringVarP(&title, "title", "t", "", opts.t("cli.task.create_intent.flag.title"))
-	cmd.Flags().StringVarP(&description, "description", "d", "", opts.t("cli.task.create_intent.flag.description"))
-	cmd.Flags().StringVar(&priority, "priority", "", opts.t("cli.task.create_intent.flag.priority"))
-	cmd.Flags().StringVar(&templateSlug, "template", "", opts.t("cli.task.create_intent.flag.template"))
-	cmd.Flags().Int64Var(&parentID, "parent", 0, opts.t("cli.task.create_intent.flag.parent"))
-	cmd.Flags().BoolVar(&confirmed, "confirm", false, opts.t("cli.task.create_intent.flag.confirm"))
-	_ = cmd.MarkFlagRequired("description")
 	return cmd
 }
 

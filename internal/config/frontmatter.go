@@ -58,7 +58,10 @@ func SplitFrontmatter(data []byte) (frontmatter, body []byte, err error) {
 		return []byte{}, []byte(strings.TrimRight(bodySection, "\r\n")), nil
 	}
 
-	closeIdx := strings.Index(rest, "\n"+frontmatterDelim)
+	closeIdx := strings.Index(rest, "\n"+frontmatterDelim+"\n")
+	if closeIdx < 0 && strings.HasSuffix(rest, "\n"+frontmatterDelim) {
+		closeIdx = len(rest) - len(frontmatterDelim) - 1
+	}
 	if closeIdx < 0 {
 		return nil, nil, errors.New("missing closing --- frontmatter delimiter")
 	}

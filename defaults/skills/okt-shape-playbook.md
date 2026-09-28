@@ -18,7 +18,7 @@ Draft a compact proposal before any durable writes: topic, scope, candidate task
 
 ## Convene the council before you persist
 
-Follow the bound **Council deliberation** skill: call `okt persona list`, spawn one subagent per returned slug, each subagent calls `okt persona show` in its own fresh agent context, and each returns a compact impact opinion on the brief. Synthesize agreements, disagreements, and gaps before you author tasks or plans. Do not call `okt task create-intent`, `okt plan create`, or other commit tools until synthesis is complete — or the user explicitly accepts the named gaps.
+Follow the bound **Council deliberation** skill: call `okt persona list`, spawn one subagent per returned slug, each subagent calls `okt persona show` in its own fresh agent context, and each returns a compact impact opinion on the brief. Synthesize agreements, disagreements, and gaps before you author tasks or plans. Do not call `okt task create`, `okt plan create`, or other commit tools until synthesis is complete — or the user explicitly accepts the named gaps.
 
 ## Chain the discover → define granulars
 

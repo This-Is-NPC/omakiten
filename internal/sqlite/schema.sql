@@ -1,4 +1,4 @@
-PRAGMA user_version = 1;
+PRAGMA user_version = 2;
 
 CREATE TABLE projects (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -359,3 +359,11 @@ BEGIN
        SET depth = COALESCE((SELECT depth + 1 FROM tasks WHERE id = NEW.parent_id), 0)
      WHERE id = NEW.id;
 END;
+
+CREATE TABLE document_metadata (
+  id INTEGER PRIMARY KEY,
+  task_id INTEGER UNIQUE REFERENCES tasks(id) ON DELETE CASCADE,
+  plan_id INTEGER UNIQUE REFERENCES plans(id) ON DELETE CASCADE,
+  metadata TEXT NOT NULL,
+  CHECK ((task_id IS NULL) != (plan_id IS NULL))
+);

@@ -274,7 +274,7 @@ func (s *Store) orphanSweepPass(ctx context.Context, policy config.ResolvedOrpha
 // orphanSweepBatch issues one bounded DELETE and returns how many rows
 // it removed plus the highest id among them.
 func (s *Store) orphanSweepBatch(ctx context.Context, cursor int64, limit int) (int, int64, error) {
-	rows, err := s.db.QueryContext(ctx, orphanSweepDeleteBatchSQL, cursor, limit)
+	rows, err := s.query(ctx).QueryContext(ctx, orphanSweepDeleteBatchSQL, cursor, limit)
 	if err != nil {
 		return 0, 0, fmt.Errorf("sweep orphan events: %w", err)
 	}

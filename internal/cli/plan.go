@@ -17,6 +17,8 @@ func newPlanCommand(opts *runtimeOptions) *cobra.Command {
 		Short: opts.t("cli.plan.short"),
 	}
 	cmd.AddCommand(newPlanCreateCommand(opts))
+	cmd.AddCommand(newWorkImportCommand(opts, "plan"))
+	cmd.AddCommand(newWorkExportCommand(opts, "plan"))
 	cmd.AddCommand(newPlanListCommand(opts))
 	cmd.AddCommand(newPlanShowCommand(opts))
 	cmd.AddCommand(newPlanContinueCommand(opts))
@@ -235,13 +237,23 @@ func newPlanDeleteCommand(opts *runtimeOptions) *cobra.Command {
 
 func newPlanCreateCommand(opts *runtimeOptions) *cobra.Command {
 	var name string
-	var goalBody string
+	var goalBody, file string
+	var dryRun bool
 	cmd := &cobra.Command{
-		Use:   "create SLUG --name NAME",
+		Use:   "create [SLUG]",
 		Short: opts.t("cli.plan.create.short"),
-		Args:  cobra.ExactArgs(1),
+		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runJSON(cmd, func(ctx context.Context) (any, error) {
+				if file != "" {
+					if len(args) != 0 {
+						return nil, domain.NewError(domain.ErrValidation, "--file supplies the plan slug", nil)
+					}
+					return importWorkFile(ctx, cmd, opts, "plan", file, dryRun, true)
+				}
+				if len(args) != 1 || name == "" || dryRun {
+					return nil, domain.NewError(domain.ErrValidation, "provide --file or a slug and --name; --dry-run requires --file", nil)
+				}
 				rt, err := opts.open(ctx, true)
 				if err != nil {
 					return nil, err
@@ -258,7 +270,10 @@ func newPlanCreateCommand(opts *runtimeOptions) *cobra.Command {
 	}
 	cmd.Flags().StringVarP(&name, "name", "n", "", opts.t("cli.plan.create.flag.name"))
 	cmd.Flags().StringVarP(&goalBody, "goal-body", "g", "", opts.t("cli.plan.create.flag.goal_body"))
-	_ = cmd.MarkFlagRequired("name")
+	cmd.Flags().StringVar(&file, "file", "", opts.t("cli.work.flag.file"))
+	cmd.Flags().BoolVar(&dryRun, "dry-run", false, opts.t("cli.work.flag.dry_run"))
+	cmd.MarkFlagsMutuallyExclusive("file", "goal-body")
+	cmd.MarkFlagsMutuallyExclusive("file", "name")
 	return cmd
 }
 

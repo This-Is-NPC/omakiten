@@ -228,7 +228,7 @@ func TestCLILogsRunsAndShapeMatchesAC(t *testing.T) {
 	t.Chdir(projectRoot)
 
 	runCLI(t, dbPath, configPath, "init", "--name", "Project", "--slug", "project")
-	runCLI(t, dbPath, configPath, "add", "-t", "First")
+	runCLI(t, dbPath, configPath, "task", "create", "--confirm", "-t", "First")
 	runCLI(t, dbPath, configPath, "comment", "add", "1", "-b", "remember this")
 
 	assertCLILogsDefault(t, dbPath, configPath)

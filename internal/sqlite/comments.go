@@ -73,11 +73,11 @@ func (s *Store) AddScopedComment(ctx context.Context, w domain.CommentWrite) (do
 		return domain.Comment{}, err
 	}
 
-	tx, err := s.db.BeginTx(ctx, nil)
+	tx, err := s.beginTransaction(ctx)
 	if err != nil {
 		return domain.Comment{}, err
 	}
-	defer func() { _ = tx.Rollback() }()
+	defer func() { _ = s.rollbackTransaction(ctx, tx) }()
 
 	var titleArg, kindArg any
 	if w.Title != "" {
@@ -121,7 +121,7 @@ RETURNING id, created_at
 	}
 	comment.Tags = attached
 
-	if err := tx.Commit(); err != nil {
+	if err := s.commitTransaction(ctx, tx); err != nil {
 		return domain.Comment{}, err
 	}
 	s.publishEvent(ctx, domain.Event{
@@ -272,7 +272,7 @@ func commentQueryFilters(filter domain.CommentFilter) ([]string, []any) {
 // queryCommentRows runs a comment SELECT built on commentSelectColumns, scans
 // each row, and eager-loads tags for the result set.
 func (s *Store) queryCommentRows(ctx context.Context, query string, args []any) ([]domain.Comment, error) {
-	rows, err := s.db.QueryContext(ctx, query, args...)
+	rows, err := s.query(ctx).QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -326,14 +326,14 @@ func (s *Store) UpdateComment(ctx context.Context, projectID, commentID int64, b
 // emitted event is tied to the parent task; project/universal edits emit under
 // their own entity scope.
 func (s *Store) EditComment(ctx context.Context, projectID, commentID int64, edit domain.CommentEdit) (domain.Comment, domain.Event, error) {
-	tx, err := s.db.BeginTx(ctx, nil)
+	tx, err := s.beginTransaction(ctx)
 	if err != nil {
 		return domain.Comment{}, domain.Event{}, err
 	}
 	committed := false
 	defer func() {
 		if !committed {
-			_ = tx.Rollback()
+			_ = s.rollbackTransaction(ctx, tx)
 		}
 	}()
 
@@ -357,7 +357,7 @@ func (s *Store) EditComment(ctx context.Context, projectID, commentID int64, edi
 	// not bump updated_at or emit a content-free comment.edited. prev is the
 	// in-tx snapshot, so this comparison is race-free.
 	if !scalarChanged && !tagsChanged {
-		if err := commitCommentNoOp(tx); err != nil {
+		if err := s.commitCommentNoOp(ctx, tx); err != nil {
 			return domain.Comment{}, domain.Event{}, err
 		}
 		committed = true
@@ -381,7 +381,7 @@ func (s *Store) EditComment(ctx context.Context, projectID, commentID int64, edi
 		return domain.Comment{}, domain.Event{}, err
 	}
 
-	if err := tx.Commit(); err != nil {
+	if err := s.commitTransaction(ctx, tx); err != nil {
 		return domain.Comment{}, domain.Event{}, err
 	}
 	committed = true
@@ -389,8 +389,8 @@ func (s *Store) EditComment(ctx context.Context, projectID, commentID int64, edi
 	return updated, event, nil
 }
 
-func commitCommentNoOp(tx *sql.Tx) error {
-	return tx.Commit()
+func (s *Store) commitCommentNoOp(ctx context.Context, tx *sql.Tx) error {
+	return s.commitTransaction(ctx, tx)
 }
 
 func (s *Store) commentEditEvent(ctx context.Context, tx *sql.Tx, updated domain.Comment, projectID int64, payload string) (domain.Event, error) {
@@ -517,11 +517,11 @@ func entityIDForScope(c domain.Comment) int64 {
 // the WHERE clause filters on event_type='comment', so project and universal
 // comments delete too.
 func (s *Store) DeleteComment(ctx context.Context, projectID, commentID int64) (domain.Event, error) {
-	tx, err := s.db.BeginTx(ctx, nil)
+	tx, err := s.beginTransaction(ctx)
 	if err != nil {
 		return domain.Event{}, err
 	}
-	defer func() { _ = tx.Rollback() }()
+	defer func() { _ = s.rollbackTransaction(ctx, tx) }()
 
 	prev, err := commentByIDTx(ctx, tx, projectID, commentID)
 	if err != nil {
@@ -552,7 +552,7 @@ DELETE FROM events WHERE id = ? AND event_type = 'comment'
 		event = domain.Event{EntityType: prev.Scope, EntityID: entityIDForScope(prev), ProjectID: projectID, EventType: domain.EventTypeCommentRemoved, Payload: string(payload)}
 	}
 
-	if err := tx.Commit(); err != nil {
+	if err := s.commitTransaction(ctx, tx); err != nil {
 		return domain.Event{}, err
 	}
 	s.publishEvent(ctx, event)
@@ -563,16 +563,16 @@ DELETE FROM events WHERE id = ? AND event_type = 'comment'
 // project filter only constrains task/project-scoped rows because universal
 // comments carry a NULL project_id.
 func (s *Store) CommentByID(ctx context.Context, projectID, commentID int64) (domain.Comment, error) {
-	tx, err := s.db.BeginTx(ctx, nil)
+	tx, err := s.beginTransaction(ctx)
 	if err != nil {
 		return domain.Comment{}, err
 	}
-	defer func() { _ = tx.Rollback() }()
+	defer func() { _ = s.rollbackTransaction(ctx, tx) }()
 	c, err := commentByIDTx(ctx, tx, projectID, commentID)
 	if err != nil {
 		return domain.Comment{}, err
 	}
-	return c, tx.Commit()
+	return c, s.commitTransaction(ctx, tx)
 }
 
 func commentByIDTx(ctx context.Context, tx *sql.Tx, projectID, commentID int64) (domain.Comment, error) {
@@ -599,7 +599,7 @@ WHERE id = ? AND event_type = 'comment' AND (project_id = ? OR project_id IS NUL
 }
 
 func (s *Store) eventTagsByIDs(ctx context.Context, eventIDs []int64) (map[int64][]domain.Tag, error) {
-	return eventTagsByIDsQ(ctx, s.db, eventIDs)
+	return eventTagsByIDsQ(ctx, s.query(ctx), eventIDs)
 }
 
 // rowQuerier is the read surface shared by *sql.DB and *sql.Tx, letting tag

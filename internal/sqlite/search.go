@@ -34,7 +34,7 @@ func (s *Store) Search(ctx context.Context, query string, projectID int64, entit
 		entityTypes = domain.AllSearchEntityTypes()
 	}
 	statement, args := buildSearchQuery(query, projectID, entityTypes)
-	rows, err := s.db.QueryContext(ctx, statement, args...)
+	rows, err := s.query(ctx).QueryContext(ctx, statement, args...)
 	if err != nil {
 		return nil, classifyFTSQueryError(err)
 	}

@@ -83,6 +83,7 @@ edges; `.golangci.yml` mirrors the production import restrictions.
 | `internal/app/guards` | Transition, operation and permission guard evaluation |
 | `internal/domain` | Entities, errors, immutable event metadata and slug policy |
 | `internal/agentruntime` | Shared bootstrap, per-project runtime cache and resource lifecycle |
+| `internal/workfile` | Bounded UTF-8 OKF Markdown codec; preserves producer metadata |
 | `internal/sqlite` | Operational persistence, transactional writes and live database snapshots |
 | `internal/config` | Bundle schema, coherent loading, validation and immutable snapshots |
 | `internal/config/bundledraft` | Pure staged bundle editing through an editor port |
@@ -118,6 +119,22 @@ before delivery. Global log and metric queries preserve each project's metadata.
 Event logging, broadcast, recent-row limits and automatic retention resolve the
 origin project's policy. A local reload cannot replace another project's policy.
 Store-wide orphan maintenance uses the default policy.
+
+## Work documents
+
+CLI reads and writes Markdown through `internal/workfile`. The operation facade
+checks configured capabilities and project scope, then passes domain document
+values to `app.WorkDocumentService` through `DocumentRepository`. Validation,
+import orchestration and export projection have separate source files. The TUI
+uses its independent contracts and ports.
+
+Import reuses task, plan, tag and dependency services under one repository
+transaction. SQLite binds queries and nested mutations to the transaction
+context, buffers event publication, commits once and publishes durable events.
+A failed import or preview rolls back every business mutation and its events.
+Export hydrates the complete record under a consistent transaction snapshot.
+File-local keys and producer extensions are persisted as entity-owned metadata;
+export projects current business fields from their operational tables.
 
 ## Interactive behavior
 

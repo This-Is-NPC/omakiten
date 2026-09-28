@@ -17,7 +17,7 @@ import (
 // through to the workflow's default-bucket logic.
 func (s *Store) CurrentTaskBucket(ctx context.Context, projectID, taskID int64, buckets domain.BucketResolver) (int64, string, error) {
 	var bucketID int64
-	err := s.db.QueryRowContext(ctx, `
+	err := s.query(ctx).QueryRowContext(ctx, `
 SELECT COALESCE(t.bucket_id, 0)
 FROM tasks t
 WHERE t.project_id = ? AND t.id = ?
@@ -44,7 +44,7 @@ WHERE t.project_id = ? AND t.id = ?
 // TaskState returns the active|archived flag for a task.
 func (s *Store) TaskState(ctx context.Context, projectID, taskID int64) (domain.TaskState, error) {
 	var state string
-	err := s.db.QueryRowContext(ctx, `SELECT state FROM tasks WHERE project_id = ? AND id = ?`, projectID, taskID).Scan(&state)
+	err := s.query(ctx).QueryRowContext(ctx, `SELECT state FROM tasks WHERE project_id = ? AND id = ?`, projectID, taskID).Scan(&state)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return "", domain.NewError(domain.ErrTaskNotFound, "task not found in active project", map[string]any{"task_id": taskID, "project_id": projectID})

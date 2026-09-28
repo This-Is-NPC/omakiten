@@ -117,7 +117,7 @@ func TestCreateTaskIntentRequiresConfirmationForSimilarWork(t *testing.T) {
 	// The Reason text is the load-bearing instruction the agent acts on when
 	// the prompt has no `if returns requires_confirmation` branch. It must
 	// name the next-step tools so the agent does not need to infer them.
-	if !strings.Contains(created.Confirmation.Reason, "tasks.continue") || !strings.Contains(created.Confirmation.Reason, "confirmed=true") {
+	if !strings.Contains(created.Confirmation.Reason, "okt task continue") || !strings.Contains(created.Confirmation.Reason, "okt task create --confirm") {
 		t.Fatalf("Confirmation.Reason missing actionable next-step tools: %q", created.Confirmation.Reason)
 	}
 	if len(created.SimilarTasks) == 0 {

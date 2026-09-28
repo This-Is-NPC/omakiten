@@ -32,7 +32,7 @@ New to the codebase? Start with the [Developer Guide](.docs/internal/dev-guide.m
 | Access method | `okt` CLI or `okt tui` |
 | Project/Board URL | Not applicable; local-first project state |
 | How to read tasks | `okt list`, `okt task continue`, `okt project resume`, or `okt tui` |
-| How to create issues | `okt add` or `okt task create-intent` |
+| How to create issues | `okt task create` |
 | How to update status | `okt move`, `okt workflow orphans`, or TUI actions |
 
 ## Project Knowledge Base

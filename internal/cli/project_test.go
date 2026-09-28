@@ -19,7 +19,7 @@ func TestCLIProjectOverviewResumeEdit(t *testing.T) {
 	t.Chdir(projectRoot)
 
 	runCLI(t, dbPath, configPath, "init", "--name", "Project", "--slug", "project")
-	runCLI(t, dbPath, configPath, "add", "--title", "Next task")
+	runCLI(t, dbPath, configPath, "task", "create", "--confirm", "--title", "Next task")
 
 	overview := runCLI(t, dbPath, configPath, "project", "overview")
 	if !strings.Contains(overview, `"pending_count"`) {

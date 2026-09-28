@@ -25,9 +25,9 @@ func TestCLIDependencyAndLifecycleCommands(t *testing.T) {
 	t.Chdir(projectRoot)
 
 	runCLI(t, dbPath, configPath, "init", "--name", "Project", "--slug", "project")
-	runCLI(t, dbPath, configPath, "add", "-t", "First")
-	runCLI(t, dbPath, configPath, "add", "-t", "Second")
-	runCLI(t, dbPath, configPath, "add", "-t", "Third")
+	runCLI(t, dbPath, configPath, "task", "create", "--confirm", "-t", "First")
+	runCLI(t, dbPath, configPath, "task", "create", "--confirm", "-t", "Second")
+	runCLI(t, dbPath, configPath, "task", "create", "--confirm", "-t", "Third")
 
 	testCLIDependencyCommands(t, dbPath, configPath)
 	testCLILifecycleCommands(t, dbPath, configPath)
@@ -107,10 +107,10 @@ func TestCLISubTaskParentFlags(t *testing.T) {
 	t.Chdir(projectRoot)
 
 	runCLI(t, dbPath, configPath, "init", "--name", "Project", "--slug", "project")
-	runCLI(t, dbPath, configPath, "add", "-t", "Root")
+	runCLI(t, dbPath, configPath, "task", "create", "--confirm", "-t", "Root")
 
 	// add --parent attaches the new row as a sub-task via CreateTask/AddSub.
-	subOut := runCLI(t, dbPath, configPath, "add", "-t", "Child", "--parent", "1")
+	subOut := runCLI(t, dbPath, configPath, "task", "create", "--confirm", "-t", "Child", "--parent", "1")
 	if !strings.Contains(subOut, `"parent_id":1`) {
 		t.Fatalf("add --parent output missing parent_id=1: %s", subOut)
 	}
@@ -158,7 +158,7 @@ func TestCLITaskCRUDThroughOperationLayer(t *testing.T) {
 
 	runCLI(t, dbPath, configPath, "init", "--name", "Project", "--slug", "project")
 
-	added := runCLI(t, dbPath, configPath, "add", "-t", "CRUD task", "-d", "body")
+	added := runCLI(t, dbPath, configPath, "task", "create", "--confirm", "-t", "CRUD task", "-d", "body")
 	if !strings.Contains(added, `"title":"CRUD task"`) {
 		t.Fatalf("add missing title: %s", added)
 	}

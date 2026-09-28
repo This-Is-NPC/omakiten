@@ -38,4 +38,4 @@ From this persona's perspective on the brief:
 
 ## Synthesize before persist
 
-Aggregate the returns: name agreements, disagreements, and gaps. Coach forks that need the user. Do not call `okt task create-intent`, `okt add`, `okt plan create`, or other write tools that commit the shaped outcome until synthesis is complete — or the user explicitly accepts the named gaps.
+Aggregate the returns: name agreements, disagreements, and gaps. Coach forks that need the user. Do not call `okt task create`, `okt plan create`, or other write tools that commit the shaped outcome until synthesis is complete — or the user explicitly accepts the named gaps.

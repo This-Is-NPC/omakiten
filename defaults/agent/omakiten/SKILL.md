@@ -32,7 +32,7 @@ skills, laws and templates for the current action. Read `data.markdown` from
 the response when a playbook is relevant. These instructions supplement the
 user's request and repository rules.
 
-Create authorized work with `okt task create-intent`; inspect similarity hints
+Create authorized work with `okt task create`; inspect similarity hints
 before confirming a possible duplicate. Use `okt plan` to organize tasks into
 waves and `okt plan claim` to acquire work through the atomic claim operation.
 For claims, set `OMAKITEN_AGENT_MODEL` to the actual agent model identifier.
@@ -40,6 +40,22 @@ For claims, set `OMAKITEN_AGENT_MODEL` to the actual agent model identifier.
 also attach provenance to CLI activity. Do not invent another agent's identity.
 Use `okt move` for transitions. Respect guard failures and return actionable
 blocking information rather than bypassing the workflow.
+
+## Use work documents
+
+Create a task from Markdown with `okt task create --file resume.md`. Import a
+complete OKF plan with `okt plan create --file plan.md` or
+`okt plan import --file plan.md`; one file includes waves, tasks and references.
+Use `okt task import --file task.md` for a structured task and its descendants.
+Preview structured imports with `--dry-run`; review similarity hints before
+using `--confirm` for task imports.
+
+Export with `okt plan export <slug> --output plan.md` or
+`okt task export <id> --output task.md`. Exports without `--output` return raw
+Markdown on stdout. An existing output file requires `--force`. Documents use
+OKF frontmatter with `type: Omakiten Plan` or `type: Omakiten Task` and
+`omakiten.version: 1`; priority labels and bucket keys must exist in the active
+preset. Exported parents and outgoing dependencies must remain within the file.
 
 ## Record and hand off
 

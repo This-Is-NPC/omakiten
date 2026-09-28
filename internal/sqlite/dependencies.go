@@ -13,7 +13,7 @@ func (s *Store) AddTaskDependency(ctx context.Context, projectID, taskID, depend
 	if err := s.ensureTaskExists(ctx, projectID, dependsOnTaskID); err != nil {
 		return domain.TaskDependency{}, err
 	}
-	if _, err := s.db.ExecContext(ctx, `
+	if _, err := s.query(ctx).ExecContext(ctx, `
 INSERT INTO task_dependencies(project_id, task_id, depends_on_task_id)
 VALUES (?, ?, ?)
 ON CONFLICT(project_id, task_id, depends_on_task_id) DO NOTHING
@@ -24,7 +24,7 @@ ON CONFLICT(project_id, task_id, depends_on_task_id) DO NOTHING
 }
 
 func (s *Store) RemoveTaskDependency(ctx context.Context, projectID, taskID, dependsOnTaskID int64) error {
-	_, err := s.db.ExecContext(ctx, "DELETE FROM task_dependencies WHERE project_id = ? AND task_id = ? AND depends_on_task_id = ?", projectID, taskID, dependsOnTaskID)
+	_, err := s.query(ctx).ExecContext(ctx, "DELETE FROM task_dependencies WHERE project_id = ? AND task_id = ? AND depends_on_task_id = ?", projectID, taskID, dependsOnTaskID)
 	return err
 }
 
@@ -40,7 +40,7 @@ func (s *Store) ListTaskDependencies(ctx context.Context, projectID, taskID int6
 	}
 	query += " ORDER BY task_id, depends_on_task_id"
 
-	rows, err := s.db.QueryContext(ctx, query, args...)
+	rows, err := s.query(ctx).QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}

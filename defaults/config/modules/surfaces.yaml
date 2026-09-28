@@ -1,10 +1,10 @@
-# Canonical surfaces table (70 operation.Service methods).
+# Canonical surfaces table (74 operation.Service methods).
 # Shared by every kit via:
 #   surfaces:
 #     from: ./modules/surfaces.yaml
 #
 # Sibling of workflows: — not nested under workflow.operations (domain guards).
-# Product (61): cli/tui true. Wiring (9): all false + reason token.
+# Product (65): cli/tui true. Wiring (9): all false + reason token.
 # Tokens are stored as-is; the catalog resolves them at display time.
 
 command.list: { cli: true, tui: true, }
@@ -29,6 +29,8 @@ plan.continue: { cli: true, tui: true, }
 plan.create: { cli: true, tui: true, }
 plan.delete: { cli: true, tui: true, }
 plan.edit: { cli: true, tui: true, }
+plan.export: { cli: true, tui: true, }
+plan.import: { cli: true, tui: true, }
 plan.list: { cli: true, tui: true, }
 plan.show: { cli: true, tui: true, }
 plan.task.assign: { cli: true, tui: true, }
@@ -61,6 +63,8 @@ task.create: { cli: true, tui: true, }
 task.create_intent: { cli: true, tui: true, }
 task.delete: { cli: true, tui: true, }
 task.edit: { cli: true, tui: true, }
+task.export: { cli: true, tui: true, }
+task.import: { cli: true, tui: true, }
 task.list: { cli: true, tui: true, }
 task.transition: { cli: true, tui: true, }
 task.unarchive: { cli: true, tui: true, }

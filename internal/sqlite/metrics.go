@@ -39,7 +39,7 @@ func (s *Store) AgentMetricsSummary(ctx context.Context, period string, projectI
 		args = append(args, projectID)
 	}
 	query += " GROUP BY agent_model, project_id, event_type"
-	rows, err := s.db.QueryContext(ctx, query, args...)
+	rows, err := s.query(ctx).QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, since, fmt.Errorf("metrics summary counts: %w", err)
 	}
@@ -108,7 +108,7 @@ func (s *Store) fillSearchBeforeRecord(ctx context.Context, models []domain.Agen
 	if query == "" {
 		return nil
 	}
-	rows, err := s.db.QueryContext(ctx, query, queryArgs...)
+	rows, err := s.query(ctx).QueryContext(ctx, query, queryArgs...)
 	if err != nil {
 		return fmt.Errorf("search-before-record: %w", err)
 	}

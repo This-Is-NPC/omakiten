@@ -18,7 +18,7 @@ func TestCLIWorkflowOrphans_NoOpWhenEmpty(t *testing.T) {
 	t.Chdir(projectRoot)
 
 	runCLI(t, dbPath, configPath, "init", "--name", "Project", "--slug", "project")
-	runCLI(t, dbPath, configPath, "add", "-t", "First")
+	runCLI(t, dbPath, configPath, "task", "create", "--confirm", "-t", "First")
 
 	out := runCLI(t, dbPath, configPath, "workflow", "orphans")
 	if !strings.Contains(out, `"applied":false`) {

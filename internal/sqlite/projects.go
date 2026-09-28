@@ -12,7 +12,7 @@ import (
 )
 
 func (s *Store) UpsertProject(ctx context.Context, name, slug, rootPath string) (domain.Project, error) {
-	row := s.db.QueryRowContext(ctx, `
+	row := s.query(ctx).QueryRowContext(ctx, `
 INSERT INTO projects(name, slug, root_path, updated_at)
 VALUES (?, ?, ?, CURRENT_TIMESTAMP)
 ON CONFLICT(root_path) DO UPDATE SET
@@ -36,7 +36,7 @@ RETURNING id, name, slug, root_path
 // no row, surfacing ErrProjectNotFound via scanProject's sql.ErrNoRows
 // branch.
 func (s *Store) UpdateProjectDescription(ctx context.Context, id int64, description string) (domain.Project, error) {
-	return s.scanProject(s.db.QueryRowContext(ctx, `
+	return s.scanProject(s.query(ctx).QueryRowContext(ctx, `
 UPDATE projects SET description = ?, updated_at = CURRENT_TIMESTAMP
 WHERE id = ? AND archived_at IS NULL
 RETURNING id, name, slug, root_path, description
@@ -44,15 +44,15 @@ RETURNING id, name, slug, root_path, description
 }
 
 func (s *Store) FindProjectByID(ctx context.Context, id int64) (domain.Project, error) {
-	return s.scanProject(s.db.QueryRowContext(ctx, "SELECT id, name, slug, root_path, description FROM projects WHERE id = ? AND archived_at IS NULL", id))
+	return s.scanProject(s.query(ctx).QueryRowContext(ctx, "SELECT id, name, slug, root_path, description FROM projects WHERE id = ? AND archived_at IS NULL", id))
 }
 
 func (s *Store) FindProjectBySlug(ctx context.Context, slug string) (domain.Project, error) {
-	return s.scanProject(s.db.QueryRowContext(ctx, "SELECT id, name, slug, root_path, description FROM projects WHERE slug = ? AND archived_at IS NULL", slug))
+	return s.scanProject(s.query(ctx).QueryRowContext(ctx, "SELECT id, name, slug, root_path, description FROM projects WHERE slug = ? AND archived_at IS NULL", slug))
 }
 
 func (s *Store) ListProjects(ctx context.Context) ([]domain.Project, error) {
-	rows, err := s.db.QueryContext(ctx, "SELECT id, name, slug, root_path, description FROM projects WHERE archived_at IS NULL ORDER BY LOWER(name), id")
+	rows, err := s.query(ctx).QueryContext(ctx, "SELECT id, name, slug, root_path, description FROM projects WHERE archived_at IS NULL ORDER BY LOWER(name), id")
 	if err != nil {
 		return nil, err
 	}
@@ -70,7 +70,7 @@ func (s *Store) ListProjects(ctx context.Context) ([]domain.Project, error) {
 }
 
 func (s *Store) FindProjectsContainingPath(ctx context.Context, path string) ([]domain.Project, error) {
-	rows, err := s.db.QueryContext(ctx, "SELECT id, name, slug, root_path FROM projects WHERE archived_at IS NULL ORDER BY length(root_path) DESC")
+	rows, err := s.query(ctx).QueryContext(ctx, "SELECT id, name, slug, root_path FROM projects WHERE archived_at IS NULL ORDER BY length(root_path) DESC")
 	if err != nil {
 		return nil, err
 	}
@@ -121,7 +121,7 @@ func (s *Store) ProjectDeleteCounts(ctx context.Context, projectID int64) (domai
 			(SELECT COUNT(*) FROM events        WHERE project_id = ?1 AND event_type IN ('operation', 'cli.tool_call', 'cli.tool_call', 'tui.tool_call'))
 	`
 	var counters domain.ProjectDeleteCounters
-	if err := s.db.QueryRowContext(ctx, query, projectID).Scan(
+	if err := s.query(ctx).QueryRowContext(ctx, query, projectID).Scan(
 		&counters.Tasks,
 		&counters.Comments,
 		&counters.Plans,
@@ -164,15 +164,15 @@ func deleteProjectRows(ctx context.Context, executor projectDeleteExecutor, proj
 // explicitly inside the same transaction so the activity feed stays
 // consistent with the project being gone.
 func (s *Store) DeleteProject(ctx context.Context, projectID int64) error {
-	tx, err := s.db.BeginTx(ctx, nil)
+	tx, err := s.beginTransaction(ctx)
 	if err != nil {
 		return err
 	}
 	if err := deleteProjectRows(ctx, tx, projectID); err != nil {
-		_ = tx.Rollback()
+		_ = s.rollbackTransaction(ctx, tx)
 		return err
 	}
-	return tx.Commit()
+	return s.commitTransaction(ctx, tx)
 }
 
 type projectDeleteBackupHooks struct {

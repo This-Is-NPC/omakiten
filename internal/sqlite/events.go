@@ -27,7 +27,7 @@ func (s *Store) RecordTaskEvent(ctx context.Context, projectID, taskID int64, ev
 	var ev domain.Event
 	if s.shouldLogEvent(projectID, eventType) {
 		var err error
-		ev, err = insertTaskEvent(ctx, s.db, projectID, taskID, eventType, body, payload)
+		ev, err = insertTaskEvent(ctx, s.query(ctx), projectID, taskID, eventType, body, payload)
 		if err != nil {
 			return domain.Event{}, err
 		}
@@ -91,7 +91,7 @@ func (s *Store) ListRecentEvents(ctx context.Context, eventType string, limit in
 			limit = cfg.Events.DefaultRecentLimit
 		}
 	}
-	rows, err := s.db.QueryContext(ctx, `
+	rows, err := s.query(ctx).QueryContext(ctx, `
 SELECT id, entity_type, COALESCE(entity_id, 0), COALESCE(project_id, 0), event_type, COALESCE(body, ''), COALESCE(payload, ''), COALESCE(source, ''), COALESCE(entrypoint, ''), COALESCE(agent_model, ''), COALESCE(agent_session_id, ''), created_at
 FROM events
 WHERE event_type = ?
@@ -127,7 +127,7 @@ func (s *Store) RecordEntityEvent(ctx context.Context, entityType string, entity
 		if projectID > 0 {
 			projectIDArg = projectID
 		}
-		if _, err := s.db.ExecContext(ctx, `
+		if _, err := s.query(ctx).ExecContext(ctx, `
 INSERT INTO events(entity_type, entity_id, project_id, event_type, payload, source, entrypoint, agent_model, agent_session_id)
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 `, entityType, entityIDArg, projectIDArg, eventType, payload, source, entrypoint, agentModel, agentSessionID); err != nil {
@@ -196,7 +196,7 @@ func (s *Store) loadTaskActivityRows(ctx context.Context, projectID, taskID int6
 			limit = cfg.Events.DefaultRecentLimit
 		}
 	}
-	rows, err := s.db.QueryContext(ctx, `
+	rows, err := s.query(ctx).QueryContext(ctx, `
 SELECT id, entity_type, entity_id, project_id, event_type, body, payload, author_type, created_at
 FROM (
 	SELECT id, entity_type, entity_id, COALESCE(project_id, 0) AS project_id, event_type, body, payload, COALESCE(author_type, '') AS author_type, created_at

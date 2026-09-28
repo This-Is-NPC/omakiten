@@ -14,7 +14,7 @@ func (s *Store) ListTaskBlockerBuckets(ctx context.Context, projectID, taskID in
 	// resolved bucket key per blocker. We now scan blocker rows with
 	// bucket_id and resolve key via the in-memory provider after the
 	// SQL completes.
-	rows, err := s.db.QueryContext(ctx, `
+	rows, err := s.query(ctx).QueryContext(ctx, `
 SELECT t.id, t.title, COALESCE(t.bucket_id, 0)
 FROM task_dependencies td
 JOIN tasks t ON t.project_id = td.project_id AND t.id = td.depends_on_task_id
@@ -43,7 +43,7 @@ ORDER BY t.id
 // the comments_min workflow guard at the app layer.
 func (s *Store) CountTaskComments(ctx context.Context, projectID, taskID int64) (int, error) {
 	var count int
-	if err := s.db.QueryRowContext(ctx, `
+	if err := s.query(ctx).QueryRowContext(ctx, `
 SELECT COUNT(1) FROM events WHERE entity_type = 'task' AND event_type = 'comment' AND project_id = ? AND entity_id = ?
 `, projectID, taskID).Scan(&count); err != nil {
 		return 0, err
@@ -55,7 +55,7 @@ SELECT COUNT(1) FROM events WHERE entity_type = 'task' AND event_type = 'comment
 // task that carry the given tag. Used by the comments_tagged workflow guard.
 func (s *Store) CountTaskCommentsTagged(ctx context.Context, projectID, taskID int64, tagName string) (int, error) {
 	var count int
-	if err := s.db.QueryRowContext(ctx, `
+	if err := s.query(ctx).QueryRowContext(ctx, `
 SELECT COUNT(DISTINCT e.id)
 FROM events e
 JOIN event_tags et ON et.event_id = e.id
