@@ -25,6 +25,7 @@ func TestRealCosignOfflinePositivePath(t *testing.T) {
 		t.Skip("cosign not installed; skipping genuine offline positive-path test")
 	}
 	dir := t.TempDir()
+	signingConfig := filepath.Join(repoRoot(t), "scripts", "testdata", "offline-signing-config.json")
 	prefix := filepath.Join(dir, "fixture")
 	blob := filepath.Join(dir, "artifact")
 	bundle := filepath.Join(dir, "artifact.sigstore.json")
@@ -33,7 +34,8 @@ func TestRealCosignOfflinePositivePath(t *testing.T) {
 	if err := os.WriteFile(blob, []byte("authenticated release fixture\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	env := append(os.Environ(), "COSIGN_PASSWORD=hermetic-test-password")
+	env := append(os.Environ(), "COSIGN_PASSWORD=hermetic-test-password",
+		"HTTP_PROXY=http://127.0.0.1:1", "HTTPS_PROXY=http://127.0.0.1:1", "NO_PROXY=")
 	runCosign := func(args ...string) {
 		t.Helper()
 		cmd := exec.Command(cosign, args...)
@@ -43,7 +45,7 @@ func TestRealCosignOfflinePositivePath(t *testing.T) {
 		}
 	}
 	runCosign("generate-key-pair", "--output-key-prefix", prefix)
-	runCosign("sign-blob", "--key", prefix+".key", "--bundle", bundle, "--use-signing-config=false", "--yes", blob)
+	runCosign("sign-blob", "--key", prefix+".key", "--bundle", bundle, "--signing-config", signingConfig, "--yes", blob)
 	runCosign("verify-blob", "--key", prefix+".pub", "--bundle", bundle, "--insecure-ignore-tlog", blob)
 
 	digest := sha256.Sum256([]byte("authenticated release fixture\n"))
@@ -60,7 +62,7 @@ func TestRealCosignOfflinePositivePath(t *testing.T) {
 	if err := os.WriteFile(statementPath, statementJSON, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	runCosign("attest-blob", "--key", prefix+".key", "--statement", statementPath, "--bundle", attestationBundle, "--use-signing-config=false", "--yes")
+	runCosign("attest-blob", "--key", prefix+".key", "--statement", statementPath, "--bundle", attestationBundle, "--signing-config", signingConfig, "--yes")
 	runCosign("verify-blob-attestation", "--key", prefix+".pub", "--bundle", attestationBundle, "--insecure-ignore-tlog", "--type", "slsaprovenance1", blob)
 	assertForgedAttestationFails(t, cosign, env, attestationBundle, prefix+".pub", blob, dir)
 }

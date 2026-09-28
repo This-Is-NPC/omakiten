@@ -21,6 +21,7 @@ manifest_bundle="$dist/release-manifest-${tag}.sigstore.json"
 checksums_bundle="$dist/checksums-${tag}.sigstore.json"
 provenance_bundle="$dist/release-provenance-${tag}.sigstore.json"
 key_prefix="$tmpdir/dry-run"
+signing_config="$repo_root/scripts/testdata/offline-signing-config.json"
 
 go run ./cmd/okt-release-metadata create \
   --dist "$dist" \
@@ -37,25 +38,26 @@ COSIGN_PASSWORD="" cosign generate-key-pair --output-key-prefix "$key_prefix"
 COSIGN_PASSWORD="" cosign sign-blob \
   --key "$key_prefix.key" \
   --bundle "$manifest_bundle" \
-  --use-signing-config=false \
+  --signing-config "$signing_config" \
   --yes "$manifest"
 COSIGN_PASSWORD="" cosign sign-blob \
   --key "$key_prefix.key" \
   --bundle "$checksums_bundle" \
-  --use-signing-config=false \
+  --signing-config "$signing_config" \
   --yes "$dist/checksums.txt"
 COSIGN_PASSWORD="" cosign attest-blob \
   --key "$key_prefix.key" \
   --statement "$statement" \
   --bundle "$provenance_bundle" \
-  --use-signing-config=false \
+  --signing-config "$signing_config" \
   --yes
 
-cosign verify-blob --key "$key_prefix.pub" --bundle "$manifest_bundle" "$manifest"
-cosign verify-blob --key "$key_prefix.pub" --bundle "$checksums_bundle" "$dist/checksums.txt"
+cosign verify-blob --key "$key_prefix.pub" --insecure-ignore-tlog --bundle "$manifest_bundle" "$manifest"
+cosign verify-blob --key "$key_prefix.pub" --insecure-ignore-tlog --bundle "$checksums_bundle" "$dist/checksums.txt"
 for archive in "$dist"/*.tar.gz "$dist"/*.zip; do
   cosign verify-blob-attestation \
     --key "$key_prefix.pub" \
+    --insecure-ignore-tlog \
     --bundle "$provenance_bundle" \
     --type slsaprovenance1 \
     "$archive"
