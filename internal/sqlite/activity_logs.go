@@ -88,7 +88,7 @@ func (s *Store) BeginActivityLog(ctx context.Context, log any) (int64, error) {
 	if err != nil {
 		return 0, fmt.Errorf("encode activity log payload: %w", err)
 	}
-	row := s.db.QueryRowContext(ctx, `
+	row := s.query(ctx).QueryRowContext(ctx, `
 INSERT INTO events(entity_type, project_id, project_slug, event_type, payload, source, entrypoint, operation, status, agent_model, agent_session_id, created_at)
 VALUES ('system', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
 RETURNING id
@@ -119,7 +119,7 @@ func (s *Store) FinishActivityLog(ctx context.Context, id int64, status string, 
 	// (read by hook `when:` filters). json_set keeps args + tool_name
 	// + source intact so subscribers can match on those after the row
 	// is finalised.
-	if _, err := s.db.ExecContext(ctx, `
+	if _, err := s.query(ctx).ExecContext(ctx, `
 UPDATE events
 SET status = ?, duration_ms = ?, error_message = ?,
     payload = json_set(
@@ -141,7 +141,7 @@ WHERE id = ? AND event_type IN (`+toolCallEventTypeList+`)
 	// call itself. publishEvent is a no-op when no bus is wired.
 	var ev domain.Event
 	var projectID, durationMsCol sql.NullInt64
-	if err := s.db.QueryRowContext(ctx, `
+	if err := s.query(ctx).QueryRowContext(ctx, `
 SELECT id, entity_type, COALESCE(entity_id, 0), project_id, event_type, COALESCE(payload, ''), COALESCE(source, ''), COALESCE(entrypoint, ''), COALESCE(operation, ''), COALESCE(status, ''), duration_ms, COALESCE(error_message, ''), created_at, COALESCE(finished_at, ''), COALESCE(agent_model, ''), COALESCE(agent_session_id, '')
 FROM events WHERE id = ?
 `, id).Scan(&ev.ID, &ev.EntityType, &ev.EntityID, &projectID, &ev.EventType, &ev.Payload, &ev.Source, &ev.Entrypoint, &ev.Operation, &ev.Status, &durationMsCol, &ev.ErrorMessage, &ev.CreatedAt, &ev.FinishedAt, &ev.AgentModel, &ev.AgentSessionID); err != nil {
@@ -200,7 +200,7 @@ func (s *Store) ListActivityLogs(ctx context.Context, filter domain.ActivityLogF
 		args = append(args, filter.Limit)
 	}
 
-	rows, err := s.db.QueryContext(ctx, query, args...)
+	rows, err := s.query(ctx).QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -261,7 +261,7 @@ COALESCE(MIN(created_at), ''),
 COALESCE(MAX(created_at), '')
 FROM events WHERE ` + strings.Join(conds, " AND ")
 
-	row := s.db.QueryRowContext(ctx, query, args...)
+	row := s.query(ctx).QueryRowContext(ctx, query, args...)
 	var stats domain.ActivityLogStats
 	var ok, errCount, running, cli, tui sql.NullInt64
 	if err := row.Scan(&stats.Total, &ok, &errCount, &running, &cli, &tui, &stats.OldestAt, &stats.NewestAt); err != nil {

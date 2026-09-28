@@ -79,7 +79,7 @@ func (s *Store) ListTasks(ctx context.Context, projectID int64, filter domain.Ta
 	if !ok {
 		return nil, nil
 	}
-	rows, err := s.db.QueryContext(ctx, query, args...)
+	rows, err := s.query(ctx).QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -210,16 +210,16 @@ func taskOrderClause(sort domain.TaskSort) string {
 // final bucket) lives in app.WorkflowService — this method does not enforce
 // any of those rules so the adapter stays decision-free.
 func (s *Store) MoveTask(ctx context.Context, projectID, taskID int64, targetBucketKey string, buckets domain.BucketResolver) (domain.Task, error) {
-	tx, err := s.db.BeginTx(ctx, nil)
+	tx, err := s.beginTransaction(ctx)
 	if err != nil {
 		return domain.Task{}, err
 	}
-	defer func() { _ = tx.Rollback() }()
+	defer func() { _ = s.rollbackTransaction(ctx, tx) }()
 	result, err := s.moveTaskTx(ctx, tx, projectID, taskID, targetBucketKey, buckets)
 	if err != nil {
 		return domain.Task{}, err
 	}
-	if err := tx.Commit(); err != nil {
+	if err := s.commitTransaction(ctx, tx); err != nil {
 		return domain.Task{}, err
 	}
 	if result.moveEvent.EventType != "" {
@@ -344,7 +344,7 @@ func (s *Store) UpdateTask(ctx context.Context, projectID, taskID int64, update 
 	}
 	if len(sets) > 0 {
 		args = append(args, projectID, taskID)
-		result, err := s.db.ExecContext(ctx, "UPDATE tasks SET "+strings.Join(sets, ", ")+
+		result, err := s.query(ctx).ExecContext(ctx, "UPDATE tasks SET "+strings.Join(sets, ", ")+
 			", updated_at = CURRENT_TIMESTAMP WHERE project_id = ? AND id = ?", args...)
 		if err != nil {
 			return domain.Task{}, err
@@ -363,7 +363,7 @@ func (s *Store) UpdateTask(ctx context.Context, projectID, taskID int64, update 
 
 func (s *Store) TaskCount(ctx context.Context, projectID int64) (int64, error) {
 	var count int64
-	if err := s.db.QueryRowContext(ctx, "SELECT COUNT(1) FROM tasks WHERE project_id = ?", projectID).Scan(&count); err != nil {
+	if err := s.query(ctx).QueryRowContext(ctx, "SELECT COUNT(1) FROM tasks WHERE project_id = ?", projectID).Scan(&count); err != nil {
 		return 0, err
 	}
 	return count, nil
@@ -403,7 +403,7 @@ func (s *Store) GetTaskByID(ctx context.Context, projectID, taskID int64, bucket
 }
 
 func (s *Store) taskByID(ctx context.Context, projectID, taskID int64, buckets domain.BucketResolver) (domain.Task, error) {
-	row := s.db.QueryRowContext(ctx, `
+	row := s.query(ctx).QueryRowContext(ctx, `
 SELECT tasks.id, tasks.project_id, COALESCE(tasks.bucket_id, 0), tasks.title, tasks.description, tasks.priority_id, tasks.state, tasks.created_at, tasks.parent_id, tasks.depth
 FROM tasks
 WHERE tasks.project_id = ? AND tasks.id = ?
@@ -426,7 +426,7 @@ WHERE tasks.project_id = ? AND tasks.id = ?
 
 func (s *Store) ensureTaskExists(ctx context.Context, projectID, taskID int64) error {
 	var exists int
-	if err := s.db.QueryRowContext(ctx, "SELECT COUNT(1) FROM tasks WHERE project_id = ? AND id = ?", projectID, taskID).Scan(&exists); err != nil {
+	if err := s.query(ctx).QueryRowContext(ctx, "SELECT COUNT(1) FROM tasks WHERE project_id = ? AND id = ?", projectID, taskID).Scan(&exists); err != nil {
 		return err
 	}
 	if exists == 0 {

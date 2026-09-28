@@ -199,6 +199,10 @@ func (s *Store) publishEvent(ctx context.Context, ev domain.Event) {
 	if ev.EventType == "" {
 		return
 	}
+	if scope := s.transaction(ctx); scope != nil {
+		scope.events = append(scope.events, ev)
+		return
+	}
 	s.configMu.RLock()
 	bus := s.bus
 	s.configMu.RUnlock()
@@ -660,6 +664,13 @@ func initializeOrValidateDatabase(ctx context.Context, db *sql.DB, fresh bool) e
 	if err := verifyCurrentOmakitenSchema(ctx, db); err == nil {
 		return nil
 	}
+	var version int
+	if err := db.QueryRowContext(ctx, "PRAGMA user_version").Scan(&version); err != nil {
+		return err
+	}
+	if version == 1 {
+		return upgradeDocumentSchema(ctx, db)
+	}
 	return bridgeV030ReleaseDatabase(ctx, db)
 }
 
@@ -853,7 +864,7 @@ func (s *Store) DataVersion(ctx context.Context) (int64, error) {
 // writers from another process remain a best-effort case.
 func (s *Store) Checkpoint(ctx context.Context) error {
 	var busy, logged, checkpointed int
-	if err := s.db.QueryRowContext(ctx, "PRAGMA wal_checkpoint(TRUNCATE)").Scan(&busy, &logged, &checkpointed); err != nil {
+	if err := s.query(ctx).QueryRowContext(ctx, "PRAGMA wal_checkpoint(TRUNCATE)").Scan(&busy, &logged, &checkpointed); err != nil {
 		return fmt.Errorf("wal_checkpoint query: %w", err)
 	}
 	if busy != 0 || checkpointed < logged {

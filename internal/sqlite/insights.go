@@ -147,7 +147,7 @@ func (s *Store) insightStuck(ctx context.Context, projectID int64, stuckDays int
 	}
 
 	query, args := insightStuckSQL(projectID, stuckDays, stuckBuckets)
-	rows, err := s.db.QueryContext(ctx, query, args...)
+	rows, err := s.query(ctx).QueryContext(ctx, query, args...)
 	if err != nil {
 		return out, fmt.Errorf("insight stuck: %w", err)
 	}
@@ -197,7 +197,7 @@ func (s *Store) insightCycleTime(ctx context.Context, projectID int64) (domain.C
 	out := domain.CycleTimeInsight{Buckets: []domain.BucketDwell{}}
 
 	query, args := insightCycleTimeSQL(projectID)
-	rows, err := s.db.QueryContext(ctx, query, args...)
+	rows, err := s.query(ctx).QueryContext(ctx, query, args...)
 	if err != nil {
 		return out, fmt.Errorf("insight cycle time: %w", err)
 	}
@@ -247,7 +247,7 @@ func (s *Store) insightWIP(ctx context.Context, projectID int64) (domain.WIPInsi
 	out := domain.WIPInsight{Buckets: []domain.BucketWIP{}}
 
 	query, args := insightWIPSQL(projectID)
-	rows, err := s.db.QueryContext(ctx, query, args...)
+	rows, err := s.query(ctx).QueryContext(ctx, query, args...)
 	if err != nil {
 		return out, fmt.Errorf("insight wip: %w", err)
 	}
@@ -297,7 +297,7 @@ func (s *Store) insightGuards(ctx context.Context, projectID int64) (domain.Guar
 	out := domain.GuardInsight{Hotspots: []domain.GuardHotspot{}}
 
 	query, args := insightGuardsSQL(projectID)
-	rows, err := s.db.QueryContext(ctx, query, args...)
+	rows, err := s.query(ctx).QueryContext(ctx, query, args...)
 	if err != nil {
 		return out, fmt.Errorf("insight guards: %w", err)
 	}
@@ -341,12 +341,12 @@ func (s *Store) insightErrorLoop(ctx context.Context, projectID int64) (domain.E
 	var out domain.ErrorLoopInsight
 
 	totalQuery, totalArgs := insightErrorLoopTotalSQL(projectID)
-	if err := s.db.QueryRowContext(ctx, totalQuery, totalArgs...).Scan(&out.Total); err != nil {
+	if err := s.query(ctx).QueryRowContext(ctx, totalQuery, totalArgs...).Scan(&out.Total); err != nil {
 		return out, fmt.Errorf("insight error loop total: %w", err)
 	}
 
 	resolvedQuery, resolvedArgs := insightErrorLoopResolvedSQL(projectID)
-	if err := s.db.QueryRowContext(ctx, resolvedQuery, resolvedArgs...).Scan(&out.Resolved); err != nil {
+	if err := s.query(ctx).QueryRowContext(ctx, resolvedQuery, resolvedArgs...).Scan(&out.Resolved); err != nil {
 		return out, fmt.Errorf("insight error loop resolved: %w", err)
 	}
 
@@ -465,7 +465,7 @@ func (s *Store) insightPerModel(ctx context.Context, projectID int64) (domain.Pe
 	out := domain.PerModelInsight{Models: []domain.ModelContrast{}}
 
 	query, args := insightPerModelSQL(projectID)
-	rows, err := s.db.QueryContext(ctx, query, args...)
+	rows, err := s.query(ctx).QueryContext(ctx, query, args...)
 	if err != nil {
 		return out, fmt.Errorf("insight per-model: %w", err)
 	}
@@ -509,7 +509,7 @@ func hasTaskMoveHistorySQL(projectID int64) (string, []any) {
 func (s *Store) hasTaskMoveHistory(ctx context.Context, projectID int64) (bool, error) {
 	query, args := hasTaskMoveHistorySQL(projectID)
 	var exists int
-	if err := s.db.QueryRowContext(ctx, query, args...).Scan(&exists); err != nil {
+	if err := s.query(ctx).QueryRowContext(ctx, query, args...).Scan(&exists); err != nil {
 		return false, fmt.Errorf("insight stuck has-data probe: %w", err)
 	}
 	return exists == 1, nil

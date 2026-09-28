@@ -193,7 +193,10 @@ func bridgeV030ReleaseDatabaseWithHooks(ctx context.Context, db *sql.DB, hooks v
 	if _, err := conn.ExecContext(ctx, "DROP TABLE schema_migrations"); err != nil {
 		return fmt.Errorf("remove v0.30.0 migration marker: %w", err)
 	}
-	if _, err := conn.ExecContext(ctx, "PRAGMA user_version = 1"); err != nil {
+	if _, err := conn.ExecContext(ctx, documentMetadataSQL()); err != nil {
+		return err
+	}
+	if _, err := conn.ExecContext(ctx, "PRAGMA user_version = 2"); err != nil {
 		return fmt.Errorf("set current schema marker: %w", err)
 	}
 	if err := verifyCurrentOmakitenSchema(ctx, conn); err != nil {
@@ -255,7 +258,7 @@ func validateV030ReleaseDatabase(ctx context.Context, db schemaQueryer) error {
 	if err := validateV030MigrationVersions(ctx, db); err != nil {
 		return err
 	}
-	expected, err := currentSchemaSemanticFingerprint(ctx)
+	expected, err := releaseSchemaSemanticFingerprint(ctx)
 	if err != nil {
 		return v030ReleaseValidationError("current schema baseline is unavailable")
 	}
@@ -476,7 +479,7 @@ func verifyCurrentOmakitenSchema(ctx context.Context, db schemaQueryer) error {
 	return nil
 }
 
-func currentSchemaSemanticFingerprint(ctx context.Context) (string, error) {
+func releaseSchemaSemanticFingerprint(ctx context.Context) (string, error) {
 	db, err := sql.Open("sqlite", ":memory:")
 	if err != nil {
 		return "", err
@@ -484,6 +487,9 @@ func currentSchemaSemanticFingerprint(ctx context.Context) (string, error) {
 	defer func() { _ = db.Close() }()
 	db.SetMaxOpenConns(1)
 	if _, err := db.ExecContext(ctx, schemaSQL); err != nil {
+		return "", err
+	}
+	if _, err := db.ExecContext(ctx, "DROP TABLE document_metadata"); err != nil {
 		return "", err
 	}
 	return semanticSchemaFingerprint(ctx, db)

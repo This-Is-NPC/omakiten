@@ -143,7 +143,6 @@ func configureRootFlags(cmd *cobra.Command, opts *runtimeOptions) {
 
 func addRootCommands(cmd *cobra.Command, opts *runtimeOptions, version string, interactive ...func(context.Context, agentruntime.Session) error) {
 	cmd.AddCommand(newInitCommand(opts))
-	cmd.AddCommand(newAddCommand(opts))
 	cmd.AddCommand(newListCommand(opts))
 	cmd.AddCommand(newMoveCommand(opts))
 	cmd.AddCommand(newAssignCommand(opts))

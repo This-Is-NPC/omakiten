@@ -20,11 +20,11 @@ import (
 // the task. Events have no FK to tasks at all (entity_id is opaque), so we
 // delete those manually too.
 func (s *Store) HardDeleteTask(ctx context.Context, projectID, taskID int64, buckets domain.BucketResolver) (domain.Event, error) {
-	tx, err := s.db.BeginTx(ctx, nil)
+	tx, err := s.beginTransaction(ctx)
 	if err != nil {
 		return domain.Event{}, err
 	}
-	defer func() { _ = tx.Rollback() }()
+	defer func() { _ = s.rollbackTransaction(ctx, tx) }()
 
 	task, err := s.taskByIDTx(ctx, tx, projectID, taskID, buckets)
 	if err != nil {
@@ -69,7 +69,7 @@ RETURNING id, entity_type, COALESCE(entity_id, 0), project_id, event_type, body,
 		event = domain.Event{EntityType: domain.EventEntitySystem, ProjectID: projectID, EventType: domain.EventTypeTaskRemoved, Payload: payload}
 	}
 
-	if err := tx.Commit(); err != nil {
+	if err := s.commitTransaction(ctx, tx); err != nil {
 		return domain.Event{}, err
 	}
 	s.publishEvent(ctx, event)
@@ -101,7 +101,7 @@ func (s *Store) BackfillTaskCompletedAt(ctx context.Context, projectID int64, bu
 	if !ok {
 		return 0, nil
 	}
-	result, err := s.db.ExecContext(ctx, `
+	result, err := s.query(ctx).ExecContext(ctx, `
 UPDATE tasks SET completed_at = updated_at
 WHERE project_id = ?
   AND completed_at IS NULL
@@ -128,16 +128,16 @@ func (s *Store) SetTaskState(ctx context.Context, projectID, taskID int64, state
 		return domain.Task{}, domain.Event{}, domain.NewError(domain.ErrValidation, "invalid task state", map[string]any{"state": string(state)})
 	}
 
-	tx, err := s.db.BeginTx(ctx, nil)
+	tx, err := s.beginTransaction(ctx)
 	if err != nil {
 		return domain.Task{}, domain.Event{}, err
 	}
-	defer func() { _ = tx.Rollback() }()
+	defer func() { _ = s.rollbackTransaction(ctx, tx) }()
 	result, err := s.setTaskStateTx(ctx, tx, projectID, taskID, state, targetBucketKey, buckets)
 	if err != nil {
 		return domain.Task{}, domain.Event{}, err
 	}
-	if err := tx.Commit(); err != nil {
+	if err := s.commitTransaction(ctx, tx); err != nil {
 		return domain.Task{}, domain.Event{}, err
 	}
 	s.publishEvent(ctx, result.event)

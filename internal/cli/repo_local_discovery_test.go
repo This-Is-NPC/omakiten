@@ -112,12 +112,12 @@ func TestCLIPerProjectListIsolatesTasks(t *testing.T) {
 	t.Chdir(projectA)
 	runCLIWithoutConfig(t, dbPath, "config", "init", "--scope", "local", "--preset", "omakase")
 	runCLIWithoutConfig(t, dbPath, "init", "--name", "Proj A", "--slug", "proj-a", "--root", projectA)
-	runCLIWithoutConfig(t, dbPath, "--project", "proj-a", "add", "-t", "task-only-in-a")
+	runCLIWithoutConfig(t, dbPath, "--project", "proj-a", "task", "create", "--confirm", "-t", "task-only-in-a")
 
 	t.Chdir(projectB)
 	runCLIWithoutConfig(t, dbPath, "config", "init", "--scope", "local", "--preset", "omakase")
 	runCLIWithoutConfig(t, dbPath, "init", "--name", "Proj B", "--slug", "proj-b", "--root", projectB)
-	runCLIWithoutConfig(t, dbPath, "--project", "proj-b", "add", "-t", "task-only-in-b")
+	runCLIWithoutConfig(t, dbPath, "--project", "proj-b", "task", "create", "--confirm", "-t", "task-only-in-b")
 
 	t.Chdir(tmp)
 	outA := runCLIWithoutConfig(t, dbPath, "--project", "proj-a", "list")

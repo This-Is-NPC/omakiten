@@ -24,7 +24,7 @@ func commentTestEnv(t *testing.T) (dbPath, configPath string) {
 	t.Chdir(projectRoot)
 
 	runCLI(t, dbPath, configPath, "init", "--name", "Project", "--slug", "project")
-	runCLI(t, dbPath, configPath, "add", "-t", "T1")
+	runCLI(t, dbPath, configPath, "task", "create", "--confirm", "-t", "T1")
 	return dbPath, configPath
 }
 

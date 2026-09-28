@@ -77,7 +77,7 @@ func TestTrackLogsSuccess(t *testing.T) {
 func TestTrackLogsError(t *testing.T) {
 	repo := &fakeRepo{beginReturnID: 1}
 	ctx := WithRepository(context.Background(), repo)
-	ctx = WithAgent(ctx, "cli", "okt add", "", "")
+	ctx = WithAgent(ctx, "cli", "okt task create", "", "")
 
 	finish := Track(ctx, "app.TaskService.Add", domain.ProjectContext{}, nil)
 	finish("error", "validation failed")
@@ -91,7 +91,7 @@ func TestTrackLogsError(t *testing.T) {
 }
 
 func TrackNoOpWhenRepoMissing(t *testing.T) {
-	ctx := WithAgent(context.Background(), "cli", "okt add", "", "")
+	ctx := WithAgent(context.Background(), "cli", "okt task create", "", "")
 	finish := Track(ctx, "app.TaskService.Add", domain.ProjectContext{}, nil)
 	finish("ok", "")
 	// Should not panic

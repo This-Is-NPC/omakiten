@@ -20,6 +20,8 @@ plan.continue product
 plan.create product
 plan.delete product
 plan.edit product
+plan.export product
+plan.import product
 plan.list product
 plan.show product
 plan.task.assign product
@@ -52,6 +54,8 @@ task.create product
 task.create_intent product
 task.delete product
 task.edit product
+task.export product
+task.import product
 task.list product
 task.transition product
 task.unarchive product

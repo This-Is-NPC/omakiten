@@ -58,8 +58,8 @@ func assertV030BridgeMarker(t *testing.T, ctx context.Context, db schemaQueryer)
 	if err := db.QueryRowContext(ctx, "PRAGMA user_version").Scan(&userVersion); err != nil {
 		t.Fatalf("user_version: %v", err)
 	}
-	if userVersion != 1 {
-		t.Fatalf("user_version = %d, want 1", userVersion)
+	if userVersion != 2 {
+		t.Fatalf("user_version = %d, want 2", userVersion)
 	}
 	var migrationTables int
 	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'schema_migrations'`).Scan(&migrationTables); err != nil {
@@ -147,13 +147,13 @@ func TestOpenBridgeCancellationAfterCommitDoesNotReportDurableFailure(t *testing
 	if err := db.QueryRowContext(context.Background(), "PRAGMA user_version").Scan(&userVersion); err != nil {
 		t.Fatalf("user_version after committed cancellation: %v", err)
 	}
-	if userVersion != 1 {
-		t.Fatalf("user_version after committed cancellation = %d, want 1", userVersion)
+	if userVersion != 2 {
+		t.Fatalf("user_version after committed cancellation = %d, want 2", userVersion)
 	}
 }
 
 func TestV030ReleaseSchemaFingerprintIsPinned(t *testing.T) {
-	fingerprint, err := currentSchemaSemanticFingerprint(context.Background())
+	fingerprint, err := releaseSchemaSemanticFingerprint(context.Background())
 	if err != nil {
 		t.Fatalf("current schema fingerprint: %v", err)
 	}
@@ -341,7 +341,7 @@ func seedV030ReleaseDatabase(t *testing.T, path string, quoted bool) {
 	if _, err := db.Exec(schema); err != nil {
 		t.Fatalf("seed current schema: %v", err)
 	}
-	if _, err := db.Exec(`PRAGMA user_version = 0`); err != nil {
+	if _, err := db.Exec(`DROP TABLE document_metadata; PRAGMA user_version = 0`); err != nil {
 		t.Fatalf("seed user_version: %v", err)
 	}
 	if _, err := db.Exec(`CREATE TABLE "schema_migrations" (
@@ -375,7 +375,7 @@ func seedV030WALDatabase(t *testing.T, path string, mutate func(*testing.T, *sql
 		_ = db.Close()
 		t.Fatalf("WAL seed autocheckpoint: %v", err)
 	}
-	if _, err := db.Exec(`PRAGMA user_version = 0`); err != nil {
+	if _, err := db.Exec(`DROP TABLE document_metadata; PRAGMA user_version = 0`); err != nil {
 		_ = db.Close()
 		t.Fatalf("WAL seed user_version: %v", err)
 	}

@@ -16,6 +16,7 @@ This guide is the authoritative reference for picking a preset, understanding wh
 - [Cross-preset progression](#cross-preset-progression)
 - [Notes and handoff loop](#notes-and-handoff-loop)
 - [Plans — multi-agent fan-out](#plans--multi-agent-fan-out)
+- [Work documents](#work-documents)
 - [Authoring your own preset](#authoring-your-own-preset)
 - [See also](#see-also)
 
@@ -534,6 +535,136 @@ v1 does not auto-reclaim — silent reclaim would hide real-world agent failures
 - **CLI**: `okt plan create|list|show|wave-add|assign|claim|edit|delete|wave-remove|wave-rename|wave-reorder|unassign` and the orthogonal `okt assign <task_id> [who]` for free-text assignment outside the plan flow. See [CLI Guide § Plans](./cli.md#plans).
 - **TUI**: a fourth sub-tab under `01 // TASKS` — list view first, then a screen-local collapsible wave/task network per plan with goal editing and assignment. See [TUI Guide § Tasks › Plans](./tui.md#tasks--plans).
 - **Search**: `plans.goal_body` is indexed in the unified FTS5 `search_index` so cross-project `search` finds plans by name or any phrase in the goal markdown.
+
+---
+
+## Work documents
+
+A plan or task travels as **one UTF-8 Markdown file**: YAML frontmatter carries
+structure and the body carries its goal or description. The format follows the
+[Open Knowledge Format specification](https://github.com/GoogleCloudPlatform/open-knowledge-format/blob/main/SPEC.md)
+with producer-defined types `Omakiten Plan` and `Omakiten Task`. The nested
+`omakiten.version: 1` identifies the Omakiten profile. Standard OKF metadata
+such as `description`, `tags`, `relations` and `status` remains document
+metadata. Operational plan status lives in `omakiten.status`.
+
+### Complete plan example
+
+```markdown
+---
+type: Omakiten Plan
+title: Portable work documents
+description: Deliver a reproducible work-file workflow.
+tags: [cli]
+status: draft
+omakiten:
+  version: 1
+  slug: work-documents
+  status: active
+  waves:
+    - key: foundation
+      name: Foundation
+      tasks:
+        - key: parser
+          title: Parse work files
+          description: |
+            ## Acceptance
+            Preserve Markdown and references.
+          tags: [parser]
+        - key: validation
+          title: Validate references
+          parent: parser
+    - key: delivery
+      name: Delivery
+      tasks:
+        - key: export
+          title: Export the complete plan
+          depends_on: [parser]
+---
+## Goal
+
+Create and transport this plan using one file.
+```
+
+```sh
+okt plan create --file plan.md
+okt plan import --file plan.md --dry-run
+okt plan export work-documents --output plan.md --force
+okt --project another-project plan import --file plan.md
+okt plan export work-documents | okt --project another-project plan import --file -
+```
+
+Wave order is file order. Tasks without a wave belong in `omakiten.tasks`.
+Each task has a unique `key`; `parent` and `depends_on` reference keys in the
+same document. Wave keys must also be unique. Import creates new database IDs
+and resolves relationships from these keys. A duplicate plan slug is a conflict.
+
+Optional task fields are `description`, `priority` (a configured label),
+`bucket` (a workflow key), `state` (`active` or `archived`), `assignee`, `tags`,
+`parent` and `depends_on`. Omitted priority and bucket use the active preset's
+defaults; descendants use the configured subtask kit. Plan status is `active`,
+`done` or `abandoned`. Export includes all plan members and their descendants.
+A descendant that is outside the plan carries `plan_member: false`, preserving
+its parent relationship without assigning it to the plan on import.
+
+### Task documents and plain Markdown
+
+```markdown
+---
+type: Omakiten Task
+title: Finish documentation
+omakiten:
+  version: 1
+  task:
+    key: documentation
+    tags: [docs]
+  tasks:
+    - key: examples
+      title: Verify examples
+      parent: documentation
+---
+## Acceptance
+
+Every documented command executes successfully.
+```
+
+The outer title and body define the root task. `omakiten.tasks` carries its
+descendants and their relationships.
+
+```sh
+okt task create --file resume.md --title "Resume work"
+okt task import --file task.md --dry-run
+okt task import --file task.md --confirm
+okt task export 42 --output task.md
+```
+
+Plain Markdown supplies a task description and supports the normal creation
+flags. A structured file supplies its own fields and can be used with either
+`task create --file` or `task import --file`. Task imports review similar work
+before creating it; use `--confirm` after assessing the hints. A plan requires
+the explicit structured format.
+
+### Validation and preservation
+
+Imports are bounded to 16 MiB and reject invalid UTF-8, malformed frontmatter,
+unsupported profile versions, duplicate keys, unresolved references and cycles.
+Configured capabilities and application guards apply. The import is atomic;
+`--dry-run` executes the same services then rolls back all business rows and
+event publication. CLI activity may still record the invocation.
+
+Exports preserve producer extensions at document, profile, wave and task
+levels. Current titles, descriptions, status, priority, bucket, assignment,
+tags and relationships come from the board. Stable file-local keys survive
+reexport. Exports reject unavailable buckets or priorities, parents outside the document and
+outgoing dependencies across its boundary, so relationships are never silently
+lost. A subtask with an external parent must be exported with its parent tree.
+Task comments, project notes, errors and activity history remain on the board;
+they are outside the work-document profile. An archived task's configured
+archive guards must be satisfiable in the destination project.
+
+`--file -` reads stdin. Exports emit raw Markdown to stdout by default;
+`--output PATH` writes one file and returns a JSON result. Replacing an existing
+file requires `--force`. See [CLI guide](cli.md#tasks) for the full command flags.
 
 ---
 

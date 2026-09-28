@@ -18,7 +18,7 @@ func TestCLIInsightsAndMetricsSummary(t *testing.T) {
 	t.Chdir(projectRoot)
 
 	runCLI(t, dbPath, configPath, "init", "--name", "Project", "--slug", "project")
-	runCLI(t, dbPath, configPath, "add", "--title", "Insightable task")
+	runCLI(t, dbPath, configPath, "task", "create", "--confirm", "--title", "Insightable task")
 
 	insights := runCLI(t, dbPath, configPath, "insights", "summary", "--stuck-days", "7")
 	if !strings.Contains(insights, `"schema_version"`) {

@@ -183,11 +183,11 @@ func (s *Service) similarTaskConfirmation(ctx context.Context, project domain.Pr
 		Confirmation: contract.Confirmation{
 			RequiresConfirmation: true,
 			Reason: "Similar tasks already exist in this project. Surface them to the user verbatim and ask " +
-				"whether to continue an existing one (call `tasks.continue` with the chosen id) or create a " +
-				"separate task (call `tasks.create_intent` again with the same description and `confirmed=true`).",
+				"whether to continue an existing one (run `okt task continue <id>`) or create a " +
+				"separate task (run `okt task create --confirm` with the same content).",
 			Options: []contract.ConfirmationOption{
 				{Action: "continue_existing", Label: "Continue one of the similar tasks"},
-				{Action: "create_separate", Label: "Create a separate task with confirmed=true"},
+				{Action: "create_separate", Label: "Create a separate task with --confirm"},
 			},
 		},
 	}, true, nil

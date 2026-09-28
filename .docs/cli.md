@@ -273,17 +273,27 @@ Presets:
 
 Run `okt <subcommand> --help` for the full flag list of any task command. Notes below cover behavior not obvious from `--help`.
 
-### `okt add` — create a task
+### `okt task create` — create a task
 
-`internal/cli/add.go`. Calls `app.TaskService.Add` → `app.WorkflowService.CreateTask`. When `--parent` is set, routes through `app.TaskService.AddSub` so the row + FK land in a single atomic INSERT.
+`internal/cli/task_create.go` dispatches creation through the operation facade.
+Creation checks similar tasks before writing; use `--confirm` after reviewing a
+possible duplicate. An omitted bucket uses the first bucket of the applicable
+workflow. `--parent` requires an active task in the same project and selects the
+configured subtask kit.
 
-- `--bucket` empty falls back to `app.WorkflowService.ResolveDefaultBucket` — the **first bucket** of the active workflow, not a hard-coded `backlog`.
-- `--parent` requires an active task in the same project; cross-bucket parents are rejected; sub-task inherits the parent's bucket when `--bucket` is omitted.
+`--file PATH` reads the description from plain UTF-8 Markdown or imports a
+structured OKF task document. Plain Markdown supports title, priority, bucket,
+parent and template flags. Structured documents supply those values themselves;
+`--dry-run` validates the complete import without retaining business rows.
+`--file -` reads stdin. See [Work documents](workflow.md#work-documents) for the
+single-file plan and task format.
 
 ```sh
-okt add -t "Refactor sqlite store"
-okt add -t "Doc cleanup" -d "Update guards.md" -b dev
-okt add -t "Extract helper" --parent 42
+okt task create -t "Refactor sqlite store"
+okt task create --file resume.md --title "Finish documentation"
+okt task create -t "Extract helper" --parent 42
+okt task import --file task.md --dry-run
+okt task export 42 --output task.md
 ```
 
 ### `okt list` — list tasks
@@ -399,6 +409,20 @@ okt depend remove 42 --on 41
 ### `okt plan create SLUG --name NAME [--goal-body BODY]`
 
 Creates a plan in the active project. `slug` is required (kebab-case, unique per project); `--name` is required; `--goal-body` (`-g`) accepts a markdown string for the goal + acceptance criteria. Emits `plan.created`.
+
+### Plan files
+
+```sh
+okt plan create --file plan.md
+okt plan import --file plan.md --dry-run
+okt plan export my-plan --output plan.md
+okt plan export my-plan > plan.md
+```
+
+A plan document contains its goal, waves, tasks and relationships in one file.
+Create and import share the same parser and atomic application operation. The
+file supplies the slug and name. An existing slug is a conflict; imports create
+new work rather than merging it. See [Work documents](workflow.md#work-documents).
 
 ### `okt plan list`
 
@@ -737,17 +761,39 @@ Complete map of every `okt` command and flag. Brief by design — run `okt <comm
 
 `okt completion <bash|zsh|fish|powershell>` is also available — the standard Cobra shell-completion generator (`--no-descriptions`, plus `--prefix` on bash/zsh); not listed below.
 
-### `okt add`
+### `okt task create`
 
-Create a task in the active project
-`okt add [flags]`
+`okt task create [flags]`
 
 | Flag | Short | Type | Description |
 |---|---|---|---|
-| `--bucket` | `-b` | string | bucket key (defaults to the active workflow's first bucket) |
-| `--description` | `-d` | string | task description |
-| `--parent` |  | int | optional parent task id; when set, the new row is attached as a sub-task via AddSub (parent must be active and in the same project) |
-| `--title` | `-t` | string | task title |
+| `--bucket` | `-b` | string | bucket key; defaults to the applicable workflow's first bucket |
+| `--description` | `-d` | string | task description; exclusive with `--file` |
+| `--parent` | | int | active parent in the same project |
+| `--title` | `-t` | string | title; otherwise inferred from the description |
+| `--priority` | | string | configured priority label |
+| `--template` | | string | task template slug |
+| `--file` | | string | plain Markdown or OKF task file; `-` reads stdin |
+| `--confirm` | | bool | create after reviewing similarity hints |
+| `--dry-run` | | bool | preview a structured OKF import through rollback |
+
+### `okt task import` / `okt plan import`
+
+`okt task import --file PATH [--dry-run] [--confirm]`
+`okt plan import --file PATH [--dry-run]`
+
+`--file` is required; `-` reads stdin. Task imports check similar tasks unless
+`--confirm` is set. Imports return JSON with counts and newly created IDs;
+previews return counts without temporary IDs.
+
+### `okt task export` / `okt plan export`
+
+`okt task export TASK_ID [--output PATH] [--force]`
+`okt plan export SLUG [--output PATH] [--force]`
+
+The default output is raw Markdown on stdout. A path produces one file and a
+JSON result. Existing destinations require `--force`. Errors use the JSON
+envelope and an unsuccessful exit status.
 
 ### `okt archive`
 
@@ -1167,12 +1213,14 @@ _No flags beyond globals._
 ### `okt plan create`
 
 Create a plan in the active project
-`okt plan create SLUG --name NAME [flags]`
+`okt plan create [SLUG] [flags]`
 
 | Flag | Short | Type | Description |
 |---|---|---|---|
 | `--goal-body` | `-g` | string | Optional markdown goal / acceptance body |
-| `--name` | `-n` | string | Plan name (human-readable) |
+| `--name` | `-n` | string | Plan name; required with a positional slug |
+| `--file` | | string | OKF plan file; exclusive with slug, name and goal flags |
+| `--dry-run` | | bool | preview a file import |
 
 ### `okt plan delete`
 
@@ -1373,6 +1421,9 @@ _No flags beyond globals._
 ---
 
 ## Output envelope
+
+Successful exports to stdout emit raw Markdown. Other data commands use the
+JSON envelope below.
 
 Every command writes to stdout one of:
 

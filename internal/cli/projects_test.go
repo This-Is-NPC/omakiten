@@ -25,7 +25,7 @@ func TestProjectsDeleteCommand_WithYesSkipsPromptAndWritesBackup(t *testing.T) {
 	t.Setenv("XDG_STATE_HOME", filepath.Join(tmp, "state"))
 
 	runCLI(t, dbPath, configPath, "init", "--name", "Doomed", "--slug", "doomed")
-	runCLI(t, dbPath, configPath, "add", "-t", "Stay alive")
+	runCLI(t, dbPath, configPath, "task", "create", "--confirm", "-t", "Stay alive")
 
 	output := runCLI(t, dbPath, configPath, "projects", "delete", "doomed", "--yes")
 	var envelope map[string]any

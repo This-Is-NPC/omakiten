@@ -20,7 +20,7 @@ func TestCLISearch(t *testing.T) {
 	t.Chdir(projectRoot)
 
 	runCLI(t, dbPath, configPath, "init", "--name", "Project", "--slug", "project")
-	addOut := runCLI(t, dbPath, configPath, "add", "--title", "Searchable alpha task")
+	addOut := runCLI(t, dbPath, configPath, "task", "create", "--confirm", "--title", "Searchable alpha task")
 	if !strings.Contains(addOut, `"id"`) {
 		t.Fatalf("add missing id: %s", addOut)
 	}
@@ -46,7 +46,7 @@ func TestCLITagCommands(t *testing.T) {
 	t.Chdir(projectRoot)
 
 	runCLI(t, dbPath, configPath, "init", "--name", "Project", "--slug", "project")
-	addOut := runCLI(t, dbPath, configPath, "add", "--title", "Tagged task")
+	addOut := runCLI(t, dbPath, configPath, "task", "create", "--confirm", "--title", "Tagged task")
 	var addEnv map[string]any
 	if err := json.Unmarshal([]byte(addOut), &addEnv); err != nil {
 		t.Fatalf("Unmarshal add: %v (%s)", err, addOut)

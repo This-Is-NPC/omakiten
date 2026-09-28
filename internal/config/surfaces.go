@@ -80,7 +80,7 @@ func LoadSurfaceTable(path string) (SurfaceTable, error) {
 	return wired.Surfaces, nil
 }
 
-// SurfaceScaffoldYAML emits the canonical 70-row table as a mapping
+// SurfaceScaffoldYAML emits the canonical 74-row table as a mapping
 // body suitable to drop under `surfaces:` or into a module file.
 // Product rows are all-true; wiring rows are all-false with
 // DeniedWiringReason. Rows are grouped by entity prefix with a blank

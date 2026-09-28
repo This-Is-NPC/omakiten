@@ -8,6 +8,17 @@ import (
 	"omakiten/internal/domain"
 )
 
+// DocumentRepository binds portable work to existing transactional repositories.
+type DocumentRepository interface {
+	CompositeWorkflowStore
+	PlanRepository
+	DependencyRepository
+	TagRepository
+	WithinTransaction(context.Context, func(context.Context) error) error
+	ReadWorkRecord(context.Context, int64, string, int64, domain.BucketResolver) (domain.WorkRecord, error)
+	SaveWorkMetadata(context.Context, string, int64, []byte) error
+}
+
 type ProjectRepository interface {
 	UpsertProject(ctx context.Context, name, slug, rootPath string) (domain.Project, error)
 	FindProjectByID(ctx context.Context, id int64) (domain.Project, error)

@@ -4,7 +4,9 @@ Omakiten persists operational state in a single SQLite file (default
 `~/.local/share/omakiten/omakiten.db`, pure-Go driver
 `modernc.org/sqlite`). The schema is the embedded current baseline at
 `internal/sqlite/schema.sql`. A missing database is initialized from that
-baseline; an existing database must match it exactly or `Open` returns a
+baseline (`user_version=2`). An exact version-1 baseline is upgraded atomically
+with entity-owned document metadata. Other databases must match a supported
+baseline or `Open` returns a
 `validation_error` naming a new database path or current-compatible backup.
 Filesystem-backed opens reject symlink path components and targets, and verify
 the selected file identity before schema or WAL mutation.
@@ -16,6 +18,15 @@ the selected file identity before schema or WAL mutation.
 > The runtime resolves workflows, buckets, personas, skills, laws, and
 > templates from an immutable per-project `config.Snapshot` built at bundle
 > import (see `.docs/configuration-guide/project-overrides.md`).
+
+## Work document metadata
+
+`document_metadata` contains `id`, nullable unique `task_id` and `plan_id`, and
+`metadata` (JSON text). A check requires exactly one entity owner. Both foreign
+keys cascade on entity deletion. The payload retains file-local keys and
+producer extensions at document, profile, wave and task levels. Business
+content remains in tasks, plans, waves, tags and dependencies; exports combine
+those current rows with the retained metadata.
 
 ## Current schema
 
@@ -30,7 +41,7 @@ errors                 plans
 solutions              plan_waves
 tags                   search_index (FTS5 virtual)
 task_tags
-project_tags
+project_tags           document_metadata
 ```
 
 The diagram below reflects that shape. Crow's-foot reads as: `||--o{` is one-to-many; pure-junction tables (`*_tags`, `task_dependencies`) sit between the two entities they link.

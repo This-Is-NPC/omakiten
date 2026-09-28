@@ -32,7 +32,7 @@ func (s *Store) pruneEventTypes(ctx context.Context, eventTypes []string, maxAge
 
 	if maxAgeDays > 0 {
 		ageArgs := append(append([]any{}, args...), maxAgeDays)
-		if _, err := s.db.ExecContext(ctx, `
+		if _, err := s.query(ctx).ExecContext(ctx, `
 DELETE FROM events
 WHERE `+inClause+` AND created_at < datetime('now', '-' || ? || ' days')
 `, ageArgs...); err != nil {
@@ -44,7 +44,7 @@ WHERE `+inClause+` AND created_at < datetime('now', '-' || ? || ' days')
 		rowArgs = append(rowArgs, args...)
 		rowArgs = append(rowArgs, args...)
 		rowArgs = append(rowArgs, maxRows)
-		if _, err := s.db.ExecContext(ctx, `
+		if _, err := s.query(ctx).ExecContext(ctx, `
 DELETE FROM events
 WHERE `+inClause+` AND id NOT IN (
   SELECT id FROM events WHERE `+inClause+` ORDER BY created_at DESC, id DESC LIMIT ?

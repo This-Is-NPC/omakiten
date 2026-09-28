@@ -99,14 +99,14 @@ type TxMutation[T any] struct {
 //     untouched. Matches the inline gated callsites' existing shape.
 func txMutateAndEmit[T any](ctx context.Context, s *Store, m TxMutation[T]) (T, error) {
 	var zero T
-	tx, err := s.db.BeginTx(ctx, nil)
+	tx, err := s.beginTransaction(ctx)
 	if err != nil {
 		return zero, err
 	}
 	committed := false
 	defer func() {
 		if !committed {
-			_ = tx.Rollback()
+			_ = s.rollbackTransaction(ctx, tx)
 		}
 	}()
 
@@ -160,7 +160,7 @@ func txMutateAndEmit[T any](ctx context.Context, s *Store, m TxMutation[T]) (T, 
 		}
 	}
 
-	if err := tx.Commit(); err != nil {
+	if err := s.commitTransaction(ctx, tx); err != nil {
 		return zero, err
 	}
 	committed = true

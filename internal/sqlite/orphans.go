@@ -217,7 +217,7 @@ func (s *Store) queryRecursiveOrphans(ctx context.Context, projectID int64, scop
 	if query == "" {
 		return nil, fmt.Errorf("orphan scope %q has no query template", scopeName)
 	}
-	rows, err := s.db.QueryContext(ctx, query, projectID, projectID, projectID)
+	rows, err := s.query(ctx).QueryContext(ctx, query, projectID, projectID, projectID)
 	if err != nil {
 		return nil, err
 	}
@@ -259,7 +259,7 @@ func detectAndWarnTruncation(projectID int64, scopeName string, rows []orphanRow
 // the root-tasks path avoids walking the full sub-task tree once per
 // migration.
 func (s *Store) queryActiveRootTasks(ctx context.Context, projectID int64) ([]orphanRow, error) {
-	rows, err := s.db.QueryContext(ctx, `
+	rows, err := s.query(ctx).QueryContext(ctx, `
 SELECT t.id, t.title, COALESCE(t.bucket_id, 0), t.parent_id, 0 AS depth
 FROM tasks t
 WHERE t.project_id = ? AND t.state = 'active' AND t.parent_id IS NULL
@@ -358,17 +358,17 @@ type orphanEventContext struct {
 // themselves before treating the slice as audit-quality data.
 // Documented per review finding §C.11 of #297.
 func (s *Store) rebindOrphansScoped(ctx context.Context, projectID int64, current, previous domain.BucketResolver, q orphanQuery, eventType string, evCtx orphanEventContext) (domain.OrphanReport, error) {
-	tx, err := s.db.BeginTx(ctx, nil)
+	tx, err := s.beginTransaction(ctx)
 	if err != nil {
 		return domain.OrphanReport{}, err
 	}
-	defer func() { _ = tx.Rollback() }()
+	defer func() { _ = s.rollbackTransaction(ctx, tx) }()
 
 	report, events, err := s.rebindOrphansInTx(ctx, tx, projectID, current, previous, q, eventType, evCtx)
 	if err != nil {
 		return domain.OrphanReport{}, err
 	}
-	if err := tx.Commit(); err != nil {
+	if err := s.commitTransaction(ctx, tx); err != nil {
 		return domain.OrphanReport{}, err
 	}
 	for _, ev := range events {
@@ -492,11 +492,11 @@ func (s *Store) RebindOrphanedCascade(ctx context.Context, projectID int64, plan
 	if plan.CurrentRoot == nil {
 		return domain.OrphanReport{}, nil
 	}
-	tx, err := s.db.BeginTx(ctx, nil)
+	tx, err := s.beginTransaction(ctx)
 	if err != nil {
 		return domain.OrphanReport{}, err
 	}
-	defer func() { _ = tx.Rollback() }()
+	defer func() { _ = s.rollbackTransaction(ctx, tx) }()
 
 	rootReport, rootEvents, err := s.rebindOrphansInTx(ctx, tx, projectID, plan.CurrentRoot, plan.PreviousRoot, rootOnlyOrphans{}, domain.EventTypeTaskMigrated, orphanEventContext{})
 	if err != nil {
@@ -516,7 +516,7 @@ func (s *Store) RebindOrphanedCascade(ctx context.Context, projectID int64, plan
 		return domain.OrphanReport{}, err
 	}
 
-	if err := tx.Commit(); err != nil {
+	if err := s.commitTransaction(ctx, tx); err != nil {
 		return domain.OrphanReport{}, err
 	}
 	for _, ev := range rootEvents {

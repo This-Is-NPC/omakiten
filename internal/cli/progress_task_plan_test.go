@@ -20,7 +20,7 @@ func TestCLIProgressTaskAndPlanContinue(t *testing.T) {
 	t.Chdir(projectRoot)
 
 	runCLI(t, dbPath, configPath, "init", "--name", "Project", "--slug", "project")
-	addOut := runCLI(t, dbPath, configPath, "add", "--title", "Alpha renderer bug")
+	addOut := runCLI(t, dbPath, configPath, "task", "create", "--confirm", "--title", "Alpha renderer bug")
 	taskID := extractFirstID(addOut)
 	if taskID == "" {
 		t.Fatalf("cannot find task id in add output: %s", addOut)
@@ -48,20 +48,20 @@ func TestCLIProgressTaskAndPlanContinue(t *testing.T) {
 		t.Fatalf("task activity missing events: %s", activity)
 	}
 
-	// create-intent similarity gate: similar description without --confirm
-	gate := runCLI(t, dbPath, configPath, "task", "create-intent",
+	// task create similarity gate: similar description without --confirm
+	gate := runCLI(t, dbPath, configPath, "task", "create",
 		"--description", "Alpha renderer bug again",
 	)
 	if !strings.Contains(gate, `"requires_confirmation":true`) && !strings.Contains(gate, `"requires_confirmation": true`) {
-		t.Fatalf("create-intent without confirm should gate on similar tasks: %s", gate)
+		t.Fatalf("task create without confirm should gate on similar tasks: %s", gate)
 	}
 
-	created := runCLI(t, dbPath, configPath, "task", "create-intent",
+	created := runCLI(t, dbPath, configPath, "task", "create",
 		"--description", "Alpha renderer bug again",
 		"--confirm",
 	)
 	if !strings.Contains(created, `"task"`) {
-		t.Fatalf("create-intent --confirm missing task: %s", created)
+		t.Fatalf("task create --confirm missing task: %s", created)
 	}
 
 	runCLI(t, dbPath, configPath, "plan", "create", "wave-one", "--name", "Wave One")

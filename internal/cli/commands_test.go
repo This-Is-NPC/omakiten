@@ -20,8 +20,8 @@ func TestCLIOperationalCommands(t *testing.T) {
 	t.Chdir(projectRoot)
 
 	runCLI(t, dbPath, configPath, "init", "--name", "Project", "--slug", "project")
-	runCLI(t, dbPath, configPath, "add", "-t", "First")
-	runCLI(t, dbPath, configPath, "add", "-t", "Second")
+	runCLI(t, dbPath, configPath, "task", "create", "--confirm", "-t", "First")
+	runCLI(t, dbPath, configPath, "task", "create", "--confirm", "-t", "Second")
 	runCLI(t, dbPath, configPath, "comment", "add", "1", "-b", "Remember this")
 	runCLI(t, dbPath, configPath, "comment", "add", "1", "-b", "feat/test", "--tag", "self-branch")
 	runCLI(t, dbPath, configPath, "depend", "add", "2", "-i", "1")
@@ -52,8 +52,8 @@ func TestCLICodedErrorsForAgentRecovery(t *testing.T) {
 	t.Chdir(projectRoot)
 
 	runCLI(t, dbPath, configPath, "init", "--name", "Project", "--slug", "project")
-	runCLI(t, dbPath, configPath, "add", "-t", "First")
-	runCLI(t, dbPath, configPath, "add", "-t", "Second")
+	runCLI(t, dbPath, configPath, "task", "create", "--confirm", "-t", "First")
+	runCLI(t, dbPath, configPath, "task", "create", "--confirm", "-t", "Second")
 
 	t.Run("workflow blocked transition returns coded error", func(t *testing.T) {
 		runCLIExpectError(t, dbPath, configPath, "workflow_invalid_transition",
@@ -79,7 +79,7 @@ func TestCLICodedErrorsForAgentRecovery(t *testing.T) {
 	t.Run("missing project returns coded error", func(t *testing.T) {
 		runCLIExpectError(t, dbPath, configPath, "project_not_found",
 			"--project", "ghost-slug",
-			"add", "-t", "x")
+			"task", "create", "--confirm", "-t", "x")
 	})
 
 	t.Run("validation rejects non-numeric task id", func(t *testing.T) {

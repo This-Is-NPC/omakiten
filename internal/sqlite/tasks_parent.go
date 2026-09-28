@@ -15,7 +15,7 @@ import (
 // panel and any caller that only cares about one level of the tree —
 // recursive walks live in CountDescendants and DescendsFrom.
 func (s *Store) ListDirectChildren(ctx context.Context, projectID, parentID int64, buckets domain.BucketResolver) ([]domain.Task, error) {
-	rows, err := s.db.QueryContext(ctx, `
+	rows, err := s.query(ctx).QueryContext(ctx, `
 SELECT tasks.id, tasks.project_id, COALESCE(tasks.bucket_id, 0), tasks.title, tasks.description, tasks.priority_id, tasks.state, tasks.created_at, tasks.parent_id, tasks.depth
 FROM tasks
 WHERE tasks.project_id = ? AND tasks.parent_id = ?
@@ -49,7 +49,7 @@ ORDER BY tasks.id
 // children are checked because deeper levels gate themselves on their
 // own promotions.
 func (s *Store) FirstChildNotInBucket(ctx context.Context, projectID, parentID, finalBucketID int64, buckets domain.BucketResolver) (domain.Task, bool, error) {
-	row := s.db.QueryRowContext(ctx, `
+	row := s.query(ctx).QueryRowContext(ctx, `
 SELECT tasks.id, tasks.project_id, COALESCE(tasks.bucket_id, 0), tasks.title, tasks.description, tasks.priority_id, tasks.state, tasks.created_at, tasks.parent_id, tasks.depth
 FROM tasks
 WHERE tasks.project_id = ? AND tasks.parent_id = ?
@@ -80,7 +80,7 @@ LIMIT 1
 // admin scripts) so the extra walk is acceptable.
 func (s *Store) CountDescendants(ctx context.Context, projectID, parentID int64) (int, error) {
 	var count int
-	err := s.db.QueryRowContext(ctx, `
+	err := s.query(ctx).QueryRowContext(ctx, `
 WITH RECURSIVE subtree(id, depth) AS (
     SELECT id, 0 FROM tasks WHERE project_id = ? AND parent_id = ?
     UNION ALL
@@ -105,7 +105,7 @@ func (s *Store) IsDescendantOf(ctx context.Context, projectID, candidateID, ance
 		return true, nil
 	}
 	var hit int
-	err := s.db.QueryRowContext(ctx, `
+	err := s.query(ctx).QueryRowContext(ctx, `
 WITH RECURSIVE ancestors(id, parent_id, depth) AS (
     SELECT id, parent_id, 0 FROM tasks WHERE project_id = ? AND id = ?
     UNION ALL
@@ -170,18 +170,18 @@ WHERE project_id = ? AND id = ?
 }
 
 func (s *Store) withTaskParentTx(ctx context.Context, projectID, taskID int64, mutate func(*sql.Tx) error) error {
-	tx, err := s.db.BeginTx(ctx, nil)
+	tx, err := s.beginTransaction(ctx)
 	if err != nil {
 		return err
 	}
-	defer func() { _ = tx.Rollback() }()
+	defer func() { _ = s.rollbackTransaction(ctx, tx) }()
 	if err := mutate(tx); err != nil {
 		return err
 	}
 	if err := recomputeSubtreeDepth(ctx, tx, projectID, taskID); err != nil {
 		return err
 	}
-	return tx.Commit()
+	return s.commitTransaction(ctx, tx)
 }
 
 func subtreeRowCount(ctx context.Context, tx *sql.Tx, projectID, rootID int64, depthLimit int) (int64, error) {
@@ -311,7 +311,7 @@ WHERE project_id = ? AND id = ?
 // — used by the board badge slot to avoid a per-card subtree walk.
 func (s *Store) CountDirectChildren(ctx context.Context, projectID, parentID int64) (int, error) {
 	var count int
-	err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM tasks WHERE project_id = ? AND parent_id = ?`, projectID, parentID).Scan(&count)
+	err := s.query(ctx).QueryRowContext(ctx, `SELECT COUNT(*) FROM tasks WHERE project_id = ? AND parent_id = ?`, projectID, parentID).Scan(&count)
 	if err != nil {
 		return 0, fmt.Errorf("count direct children: %w", err)
 	}

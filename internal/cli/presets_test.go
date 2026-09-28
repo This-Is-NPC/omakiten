@@ -149,7 +149,7 @@ func TestCLIPresetWorkflowsEndToEnd(t *testing.T) {
 			globalConfigPath := filepath.Join(tmp, "global", "config", "omakase.yaml")
 			runCLI(t, dbPath, globalConfigPath, "init", "--preset", preset, "--name", preset, "--slug", preset)
 			presetConfigPath := filepath.Join(projectRoot, ".omakiten", "config", preset+".yaml")
-			runCLI(t, dbPath, presetConfigPath, "add", "-t", "Preset task")
+			runCLI(t, dbPath, presetConfigPath, "task", "create", "--confirm", "-t", "Preset task")
 			for _, args := range steps {
 				runCLI(t, dbPath, presetConfigPath, args...)
 			}

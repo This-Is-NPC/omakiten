@@ -18,8 +18,8 @@ func TestCLIPlanLifecycle(t *testing.T) {
 	t.Chdir(projectRoot)
 
 	runCLI(t, dbPath, configPath, "init", "--name", "Project", "--slug", "project")
-	runCLI(t, dbPath, configPath, "add", "-t", "T1")
-	runCLI(t, dbPath, configPath, "add", "-t", "T2")
+	runCLI(t, dbPath, configPath, "task", "create", "--confirm", "-t", "T1")
+	runCLI(t, dbPath, configPath, "task", "create", "--confirm", "-t", "T2")
 
 	created := runCLI(t, dbPath, configPath, "plan", "create", "ship", "--name", "Ship", "--goal-body", "Goal")
 	if !strings.Contains(created, `"slug":"ship"`) || !strings.Contains(created, `"goal_body":"Goal"`) {
@@ -57,7 +57,7 @@ func TestCLIAssignSetsAndClearsAssignee(t *testing.T) {
 	t.Chdir(projectRoot)
 
 	runCLI(t, dbPath, configPath, "init", "--name", "Project", "--slug", "project")
-	runCLI(t, dbPath, configPath, "add", "-t", "T1")
+	runCLI(t, dbPath, configPath, "task", "create", "--confirm", "-t", "T1")
 
 	// Set assignee via `okt assign 1 alice` → emits task.assigned.
 	setOut := runCLI(t, dbPath, configPath, "assign", "1", "alice")
@@ -213,7 +213,7 @@ func TestCLIPlanWaveMutationsAndUnassign(t *testing.T) {
 	t.Chdir(projectRoot)
 
 	runCLI(t, dbPath, configPath, "init", "--name", "Project", "--slug", "project")
-	runCLI(t, dbPath, configPath, "add", "-t", "T1")
+	runCLI(t, dbPath, configPath, "task", "create", "--confirm", "-t", "T1")
 	runCLI(t, dbPath, configPath, "plan", "create", "ship", "--name", "Ship")
 
 	w1 := runCLI(t, dbPath, configPath, "plan", "wave-add", "ship", "alpha", "--position", "1")
