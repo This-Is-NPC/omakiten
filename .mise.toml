@@ -21,7 +21,7 @@ description = "Fail if Go source directories are not gofmt-clean (CI gate)"
 run = "scripts/format.sh --check"
 
 [tasks.test]
-description = "Run Go tests once and enforce aggregate coverage"
+description = "Run tests, coverage and concurrency race checks"
 env = { OKT_REQUIRE_PWSH = "1" }
 run = "scripts/test.sh"
 

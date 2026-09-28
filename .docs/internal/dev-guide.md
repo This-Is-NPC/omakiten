@@ -65,7 +65,7 @@ Every task is defined in `.mise.toml` at the repo root and delegates to executab
 | `fmt` | Formats Go sources under `internal/`, `cmd/`, `defaults/`, `rules/`, and `scripts/`; skips scratch files. |
 | `build` | Builds `.tmp/build/okt` with the current `git describe` version baked in via `-ldflags`. |
 | `release:dry-run` | Builds all six GoReleaser archives in a temporary directory, generates the manifest and SLSA v1 statement, signs them with an ephemeral local fixture key using `scripts/testdata/offline-signing-config.json`, and verifies every digest. The fixture config declares no external signing services; local verification uses the generated public key without a transparency log. Production signing and installer verification retain their keyless identity and transparency-log requirements. |
-| `test` | Runs one full all-package test pass, writes coverage under `.tmp/coverage/`, then enforces the unrounded 78.0% statement floor through the fail-closed checker. |
+| `test` | Runs one full all-package test pass, enforces the 78.0% coverage floor using evidence under `.tmp/coverage/`, then runs concurrency and event-bus tests with the race detector. |
 | `test:cross-build` | Compiles config, path, and SQLite safety tests for the six release targets, plus config/path tests for Plan 9, into `.tmp/tests/`. Each binary is named by package, OS, and architecture. |
 | `test:profile <package> --bench <pattern>` | Profiles one package, placing its test binary and CPU/memory profiles under `.tmp/profiles/<import-path>/`. |
 | `workspace:check` | Rejects misplaced generated files in the root and source directories, while allowing `.tmp/`, persistent dev state, tool configuration, and checked-in fixtures. |
@@ -321,7 +321,7 @@ mise run build
 
 | Where | Run with |
 |---|---|
-| Go unit + integration tests | `go test -race -count=1 ./...` (or `mise run test`) |
+| Go unit + integration tests, coverage and concurrency race checks | `mise run test` |
 | Hexagonal boundary check | `go test ./internal/arch/...` |
 | Setup selection and Bash/PowerShell wrapper round trips | `mise run test:installer` — includes LF/CRLF idempotence and preservation of unrelated profile whitespace. |
 | Release archive/metadata fixture | `mise run release:dry-run` |
@@ -471,7 +471,7 @@ JSON
 
 The only workflow that remains in `.github/workflows/` is `release.yml` (release-please + asset builds). The merge gate moved local for three reasons:
 
-- `mise run check` already covers the same surface (build + vet via `go test`, race-tested unit tests, `golangci-lint`, `govulncheck`, docs drift) and runs in seconds on the maintainer's box instead of minutes on a hosted runner.
+- `mise run check` covers build and vet through `go test`, coverage, concurrency race checks, `golangci-lint`, `govulncheck` and docs drift.
 - The old `ci-docs.yml` companion existed only to satisfy the required `build-test` check on doc-only PRs. A locally-posted status removes the need for that workaround entirely.
 - Solo maintainer: cross-platform matrix isn't a constraint today. If a second contributor or a Windows/macOS regression appears, restore a thin `ci.yml` matrix alongside the local gate.
 
