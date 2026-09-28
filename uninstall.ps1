@@ -16,8 +16,8 @@ function Remove-OktWrapperFrom {
   if ($existing -notmatch [regex]::Escape($WrapperBegin)) {
     return
   }
-  $pattern = "(?s)\s*" + [regex]::Escape($WrapperBegin) + ".*?" + [regex]::Escape($WrapperEnd) + "\s*"
-  $updated = [regex]::Replace($existing, $pattern, "`n")
+  $pattern = "(?m)^" + [regex]::Escape($WrapperBegin) + "\r?\n(?s:.*?)^" + [regex]::Escape($WrapperEnd) + "(?:\r?\n|\z)"
+  $updated = [regex]::Replace($existing, $pattern, "")
   Set-Content -Path $ProfilePath -Value $updated -NoNewline
   Write-Host "=> Removed okt() wrapper from $ProfilePath"
 }
