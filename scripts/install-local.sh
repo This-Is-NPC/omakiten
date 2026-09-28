@@ -10,7 +10,8 @@ esac
 installed_at="$HOME/.local/bin/okt"
 mkdir -p "${installed_at%/*}"
 install -m755 .tmp/build/okt "$installed_at"
-"$PWD/scripts/sync-defaults.sh" "$HOME/.config/omakiten"
+install_root="$HOME/.config/omakiten"
+export OMAKITEN_HOME="$install_root"
 
 # Warn when PATH selects another okt installation.
 on_path="$(command -v okt 2>/dev/null || true)"
@@ -20,11 +21,13 @@ if [ -n "$on_path" ] && [ "$on_path" != "$installed_at" ]; then
   printf '       e.g. rm %s\n\n' "$on_path" >&2
 fi
 
-# Refresh shipped defaults before registering the local project.
+# Setup and project registration use the same user installation.
 if [[ "${1:-}" == --silent ]]; then
   "$installed_at" setup --update --cli-lang en --tui-lang en --agent-lang en --preset omakase --skip-harnesses
 else
   "$installed_at" setup --update
 fi
 
-"$installed_at" init --name Omakiten --slug omakiten --root "$PWD"
+IFS= read -r active_preset < "$install_root/config/.active"
+unset OMAKITEN_HOME
+"$installed_at" --config "$install_root/config/$active_preset" init --name Omakiten --slug omakiten --root "$PWD"

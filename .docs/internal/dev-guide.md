@@ -47,6 +47,11 @@ okt --version
 okt tui
 ```
 
+The local install task uses `~/.config/omakiten` for setup and project
+registration, and registers with the selected active preset explicitly.
+Repository-local configuration in a parent directory does not select the
+installation profile. Normal CLI commands retain repository-local discovery.
+
 Roll it back without touching project state:
 
 ```bash

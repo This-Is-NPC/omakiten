@@ -203,7 +203,7 @@ A first PR that translates only the CLI surface is fine. The remaining keys stil
 - `internal/config/language_pack_scaffold_test.go` — exercises `scripts/new-language-pack.sh`.
 - `internal/cli/setup_picker.go::loadBundledLanguageOptions` — combines embedded packs (via sibling `loadEmbedLanguageOptions`, which auto-discovers via `defaults.FS.ReadDir("languages")`) with user customs.
 - `internal/cli/setup_picker.go::loadCustomLanguageOptions` — merges `~/.config/omakiten/languages/custom/` on top.
-- `scripts/sync-defaults.sh` — copies packs into the user-global install on `mise run install`.
+- `okt setup --update` — refreshes bundled packs in the user-global install during `mise run install`.
 
 That is the entire mechanism. No Go code changes are required to add a new bundled language — just the YAML file and (optionally) a refresh of any cross-referencing doc.
 
