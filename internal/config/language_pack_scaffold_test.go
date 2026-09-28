@@ -7,43 +7,26 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-
-	"omakiten/defaults"
 )
 
-// TestNewLanguagePackScript exercises scripts/new-language-pack.sh against the
-// real defaults/languages/en.yaml baseline. It writes a throwaway pack under
-// a code unlikely to collide with any bundled or future BCP-47 selection,
-// then asserts:
-//   - the destination decodes via the same strict loader the runtime uses,
-//   - the header swap landed (code, name, native),
-//   - every translated value carries a `# TODO(translate): <key>` comment.
-//
-// The pack is removed at end-of-test so the parity suite is unaffected.
 func TestNewLanguagePackScript(t *testing.T) {
 	if _, err := exec.LookPath("bash"); err != nil {
 		t.Skip("bash not on PATH; scaffold script requires bash")
 	}
 
-	repoRoot := findRepoRoot(t)
-	script := filepath.Join(repoRoot, "scripts", "new-language-pack.sh")
-	if _, err := os.Stat(script); err != nil {
-		t.Fatalf("scaffold script missing: %v", err)
-	}
+	workspace := scaffoldWorkspace(t)
+	script := filepath.Join(workspace, "scripts", "new-language-pack.sh")
+	t.Setenv("MISE_PROJECT_ROOT", workspace)
 
 	const (
 		code   = "zz-test"
-		native = "Zzznative"
-		name   = "Zztest"
+		native = "Native: \"quoted\" # name"
+		name   = "English: \"quoted\" # name"
 	)
-	dst := filepath.Join(repoRoot, "defaults", "languages", code+".yaml")
-	if _, err := os.Stat(dst); err == nil {
-		t.Fatalf("test artifact %s already exists; refusing to clobber", dst)
-	}
-	t.Cleanup(func() { _ = os.Remove(dst) })
+	dst := filepath.Join(workspace, "defaults", "languages", code+".yaml")
 
 	cmd := exec.Command("bash", script, code, native, name)
-	cmd.Dir = repoRoot
+	cmd.Dir = workspace
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("scaffold run: %v\n%s", err, out)
 	}
@@ -55,16 +38,10 @@ func TestNewLanguagePackScript(t *testing.T) {
 
 	var lf languageFile
 	if err := decodeLanguageStrict(raw, &lf); err != nil {
-		t.Fatalf("scaffolded pack failed strict decode: %v", err)
+		t.Fatalf("scaffolded pack failed strict decode: %v\n%s", err, raw[:min(len(raw), 600)])
 	}
-	if lf.Code != code {
-		t.Errorf("code: got %q want %q", lf.Code, code)
-	}
-	if lf.Name != name {
-		t.Errorf("name: got %q want %q", lf.Name, name)
-	}
-	if lf.Native != native {
-		t.Errorf("native: got %q want %q", lf.Native, native)
+	if lf.Code != code || lf.Name != name || lf.Native != native {
+		t.Fatalf("header = %q %q %q, want %q %q %q", lf.Code, lf.Name, lf.Native, code, name, native)
 	}
 
 	en := loadBundledLanguage(t, "en")
@@ -78,24 +55,13 @@ func TestNewLanguagePackScript(t *testing.T) {
 			t.Errorf("scaffolded pack missing `# TODO(translate): %s` marker", key)
 		}
 	}
-}
-
-func findRepoRoot(t *testing.T) string {
-	t.Helper()
-	wd, err := os.Getwd()
-	if err != nil {
-		t.Fatalf("getwd: %v", err)
+	cmd = exec.Command("bash", script, code, "different native", "different name")
+	if out, err := cmd.CombinedOutput(); err == nil {
+		t.Fatalf("scaffold overwrote an existing pack: %s", out)
 	}
-	dir := wd
-	for {
-		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
-			return dir
-		}
-		parent := filepath.Dir(dir)
-		if parent == dir {
-			t.Fatalf("repo root (go.mod) not found above %s", wd)
-		}
-		dir = parent
+	unchanged, err := os.ReadFile(dst)
+	if err != nil || string(unchanged) != string(raw) {
+		t.Fatalf("existing pack changed after rejected overwrite: %v", err)
 	}
 }
 
@@ -123,5 +89,25 @@ func collectTodoMarkers(t *testing.T, path string) map[string]struct{} {
 	return out
 }
 
-// silence unused import warning if defaults pkg drops out during refactors.
-var _ = defaults.FS
+func scaffoldWorkspace(t *testing.T) string {
+	t.Helper()
+	repoRoot, err := filepath.Abs(filepath.Join("..", ".."))
+	if err != nil {
+		t.Fatal(err)
+	}
+	workspace := t.TempDir()
+	for _, relative := range []string{"scripts/new-language-pack.sh", "scripts/new-language-pack.go", "scripts/lib/workspace.sh", "defaults/languages/en.yaml"} {
+		data, err := os.ReadFile(filepath.Join(repoRoot, relative))
+		if err != nil {
+			t.Fatal(err)
+		}
+		path := filepath.Join(workspace, relative)
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, data, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return workspace
+}
