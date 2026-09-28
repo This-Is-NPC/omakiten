@@ -28,15 +28,27 @@ func stepThrough(t *testing.T, m setupPickerModel, msgs ...tea.Msg) setupPickerM
 	for _, msg := range msgs {
 		next, _ := m.Update(msg)
 		m = next.(setupPickerModel)
+		if !m.done && !m.aborted {
+			var selected string
+			switch m.step {
+			case stepLang:
+				selected = m.langs[m.langCursor].Code
+			case stepAgentLang:
+				selected = m.agentInput.Value()
+			case stepPreset:
+				selected = m.presets[m.presetCursor].Name
+			case stepHarness:
+				selected = m.harnesses[m.harnessCursor]
+			}
+			if selected != "" && !strings.Contains(m.View(), selected) {
+				t.Fatalf("picker hides selected value %q at step %v", selected, m.step)
+			}
+		}
 	}
 	return m
 }
 
-// TestSetupPicker_HappyPath drives a fresh install through every
-// screen (lang=pt-br → agent="Portugues" → preset=omakase →
-// harnesses=claude-code+opencode), then asserts the resulting inputs
-// match what runSetup would receive. Language is one screen now — CLI
-// and TUI share the same picker per UX feedback.
+// TestSetupPicker_HappyPath verifies the choices through every setup screen.
 func TestSetupPicker_HappyPath(t *testing.T) {
 	needs := pickerNeeds{Lang: true, Agent: true, Preset: true, Harness: true}
 	m, err := newSetupPickerModel(setupInputs{}, needs)
@@ -50,6 +62,36 @@ func TestSetupPicker_HappyPath(t *testing.T) {
 	m = setupPickerEnterAgent(t, m)
 	m = setupPickerSelectPreset(t, m)
 	setupPickerSelectHarnesses(t, m)
+}
+
+func TestSetupPickerNavigationKeepsChoicesWithinVisibleRows(t *testing.T) {
+	m, err := newSetupPickerModel(setupInputs{}, pickerNeeds{Lang: true, Preset: true, Harness: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, step := range []setupStep{stepLang, stepPreset, stepHarness} {
+		m = stepThrough(t, m, tea.KeyMsg{Type: tea.KeyEnd}, tea.KeyMsg{Type: tea.KeyUp})
+		m = stepThrough(t, m, tea.KeyMsg{Type: tea.KeyHome}, tea.KeyMsg{Type: tea.KeyUp})
+		switch step {
+		case stepLang:
+			if m.langCursor != 0 {
+				t.Fatalf("language moved above first row: %d", m.langCursor)
+			}
+		case stepPreset:
+			if m.presetCursor != 0 {
+				t.Fatalf("preset moved above first row: %d", m.presetCursor)
+			}
+		case stepHarness:
+			if m.harnessCursor != 0 {
+				t.Fatalf("harness moved above first row: %d", m.harnessCursor)
+			}
+		}
+		m = stepThrough(t, m, enterMsg())
+	}
+	m = stepThrough(t, m, tabMsg())
+	if !m.done || len(m.inputs.Harnesses) != 1 || m.inputs.Harnesses[0] != "agents" {
+		t.Fatalf("navigation changed confirmed selection: %+v", m.inputs)
+	}
 }
 
 func setupPickerSelectLanguage(t *testing.T, m setupPickerModel) setupPickerModel {

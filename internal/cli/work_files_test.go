@@ -76,6 +76,9 @@ func TestCLIWorkDocumentRoundTrip(t *testing.T) {
 		}
 	}
 	runCLIExpectError(t, db, profile, "validation_error", "plan", "export", "file-transport", "--output", exported)
+	writeFile(t, exported, "replace this destination")
+	runCLI(t, db, profile, "plan", "export", "file-transport", "--output", exported, "--force")
+	readBackEquals(t, exported, string(data))
 	target := filepath.Join(root, "target")
 	if err := os.Mkdir(target, 0o700); err != nil {
 		t.Fatal(err)
