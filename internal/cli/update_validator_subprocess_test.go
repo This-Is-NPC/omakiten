@@ -12,6 +12,31 @@ import (
 	"testing"
 )
 
+func TestDefaultUpdateValidatorRejectsMissingMalformedOrEmptyOutput(t *testing.T) {
+	if goruntime.GOOS == "windows" {
+		t.Skip("POSIX candidate executable")
+	}
+	for name, body := range map[string]string{
+		"missing executable": "",
+		"empty output":       "#!/bin/sh\nexit 0\n",
+		"malformed output":   "#!/bin/sh\nprintf 'not JSON'\n",
+	} {
+		t.Run(name, func(t *testing.T) {
+			root := t.TempDir()
+			script := filepath.Join(root, "validator")
+			if body != "" {
+				if err := os.WriteFile(script, []byte(body), 0o755); err != nil {
+					t.Fatal(err)
+				}
+			}
+			result, err := defaultUpdateValidator(context.Background(), script, filepath.Join(root, "config.yaml"))
+			if err == nil || result.OK {
+				t.Fatalf("unusable validator approved swap: %+v, %v", result, err)
+			}
+		})
+	}
+}
+
 // TestDefaultUpdateValidator_IgnoresStderrNoise pins review-finding
 // (error) on stdout/stderr split. A staged binary that writes
 // `emitBundleWarnings` output to stderr while still emitting the

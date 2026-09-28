@@ -22,21 +22,14 @@ import (
 func TestRunUninstall_DefaultPreservesDataAndConfig(t *testing.T) {
 	home := seedFakeInstall(t)
 
-	res, err := runUninstall(context.Background(), uninstallInputs{})
-	if err != nil {
-		t.Fatalf("runUninstall: %v", err)
-	}
-	payload, ok := res.(map[string]any)
-	if !ok {
-		t.Fatalf("payload type: got %T want map[string]any", res)
-	}
+	payload := decodeEnvelope(t, runCLI(t, "", "", "uninstall", "--yes"))["data"].(map[string]any)
 	if payload["code"] != "uninstall_completed" {
 		t.Fatalf("code: got %v want uninstall_completed", payload["code"])
 	}
 	if payload["binary_removed"] != true {
 		t.Fatalf("binary_removed: got %v want true", payload["binary_removed"])
 	}
-	wrappers := payload["wrappers"].([]string)
+	wrappers := payload["wrappers"].([]any)
 	if len(wrappers) != 1 {
 		t.Fatalf("wrappers: got %v want 1 entry", wrappers)
 	}
@@ -71,14 +64,7 @@ func TestRunUninstall_DefaultPreservesDataAndConfig(t *testing.T) {
 func TestRunUninstall_PurgeRemovesEverything(t *testing.T) {
 	home := seedFakeInstall(t)
 
-	res, err := runUninstall(context.Background(), uninstallInputs{PurgeData: true, PurgeConfig: true})
-	if err != nil {
-		t.Fatalf("runUninstall: %v", err)
-	}
-	payload, ok := res.(map[string]any)
-	if !ok {
-		t.Fatalf("payload type: got %T want map[string]any", res)
-	}
+	payload := decodeEnvelope(t, runCLI(t, "", "", "uninstall", "--purge"))["data"].(map[string]any)
 	if payload["data_removed"] != true {
 		t.Fatalf("data_removed: got %v want true", payload["data_removed"])
 	}
