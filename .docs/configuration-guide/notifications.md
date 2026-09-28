@@ -140,10 +140,11 @@ actions:
   - key: m                         # single keystroke that fires this action
     id: migrate                    # stable identifier surfaced to the audit log
     label: Migrate                 # rendered in the footer next to the keystroke
-    command: ["workflow", "orphans", "--confirm"]  # cobra args run in-process when the key is pressed; omit/empty for a labeled dismiss
+    operation: orphans.migrate      # application operation, gated by its TUI surface policy
+    arguments: {confirmed: true}   # typed operation input
   - key: s
     id: skip
-    label: Skip                    # no command → behaves like a labeled dismiss
+    label: Skip                    # no operation → behaves like a labeled dismiss
 ```
 
 ## Action buttons
@@ -151,14 +152,17 @@ actions:
 When `actions:` is present, the notification turns into a prompt with one
 button per entry. The TUI consumes the action's `key` ahead of any `dismiss.keys`
 entry, emits a `confirmation.granted` event tied to the active project, and
-dispatches `command` in-process through the same cobra root the CLI uses.
-Empty/absent `command` means the action only labels a dismiss path — useful
-for "Skip" / "Cancel" buttons.
+dispatches `operation` through the injected application-action port. An absent
+`operation` labels a dismiss path, such as "Skip" or "Cancel". The active project
+is supplied by the host; arguments cannot select a different project.
 
-Templating: each `command` element runs through `text/template` (Go stdlib)
-with the triggering event's payload exposed as `{{ .Payload.* }}`. Missing
-keys raise a loud error so a typo in YAML fails fast instead of silently
-shipping the wrong arguments. Example: `["workflow", "orphans", "--id={{ .Payload.id }}", "--confirm"]`.
+String values in `arguments` run through `text/template` with the triggering
+event's payload exposed as `{{ .Payload.* }}`. Booleans and numbers retain their
+types. Missing template keys fail visibly. For example:
+`operation: task.archive` with `arguments: {task_id: 42}`.
+
+The `command` field is unsupported. Custom notifications must specify an
+application operation and its input fields; CLI argument arrays are not accepted.
 
 The validator rejects:
 
@@ -167,11 +171,13 @@ The validator rejects:
 - an `id` that duplicates another action in the same notification,
 - a `key` that also appears in `dismiss.keys` (actions take priority, but
   the overlap is ambiguous — clear one side),
-- a `command` whose first element is `tui` or `mcp` (those surfaces need
-  their own terminal and cannot run nested under a hook).
+- arguments without an operation, unknown operation names, or wiring operations.
+
+Dispatch rejects unknown operations, unknown input fields and operations disabled
+for the TUI in the active bundle.
 
 Audit trail: every successful action key emits `confirmation.granted` with
-payload `{notification_slug, action_id, command}` before the command runs.
+payload `{notification_slug, action_id, operation, arguments}` before dispatch.
 The event's `author_type` flows from the TUI context (`human`) so reviewers
 can trace human-approved automation in the activity log.
 
@@ -370,7 +376,7 @@ log line; only well-formed `${{intl:KEY}}` is substituted.
 ## Update when
 
 - A new notification slug ships under `defaults/notifications/`.
-- The card schema gains a field (`internal/notifications/loader.go`).
+- The card schema gains a field (`internal/config/entity_loader.go`).
 - The `${{intl:KEY}}` interpolation contract changes.
 - The exclusivity / scroll-routing behaviour shifts in `internal/tui/notifications/`.
 

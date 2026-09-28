@@ -1,6 +1,6 @@
 # MCP Agent Surface
 
-Omakiten exposes a protocol-neutral agent intent layer in `internal/agent` and an MCP adapter in `internal/mcp`. The adapter maps MCP tools, resources, and prompts to the same `internal/app` services used by the CLI and TUI; it does not shell out to `okt` and does not duplicate workflow or project-scope rules.
+Omakiten exposes a protocol-neutral agent intent layer in `internal/operation` and an MCP adapter in `internal/mcp`. The adapter maps MCP tools, resources, and prompts to the same `internal/app` services used by the CLI and TUI; it does not shell out to `okt` and does not duplicate workflow or project-scope rules.
 
 A small set of operations are deliberately CLI/TUI-only — `projects.delete`, `db.backup`, `update`, `uninstall`, `setup`. Destructive or install-affecting ops never land on MCP; everything else does.
 
@@ -243,9 +243,9 @@ Every tool accepts optional project selector fields where useful: `project_id`, 
 
 ## Prompts
 
-`prompts/list` is built from `agent.CommandNames()` and currently exposes 40 `okt-*` prompts. Each prompt's one-line description is **entity-sourced**: it comes from the frontmatter `description` of the command's bound `okt-<slug>-playbook` skill, not from Go. The stable command tiers, roles, scopes, and write behavior live in [`command-surface.md`](command-surface.md). This MCP guide documents how prompt resolution travels over the protocol and how the rendered prompt is composed.
+`prompts/list` is built from `commandcatalog.CommandNames()` and currently exposes 40 `okt-*` prompts. Each prompt's one-line description is **entity-sourced**: it comes from the frontmatter `description` of the command's bound `okt-<slug>-playbook` skill, not from Go. The stable command tiers, roles, scopes, and write behavior live in [`command-surface.md`](command-surface.md). This MCP guide documents how prompt resolution travels over the protocol and how the rendered prompt is composed.
 
-Bindings come from `mcp_commands` in the active profile yaml. Each prompt resolves a persona, the command skill subset (including the command's `okt-<slug>-playbook` skill, whose body is the command's operational playbook), the union of bound laws, and any bound templates into a single user message. There is no hardcoded Go playbook prose — `internal/agent/command_table.go` is a bare slug table. The binding schema and the playbook-skill convention live in [`configuration-guide/command-bindings.md`](configuration-guide/command-bindings.md).
+Bindings come from `mcp_commands` in the active profile yaml. Each prompt resolves a persona, the command skill subset (including the command's `okt-<slug>-playbook` skill, whose body is the command's operational playbook), the union of bound laws, and any bound templates into a single user message. There is no hardcoded Go playbook prose — `internal/commandcatalog/command_table.go` is a bare slug table. The binding schema and the playbook-skill convention live in [`configuration-guide/command-bindings.md`](configuration-guide/command-bindings.md).
 
 The same 40 playbooks are reachable as agent-callable **tools** (`commands.list` / `commands.resolve`, see [Commands](#commands-agent-callable-playbook-surface)) for contexts with no human to type the slash. The tool path returns byte-identical markdown to `prompts/get` — same `ResolveCommand`, same source of truth — so this is a dual-surface, not a fork.
 
@@ -266,7 +266,7 @@ sequenceDiagram
     participant Client as MCP client
     participant Server as okt mcp serve
     participant Adapter as internal/mcp.Adapter
-    participant Service as internal/agent.Service
+    participant Service as internal/operation.Service
     participant Store as SQLite (read model)
     participant Agent as LLM agent
 
@@ -355,7 +355,7 @@ The default kit follows Anthropic's [context engineering for AI agents](https://
 - **Right altitude in playbook skills.** The `okt-<slug>-playbook` skill body describes the command's contract: name the canonical tools required for durable state, then hand off to the next command or operator action. **Role lives in the persona body** (rendered in `## Persona`); **constraints live in bound laws** (rendered in `## Laws`); **scaffold metadata lives in the templates section**. The playbook never restates persona-specific prose — `mcp_commands.<cmd>.persona` is configurable, so persona-coupled prose in the playbook would leak role-specific instructions into prompts that bind a different persona. The persona body is the single source of truth for "how this role works"; the laws are the single source for "what is forbidden / required"; the playbook is just the command-specific bootstrap and handoff.
 - **Just-in-time over pre-loading.** Template bodies are fetched via `templates.show` rather than embedded inline. The same logic applies to any heavy artifact (long comment threads, large bodies): expose a tool, ship the slug, let the agent pull the body when actually needed.
 - **Few-shot examples in load-bearing laws.** Laws that govern judgment calls (`template-fidelity`, `conventional-commits`, `no-assumptions`, `self-report`) carry a `Bad:` / `Good:` micro-example after the directive paragraph. Anthropic's principle: examples teach generalization better than abstract rules. Plain text labels (no emoji) keep the prompt readable across terminals and clients.
-- **No brittle response-shape branching in prompts.** Anti-pattern: `if returns requires_confirmation, ask the user…`. Instead, the server's response carries an actionable `Reason` field that names the next-step tools — the agent acts on the response shape, not on prompt-side branching. Normal workflow conditions are still allowed in playbooks when they describe the command's domain logic, such as "tasks with unmet dependencies wait". See `agent.Confirmation.Reason` in `internal/agent/dto.go`.
+- **No brittle response-shape branching in prompts.** Anti-pattern: `if returns requires_confirmation, ask the user…`. Instead, the server's response carries an actionable `Reason` field that names the next-step tools — the agent acts on the response shape, not on prompt-side branching. Normal workflow conditions are still allowed in playbooks when they describe the command's domain logic, such as "tasks with unmet dependencies wait". See `agent.Confirmation.Reason` in `internal/operation/dto.go`.
 - **Failure-driven additions.** Add a law or example only after observing a real failure mode. `template-fidelity` was added because the agent fabricated `Closes #40`; `authorize-remote-writes` was added because `git push` is destructive. Don't speculate.
 - **Markdown sections, not XML tags.** The renderer uses `## Persona`, `## Skills`, `## Laws`, `## Templates` — the operational playbook arrives as a bullet inside `## Skills` (the bound `okt-<slug>-playbook` skill), so there is no separate `## Action` section. Same load-bearing structure Anthropic recommends, but markdown reads cleanly in both the agent prompt and a developer's terminal when debugging.
 
@@ -393,19 +393,19 @@ Ambiguous or destructive operations return `requires_confirmation` instead of mu
 
 ## Failure Guidance
 
-Domain errors are mapped to compact coded failures with next-step guidance (`internal/agent/errors.go:guidanceForCode`). Codes currently defined in `internal/domain/errors.go`:
+Domain errors are mapped to compact coded failures with next-step guidance (`internal/operation/errors.go:guidanceForCode`). Codes currently defined in `internal/domain/errors.go`:
 
 `config_invalid`, `config_too_large`, `project_not_found`, `project_ambiguous`, `task_not_found`, `workflow_invalid_transition`, `bucket_not_found`, `dependency_invalid`, `validation_error`, `law_not_found`, `skill_not_found`, `persona_not_found`, `skill_referenced`, `editor_failed`, `editor_not_found`, `tag_not_found`, `tag_conflict`, `guard_violation`, `error_not_found`, `solution_not_found`, `plan_not_found`, `plan_slug_conflict`, `plan_wave_not_found`, `uninstall_failed`, `update_failed`.
 
 ## Per-project routing
 
-Every tool input may carry `project` (slug) or `project_id` (integer) — both are declared on the `selectorProperties` schema and accepted on every tool that exposes a selector. The MCP adapter `peekProjectArg`s these before dispatch, asks the runtime's `ServiceResolver` to look up the matching `*ProjectRuntime` from the `BundleCache`, and dispatches the call against that project's `agent.Service`. Calls without either field fall back to the adapter's default service (the boot-resolved project).
+Every tool input may carry `project` (slug) or `project_id` (integer) — both are declared on the `selectorProperties` schema and accepted on every tool that exposes a selector. The MCP adapter `peekProjectArg`s these before dispatch, asks the runtime's `ServiceResolver` to look up the matching `*ProjectRuntime` from the `BundleCache`, and dispatches the call against that project's `operation.Service`. Calls without either field fall back to the adapter's default service (the boot-resolved project).
 
 Implications:
 
-- N agents may target N different projects through the same `okt mcp serve` process. Each call resolves an isolated `agent.Service`, hooks engine, action registry, notification snapshot, theme, tag synonyms, and stopwords — bundles do not cross-talk.
+- N agents may target N different projects through the same `okt mcp serve` process. Each call resolves an isolated `operation.Service`, hooks engine, action registry, notification snapshot, theme, tag synonyms, and stopwords — bundles do not cross-talk.
 - A project without a `.omakiten/` install falls through to the default service (single-bundle behaviour). To upgrade a project to its own bundle, run `okt config init --scope local` inside its repo root.
-- Cache rebuilds (mtime change on the on-disk YAML, explicit `cache.Reload` from the TUI) rotate the underlying `agent.Service`. The adapter's `DefaultServiceProvider` consults the runtime on every call so dispatch never lands on a stale pointer.
+- Cache rebuilds (mtime change on the on-disk YAML, explicit `cache.Reload` from the TUI) rotate the underlying `operation.Service`. The adapter's `DefaultServiceProvider` consults the runtime on every call so dispatch never lands on a stale pointer.
 - Hooks fire only when the engine's `projectID` matches the event's `ProjectID`, with zero on either side opting out (system events reach every engine; engines built before a project resolves catch all). Two projects' hook entries never cross-fire.
 
 ## Scope Controls
@@ -413,7 +413,7 @@ Implications:
 - All reads and writes resolve one active `ProjectContext` at intent entry, except for the explicitly cross-project tools listed above (`tags.list_all`, `errors.*`, `solutions.*`, `templates.list`).
 - Tasks, comments, dependencies, and tags are read or written through project-scoped repositories.
 - Workflow movement goes through `app.WorkflowService.MoveTask` (transition allowance + guards + `task.completed` emission); task edits go through `app.TaskService.Edit`.
-- The core `internal/agent` package has no MCP SDK, package-manager, or transport dependency. The composition root for the MCP server is `internal/agentruntime`; the protocol translation lives in `internal/mcp`.
+- The core `internal/operation` package has no MCP SDK, package-manager, or transport dependency. The composition root for the MCP server is `internal/agentruntime`; the protocol translation lives in `internal/mcp`.
 - Hexagonal boundaries (no `agent` → `sqlite`/`configstore`/`mcp` imports) are enforced by `internal/arch/arch_test.go` and mirrored as `depguard` rules in `.golangci.yml`.
 
 ## See also

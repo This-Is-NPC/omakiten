@@ -14,7 +14,7 @@ The ceiling is a **correctness** number, not a latency number. Latency is record
 
 The benchmark therefore models real agents, not goroutines sharing one handle:
 
-- **One independent stack per caller.** Each of the `N` callers gets its own `sqlite.Store` → `agent.Service` → `mcp.Adapter`, opened once and held for the whole level. Nothing is shared above the file.
+- **One independent stack per caller.** Each of the `N` callers gets its own `sqlite.Store` → `operation.Service` → `mcp.Adapter`, opened once and held for the whole level. Nothing is shared above the file.
 - **One file-backed WAL database.** All `N` stacks point at the same on-disk database, so they contend on the real write lock rather than on separate in-memory copies.
 - **One seeded task per caller.** Every burst seeds exactly `N` claimable tasks, so a fully correct burst is `N` distinct claims and zero empties.
 - **Synchronized start.** All `N` goroutines register ready, then block on a single channel close, so the burst is a genuine simultaneous arrival.

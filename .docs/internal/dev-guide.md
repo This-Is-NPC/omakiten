@@ -120,11 +120,16 @@ cmd/                     entry points (okt, okt-docs-refresh, …)
 internal/
   domain/                pure types (no adapter imports)
   app/                   application services, ports
-  agent/                 protocol-neutral agent intent layer
+  operation/             application operation facade
+  contract/              shared delivery DTOs and ports
+  terminal/              production TUI composition
+  recovery/              filesystem snapshot and lease adapter
+  updater/               release download and binary staging adapter
+  commandcatalog/        canonical prompt command registry
   agentruntime/          composition root (DB, config, paths, BundleCache)
   agentsetup/            MCP harness writer (claude-code, claude-desktop, opencode, crush, github-copilot, codex, cursor)
-  cli/                   cobra commands (delegates to app)
-  mcp/                   MCP adapter (delegates to agent.Service)
+  cli/                   cobra commands (delegates to operation)
+  mcp/                   MCP adapter (delegates to operation.Service)
   tui/                   bubbletea terminal UI
   sqlite/                sqlite-backed operational adapter (state only post-020)
   configstore/           filesystem-backed config adapter (bundle YAML + entity .md)
@@ -151,7 +156,17 @@ Architecture rules are enforced in two places — see [architecture.md](architec
 
 ### Composition roots and the BundleCache
 
-Both `internal/cli/root.go` and `internal/agentruntime/runtime.go` reach the same shape: parse the bundle once to seed the events bus, then call `agentruntime.NewBundleCache(...).SetProjectSelector(...)` + `cache.Resolve(ctx, projectID, configPath)`. `BundleCache` builds and caches one `*ProjectRuntime` per project id; the `BuildProjectRuntime` helper inside `internal/agentruntime/cache.go` is the single inflation path so boot, MCP per-project routing, CLI subcommands, and the TUI hot-reload all produce identical runtimes. Rebuilds validate an inactive candidate before commit; only then are Store settings, hooks, and consumer state published. A rejected candidate leaves the cache, Store, model, and event rows untouched, so it can be retried. A drain timeout is returned and the inactive replacement is not published.
+CLI and headless startup share `agentruntime.Bootstrap`, which creates the event
+bus, configures the project selector and resolves the initial cache entry.
+`buildProjectRuntime` is the cache's single inflation path. Rebuilds prepare an
+inactive candidate, validate consumer acceptance, drain the previous engine,
+then publish the replacement. A rejected candidate leaves the active runtime
+unchanged. `BundleCache.Close` drains every cached project's engine before the
+store closes. Project-resolution and reload errors propagate to callers.
+
+The TUI receives `contract.RuntimeView` and operation ports. `internal/terminal`
+connects those ports to the runtime; CLI code receives an injected interactive
+runner. Notifications send structured operation intents through that binding.
 
 `ConfigService.Import` loads and hashes the YAML bundle without writing SQL configuration rows. It returns `(bundle, hash, *domain.EnumRegistry)`; the composition root then calls `config.BuildSnapshot(bundle)` to materialise the per-project Snapshot and emits `bundle.imported` via `Store.RecordEntityEvent`. Anything that needs to react to a bundle change subscribes to `bundle.imported` on the in-process bus. See [configuration-guide/README.md § How config reads work at runtime](../configuration-guide/project-overrides.md) for the full data flow.
 
@@ -273,7 +288,7 @@ component holds real state, so navigating it exercises the same mutators a scree
 would call. Dump before and after a refactor to diff what moved.
 
 The first entries are the layout packages — `screenlayout`, `screenkit`, `layout`,
-`scrollwindow`, `cursorwindow`. They have no look of their own, so what they render
+`scrollwindow`, `screenlayout`. They have no look of their own, so what they render
 is the numbers they resolved for the frame: the breakpoint the arranger chose, the
 row budget each section got, the chrome it measured, the window it sliced. Narrowing
 the frame on the `screenlayout` entry is the only place a breakpoint is visible
@@ -286,7 +301,7 @@ smaller terminal does. Sizes clamp to what the pane can actually draw, and conte
 that overflows the frame is clipped and counted rather than allowed to push the
 frame open.
 
-Components with no `View` of their own (`scrollwindow`, `cursorwindow`, `screenlayout`,
+Components with no `View` of their own (`scrollwindow`, `screenlayout`, `screenlayout`,
 `screenkit`, `layout`) are not in the gallery yet; they are state and arithmetic, and
 showing them means rendering their resolved numbers rather than their output.
 
@@ -380,7 +395,7 @@ The recorder is not a second harness — `testutil.Golden` remains the only writ
 
 Assert on state the screen exposes — a non-zero `Scroll()`, a cursor off its default cell, an open mode, a dirty candidate — not on rendered text, which is what the fixture already records. And record state worth keeping: a body long enough to scroll, content wide enough to wrap at 80 columns, a cursor off its default. An empty screen proves nothing about a migration.
 
-Coverage is enforced as one aggregate all-package run. The checker compares the unrounded profile statement ratio against a 78.0% floor and fails closed for missing, empty, malformed, stale, missing-total, or below-floor evidence; it does not define per-package floors or exemptions. Focused checker fixtures cover canonical grammar, extra fields and garbage ranges, portable nanosecond staleness, multi-file roots, ratio boundaries, and every failure case. The named-file checker fixture task does not add a package or coverage denominator.
+Coverage is enforced as one aggregate all-package run with `-coverpkg=./...`, so existing integration tests count every project package they exercise through ports. The checker compares the unrounded profile statement ratio against a 78.0% floor and fails closed for missing, empty, malformed, stale, missing-total, or below-floor evidence; it does not define per-package floors or exemptions. Focused checker fixtures cover canonical grammar, extra fields and garbage ranges, portable nanosecond staleness, multi-file roots, ratio boundaries, and every failure case. The named-file checker fixture task does not add a package or coverage denominator.
 
 ```bash
 mise run test

@@ -67,14 +67,16 @@ Use `mise run check` before sending a PR. The pre-push hook at `scripts/hooks/pr
 The codebase follows hexagonal architecture (`internal/app/doc.go`). Three layers enforce it:
 
 - **`internal/arch/arch_test.go`** — parses every non-test file under `internal/` and fails the build on forbidden cross-package imports.
-- **`internal/arch/scroll_state_boundary_test.go`** — AST walk over `internal/tui/render_*.go` that rejects direct `*Scroll =` writes outside `internal/tui/components/`. Extended to `*Cursor =` writes via an opt-in env flag (`OKT_ENFORCE_CURSOR_BOUNDARY=1`) until `activityCursor` migrates; will go default-on once the deferred surface lands. Cursor/scroll state must flow through `cursorwindow.Model` + `picker.WithCursor` / `picker.WithScroll` + `viewport.WithScroll`, never raw int assignment on `Model`.
 - **`.golangci.yml` `depguard` rules** — same forbidden edges as lint warnings so editor + CI surface them inline.
 
 Rules in plain English:
 
 - `internal/domain` is the inner core; it imports nothing else from `internal/`.
-- `internal/app` talks to adapters via ports declared in `internal/app/ports.go`; it never imports `internal/sqlite`, `internal/configstore`, `internal/tui`, `internal/cli`, `internal/mcp`, `internal/agent`, or `internal/agentruntime`.
+- `internal/app` talks to adapters via ports declared in `internal/app/ports.go`; it never imports `internal/sqlite`, `internal/configstore`, `internal/tui`, `internal/cli`, `internal/mcp`, `internal/operationruntime`.
 - `internal/sqlite` and `internal/configstore` are leaf adapters; they never import each other, `internal/app`, or any consumer adapter.
+- `internal/tui` consumes neutral contracts and ports; it imports no CLI, operation
+  implementation, runtime or storage adapter. `internal/terminal` binds those ports.
+- `internal/cli` receives its interactive runner from `cmd/okt`; it imports no TUI.
 - `internal/tui/components/*` own their state internally (cursor, scroll, viewport bookkeeping). Renderers consume the component API; they do not reach into raw fields.
 
 Run `go test ./internal/arch/...` after structural changes.
@@ -84,19 +86,18 @@ Run `go test ./internal/arch/...` after structural changes.
 Building a screen is declaring its archetype, its content and its keys. Geometry comes from
 `screenlayout.Canvas`, the measure from the `screenkit` vocabulary, memoisation from
 `screenlayout.BlockMemo` (whose key excludes `rows`), and style is declared per box. Composition
-happens ahead of the render, under the keystroke budget recorded by `screentest.Budgets`.
+is prepared on content and interaction changes; rendering consumes prepared state.
 
 The logic that used to live in screens was removed deliberately and does not return.
 [`.docs/internal/tui-screen-assembly.md`](.docs/internal/tui-screen-assembly.md) is normative: it
-states the five invariants, the nine patterns and the enforcement scoreboard naming which gate
-holds each line. Read it before adding or refactoring a screen.
+states ownership, assembly rules and the existing verification mechanisms. Read it before adding or refactoring a screen.
 
 
 ### Testing
 
 - Standard library `testing` only.
 - Prefer table-driven tests; integration-style tests for CLI/MCP flows are welcome and live alongside the package.
-- Coverage is enforced by one full all-package run: `mise run test`, which writes the profile and function summary under `.tmp/coverage/` and invokes `scripts/check-coverage.sh`. The checker compares the unrounded aggregate statement ratio against the fixed 78.0% floor and fails closed for missing, empty, malformed, stale, missing-total, or below-floor evidence. Focused checker fixtures run separately via the named-file `scripts/check-coverage_test.sh` and do not add a package or coverage denominator; there are no per-package floors or exemptions.
+- Coverage is enforced by one full all-package run: `mise run test`, which instruments all project packages with `-coverpkg=./...`, writes the profile and function summary under `.tmp/coverage/`, and invokes `scripts/check-coverage.sh`. Cross-package integration tests count the adapters they exercise through ports. The checker compares the unrounded aggregate statement ratio against the fixed 78.0% floor and fails closed for missing, empty, malformed, stale, missing-total, or below-floor evidence. Focused checker fixtures run separately via the named-file `scripts/check-coverage_test.sh` and do not add a package or coverage denominator; there are no per-package floors or exemptions.
 
 #### Patterns for new test files
 
@@ -118,7 +119,7 @@ The classic `tests := []struct{ name string … }{}` + `for _, tt := range tests
 
   No `name` field, the map iteration order is randomized so any inter-case ordering dependency surfaces immediately, and a duplicate case name is a compile-time map-literal error.
 
-- **`t.Parallel()`** in slow packages (`internal/sqlite`, `internal/agent`, anything that touches the DB) and in pure-function tables. Add it as the first line of the test and inside each subtest. `go.mod` is `go 1.25`; the loop-variable capture rule is the post-1.22 semantic, so no manual `tc := tc` copy is needed.
+- **`t.Parallel()`** in slow packages (`internal/sqlite`,  anything that touches the DB) and in pure-function tables. Add it as the first line of the test and inside each subtest. `go.mod` is `go 1.25`; the loop-variable capture rule is the post-1.22 semantic, so no manual `tc := tc` copy is needed.
 
 - **Golden files** for long render output (TUI views, pretty-printed payloads). The snapshot lives at `testdata/<name>.golden` and is always read and written through `testutil.Golden` — never with a hand-rolled `os.ReadFile` / `os.WriteFile` pair:
 
@@ -176,7 +177,7 @@ The classic `tests := []struct{ name string … }{}` + `for _, tt := range tests
 
 - **`testscript`** (`github.com/rogpeppe/go-internal/testscript`) is on the radar for end-to-end CLI / MCP flows but is **not adopted** — the rule above is "standard library `testing` only". Promotion would need an explicit amendment.
 
-The 79 existing `_test.go` files are intact; no mass refactor. Migrate opportunistically when a file is already being touched for another reason.
+Keep tests that protect observable behavior. Remove fixtures and tests that only exercise a deleted API; do not restore retired guards or speculative tests.
 
 ### Documentation
 

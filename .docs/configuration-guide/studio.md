@@ -9,7 +9,7 @@ Source files inspected for this decision:
 - `internal/config/bundle.go` (`Bundle`, `wiring`, `MCPCommandSpec`, workflow structs).
 - `internal/config/saver.go` (`SaveBundle`, `bundleToWiring`).
 - `internal/app/bundle_editor.go` (`BundleEditor.ApplyWithFiles`).
-- `internal/agent/service_command.go` (`ResolveCommand`, `renderCommandMarkdown`).
+- `internal/operation/service_command.go` (`ResolveCommand`, `renderCommandMarkdown`).
 - `.docs/configuration-guide/workflows.md`, `guards.md`, `command-bindings.md`, and `views.md`.
 
 ## Information Architecture
@@ -177,7 +177,7 @@ Validation requirements:
 
 ## Prompt Preview
 
-Studio Commands must use the real command composition rules from `internal/agent/service_command.go` or a candidate-bundle equivalent that produces identical structured inputs.
+Studio Commands must use the real command composition rules from `internal/operation/service_command.go` or a candidate-bundle equivalent that produces identical structured inputs.
 
 Prompt-preview requirements:
 

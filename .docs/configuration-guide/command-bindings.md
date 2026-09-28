@@ -6,7 +6,7 @@ Source files:
 
 - `internal/config/bundle.go` (`MCPCommandSpec`, `PersonaWiring`).
 - `internal/config/validator.go::validateMCPCommands` and `validateMCPCommandSkillSubset`.
-- `internal/agent/service_command.go` (prompt rendering).
+- `internal/operation/service_command.go` (prompt rendering).
 
 ## Contents
 
@@ -50,8 +50,8 @@ mcp_commands:
 
 Every `okt-*` prompt resolves to one markdown `PromptMessage`:
 
-1. The command playbook is **entity-sourced**: the command binds an `okt-<slug>-playbook` skill via `mcp_commands.<command>.skills`, and the bound playbook skill's body renders inside the `## Skills` section like any other skill body. There is no `## Action` section and no hardcoded Go prose — `internal/agent/command_table.go` is a bare slug table with no Action/Description strings.
-2. The prompts/list one-liner for the command is the bound playbook skill's frontmatter `description`. `internal/agent/service_command.go` reads it from the live skill catalog; an unwired runtime (no playbook skill bound) degrades to an empty description rather than falling back to Go.
+1. The command playbook is **entity-sourced**: the command binds an `okt-<slug>-playbook` skill via `mcp_commands.<command>.skills`, and the bound playbook skill's body renders inside the `## Skills` section like any other skill body. There is no `## Action` section and no hardcoded Go prose — `internal/commandcatalog/command_table.go` is a bare slug table with no Action/Description strings.
+2. The prompts/list one-liner for the command is the bound playbook skill's frontmatter `description`. `internal/operation/service_command.go` reads it from the live skill catalog; an unwired runtime (no playbook skill bound) degrades to an empty description rather than falling back to Go.
 3. `mcp_commands.<command>.persona` selects the persona body, rendered under `## Persona`.
 4. `mcp_commands.<command>.skills` selects the skill subset to render under `## Skills` — the bound `okt-<slug>-playbook` skill is one of those slugs, listed alongside the persona's other capability skills.
 5. Effective laws are `global laws + persona laws + command laws + template laws - laws_disabled`, rendered under `## Laws`.
@@ -135,7 +135,7 @@ The import replaces the `mcp_commands:` map wholesale. Full import rules live in
 ## Update when
 
 - `MCPCommandSpec` gains or loses a field.
-- Prompt composition order changes in `internal/agent/service_command.go`.
+- Prompt composition order changes in `internal/operation/service_command.go`.
 - The playbook-skill naming convention (`playbookSlugForCommand`) or its source-of-truth role changes.
 - Skill subset validation changes.
 - The command surface adds/removes/renames a command and bindings need a new example.

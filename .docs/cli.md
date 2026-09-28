@@ -755,7 +755,7 @@ Calls a tool directly without going through the stdio server. Useful for scripti
 
 ### `okt mcp serve`
 
-Runs the JSON-RPC 2.0 stdio server (`internal/mcp/server.go:Serve`). No flags. Stdin/stdout are the transport — meant to be spawned by an MCP harness.
+Runs the JSON-RPC 2.0 stdio server (`internal/mcp/server.go:ServeNotify`). No flags. Stdin/stdout are the transport — meant to be spawned by an MCP harness.
 
 ### `okt mcp setup`
 

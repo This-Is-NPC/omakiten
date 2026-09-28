@@ -174,12 +174,13 @@ Generated output belongs under `.tmp/`; see the generated-file layout in
 The codebase is hexagonal and the boundaries are enforced by tests in `internal/arch`.
 
 - `internal/domain` is the inner core and imports nothing else from `internal/`.
-- `internal/app` reaches adapters through the ports declared in `internal/app/ports.go`.
+- `internal/app` reaches adapters through ports. `internal/contract` holds shared delivery
+  contracts; TUI imports no CLI, operation implementation, runtime or storage adapter.
+- `internal/terminal` binds the TUI ports and starts the interactive program.
 - `internal/sqlite` and `internal/configstore` are leaf adapters, isolated from each other
   and from consumers.
 - `internal/tui/components/*` own their cursor, scroll and viewport state. Renderers consume
-  the component API; cursor and scroll state flows through `cursorwindow.Model`,
-  `picker.WithCursor`, `picker.WithScroll` and `viewport.WithScroll`.
+  the component API; root renderers do not maintain parallel cursor or scroll state.
 
 #### TUI screens carry no logic
 
@@ -189,8 +190,7 @@ other number a screen might want is received rather than computed:
 - Geometry comes from `screenlayout.Canvas`.
 - The measure comes from the `screenkit` vocabulary.
 - `screenlayout.BlockMemo` is the only memo, and its key never contains `rows`.
-- Composition happens ahead of the render, under the keystroke budget recorded by
-  `screentest.Budgets`.
+- Composition is prepared on content and interaction changes; rendering consumes prepared state.
 - Style is declared per box; a screen constructs none of its own.
 
 The logic that used to live in screens was removed deliberately and does not return. Read
