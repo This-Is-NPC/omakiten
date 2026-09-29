@@ -454,8 +454,9 @@ func assertCodedError(t *testing.T, err error, code domain.ErrorCode) {
 func agentTestBundle(t *testing.T) config.Bundle {
 	t.Helper()
 	bundle, _ := testfixtures.LoadBundle(t, "default.yaml")
-	bundle.Skills = []config.Skill{{Slug: "go", Name: "Go"}}
-	bundle.Personas = []config.Persona{{Slug: "agent", Name: "Agent", SkillRepertoire: []string{"go"}}}
+	bundle.Skills = []config.Skill{{Slug: "go", Name: "Go"}, {Slug: "okt-start", Name: "Start", Body: "Start work.", Command: &config.SkillCommand{Name: "okt-start"}}}
+	bundle.Personas = []config.Persona{{Slug: "agent", Name: "Agent", SkillRepertoire: []string{"go", "okt-start"}}}
 	bundle.Laws = []config.Law{{Slug: "scope", Severity: "error", Body: "Stay scoped.", Scope: "global"}}
+	bundle.Commands = map[string]config.CommandSpec{"okt-start": {Persona: "agent", Skills: []string{"okt-start"}}}
 	return bundle
 }

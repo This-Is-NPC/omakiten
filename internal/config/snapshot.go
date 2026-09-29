@@ -319,7 +319,7 @@ func populateSnapshotEntities(snap *Snapshot, bundle Bundle) {
 	for i, p := range snap.personas {
 		snap.personasBySlug[p.Slug] = i
 	}
-	snap.skills = append(snap.skills, bundle.Skills...)
+	snap.skills = cloneSkills(bundle.Skills)
 	for i, s := range snap.skills {
 		snap.skillsBySlug[s.Slug] = i
 	}
@@ -335,7 +335,7 @@ func populateSnapshotEntities(snap *Snapshot, bundle Bundle) {
 		}
 	}
 	snap.allPersonas = append(snap.allPersonas, bundle.AllPersonas...)
-	snap.allSkills = append(snap.allSkills, bundle.AllSkills...)
+	snap.allSkills = cloneSkills(bundle.AllSkills)
 	snap.allLaws = append(snap.allLaws, bundle.AllLaws...)
 	snap.allTemplates = append(snap.allTemplates, bundle.AllTemplates...)
 }
@@ -587,7 +587,7 @@ func (s *Snapshot) PersonaBySlug(slug string) (Persona, bool) {
 
 // Skills returns the resolved skill catalog. The slice is a fresh copy.
 func (s *Snapshot) Skills() []Skill {
-	return append([]Skill(nil), s.skills...)
+	return cloneSkills(s.skills)
 }
 
 // SkillBySlug resolves a skill by slug.
@@ -596,7 +596,7 @@ func (s *Snapshot) SkillBySlug(slug string) (Skill, bool) {
 	if !ok {
 		return Skill{}, false
 	}
-	return s.skills[idx], true
+	return cloneSkill(s.skills[idx]), true
 }
 
 // Laws returns the resolved law catalog. The slice is a fresh copy.
@@ -647,7 +647,29 @@ func (s *Snapshot) AllSkills() []Skill {
 	if s.allSkills == nil {
 		return activeStamped(s.Skills(), func(sk *Skill) { sk.Active = true })
 	}
-	return append([]Skill(nil), s.allSkills...)
+	return cloneSkills(s.allSkills)
+}
+
+func cloneSkills(skills []Skill) []Skill {
+	if skills == nil {
+		return nil
+	}
+	out := make([]Skill, len(skills))
+	for i, skill := range skills {
+		out[i] = cloneSkill(skill)
+	}
+	return out
+}
+
+func cloneSkill(skill Skill) Skill {
+	skill.RoleAffinity = append([]string(nil), skill.RoleAffinity...)
+	if skill.Command != nil {
+		command := *skill.Command
+		command.Next = append([]CommandReference(nil), command.Next...)
+		command.Parameters = append([]CommandParameter(nil), command.Parameters...)
+		skill.Command = &command
+	}
+	return skill
 }
 
 // AllLaws returns the full on-disk law catalog (active-flagged). Falls back
@@ -701,7 +723,7 @@ func (s *Snapshot) Catalog(surface Surface) *Catalog {
 }
 
 // AgentOutputLanguage returns the raw configured agent-output language
-// string. Empty when the user has not selected one — the playbook composer
+// string. Empty when the user has not selected one — the command composer
 // then skips the trailing "**Output language:** ..." directive entirely.
 // Free-form by design: any non-empty string is honored verbatim because
 // the agent interprets the directive against its own language training,
@@ -812,7 +834,7 @@ func (s *Snapshot) Settings() Settings {
 // (SourceDefault / SourceProject / SourceEnv). Empty or missing paths
 // fall back to SourceDefault — the conservative answer when the
 // snapshot was built from a Bundle that bypassed LoadBundle (test
-// fixtures, playbook composer mocks). Used by EffectiveTuples to populate
+// fixtures, command composer mocks). Used by EffectiveTuples to populate
 // the per-row Source field; the TUI settings viewer (#258) consumes
 // that field directly.
 func (s *Snapshot) SourceFor(path string) string {

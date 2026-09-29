@@ -22,6 +22,7 @@ func screenDescriptors() []screenhost.DescriptorSpec {
 		hostedProjectDescriptor(),
 		hostedDetailDescriptor(screenhost.ProjectForm, screenhost.TopTasks, "TASKS", "project form", "project_form", screenhost.ReloadManual),
 		hostedDetailDescriptor(screenhost.ProjectResume, screenhost.TopTasks, "TASKS", "resume", "project_resume", screenhost.ReloadManual),
+		hostedDetailDescriptor(screenhost.ProjectKnowledge, screenhost.TopTasks, "TASKS", "knowledge", "project_knowledge", screenhost.ReloadManual),
 		hostedDescriptor(screenhost.StatsGeneral, screenhost.TopStats, 2, 1, "STATS", "general", "21", "tui.palette.route.stats_general", "stats_general", screenhost.ReloadStats),
 		hostedDescriptor(screenhost.StatsLogs, screenhost.TopStats, 2, 2, "STATS", "logs", "22", "tui.palette.route.stats_logs", "stats_logs", screenhost.ReloadLogs),
 		hostedDescriptor(screenhost.StatsInsights, screenhost.TopStats, 2, 3, "STATS", "insights", "23", "tui.palette.route.stats_insights", "stats_insights", screenhost.ReloadInsights),

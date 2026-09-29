@@ -23,6 +23,7 @@ const (
 	Project           ID = "project"
 	ProjectForm       ID = "project.form"
 	ProjectResume     ID = "project.resume"
+	ProjectKnowledge  ID = "project.knowledge"
 	StatsGeneral      ID = "stats.general"
 	StatsLogs         ID = "stats.logs"
 	StatsInsights     ID = "stats.insights"
@@ -261,6 +262,7 @@ const (
 	ActionArchiveTaskFromDetail
 	ActionUnarchiveTaskFromDetail
 	ActionOpenProjectResume
+	ActionOpenProjectKnowledge
 	ActionQuit
 )
 
@@ -393,6 +395,10 @@ func OpenProjectComment(screen Screen, commentID int64, command tea.Cmd) Outcome
 
 func OpenProjectResume(screen Screen, command tea.Cmd) Outcome {
 	return Outcome{Screen: screen, Action: Action{Kind: ActionOpenProjectResume}, Command: command}
+}
+
+func OpenProjectKnowledge(screen Screen, command tea.Cmd) Outcome {
+	return Outcome{Screen: screen, Action: Action{Kind: ActionOpenProjectKnowledge}, Command: command}
 }
 
 func MergeTagsAction(screen Screen, sourceSlug, targetSlug string, command tea.Cmd) Outcome {

@@ -23,7 +23,7 @@ The orchestrator prepares a compact brief first: what is proposed, scope, candid
    - Call `okt persona show <slug>` in its own fresh agent context
    - Adopt that persona's body, expanded laws, and skill repertoire as voice and constraints
    - Assess ONLY the subject brief using the impact questions below
-   - Do NOT implement, persist, or run unrelated `okt-task-*` playbooks
+   - Do NOT implement, persist, or run unrelated `okt-task-*` command skills
    - Return a compact opinion: impact, risks, blockers, recommendations (eight bullets max)
 
 Run independent persona assessments concurrently when worthwhile; synthesize only after every spawned subagent returns or you halt with an explicit reason.

@@ -39,7 +39,7 @@ rebinding work after a bucket or kit change.
 
 ## Inspect agent instructions
 
-`okt command list` discovers configured playbooks. `okt command resolve NAME`
+`okt command list` discovers configured command skills. `okt command resolve NAME`
 composes the bound persona, skills, laws, and templates without executing them.
 
 ## Read more

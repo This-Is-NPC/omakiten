@@ -70,11 +70,11 @@ func studioDraftBundle() config.Bundle {
 			},
 			Transitions: []config.Transition{{From: 1, To: 2}},
 		}},
-		Skills:      []config.Skill{{Slug: "code"}, {Slug: "deploy"}},
-		AllSkills:   []config.Skill{{Slug: "code"}, {Slug: "deploy"}},
-		Personas:    []config.Persona{{Slug: "builder", SkillRepertoire: []string{"code"}}},
-		AllPersonas: []config.Persona{{Slug: "builder", SkillRepertoire: []string{"code"}}},
-		Commands:    map[string]config.CommandSpec{"task": {Persona: "builder", Skills: []string{"code"}}},
+		Skills:      []config.Skill{{Slug: "code"}, {Slug: "deploy"}, {Slug: "task", Command: &config.SkillCommand{Name: "task"}}},
+		AllSkills:   []config.Skill{{Slug: "code"}, {Slug: "deploy"}, {Slug: "task", Command: &config.SkillCommand{Name: "task"}}},
+		Personas:    []config.Persona{{Slug: "builder", SkillRepertoire: []string{"code", "task"}}},
+		AllPersonas: []config.Persona{{Slug: "builder", SkillRepertoire: []string{"code", "task"}}},
+		Commands:    map[string]config.CommandSpec{"task": {Persona: "builder", Skills: []string{"code", "task"}}},
 		Surfaces:    config.CanonicalSurfaceTable(),
 	}
 }

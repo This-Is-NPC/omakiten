@@ -29,6 +29,9 @@ func (m *Model) refreshProjectSummary() error {
 
 func (m *Model) loadProjectPayload() (projectscreen.Payload, error) {
 	payload := projectscreen.Payload{Project: m.project}
+	if m.repos.Knowledge != nil {
+		payload.Knowledge = m.repos.Knowledge(m.ctx, m.project)
+	}
 	events, err := m.commentsForProjectScope(domain.CommentFilter{})
 	if err != nil {
 		return payload, err

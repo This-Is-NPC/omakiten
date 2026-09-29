@@ -30,7 +30,8 @@ func loadSubtaskKitFixture(t *testing.T, rel string) Bundle {
 	}
 	configPath := filepath.Join(root, "config", "omakase.yaml")
 	if rel != "" {
-		copyFixtureProfile(t, root, rel)
+		subtask := copyFixtureProfile(t, root, rel)
+		appendTopLevelYAML(t, subtask, "commands:\n  global:\n    laws: []\n")
 		appendTopLevelYAML(t, configPath, "subtask_kit: "+rel+"\n")
 	}
 	bundle, err := LoadBundle(configPath)

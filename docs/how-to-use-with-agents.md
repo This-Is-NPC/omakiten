@@ -40,17 +40,20 @@ okt --project example search "reload failure"
 Use explicit project selection. A handoff is useful only if the next session
 reads the same work you wrote it on.
 
-## Read the configured playbook
+## Read a command from the active workflow
 
 ```bash
 okt --project example command list
-okt --project example command resolve okt-task-implement \
-  --arguments '{"task_id":42}'
+okt --project example command resolve NAME
 ```
 
 Resolution composes the selected persona, skills, laws, and templates. The
-response includes `data.markdown` and the structured entities. It supplies
-instructions; it does not execute a coding session.
+response includes `data.markdown`, the structured entities, and immediate
+related commands at the detail level declared by the selected command. Read
+the list first: names and parameters are defined by the active workflow.
+Pass `--arguments` with a JSON object when the selected command declares
+parameters.
+Resolution supplies instructions; it does not execute a coding session.
 
 The repository's rules and the user's request still apply. Follow guard
 failures and permissions rather than manufacturing evidence to pass them.

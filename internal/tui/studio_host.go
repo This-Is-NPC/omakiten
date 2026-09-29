@@ -2,8 +2,8 @@ package tui
 
 import (
 	tea "github.com/charmbracelet/bubbletea"
+	"sort"
 
-	"omakiten/internal/commandcatalog"
 	"omakiten/internal/config/bundledraft"
 	"omakiten/internal/contract"
 	"omakiten/internal/studioprojection"
@@ -34,6 +34,15 @@ func studioReloadHost(m *Model) func(string, []string) error {
 }
 
 func (m Model) studioDependencies() studio.Deps {
+	var commandNames []string
+	if snap := m.repos.activeSnapshot(); snap != nil {
+		for _, skill := range snap.Skills() {
+			if skill.Command != nil {
+				commandNames = append(commandNames, skill.Command.Name)
+			}
+		}
+	}
+	sort.Strings(commandNames)
 	return studio.Deps{
 		Ctx:               m.ctx,
 		Editor:            m.repos.Editor,
@@ -45,7 +54,7 @@ func (m Model) studioDependencies() studio.Deps {
 		Workflow:          m.workflow,
 		Tasks:             m.tasks,
 		ConfigPath:        m.repos.ConfigPath,
-		CommandNames:      commandcatalog.CommandNames(),
+		CommandNames:      commandNames,
 		ResolveCommand:    m.resolveStudioCommand,
 		HookHistory:       m.studioHookHistory,
 	}

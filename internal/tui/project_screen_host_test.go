@@ -1,10 +1,13 @@
 package tui
 
 import (
+	"context"
+	"strings"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"omakiten/internal/domain"
 	"omakiten/internal/tui/screenhost"
 )
 
@@ -74,5 +77,40 @@ func TestProjectCommentOutcomeOpensRootReader(t *testing.T) {
 	model = next.(Model)
 	if model.projectScreen.ActivityCursor() != wantCursor {
 		t.Fatalf("project activity cursor after comment round-trip = %d, want %d", model.projectScreen.ActivityCursor(), wantCursor)
+	}
+}
+
+func TestProjectKnowledgeOpensFromCtrlPAndReloads(t *testing.T) {
+	model, _, _ := scopedFeedModel(t)
+	title := "First endpoint"
+	model.repos.Knowledge = func(_ context.Context, project domain.ProjectContext) domain.KnowledgeSnapshot {
+		return domain.KnowledgeSnapshot{Resources: []domain.KnowledgeResource{{Project: project.Slug, ID: "openapi:createOrder", Title: title, Body: "# POST /orders"}}}
+	}
+	next, _ := model.Update(ctrlP())
+	model = next.(Model)
+	if got := model.projectScreen.Payload().Knowledge.Resources; len(got) != 1 || got[0].Title != title {
+		t.Fatalf("ctrl+p knowledge = %+v", got)
+	}
+	if !footerHasFragment(model.footerTokens(), "Shift+K") {
+		t.Fatalf("project footer does not explain the shifted knowledge key: %+v", model.footerTokens())
+	}
+	next, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'k'}})
+	model = next.(Model)
+	if got := model.screenStack[len(model.screenStack)-1]; got != screenhost.Project {
+		t.Fatalf("lowercase k opened %s", got)
+	}
+	next, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'K'}})
+	model = next.(Model)
+	if got := model.screenStack[len(model.screenStack)-1]; got != screenhost.ProjectKnowledge {
+		t.Fatalf("K opened %s", got)
+	}
+	if view := model.View(); !strings.Contains(view, "First endpoint") {
+		t.Fatalf("knowledge route rendered without its API entry: %q", view)
+	}
+	title = "Updated endpoint"
+	next, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'r'}})
+	model = next.(Model)
+	if got := model.projectKnowledgeScreen.Snapshot().Resources; len(got) != 1 || got[0].Title != title {
+		t.Fatalf("knowledge refresh = %+v", got)
 	}
 }

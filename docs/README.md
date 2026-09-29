@@ -25,6 +25,7 @@ can add them when the work needs them.
 | The page | What it answers |
 | --- | --- |
 | [The command line](cli.md) | Which command family to use, how to read its help, and what stdout and stderr carry. |
+| [How to browse project knowledge](how-to-browse-project-knowledge.md) | File-backed Markdown, OpenAPI, CLI resources, and optional related projects. |
 | [The terminal, in the order you meet it](screens.md) | Home, Project, the board, Task Detail, plans, search, and Studio. |
 | [How to choose and share a workflow](how-to-manage-presets.md) | Catalog, repositories, installed snapshots, activation, and single-file transport. |
 | [How to give a project its own workflow](how-to-configure-a-project.md) | `.omakiten/`, discovery, application preferences, and the shared database. |

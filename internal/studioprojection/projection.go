@@ -389,14 +389,14 @@ type CommandRow struct {
 	Spec        config.CommandSpec
 }
 
-// DefaultCommandNames is the fallback catalog order used by fixture callers.
-var DefaultCommandNames = []string{
-	"okt", "okt-help", "okt-start", "okt-shape", "okt-run", "okt-task-imagine", "okt-task-research", "okt-task-validate", "okt-task-requirements", "okt-task-prioritize", "okt-task-create", "okt-task-decompose", "okt-task-estimate", "okt-task-design", "okt-project-resume", "okt-project-continue", "okt-plan-create", "okt-plan-show", "okt-plan-continue", "okt-plan-claim", "okt-task-resume", "okt-task-continue", "okt-task-implement", "okt-task-self-review", "okt-task-refactor", "okt-task-document", "okt-task-debrief", "okt-config", "okt-skill", "okt-task-commit", "okt-task-review", "okt-task-secure", "okt-task-check", "okt-task-quality", "okt-audit", "okt-pause", "okt-note-free", "okt-note-recap", "okt-note-list", "okt-note-show",
-}
-
 func commandRows(commands map[string]config.CommandSpec, names []string) []CommandRow {
 	if len(names) == 0 {
-		names = DefaultCommandNames
+		for name := range commands {
+			if name != config.CommandsGlobalKey {
+				names = append(names, name)
+			}
+		}
+		sort.Strings(names)
 	}
 	known := make(map[string]bool, len(names))
 	rows := make([]CommandRow, 0, len(names)+len(commands))
@@ -435,8 +435,10 @@ func CommandIndexFor(commands map[string]config.CommandSpec, key string) int {
 // CommandWarnings validates command references against the loaded catalogs.
 func CommandWarnings(bundle config.Bundle, text Text) []string {
 	known := map[string]struct{}{config.CommandsGlobalKey: {}}
-	for _, key := range DefaultCommandNames {
-		known[key] = struct{}{}
+	for _, skill := range bundle.Skills {
+		if skill.Command != nil {
+			known[skill.Command.Name] = struct{}{}
+		}
 	}
 	personas, skills, laws, templates := slugSet(PersonaSlugs(bundle)), slugSet(SkillSlugs(bundle)), slugSet(LawSlugs(bundle)), slugSet(TemplateSlugs(bundle))
 	var warnings []string
@@ -548,7 +550,9 @@ func personaRows(bundle config.Bundle, known []string) []PersonaRow {
 		roster = bundledraft.LoadedPersonas(bundle)
 	}
 	if len(known) == 0 {
-		known = DefaultCommandNames
+		for _, row := range commandRows(bundle.Commands, nil) {
+			known = append(known, row.Key)
+		}
 	}
 	out := make([]PersonaRow, 0, len(roster))
 	for _, persona := range roster {

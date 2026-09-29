@@ -156,8 +156,8 @@ func TestStudioCommandsGoldenStatePinsMetadataAndPreview(t *testing.T) {
 			view := screentest.StripANSI(screen.View(frame))
 			want := []string{
 				"▸ COMMANDS",
-				"› 05 // okt-run",
-				"okt-run",
+				"› 05 // okt-sample-04",
+				"okt-sample-04",
 			}
 			if size.width >= 120 {
 				want = append(want, "persona", "skills", "laws", "// PREVIEW")

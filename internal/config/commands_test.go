@@ -62,23 +62,29 @@ personas:
     schema_version: 2
     skill_repertoire:
       - go
+      - okt-implement
+      - okt-imagine
 commands:
   global:
     laws:
       - template-fidelity
   okt-implement:
     persona: backend-agent
+    skills: [okt-implement]
     templates:
       - pull-request
   okt-imagine:
     persona: backend-agent
+    skills: [okt-imagine]
     laws_disabled:
       - template-fidelity
 `)
 	writeFile(t, filepath.Join(dir, "skills", "go.md"), "---\nname: Go\nschema_version: 2\n---\nbody\n")
+	writeFile(t, filepath.Join(dir, "skills", "okt-implement.md"), "---\nname: Implement\nschema_version: 2\ncommand:\n  name: okt-implement\n---\nbody\n")
+	writeFile(t, filepath.Join(dir, "skills", "okt-imagine.md"), "---\nname: Imagine\nschema_version: 2\ncommand:\n  name: okt-imagine\n---\nbody\n")
 	writeFile(t, filepath.Join(dir, "laws", "project-scope-only.md"), "---\nseverity: error\n---\nbody\n")
 	writeFile(t, filepath.Join(dir, "laws", "template-fidelity.md"), "---\nseverity: warning\n---\nbody\n")
-	writeFile(t, filepath.Join(dir, "personas", "backend-agent.md"), "---\nname: Backend Agent\nschema_version: 2\nskill_repertoire: [go]\nlaws:\n  - project-scope-only\n---\nbody\n")
+	writeFile(t, filepath.Join(dir, "personas", "backend-agent.md"), "---\nname: Backend Agent\nschema_version: 2\nskill_repertoire: [go, okt-implement, okt-imagine]\nlaws:\n  - project-scope-only\n---\nbody\n")
 	writeFile(t, filepath.Join(dir, "templates", "pull-request.md"), "---\nname: Pull Request\nentity: pr\ndefault: pr\nlaws:\n  - template-fidelity\n---\n\n## Before\n## After\n")
 
 	bundle, err := LoadBundle(configPath)
@@ -161,21 +167,13 @@ workflows:
 commands:
   okt-implement:
     persona: ghost
+    skills: [okt-implement]
 `)
+	writeFile(t, filepath.Join(dir, "skills", "okt-implement.md"), "---\nname: Implement\nschema_version: 2\ncommand:\n  name: okt-implement\n---\nbody\n")
 
-	bundle, err := LoadBundle(configPath)
-	if err != nil {
-		t.Fatalf("LoadBundle() error = %v, want soft load with warning", err)
-	}
-	found := false
-	for _, w := range bundle.Warnings {
-		if strings.Contains(w.Message, "no matching persona file") {
-			found = true
-			break
-		}
-	}
-	if !found {
-		t.Fatalf("LoadBundle() warnings = %v, want 'no matching persona file' entry", bundle.Warnings)
+	_, err := LoadBundle(configPath)
+	if err == nil || !strings.Contains(err.Error(), "not in persona") {
+		t.Fatalf("LoadBundle() error = %v, want invalid persona repertoire", err)
 	}
 }
 

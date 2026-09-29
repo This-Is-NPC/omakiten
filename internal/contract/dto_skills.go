@@ -22,8 +22,9 @@ type ShowSkillResponse struct {
 // body (slug + name + description only); show includes it. Skills are
 // procedural payloads bound to personas — there is no write path here.
 type SkillSummary struct {
-	Slug        string `json:"slug"`
-	Name        string `json:"name,omitempty"`
-	Description string `json:"description,omitempty"`
-	Body        string `json:"body,omitempty"`
+	Slug        string             `json:"slug"`
+	Name        string             `json:"name,omitempty"`
+	Description string             `json:"description,omitempty"`
+	Body        string             `json:"body,omitempty"`
+	Command     *CommandDefinition `json:"command,omitempty"`
 }

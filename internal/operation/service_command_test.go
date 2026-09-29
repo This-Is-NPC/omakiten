@@ -1,8 +1,6 @@
 package operation
 
 import (
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 
@@ -192,7 +190,7 @@ func TestRenderCommandMarkdownSkillBulletWithBody(t *testing.T) {
 func TestRenderCommandMarkdownInvocationArgs(t *testing.T) {
 	resp := contract.ResolveCommandResponse{
 		InvocationArgs: []contract.InvocationArg{{Name: "slug", Value: "\"release-plan\""}, {Name: "task_id", Value: "42"}},
-		Skills:         []contract.SkillInfo{{Slug: "playbook", Name: "Playbook", Body: "Run it."}},
+		Skills:         []contract.SkillInfo{{Slug: "command-skill", Name: "Command Skill", Body: "Run it."}},
 	}
 	md := renderCommandMarkdown(resp)
 
@@ -227,6 +225,26 @@ func TestInvocationArgsTrimKeysWithoutLosingValues(t *testing.T) {
 	got := invocationArgs(map[string]any{" task_id ": 42, " ": "skip"})
 	if len(got) != 1 || got[0].Name != "task_id" || got[0].Value != "42" {
 		t.Fatalf("invocationArgs() = %#v, want trimmed task_id retaining value", got)
+	}
+}
+
+func TestResolveCommandValidatesDeclaredParameters(t *testing.T) {
+	skills := map[string]contract.SkillInfo{
+		"shape": {Slug: "shape", Command: &contract.CommandDefinition{Name: "shape", Parameters: []contract.CommandParameter{{Name: "topic", Type: "string", Required: true}}}},
+	}
+	bindings := map[string]contract.CommandBinding{"shape": {}}
+	for _, input := range []struct {
+		args []contract.InvocationArg
+		ok   bool
+	}{
+		{args: nil},
+		{args: []contract.InvocationArg{{Name: "topic", Value: "42"}}},
+		{args: []contract.InvocationArg{{Name: "topic", Value: `"release"`}}, ok: true},
+	} {
+		_, err := resolveCommandFromCatalog("shape", input.args, bindings, nil, skills, nil, nil, "")
+		if (err == nil) != input.ok {
+			t.Fatalf("args %+v: error = %v, want success %t", input.args, err, input.ok)
+		}
 	}
 }
 
@@ -344,34 +362,10 @@ func TestResolveCommandFallsBackToSkillRepertoire(t *testing.T) {
 	}
 }
 
-// TestResolveCommandWithoutCatalogsDegradesGracefully guards the degraded path:
-// when the runtime is unwired (no skills/laws/personas/commands catalogs),
-// ResolveCommand still resolves a registered command without error so the agent
-// harness keeps working through partial bootstraps. The command playbook is
-// entity-sourced now, so with no skill catalog there is nothing to render — the
-// description is empty and no persona/skills attach — but resolution must not
-// fail, and an unknown command must still reject.
-func TestResolveCommandWithoutCatalogsDegradesGracefully(t *testing.T) {
+func TestResolveCommandWithoutCatalogRejects(t *testing.T) {
 	fixture := newAgentFixture(t)
-	resp, err := fixture.service.ResolveCommand(fixture.ctx, contract.ResolveCommandInput{Name: "okt"})
-	if err != nil {
-		t.Fatalf("ResolveCommand() error = %v", err)
-	}
-	if resp.Name != "okt" {
-		t.Fatalf("ResolveCommand.Name = %q, want okt", resp.Name)
-	}
-	if resp.Description != "" {
-		t.Fatalf("ResolveCommand.Description = %q, want empty when the skill catalog is unwired", resp.Description)
-	}
-	if resp.Persona != nil {
-		t.Fatalf("ResolveCommand.Persona = %+v, want nil when catalogs unwired", resp.Persona)
-	}
-	if len(resp.Skills) != 0 {
-		t.Fatalf("ResolveCommand.Skills = %+v, want none when the skill catalog is unwired", resp.Skills)
-	}
-	// An unknown command still rejects even on the degraded path.
-	if _, err := fixture.service.ResolveCommand(fixture.ctx, contract.ResolveCommandInput{Name: "okt-bogus"}); err == nil {
-		t.Fatal("ResolveCommand(unknown) error = nil, want validation failure even when unwired")
+	if _, err := fixture.service.ResolveCommand(fixture.ctx, contract.ResolveCommandInput{Name: "okt"}); err == nil {
+		t.Fatal("unconfigured command resolved without a command skill")
 	}
 }
 
@@ -396,6 +390,9 @@ func wireBindingFixturesWithPersona(t *testing.T, fixture agentFixture, persona 
 	skills := []contract.SkillInfo{
 		{Slug: "go", Name: "Go", Description: "Idiomatic Go.", Body: "Go body."},
 		{Slug: "sqlite", Name: "SQLite", Body: "SQLite body."},
+		{Slug: "okt", Name: "Okt", Body: "Start work.", Command: &contract.CommandDefinition{Name: "okt"}},
+		{Slug: "okt-task-implement", Name: "Implement", Body: "Implement work.", Command: &contract.CommandDefinition{Name: "okt-task-implement"}},
+		{Slug: "okt-task-imagine", Name: "Imagine", Body: "Explore work.", Command: &contract.CommandDefinition{Name: "okt-task-imagine"}},
 	}
 	laws := []contract.LawInfo{
 		// Body deliberately mirrors the production shape: directive paragraph
@@ -427,168 +424,6 @@ func equalStringSlices(a, b []string) bool {
 		}
 	}
 	return true
-}
-
-// TestNoGoCommandProseFallback is the no-Go-fallback guard (AC#2 of #603, the
-// automated enforcement of #598's "no hardcoded operational prose in Go"
-// goal). The okt-* command playbook (the operational ## Action prose) and the
-// command list one-liner are ENTITY-SOURCED: they must come solely from the
-// bound okt-<slug>-playbook skill, never from a Go table/fallback. This guard
-// proves Go injects NO such prose, and it is written to FAIL the moment a
-// fallback is reintroduced.
-//
-// It bites on two reintroduction shapes:
-//
-//  1. Behaviourally — it resolves a registered command with the skill catalog
-//     present but EMPTY (no okt-<slug>-playbook skill bound). With entities
-//     absent, the only thing that could populate resp.Description or emit a
-//     playbook/Action body is a Go fallback. The guard asserts both stay empty.
-//     Reintroduce a Go default (e.g. `resp.Description = actionTable[name]` or
-//     a `## Action` render block) and Description becomes non-empty / the body
-//     appears, and this test fails.
-//
-//  2. Structurally — it scans the command_table.go and ResolveCommand source
-//     for the removed-prose symbols (CommandActionFallback, a per-command
-//     Action/Description field, a `## Action` render section). Reintroducing
-//     any of them as a Go symbol trips the scan.
-func TestNoGoCommandProseFallback(t *testing.T) {
-	t.Run("resolution_has_no_go_fallback_with_empty_skill_catalog", testNoGoCommandFallbackBehavior)
-	t.Run("command_source_carries_no_removed_prose_symbols", testNoGoCommandFallbackSource)
-}
-
-func testNoGoCommandFallbackBehavior(t *testing.T) {
-	fixture := newAgentFixture(t)
-	fixture.service.SetSnapshot(snapshotWithEntities(t,
-		nil,
-		[]contract.LawInfo{{Slug: "project-scope-only", Name: "Project scope only", Severity: "error", Body: "Never mix projects."}},
-		[]contract.PersonaInfo{{Slug: "backend-agent", Name: "Backend Agent", Body: "Backend body."}},
-		nil,
-		map[string]contract.CommandBinding{
-			CommandsGlobalKey:    {Laws: []string{"project-scope-only"}},
-			"okt":                {Persona: "backend-agent"},
-			"okt-start":          {Persona: "backend-agent"},
-			"okt-task-implement": {Persona: "backend-agent"},
-		},
-	))
-
-	for _, name := range []string{"okt", "okt-start", "okt-task-implement"} {
-		assertNoGoCommandFallback(t, fixture, name)
-	}
-}
-
-func assertNoGoCommandFallback(t *testing.T, fixture agentFixture, name string) {
-	t.Helper()
-	resp, err := fixture.service.ResolveCommand(fixture.ctx, contract.ResolveCommandInput{Name: name})
-	if err != nil {
-		t.Fatalf("ResolveCommand(%s) error = %v", name, err)
-	}
-	if strings.TrimSpace(resp.Description) != "" {
-		t.Fatalf("%s carries a description %q with an empty skill catalog — a Go fallback re-injected hardcoded command list prose; descriptions must come solely from the bound okt-<slug>-playbook skill frontmatter", name, resp.Description)
-	}
-	if got := fixture.service.CommandDescription(name); strings.TrimSpace(got) != "" {
-		t.Fatalf("CommandDescription(%s) = %q with an empty skill catalog — a Go fallback re-injected hardcoded prose", name, got)
-	}
-	if strings.Contains(resp.Markdown, "## Action") {
-		t.Fatalf("%s rendered a `## Action` section — the command playbook must be the entity-sourced okt-<slug>-playbook skill body under `## Skills`, never a hardcoded Go Action block:\n%s", name, resp.Markdown)
-	}
-	if strings.Contains(resp.Markdown, "## Skills") {
-		t.Fatalf("%s rendered a `## Skills` section despite an empty skill catalog — Go injected a fallback skill/playbook body:\n%s", name, resp.Markdown)
-	}
-}
-
-func testNoGoCommandFallbackSource(t *testing.T) {
-	for _, file := range []string{"../commandcatalog/command_table.go", "service_command.go"} {
-		assertNoRemovedCommandProse(t, file)
-	}
-}
-
-func assertNoRemovedCommandProse(t *testing.T, file string) {
-	t.Helper()
-	path := filepath.Join(".", file)
-	raw, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("read %s: %v — adjust the guard if the file moved", file, err)
-	}
-	code := stripGoComments(string(raw))
-	banned := []struct {
-		token string
-		why   string
-	}{
-		{"CommandActionFallback", "the per-command Go Action fallback was stripped; it must not return"},
-		{"CommandActionEntry", "the per-command Go Action table entry was stripped; it must not return"},
-		{"\"## Action", "the hardcoded `## Action` render section was removed; the playbook is the bound skill body"},
-		{"`## Action", "the hardcoded `## Action` render section was removed; the playbook is the bound skill body"},
-		{"Action string", "command rows carry no Action prose field — the slug is the only column"},
-		{"Action:", "command rows must not be initialised with hardcoded Action prose"},
-	}
-	for _, b := range banned {
-		if strings.Contains(code, b.token) {
-			t.Fatalf("%s contains the removed symbol/prose %q in live code — %s. The okt-* command playbook and description are entity-sourced; reintroducing Go prose breaks the migration.", file, b.token, b.why)
-		}
-	}
-}
-
-// stripGoComments removes line (`//`) and block (`/* */`) comments from Go
-// source so the no-fallback guard scans live code only. It does not need to be
-// a full lexer — the command source carries no string literals containing
-// comment delimiters, so the simple state machine below is exact for this use.
-type goCommentState uint8
-
-const (
-	goSourceCode goCommentState = iota
-	goSourceLineComment
-	goSourceBlockComment
-)
-
-func stripGoComments(src string) string {
-	var b strings.Builder
-	state := goSourceCode
-	for i := 0; i < len(src); i++ {
-		state = consumeGoCommentByte(&b, src, &i, state)
-	}
-	return b.String()
-}
-
-func consumeGoCommentByte(b *strings.Builder, src string, index *int, state goCommentState) goCommentState {
-	switch state {
-	case goSourceCode:
-		return consumeGoCodeByte(b, src, index)
-	case goSourceLineComment:
-		return consumeGoLineCommentByte(b, src, *index)
-	case goSourceBlockComment:
-		return consumeGoBlockCommentByte(src, index)
-	default:
-		return state
-	}
-}
-
-func consumeGoCodeByte(b *strings.Builder, src string, index *int) goCommentState {
-	if *index+1 < len(src) && src[*index] == '/' && src[*index+1] == '/' {
-		(*index)++
-		return goSourceLineComment
-	}
-	if *index+1 < len(src) && src[*index] == '/' && src[*index+1] == '*' {
-		(*index)++
-		return goSourceBlockComment
-	}
-	b.WriteByte(src[*index])
-	return goSourceCode
-}
-
-func consumeGoLineCommentByte(b *strings.Builder, src string, index int) goCommentState {
-	if src[index] == '\n' {
-		b.WriteByte(src[index])
-		return goSourceCode
-	}
-	return goSourceLineComment
-}
-
-func consumeGoBlockCommentByte(src string, index *int) goCommentState {
-	if *index+1 < len(src) && src[*index] == '*' && src[*index+1] == '/' {
-		(*index)++
-		return goSourceCode
-	}
-	return goSourceBlockComment
 }
 
 // TestCreateTaskWithTemplateSlugMergesBody verifies the auto-apply behavior in

@@ -9,8 +9,6 @@ skill_repertoire:
   - fagan-inspection
   - solid-principles
   - markdown
-  - okt-task-review-playbook
-  - okt-task-secure-playbook
 laws:
   - project-scope-only
 ---

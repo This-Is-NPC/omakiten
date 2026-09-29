@@ -1,3 +1,7 @@
+---
+relates_to: [cli:okt]
+---
+
 # The command line
 
 `okt` reads and writes the same board the terminal displays. Start with a
@@ -46,6 +50,8 @@ working directory. Configuration discovery is described in
 | `plan wave-add`, `wave-remove`, `wave-rename`, `wave-reorder` | Ordered plan waves. |
 | `plan assign`, `unassign`, `continue`, `claim` | Membership, next-work preview, and atomic assignment. |
 | `search` | Full-text search across operational records. |
+| `knowledge validate`, `list`, `show`, `search` | Read project interfaces and attached documentation; optionally include declared related projects. |
+| `knowledge export-cli` | Export the executable's command tree as a JSON knowledge inventory. |
 | `error record` | Reusable development failures. |
 | `solution add`, `confirm`, `list-top` | Fixes, observed outcomes, and ranked reuse. |
 | `progress` | Material progress on a task. |
@@ -57,7 +63,7 @@ working directory. Configuration discovery is described in
 | `config language show`, `set`, `reset` | Application language preferences. |
 | `config refresh-defaults`, `config surfaces` | Managed refresh and operation-surface inspection. |
 | `skill`, `law`, `persona`, `template` | File-backed instruction assets. |
-| `command list`, `command resolve` | Discover and compose configured agent playbooks. |
+| `command list`, `command resolve` | Discover workflow commands and compose one command with its immediate related context. |
 | `db backup`, `check`, `reindex` | Recovery snapshots and search-index maintenance. |
 | `completion` | Shell completion from the command tree. |
 | `tui` | Open the interactive terminal. |

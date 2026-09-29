@@ -124,11 +124,10 @@ func TestStudioPersonasRosterIsNarutoSeven(t *testing.T) {
 	if strings.Join(got, ",") != strings.Join(want, ",") {
 		t.Fatalf("roster = %v, want %v", got, want)
 	}
-	if counts["kakashi-hatake"] != 2 {
-		t.Fatalf("kakashi commands = %d, want 2", counts["kakashi-hatake"])
-	}
-	if counts["shikamaru-nara"] != 14 {
-		t.Fatalf("shikamaru commands = %d, want 14", counts["shikamaru-nara"])
+	for slug, count := range counts {
+		if count != 0 {
+			t.Fatalf("%s commands = %d, want no embedded commands", slug, count)
+		}
 	}
 }
 
@@ -157,7 +156,7 @@ func assertPersonasListShape(t *testing.T, rawView string, width, height int) {
 	if width < 120 {
 		return
 	}
-	for _, want := range []string{"kakashi-hatake", "2 cmd", "14 cmd"} {
+	for _, want := range []string{"kakashi-hatake", "0 cmd"} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("personas at %dx%d missing %q\n%s", width, height, want, view)
 		}
@@ -178,11 +177,11 @@ func TestStudioPersonasInspectorFoci(t *testing.T) {
 			// The kicker has always counted the persona's laws; the table now
 			// carries them, with the type column saying which is which.
 			"project-scope-only", "law",
-		}, []string{"okt-task-review", "okt-task-secure", "skills 4/8", "skills 2/8"}},
+		}, []string{"No commands bind this persona."}},
 		{"shikamaru-nara", []string{
 			"shikamaru-nara", "Shikamaru Nara", "concierge",
 			"01   pdca-cycle", "// RELATED",
-		}, []string{"okt-start", "okt-note-free", "skills 3/24", "skills 2/24"}},
+		}, []string{"No commands bind this persona."}},
 	}
 	for _, tc := range cases {
 		tc := tc
@@ -348,51 +347,13 @@ func TestStudioPersonasInspectorEnterOpensLawEntity(t *testing.T) {
 	}
 }
 
-func TestStudioPersonasInspectorEnterNavigatesToCommand(t *testing.T) {
+func TestStudioPersonasNoEmbeddedCommands(t *testing.T) {
 	t.Parallel()
-
-	screen, frame := personasScreen(t, 120, 40, State{})
-	screen = screen.Lifecycle(frame, screenhost.LifecycleEnter).Screen.(Screen)
-	for range personasFocusKeys("kakashi-hatake") {
-		screen = studioDrive(t, screen, frame, "down")
-	}
-	screen = studioDrive(t, screen, frame, "tab")
-	screen = studioDrive(t, screen, frame, "tab")
-	// Walk to the first COMMAND row rather than counting skills: the table also
-	// carries the persona's laws now, so the skill count is no longer the
-	// distance to a command.
-	related := screen.personaRelatedRows(studioPersonaRows(studioPersonasGoldenBundle(), nil)[screen.studioPersonaIndex])
-	first := -1
-	for i, row := range related {
-		if row.Kind == relatedCommand {
-			first = i
-			break
+	rows := studioPersonaRows(studioPersonasGoldenBundle(), nil)
+	for _, row := range rows {
+		if len(row.Commands) != 0 {
+			t.Fatalf("persona %s has embedded commands: %+v", row.Persona.Slug, row.Commands)
 		}
-	}
-	if first < 0 {
-		t.Fatal("kakashi has no command rows; nothing to navigate to")
-	}
-	for i := 0; i < first; i++ {
-		screen = studioDrive(t, screen, frame, "j")
-	}
-	persona := screen.studioPersonaIndex
-	outcome := screen.Update(frame, screentest.Key("enter"))
-	next, ok := outcome.Screen.(Screen)
-	if !ok {
-		t.Fatalf("enter carried %T", outcome.Screen)
-	}
-	if next.studioPersonaIndex != persona {
-		t.Fatalf("enter moved persona index from %d to %d", persona, next.studioPersonaIndex)
-	}
-	if outcome.Action.Kind != screenhost.ActionNavigate {
-		t.Fatalf("enter action = %v, want ActionNavigate", outcome.Action.Kind)
-	}
-	if outcome.Action.Target != screenhost.StudioCommands {
-		t.Fatalf("Target = %q, want %q", outcome.Action.Target, screenhost.StudioCommands)
-	}
-	wantIdx := CommandIndexFor(studioPersonasGoldenBundle().Commands, "okt-task-review")
-	if next.studioCommandIndex != wantIdx {
-		t.Fatalf("parked command index = %d, want %d (okt-task-review)", next.studioCommandIndex, wantIdx)
 	}
 }
 

@@ -20,6 +20,7 @@ behavior and the owner of each rule, rather than a historical feature ledger.
 | Requirement | Owner |
 | --- | --- |
 | A preset captures all package files and runs independently of its source checkout. | Package installer and configuration loader |
+| Agent commands are discovered from the selected workflow's command skills and bindings; resolving one includes only its declared immediate context. | `internal/config`, `internal/operation` |
 | Package paths, regular files, manifest, configuration, and references are validated on installation. | `internal/config`, `internal/installer` |
 | Package installation does not inspect or execute hook scripts. | Installer boundary |
 | Successful edits publish one validated package snapshot; failures leave selection intact. | Bundle editor and `internal/configstore` |
@@ -34,6 +35,7 @@ behavior and the owner of each rule, rather than a historical feature ledger.
 | A task or plan export is one UTF-8 OKF Markdown file, with versioned Omakiten structure. | `internal/workfile`, work document services |
 | Structured imports are all-or-nothing, including relationships, metadata, and business events; dry-run rolls back. | Work document repository transaction |
 | Exported relationships must fit inside the document's task set. | Export validation |
+| Project knowledge is read from files without SQLite persistence; related projects are followed only when declared. | `internal/knowledgefile`, CLI and TUI knowledge ports |
 | Destructive database operations use verified live recovery images and protected directory identity. | SQLite and recovery adapters |
 | Search repair is transactional and verified against canonical records. | Search integrity adapter |
 | CLI data output is machine-readable, errors exit nonzero, and diagnostics preserve actionable context. | CLI execution and output |

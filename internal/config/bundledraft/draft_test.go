@@ -72,7 +72,7 @@ func TestStudioDraftValidationUsesCommandSkillSubset(t *testing.T) {
 	}
 
 	report := draft.Mutate(func(bundle *config.Bundle) error {
-		bundle.Commands["task"] = config.CommandSpec{Persona: "builder", Skills: []string{"deploy"}}
+		bundle.Commands["task"] = config.CommandSpec{Persona: "builder", Skills: []string{"deploy", "task"}}
 		return nil
 	})
 
@@ -88,7 +88,7 @@ func TestStudioDraftCommandLawConflictBlocksCandidate(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	report := draft.SetCommandSpec("task", config.CommandSpec{Persona: "builder", Laws: []string{"safety"}, LawsDisabled: []string{"safety"}, Skills: []string{"code"}})
+	report := draft.SetCommandSpec("task", config.CommandSpec{Persona: "builder", Laws: []string{"safety"}, LawsDisabled: []string{"safety"}, Skills: []string{"code", "task"}})
 
 	if report.ValidationError == nil || !strings.Contains(report.ValidationError.Error(), "both laws and laws_disabled") {
 		t.Fatalf("validation error = %v, want law conflict", report.ValidationError)
@@ -105,7 +105,7 @@ func TestStudioDraftCommandTemplateOrderingAndApply(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	report := draft.SetCommandSpec("task", config.CommandSpec{Persona: "builder", Skills: []string{"code"}, Templates: []string{"acceptance", "requirements"}})
+	report := draft.SetCommandSpec("task", config.CommandSpec{Persona: "builder", Skills: []string{"code", "task"}, Templates: []string{"acceptance", "requirements"}})
 	if report.ValidationError != nil {
 		t.Fatalf("set command validation error = %v", report.ValidationError)
 	}
@@ -613,11 +613,11 @@ func studioDraftBundle() config.Bundle {
 			},
 			Transitions: []config.Transition{{From: 1, To: 2}},
 		}},
-		Skills:      []config.Skill{{Slug: "code"}, {Slug: "deploy"}},
-		AllSkills:   []config.Skill{{Slug: "code"}, {Slug: "deploy"}},
-		Personas:    []config.Persona{{Slug: "builder", SkillRepertoire: []string{"code"}}},
-		AllPersonas: []config.Persona{{Slug: "builder", SkillRepertoire: []string{"code"}}},
-		Commands:    map[string]config.CommandSpec{"task": {Persona: "builder", Skills: []string{"code"}}},
+		Skills:      []config.Skill{{Slug: "code"}, {Slug: "deploy"}, {Slug: "task", Command: &config.SkillCommand{Name: "task"}}},
+		AllSkills:   []config.Skill{{Slug: "code"}, {Slug: "deploy"}, {Slug: "task", Command: &config.SkillCommand{Name: "task"}}},
+		Personas:    []config.Persona{{Slug: "builder", SkillRepertoire: []string{"code", "task"}}},
+		AllPersonas: []config.Persona{{Slug: "builder", SkillRepertoire: []string{"code", "task"}}},
+		Commands:    map[string]config.CommandSpec{"task": {Persona: "builder", Skills: []string{"code", "task"}}},
 		Surfaces:    config.CanonicalSurfaceTable(),
 	}
 }

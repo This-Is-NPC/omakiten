@@ -1,0 +1,4 @@
+version: 1
+sources:
+  - {format: markdown, path: docs}
+  - {format: cli, path: .tmp/knowledge/cli.json, optional: true}

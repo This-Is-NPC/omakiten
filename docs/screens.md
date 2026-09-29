@@ -50,6 +50,7 @@ framing.
 | `j` / `k`, page keys | Move within the focused section. |
 | `enter` | Open the focused comment or referenced task. |
 | `f` | Open the full-width Project Form reader. |
+| `Shift+K` | Open the file-backed project knowledge catalog. |
 | `r` | Refresh the projection. |
 | `esc` | Return to the prior screen. |
 
@@ -72,6 +73,15 @@ as they do through the CLI.
 The graph shows task dependencies. Plans group tasks by ordered waves, with
 a separate plan-network presentation. A wave is an ordering rule, not another
 task bucket.
+
+Project Knowledge reads Markdown, OpenAPI, and declared CLI inventories from
+the registered root. Its single scrollable graph shows CLI commands, API
+operations, linked guides, and unlinked documentation together. Move with
+`j`/`k`, page keys, or `g`/`G`; `enter` on a command or operation shows its
+attached guides and reference, `esc` returns to the same graph node, and `r`
+rereads source files.
+See [the knowledge guide](how-to-browse-project-knowledge.md)
+for source and cross-project rules.
 
 ## 4. Read Task Detail
 

@@ -74,12 +74,16 @@ func snapshotWithEntities(
 	t.Helper()
 	bundle := config.Bundle{}
 	for _, s := range skills {
-		bundle.Skills = append(bundle.Skills, config.Skill{
+		skill := config.Skill{
 			Slug:        s.Slug,
 			Name:        s.Name,
 			Description: s.Description,
 			Body:        s.Body,
-		})
+		}
+		if s.Command != nil {
+			skill.Command = &config.SkillCommand{Name: s.Command.Name}
+		}
+		bundle.Skills = append(bundle.Skills, skill)
 	}
 	for _, l := range laws {
 		bundle.Laws = append(bundle.Laws, config.Law{

@@ -16,7 +16,6 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"omakiten/internal/config"
-	"omakiten/internal/contract"
 	"omakiten/internal/domain"
 	"omakiten/internal/events"
 	"omakiten/internal/hooks"
@@ -91,7 +90,6 @@ func TestBundleCacheMtimeChangeTriggersRebuild(t *testing.T) {
 }
 
 func TestRuntimeServiceResolvesPreferenceChanges(t *testing.T) {
-	ctx := context.Background()
 	rt := openTestRuntime(t)
 	defer func() { _ = rt.Close() }()
 
@@ -99,12 +97,8 @@ func TestRuntimeServiceResolvesPreferenceChanges(t *testing.T) {
 	if first == nil {
 		t.Fatal("Service() = nil")
 	}
-	resp, err := first.ResolveCommand(ctx, contract.ResolveCommandInput{Name: "okt"})
-	if err != nil {
-		t.Fatalf("ResolveCommand before edit: %v", err)
-	}
-	if resp.AgentOutputLanguage != "" {
-		t.Fatalf("initial agent output language = %q, want empty", resp.AgentOutputLanguage)
+	if got := first.Snapshot().AgentOutputLanguage(); got != "" {
+		t.Fatalf("initial agent output language = %q, want empty", got)
 	}
 
 	if err := config.SavePreferences(config.Preferences{Languages: config.LanguageSettings{AgentOutput: "Português (Brasil)"}}); err != nil {
@@ -118,12 +112,8 @@ func TestRuntimeServiceResolvesPreferenceChanges(t *testing.T) {
 	if second == first {
 		t.Fatal("Service() returned stale service after application preferences changed")
 	}
-	resp, err = second.ResolveCommand(ctx, contract.ResolveCommandInput{Name: "okt"})
-	if err != nil {
-		t.Fatalf("ResolveCommand after edit: %v", err)
-	}
-	if resp.AgentOutputLanguage != "Português (Brasil)" {
-		t.Fatalf("agent output language after reload = %q, want Português (Brasil)", resp.AgentOutputLanguage)
+	if got := second.Snapshot().AgentOutputLanguage(); got != "Português (Brasil)" {
+		t.Fatalf("agent output language after reload = %q, want Português (Brasil)", got)
 	}
 }
 
@@ -147,7 +137,7 @@ func TestRuntimeServiceResolvesActiveProfileSwitch(t *testing.T) {
 	if first == nil {
 		t.Fatal("Service() = nil")
 	}
-	_, err = first.ResolveCommand(ctx, contract.ResolveCommandInput{Name: "okt"})
+	_, err = first.ListCommands(ctx)
 	if err != nil {
 		t.Fatalf("ResolveCommand before active switch: %v", err)
 	}
@@ -165,7 +155,7 @@ func TestRuntimeServiceResolvesActiveProfileSwitch(t *testing.T) {
 	if second == first {
 		t.Fatal("Service() returned stale service after active profile switched")
 	}
-	_, err = second.ResolveCommand(ctx, contract.ResolveCommandInput{Name: "okt"})
+	_, err = second.ListCommands(ctx)
 	if err != nil {
 		t.Fatalf("ResolveCommand after active switch: %v", err)
 	}
@@ -212,7 +202,7 @@ func TestRuntimeServicePreservesPriorRuntimeOnInvalidInPlaceEdit(t *testing.T) {
 	if first == nil {
 		t.Fatal("Service() = nil")
 	}
-	_, err := first.ResolveCommand(ctx, contract.ResolveCommandInput{Name: "okt"})
+	_, err := first.ListCommands(ctx)
 	if err != nil {
 		t.Fatalf("ResolveCommand before edit: %v", err)
 	}
@@ -238,7 +228,7 @@ func TestRuntimeServicePreservesPriorRuntimeOnInvalidInPlaceEdit(t *testing.T) {
 		t.Fatal("Service() swapped to a different service after an invalid edit; rebuild must not replace c.entries on parse failure")
 	}
 	// The prior service remains usable after an invalid edit.
-	_, err = second.ResolveCommand(ctx, contract.ResolveCommandInput{Name: "okt"})
+	_, err = second.ListCommands(ctx)
 	if err != nil {
 		t.Fatalf("ResolveCommand after invalid edit: %v", err)
 	}
@@ -292,7 +282,7 @@ func TestRuntimeServiceExplicitConfigIgnoresActiveSwitch(t *testing.T) {
 	if first == nil {
 		t.Fatal("Service() = nil")
 	}
-	_, err = first.ResolveCommand(ctx, contract.ResolveCommandInput{Name: "okt"})
+	_, err = first.ListCommands(ctx)
 	if err != nil {
 		t.Fatalf("ResolveCommand before active switch: %v", err)
 	}
@@ -309,7 +299,7 @@ func TestRuntimeServiceExplicitConfigIgnoresActiveSwitch(t *testing.T) {
 	if second == nil {
 		t.Fatal("Service() after active switch = nil")
 	}
-	_, err = second.ResolveCommand(ctx, contract.ResolveCommandInput{Name: "okt"})
+	_, err = second.ListCommands(ctx)
 	if err != nil {
 		t.Fatalf("ResolveCommand after active switch: %v", err)
 	}

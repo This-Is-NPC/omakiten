@@ -1,3 +1,7 @@
+---
+relates_to: [cli:task, cli:task.create, cli:task.continue]
+---
+
 # How to take a task from an idea to done
 
 **The question:** how do I keep the work, the evidence, and the next action

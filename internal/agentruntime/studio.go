@@ -41,7 +41,7 @@ func studioAgentPersonas(personas []config.Persona) map[string]contract.PersonaI
 func studioAgentSkills(skills []config.Skill) map[string]contract.SkillInfo {
 	out := map[string]contract.SkillInfo{}
 	for _, s := range skills {
-		out[s.Slug] = contract.SkillInfo{Slug: s.Slug, Name: s.Name, Description: s.Description, Body: s.Body}
+		out[s.Slug] = operation.SkillInfoFromConfig(s)
 	}
 	return out
 }

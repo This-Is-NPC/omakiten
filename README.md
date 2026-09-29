@@ -61,7 +61,7 @@ moves to completion.
 - [The documentation map](docs/README.md) — every page and the question it answers.
 - [Working on a task](docs/how-to-work-on-a-task.md) — evidence, guards, and handoffs.
 - [Importing and exporting work](docs/how-to-import-and-export-work.md) — one file for a task or complete plan.
-- [Using agents](docs/how-to-use-with-agents.md) — the skill, context recovery, and playbooks.
+- [Using agents](docs/how-to-use-with-agents.md) — the skill, context recovery, and command skills.
 - [Choosing a workflow](docs/how-to-manage-presets.md) — catalog, repositories, and modified snapshots.
 - [The terminal](docs/screens.md) — Home, Project, Task Detail, search, and Studio.
 - [When a command refuses](docs/troubleshooting.md) — find the selected scope and the next recovery action.

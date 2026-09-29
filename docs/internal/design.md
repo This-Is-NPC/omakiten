@@ -57,6 +57,7 @@ injected interactive runner and imports no TUI. The executable composes both.
 | `internal/sqlite` | Transactions, operational queries, events, and live snapshots. |
 | `internal/agentruntime` | Bootstrap, per-project runtime cache, reload, and shutdown. |
 | `internal/workfile` | Bounded UTF-8 OKF Markdown codec. |
+| `internal/knowledgefile` | File-backed Markdown, OpenAPI, and CLI knowledge reader. |
 | `internal/recovery` | Recovery images, directory leases, and retention. |
 | `internal/installer`, `internal/updater` | Package capture, setup, and executable updates. |
 | `internal/releaseverify`, `internal/releasemeta` | Release verification policy and metadata. |
@@ -81,6 +82,13 @@ content identity, and atomically updates the scope's selection. Application
 preferences are watched independently of preset edit hashes. Translation
 catalogs are embedded and cached; consumers receive independent values.
 
+Agent commands belong to the selected workflow package. Each command is a
+skill whose frontmatter declares its name, parameters, and immediate `next`
+references. Command bindings select its persona, supporting skills, laws, and
+templates. `internal/config` validates both sides, and `internal/operation`
+composes the requested command plus one level of related context. The CLI and
+Studio consume that composition through shared contracts.
+
 ## 4. Work documents and transactions
 
 CLI passes decoded document values through operation contracts to
@@ -95,6 +103,14 @@ the complete record under a consistent transaction snapshot.
 Business fields remain in their operational tables. Entity-owned document
 metadata preserves file-local keys and producer extensions; export combines
 both. The [data model](data-model.md) describes the relationships.
+
+Project knowledge is separate from operational work documents. Its readers
+build an in-memory projection from registered project files on each explicit
+read or TUI refresh. CLI command inventories are exported from executable
+command trees into generated files under `.tmp/`; Markdown frontmatter attaches
+guides to commands or OpenAPI operations by stable ID. The TUI prepares one
+scrollable interface-first graph from those relations. No knowledge node or relation is
+written to SQLite.
 
 ## 5. Events and hooks
 

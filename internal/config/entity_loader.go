@@ -12,10 +12,11 @@ import (
 
 // skillFrontmatter mirrors the YAML inside skills/<slug>.md.
 type skillFrontmatter struct {
-	Name          string   `yaml:"name"`
-	Description   string   `yaml:"description,omitempty"`
-	SchemaVersion int      `yaml:"schema_version"`
-	RoleAffinity  []string `yaml:"role_affinity,omitempty"`
+	Name          string        `yaml:"name"`
+	Description   string        `yaml:"description,omitempty"`
+	SchemaVersion int           `yaml:"schema_version"`
+	RoleAffinity  []string      `yaml:"role_affinity,omitempty"`
+	Command       *SkillCommand `yaml:"command,omitempty"`
 }
 
 type lawFrontmatter struct {
@@ -77,6 +78,7 @@ func decodeSkillFile(path string, raw []byte, isCustom bool) (Skill, *SourceWarn
 		Body:          string(body),
 		SchemaVersion: meta.SchemaVersion,
 		RoleAffinity:  append([]string(nil), meta.RoleAffinity...),
+		Command:       meta.Command,
 		SourcePath:    path,
 		IsCustom:      isCustom,
 	}, slugMismatchWarning(slug, meta.Name, path), nil
