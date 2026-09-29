@@ -48,4 +48,4 @@ composes the bound persona, skills, laws, and templates without executing them.
 - `docs/how-to-manage-presets.md` — snapshots, activation, and transport.
 - `docs/how-to-customize-a-workflow.md` — modules, entities, permissions, and guards.
 - `docs/how-to-use-with-agents.md` — context recovery and instruction resolution.
-- `docs/data-model.md` — operational state and document metadata.
+- `docs/internal/data-model.md` — operational state and document metadata.

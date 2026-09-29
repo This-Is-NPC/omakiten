@@ -10,7 +10,7 @@ Survey the project documentation for drift. This is a read-only audit — you li
 
 ## Survey the top-level docs
 
-Survey `docs/design.md`, `docs/requirements.md`, `README.md`, `CONTRIBUTING.md`, and the documentation map in `docs/README.md`.
+Survey `docs/internal/design.md`, `docs/internal/requirements.md`, `README.md`, `CONTRIBUTING.md`, and the documentation map in `docs/README.md`.
 
 ## List drift items
 

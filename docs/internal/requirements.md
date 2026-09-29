@@ -49,5 +49,5 @@ under `.tmp/`, with persistent development state under `dev_env/`.
 
 Keep tests that protect these behaviors, including failure paths and transaction
 boundaries. Package import restrictions are enforced by `internal/arch` and
-lint. The [contribution checklist](../CONTRIBUTING.md) and
+lint. The [contribution checklist](../../CONTRIBUTING.md) and
 [TUI assembly rules](tui-screen-assembly.md) define the implementation contract.

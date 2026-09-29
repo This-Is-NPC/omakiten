@@ -80,8 +80,8 @@ Mise owns the pinned tools and project commands. The development terminal uses
 isolated state under `dev_env/`; build output and reports belong under `.tmp/`.
 The pre-push hook runs the verification gate for clean HEAD.
 
-Read [CONTRIBUTING.md](CONTRIBUTING.md), [the design](docs/design.md), and
-[the development guide](docs/development.md) before changing the repository.
+Read [CONTRIBUTING.md](CONTRIBUTING.md), [the design](docs/internal/design.md), and
+[the development guide](docs/internal/development.md) before changing the repository.
 
 ## License
 

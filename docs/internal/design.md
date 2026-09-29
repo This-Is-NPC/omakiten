@@ -1,6 +1,6 @@
 # How it is built
 
-This page is for contributors. The [how-to pages](README.md) describe using
+This page is for contributors. The [how-to pages](../README.md) describe using
 the product; this one explains which module owns a behavior and how a change
 reaches its consumers.
 

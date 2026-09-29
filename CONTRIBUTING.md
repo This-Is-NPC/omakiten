@@ -1,6 +1,6 @@
 # Contributing
 
-Start with [working on Omakiten](docs/development.md). This file is the
+Start with [working on Omakiten](docs/internal/development.md). This file is the
 canonical checklist for repository changes. [AGENTS.md](AGENTS.md) supplies
 the agent contract and commit procedure.
 
@@ -29,8 +29,8 @@ formatting, tests, lint, vulnerability, workspace, and shell checks.
   Candidate reloads are accepted before publication.
 - Components own cursor, viewport, and scroll state. Screens consume their APIs.
 
-[The design](docs/design.md) explains ownership.
-[TUI screen assembly](docs/tui-screen-assembly.md) is normative: screens
+[The design](docs/internal/design.md) explains ownership.
+[TUI screen assembly](docs/internal/tui-screen-assembly.md) is normative: screens
 declare archetypes, content, keys, and styles; components own geometry and
 measurement. Rendering consumes prepared composition. `BlockMemo` is the
 single block cache and excludes terminal rows from its identity.
@@ -81,9 +81,10 @@ and points at complete procedures.
   the result and relevant failure paths.
 - `cli.md` maps commands and output contracts; exact flags come from `--help`.
 - `screens.md` describes terminal interaction in order of use.
-- `design.md`, `data-model.md`, and `requirements.md` describe current ownership
-  and behavioral constraints. Align implementation with them.
-- `development.md` covers tasks, generated output, verification, and releases.
+- Contributor guides live in `docs/internal/`. Design, data model, and
+  requirements describe current ownership and behavioral constraints; align
+  implementation with them. Development covers tasks, generated output,
+  verification, and releases.
 - Update the guide that owns changed behavior in the same PR. Link shared
   explanations rather than duplicating them. Describe current behavior only.
 

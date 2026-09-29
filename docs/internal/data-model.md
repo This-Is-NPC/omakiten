@@ -80,5 +80,5 @@ WAL data. Filesystem-backed opens validate paths and file identity before
 schema or WAL mutation. Supported schema changes are applied transactionally;
 an unsupported database returns a validation error.
 
-[Backup and recovery](how-to-back-up-and-recover.md) explains using the
+[Backup and recovery](../how-to-back-up-and-recover.md) explains using the
 snapshot commands. [Design](design.md) explains transaction and adapter ownership.
