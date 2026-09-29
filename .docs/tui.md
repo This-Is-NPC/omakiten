@@ -72,6 +72,10 @@ The TUI consumes the same application services as the CLI and operation layers â
 
 ## Project view
 
+Metadata, dashboard and activity each have a bordered panel, with the same
+framing used in Task Detail. The section title and outer borders stay fixed
+while its content scrolls; scroll indicators remain inside the panel.
+
 On compact terminals, the layout gives the focused area the available height
 when metadata, dashboard and activity cannot each receive a readable share.
 Use `tab` to reach every area. Wider terminals keep the side-by-side layout.
