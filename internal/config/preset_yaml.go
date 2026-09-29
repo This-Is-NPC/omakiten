@@ -275,6 +275,9 @@ func (e *presetYAMLEditor) patchKey(owner *yaml.Node, key string, before, after 
 			continue
 		}
 		if after == nil {
+			if classifyImport(owner.Content[i+1]).kind == importDirective {
+				return e.patch(owner.Content[i+1], before, &yaml.Node{Kind: before.Kind, Tag: before.Tag}, path)
+			}
 			owner.Content = append(owner.Content[:i], owner.Content[i+2:]...)
 			e.dirty[path] = true
 			return nil
