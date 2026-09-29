@@ -578,7 +578,7 @@ Rerun matrix:
 
 ### `okt config show --scope <global|local>`
 
-`internal/cli/config_show.go`. Prints the raw bytes of the chosen scope's active yaml. Local walks up from CWD via `config.FindRepoLocal`; missing discovery is a `validation_error` (no silent fallback to global — the standalone semantics make a fallback ambiguous).
+`internal/cli/config_show.go`. Prints the raw bytes of the chosen scope's active yaml. Local walks up from the selected project root, or CWD, via `config.FindRepoLocal`; missing discovery is a `validation_error` (no silent fallback to global — the standalone semantics make a fallback ambiguous).
 
 ### `okt config path --scope <global|local>`
 
@@ -586,11 +586,11 @@ Rerun matrix:
 
 ### `okt config why <key> [--layer <global|local>]`
 
-`internal/cli/config_inspect.go`. Walks the active config by dotted YAML key path and reports `{key, value, source, path}`. Without `--layer` the runtime resolver decides — the discovered `.omakiten/` wins over the user-global ConfigRoot. With `--layer` the lookup is pinned to that scope. Missing keys (and missing local installs when `--layer local`) return `source = "not_set"`.
+`internal/cli/config_inspect.go`. Walks the active config by dotted YAML key path and reports `{key, value, source, path}`. Without `--layer`, an explicit `--config` returns `source = "explicit"`; otherwise, the discovered `.omakiten/` wins over the user-global ConfigRoot. Discovery starts at the selected project root, or CWD. Imports are expanded using the same file-size, path and cycle constraints as runtime loading. With `--layer` the lookup is pinned to that scope. Missing keys (and missing local installs when `--layer local`) return `source = "not_set"`.
 
 ### `okt config diff <left> <right>`
 
-`internal/cli/config_inspect.go`. Structural YAML diff between two sources. Each operand is one of:
+`internal/cli/config_inspect.go`. Structural YAML diff between two sources after expanding their imports. Each operand is one of:
 
 - `global` — the user-global active yaml.
 - `local` — the active yaml inside the CWD walk-up `.omakiten/`.
@@ -601,7 +601,7 @@ Output entries carry `op = added | removed | changed` plus the relevant side val
 
 ### `okt config language` — inspect or update the language triple
 
-`internal/cli/config_language.go`. Three subcommands manage the CLI / TUI / agent-output language triple captured at install time. All writes go through the bundle editor (atomic temp-file + rename).
+`internal/cli/config_language.go`. Three subcommands manage the CLI / TUI / agent-output language triple captured at install time. The selected project controls discovery; an explicit `--config` selects that profile. All writes go through the bundle editor (atomic temp-file + rename).
 
 - `okt config language show` — reports the resolved triple, the kit default, and each slot's source (default vs. user override).
 - `okt config language set [--cli CODE] [--tui CODE] [--agent FREEFORM] [--global]` — updates one or more slots. CLI / TUI codes are validated against the loaded language packs (`internal/config/language.go::LoadLanguages`); unknown codes return `validation_error` with the list of available packs. The agent string is free-form (e.g. `"Português (Brasil)"`) because it is sent verbatim to the LLM. `--global` bypasses repo-local discovery and writes the user-global profile.
@@ -702,9 +702,9 @@ File-backed under `laws/<slug>.md`. `internal/cli/law.go`. Frontmatter: `name?`,
 
 > `SLUG` arguments accept either the slug or the numeric id.
 
-- `okt law list` — `--scope` filters by `global` / `project` / `persona`; pair with `--project SLUG` or `--persona SLUG` to narrow further.
+- `okt law list` — `--scope` filters by `global` / `project` / `persona`; pair with `--scope-project SLUG` or `--persona SLUG` to narrow further.
 - `okt law show SLUG` / `okt law remove SLUG` — no flags. Removal deletes the file and prunes references.
-- `okt law add` — `--key` required; `--severity` defaults to `error`; `--scope` defaults to `global` and gates a `--project` or `--persona` slug when set to those values. Empty `--body` triggers a placeholder + `$EDITOR`; pass `--no-edit` to skip.
+- `okt law add` — `--key` required; `--severity` defaults to `error`; `--scope` defaults to `global` and gates a `--scope-project` or `--persona` slug when set to those values. Empty `--body` triggers a placeholder + `$EDITOR`; pass `--no-edit` to skip.
 - `okt law edit SLUG` — flag-driven `--name` / `--severity` / `--body` rewrites; `--no-edit` applies only flag-driven updates.
 
 ```sh
@@ -941,6 +941,18 @@ _No flags beyond globals._
 Refresh shipped default files without running setup. Preserves `custom/` subtrees and `config/.active`; removes stale managed files outside `custom/`; refuses unsafe non-install roots and managed top-level symlink directories.
 `okt config refresh-defaults [flags]`
 
+Config discovery also applies to this command: a parent directory's `.omakiten/`
+installation takes precedence over the user-global installation. To repair a
+specific installation, use the path reported by the error:
+
+```bash
+okt --config /path/to/.omakiten/config/omakase.yaml config refresh-defaults
+okt --config /path/to/.omakiten/config/omakase.yaml config validate
+```
+
+Refreshing replaces direct edits to shipped files. Keep personal configuration
+in `custom/`; the database is preserved.
+
 _No flags beyond globals._
 
 ### `okt config path`
@@ -1084,6 +1096,7 @@ Add a law (writes laws/<slug>.md and opens $EDITOR if body omitted)
 | `--no-edit` |  |  | skip opening $EDITOR after creating the scaffold |
 | `--persona` |  | string | persona slug (required when --scope=persona) |
 | `--scope` |  | string | global, project, or persona (default "global") |
+| `--scope-project` |  | string | project slug (required when --scope=project) |
 | `--severity` | `-s` | string | info, warning, or error (default "error") |
 
 ### `okt law edit`
@@ -1429,19 +1442,47 @@ _No flags beyond globals._
 Successful exports to stdout emit raw Markdown. Other data commands use the
 JSON envelope below.
 
-Every command writes to stdout one of:
+Data commands write to stdout one of:
 
 ```json
 {"ok":true,"data": …}
 ```
 
 ```json
-{"ok":false,"error":{"code":"<coded>","msg":"…","details":{…}}}
+{"ok":false,"code":"<coded>","msg":"…","details":{…}}
 ```
 
 `code` is one of the constants in `internal/domain/errors.go` (e.g., `validation_error`, `task_not_found`, `workflow_invalid_transition`, `guard_violation`, `dependency_invalid`, `tag_conflict`, `editor_failed`, `config_invalid`). The full list and agent-side guidance is in `.docs/agents.md` §"Failure Guidance".
 
 A failed command exits with status `1`. JSON minification follows `config.output.json_minified`.
+
+Every failure includes `details.help_command` and `details.usage`. Argument,
+flag, and required-flag errors use `validation_error` and exit with status `1`.
+Unknown commands include Cobra's spelling suggestions. Terminal sessions also
+show readable diagnostics on stderr; scripts receive a JSON failure without
+additional terminal output. TUI startup errors use readable stderr diagnostics.
+Missing entities include a discovery command that retains explicit database,
+configuration, and project selection; project lookup failures suggest listing
+projects without repeating the invalid selection.
+
+Configuration failures include the reported source path, validator message,
+and repair hint.
+Unknown schema keys in an official managed preset recommend an explicitly
+scoped `config refresh-defaults`; custom profiles recommend editing the file.
+Commands reject undeclared positional arguments and explicitly empty path flags. IDs are positive integers;
+numeric filters such as `--limit` and `--parent` cannot be negative. Explicit
+`--project` and `--project-id` are mutually exclusive. A project-scoped law uses
+`--scope-project` independently of the global `--project` selection.
+
+Prompts and editor output go to stderr. Without a terminal, entity add/edit
+commands require `--no-edit` or an explicitly configured `EDITOR`/`VISUAL`
+command suitable for automation. Editors receive the command's cancellation
+context. Log durations accept complete Go duration strings or integer days
+(`7d`); negative, malformed, and overflowing values are rejected.
+
+`okt completion bash|zsh|fish|powershell` generates shell completions from the
+command tree. Scope, preset, harness, and event-category flags suggest their
+supported values; path flags suggest relevant files or directories.
 
 ---
 

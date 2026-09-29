@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"os"
 
 	"omakiten/internal/cli"
@@ -11,11 +10,5 @@ import (
 var version = "dev"
 
 func main() {
-	if err := cli.NewRootCommand(version, terminal.Run).Execute(); err != nil {
-		if code, ok := cli.ExitCode(err); ok {
-			os.Exit(code)
-		}
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
-	}
+	os.Exit(cli.Execute(cli.NewRootCommand(version, terminal.Run)))
 }

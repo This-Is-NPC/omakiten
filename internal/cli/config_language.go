@@ -35,8 +35,8 @@ func newConfigLanguageShowCommand(opts *runtimeOptions) *cobra.Command {
 		Use:   "show",
 		Short: opts.t("cli.config.language.show.short"),
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			return runJSON(cmd, func(_ context.Context) (any, error) {
-				path, bundle, err := loadActiveBundle(opts)
+			return runJSON(cmd, func(ctx context.Context) (any, error) {
+				path, bundle, err := loadActiveBundle(ctx, opts)
 				if err != nil {
 					return nil, err
 				}
@@ -117,11 +117,11 @@ func runConfigLanguageSet(cmd *cobra.Command, opts *runtimeOptions, inputs langu
 		if !inputs.cliSet && !inputs.tuiSet && !inputs.agentSet {
 			return nil, domain.NewError(domain.ErrValidation, opts.t("cli.err.language_set_no_flags"), nil)
 		}
-		path, err := writeTargetPath(opts, inputs.global)
+		path, err := writeTargetPath(ctx, opts, inputs.global)
 		if err != nil {
 			return nil, err
 		}
-		bundle, err := loadLanguageWriteBundle(opts, path)
+		bundle, err := loadLanguageWriteBundle(path)
 		if err != nil {
 			return nil, err
 		}
@@ -133,17 +133,17 @@ func runConfigLanguageSet(cmd *cobra.Command, opts *runtimeOptions, inputs langu
 		if err := config.SaveBundle(path, bundle); err != nil {
 			return nil, fmt.Errorf("save %s: %w", path, err)
 		}
-		if err := reloadActiveBundle(ctx, opts); err != nil {
+		if err := reloadActiveBundle(ctx, opts, path); err != nil {
 			return nil, err
 		}
 		return map[string]any{"path": path, "languages": settingsToMap(next)}, nil
 	})
 }
 
-func loadLanguageWriteBundle(opts *runtimeOptions, path string) (config.Bundle, error) {
+func loadLanguageWriteBundle(path string) (config.Bundle, error) {
 	bundle, err := config.LoadBundle(path)
 	if err != nil {
-		return config.Bundle{}, domain.NewError(domain.ErrConfigInvalid, opts.t("cli.err.config_invalid"), map[string]any{"path": path, "error": fmt.Sprint(err)})
+		return config.Bundle{}, configValidationFailure(path, err)
 	}
 	return bundle, nil
 }
@@ -168,19 +168,19 @@ func newConfigLanguageResetCommand(opts *runtimeOptions) *cobra.Command {
 		Short: opts.t("cli.config.language.reset.short"),
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return runJSON(cmd, func(ctx context.Context) (any, error) {
-				path, err := writeTargetPath(opts, global)
+				path, err := writeTargetPath(ctx, opts, global)
 				if err != nil {
 					return nil, err
 				}
 				bundle, err := config.LoadBundle(path)
 				if err != nil {
-					return nil, domain.NewError(domain.ErrConfigInvalid, opts.t("cli.err.config_invalid"), map[string]any{"path": path, "error": fmt.Sprint(err)})
+					return nil, configValidationFailure(path, err)
 				}
 				bundle.Config.Languages = config.LanguageSettings{}
 				if err := config.SaveBundle(path, bundle); err != nil {
 					return nil, fmt.Errorf("save %s: %w", path, err)
 				}
-				if err := reloadActiveBundle(ctx, opts); err != nil {
+				if err := reloadActiveBundle(ctx, opts, path); err != nil {
 					return nil, err
 				}
 				return map[string]any{
@@ -198,14 +198,19 @@ func newConfigLanguageResetCommand(opts *runtimeOptions) *cobra.Command {
 // returns its loaded Bundle for the show command. Separate from
 // writeTargetPath because show reads from the resolved path (which may
 // be repo-local) while set/reset honor --global to bypass discovery.
-func loadActiveBundle(opts *runtimeOptions) (string, config.Bundle, error) {
+func loadActiveBundle(ctx context.Context, opts *runtimeOptions) (string, config.Bundle, error) {
+	if opts.configPath == "" {
+		if err := primeDiscoveryStart(ctx, opts); err != nil {
+			return "", config.Bundle{}, err
+		}
+	}
 	path, err := opts.resolvedConfigPath()
 	if err != nil {
 		return "", config.Bundle{}, err
 	}
 	bundle, err := config.LoadBundle(path)
 	if err != nil {
-		return path, config.Bundle{}, domain.NewError(domain.ErrConfigInvalid, opts.t("cli.err.config_invalid"), map[string]any{"path": path, "error": fmt.Sprint(err)})
+		return path, config.Bundle{}, configValidationFailure(path, err)
 	}
 	return path, bundle, nil
 }
@@ -216,12 +221,15 @@ func loadActiveBundle(opts *runtimeOptions) (string, config.Bundle, error) {
 // invocations can target a temp install regardless of --global.
 // Without --global and without --config, the resolver-picked path
 // wins, matching show.
-func writeTargetPath(opts *runtimeOptions, global bool) (string, error) {
+func writeTargetPath(ctx context.Context, opts *runtimeOptions, global bool) (string, error) {
 	if opts.configPath != "" {
 		return opts.resolvedConfigPath()
 	}
 	if global {
 		return paths.ConfigFile()
+	}
+	if err := primeDiscoveryStart(ctx, opts); err != nil {
+		return "", err
 	}
 	return opts.resolvedConfigPath()
 }
@@ -264,8 +272,10 @@ func validateLanguageWriteIntent(bundle config.Bundle, cliSet, tuiSet bool) erro
 }
 
 // reloadActiveBundle rebuilds the active runtime after a language change.
-func reloadActiveBundle(ctx context.Context, opts *runtimeOptions) error {
-	rt, err := opts.open(ctx, true)
+func reloadActiveBundle(ctx context.Context, opts *runtimeOptions, path string) error {
+	selected := *opts
+	selected.configPath = path
+	rt, err := selected.open(ctx, true)
 	if err != nil {
 		return fmt.Errorf("reload bundle: %w", err)
 	}

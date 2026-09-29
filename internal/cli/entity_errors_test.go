@@ -35,11 +35,7 @@ func checkMissingEntityOperations(t *testing.T, db, cfg, entity string) {
 		if command == "edit" {
 			args = append(args, "--name", "Changed", "--no-edit")
 		}
-		code := "validation_error"
-		if command != "show" {
-			code = entity + "_not_found"
-		}
-		runCLIExpectError(t, db, cfg, code, args...)
+		runCLIExpectError(t, db, cfg, entity+"_not_found", args...)
 	}
 	if after := runCLI(t, db, cfg, entity, "list"); after != before {
 		t.Fatalf("failed operation modified %s definitions", entity)

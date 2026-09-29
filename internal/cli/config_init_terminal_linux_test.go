@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"golang.org/x/sys/unix"
@@ -97,13 +98,18 @@ func TestCLIInteractiveConfigInitValidatesAndPersistsLanguages(t *testing.T) {
 	t.Chdir(root)
 	cfg := filepath.Join(root, "config", "omakase.yaml")
 	replies := []terminalReply{{"CLI language [", "unavailable\nen\npt-br\nPortuguês\n"}}
+	var stdout bytes.Buffer
 	driveTerminal(t, replies, func(context.Context) {
 		cmd := NewRootCommand("test")
+		cmd.SetOut(&stdout)
 		cmd.SetArgs([]string{"--db", filepath.Join(root, "state.db"), "--config", cfg, "config", "init", "--scope", "global", "--preset", "omakase"})
 		if err := cmd.Execute(); err != nil {
 			t.Fatal(err)
 		}
 	})
+	if decodeEnvelope(t, stdout.String())["ok"] != true {
+		t.Fatalf("interactive JSON output corrupted: %s", &stdout)
+	}
 	bundle, err := config.LoadBundle(cfg)
 	if err != nil {
 		t.Fatal(err)

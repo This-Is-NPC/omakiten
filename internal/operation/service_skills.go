@@ -48,5 +48,5 @@ func (s *Service) ShowSkill(_ context.Context, input contract.ShowSkillInput) (c
 			return contract.ShowSkillResponse{Skill: contract.SkillSummary(sk)}, nil
 		}
 	}
-	return contract.ShowSkillResponse{}, domain.NewError(domain.ErrValidation, "skill not found", map[string]any{"slug": slug})
+	return contract.ShowSkillResponse{}, domain.NewError(domain.ErrSkillNotFound, "skill not found", map[string]any{"slug": slug})
 }

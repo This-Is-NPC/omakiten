@@ -71,7 +71,7 @@ func TestShowPersonaRejectsUnknownSlug(t *testing.T) {
 	fixture.service.SetSnapshot(snapshotWithEntities(t, nil, nil, nil, nil, nil))
 
 	_, err := fixture.service.ShowPersona(fixture.ctx, contract.ShowPersonaInput{Slug: "missing"})
-	assertCodedError(t, err, domain.ErrValidation)
+	assertCodedError(t, err, domain.ErrPersonaNotFound)
 }
 
 func TestShowPersonaRejectsBrokenLawRef(t *testing.T) {
@@ -84,5 +84,5 @@ func TestShowPersonaRejectsBrokenLawRef(t *testing.T) {
 	))
 
 	_, err := fixture.service.ShowPersona(fixture.ctx, contract.ShowPersonaInput{Slug: "builder"})
-	assertCodedError(t, err, domain.ErrValidation)
+	assertCodedError(t, err, domain.ErrLawNotFound)
 }

@@ -71,7 +71,7 @@ edges; `.golangci.yml` mirrors the production import restrictions.
 | Package | Responsibility |
 |---|---|
 | `cmd/okt` | Compose CLI and interactive runner; binary entry point |
-| `internal/cli` | Cobra commands, flags, JSON envelopes and CLI interaction |
+| `internal/cli` | Cobra command contracts, completion, scoped diagnostics, JSON envelopes and CLI interaction |
 | `internal/terminal` | Bind TUI ports, notifications, project deletion and preview |
 | `internal/tui` | Bubble Tea host, navigation, overlays and guarded async delivery |
 | `internal/tui/screenhost` | Stable screen IDs, frames, descriptors and semantic outcomes |
@@ -97,6 +97,12 @@ edges; `.golangci.yml` mirrors the production import restrictions.
 | `internal/events`, `internal/hooks`, `internal/activity` | Event dispatch, configured actions and contextual observability |
 | `internal/*projection`, `internal/graph`, `internal/taskvalidation` | Shared semantic projections and validation without UI implementations |
 | `internal/testfixtures`, `internal/testutil`, `screenfixture`, `screentest` | Existing fixture, gallery and test support |
+
+CLI argument and flag validation is configured across the Cobra command tree.
+The same tree generates help and shell completions. `cli.Execute` owns exit
+status and error presentation; data commands keep JSON on stdout, while
+terminal diagnostics, prompts and editor output use stderr. Configuration
+inspection shares runtime import resolution and bounded reads.
 
 ## Runtime and configuration
 

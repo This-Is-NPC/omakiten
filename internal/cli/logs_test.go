@@ -121,6 +121,10 @@ func TestResolveLogSinceFlagWins(t *testing.T) {
 		{name: "days suffix accepted", flag: "7d", duration: 7 * 24 * time.Hour, window: 30 * 24 * time.Hour},
 		{name: "falls back to snapshot window when flag empty", duration: 30 * 24 * time.Hour, window: 30 * 24 * time.Hour},
 		{name: "invalid duration returns coded error", flag: "not-a-duration", invalid: true, window: 30 * 24 * time.Hour},
+		{name: "day suffix rejects trailing text", flag: "7daysd", invalid: true},
+		{name: "day suffix rejects overflow", flag: "999999999999d", invalid: true},
+		{name: "negative time rejected", flag: "-1h", invalid: true},
+		{name: "negative days rejected", flag: "-1d", invalid: true},
 		{name: "zero window returns zero time floor", window: 0},
 	}
 	for _, tc := range cases {

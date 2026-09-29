@@ -54,7 +54,7 @@ func (s *Service) ShowPersona(_ context.Context, input contract.ShowPersonaInput
 		}
 	}
 	if found == nil {
-		return contract.ShowPersonaResponse{}, domain.NewError(domain.ErrValidation, "persona not found", map[string]any{"slug": slug})
+		return contract.ShowPersonaResponse{}, domain.NewError(domain.ErrPersonaNotFound, "persona not found", map[string]any{"slug": slug})
 	}
 	laws, err := resolveLawSlugs(found.Laws, s.lawCatalog)
 	if err != nil {

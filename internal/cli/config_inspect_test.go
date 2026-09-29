@@ -17,7 +17,7 @@ func TestCLIConfigWhyResolverPicksLocalOverGlobal(t *testing.T) {
 	t.Chdir(repo)
 	runCLI(t, dbPath, globalConfig, "config", "init", "--scope", "local", "--preset", "izakaya")
 
-	out := runCLI(t, dbPath, globalConfig, "config", "why", "config.workflow.active")
+	out := runCLI(t, dbPath, "", "config", "why", "config.workflow.active")
 	envelope := decodeEnvelope(t, out)
 	data := envelope["data"].(map[string]any)
 	if data["source"] != "local" {
@@ -45,6 +45,29 @@ func TestCLIConfigWhyLayerFlagFiltersToGlobal(t *testing.T) {
 	data := envelope["data"].(map[string]any)
 	if data["source"] != "global" || data["value"] != "omakase" {
 		t.Fatalf("--layer global = %+v, want source=global value=omakase", data)
+	}
+	data = decodeEnvelope(t, runCLI(t, dbPath, globalConfig, "config", "why", "config.workflow.active"))["data"].(map[string]any)
+	if data["source"] != "explicit" || data["value"] != "omakase" {
+		t.Fatalf("explicit config = %+v", data)
+	}
+}
+
+func TestCLIConfigInspectionExpandsImports(t *testing.T) {
+	root := t.TempDir()
+	left := filepath.Join(root, "config", "left.yaml")
+	right := filepath.Join(root, "config", "right.yaml")
+	fragment := filepath.Join(root, "config", "shared.yaml")
+	writeFile(t, left, "config:\n  from: ./shared.yaml\n")
+	writeFile(t, fragment, "theme:\n  active: borrowed\n")
+	writeFile(t, right, "config:\n  theme:\n    active: borrowed\n")
+	db := filepath.Join(root, "state.db")
+	data := decodeEnvelope(t, runCLI(t, db, left, "config", "why", "config.theme.active"))["data"].(map[string]any)
+	if data["value"] != "borrowed" || data["source"] != "explicit" {
+		t.Fatalf("import inspection = %+v", data)
+	}
+	diff := decodeEnvelope(t, runCLI(t, db, left, "config", "diff", left, right))["data"].(map[string]any)
+	if len(diff["diff"].([]any)) != 0 {
+		t.Fatalf("equivalent imports differ: %+v", diff)
 	}
 }
 

@@ -230,7 +230,7 @@ func validateInitLanguageChoice(flag, value string, available []string) error {
 
 // isInteractive enables prompts when input and output belong to a terminal session.
 func isInteractive(cmd *cobra.Command) bool {
-	return cmd.OutOrStdout() == os.Stdout && stdinIsTTY()
+	return stdinIsTTY() && streamIsTTY(cmd.ErrOrStderr())
 }
 
 // promptLanguageCode prints the available codes and reads one from
@@ -239,7 +239,7 @@ func isInteractive(cmd *cobra.Command) bool {
 // omakiten.yaml never lands with an invalid value.
 func promptLanguageCode(cmd *cobra.Command, label string, available []string, fallback string) (string, error) {
 	reader := bufio.NewReader(cmd.InOrStdin())
-	out := cmd.OutOrStdout()
+	out := cmd.ErrOrStderr()
 	def := fallback
 	if def == "" {
 		def = "en"
@@ -260,6 +260,9 @@ func promptLanguageCode(cmd *cobra.Command, label string, available []string, fa
 			}
 		}
 		fmt.Fprintf(out, t("cli.print.prompt_unknown_code"), choice, strings.Join(available, ", "))
+		if err == io.EOF {
+			return "", domain.NewError(domain.ErrValidation, fmt.Sprintf(t("cli.err.unknown_language_code"), label, choice), map[string]any{"available": available})
+		}
 	}
 }
 
@@ -268,7 +271,7 @@ func promptLanguageCode(cmd *cobra.Command, label string, available []string, fa
 // which is a directive consumed by the agent, not a catalog key.
 func promptFreeForm(cmd *cobra.Command, label, fallback string) (string, error) {
 	reader := bufio.NewReader(cmd.InOrStdin())
-	out := cmd.OutOrStdout()
+	out := cmd.ErrOrStderr()
 	def := fallback
 	defLabel := def
 	if defLabel == "" {

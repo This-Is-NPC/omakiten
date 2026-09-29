@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"fmt"
 	"strconv"
 
 	"github.com/spf13/cobra"
@@ -45,9 +46,9 @@ func newPlanWaveRemoveCommand(opts *runtimeOptions) *cobra.Command {
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runJSON(cmd, func(ctx context.Context) (any, error) {
-				waveID, err := strconv.ParseInt(args[0], 10, 64)
+				waveID, err := parseID(args[0], "wave id")
 				if err != nil {
-					return nil, domain.NewError(domain.ErrValidation, "wave id is not numeric", map[string]any{"value": args[0]})
+					return nil, err
 				}
 				rt, err := opts.open(ctx, true)
 				if err != nil {
@@ -74,9 +75,9 @@ func newPlanWaveRenameCommand(opts *runtimeOptions) *cobra.Command {
 		Args:  cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runJSON(cmd, func(ctx context.Context) (any, error) {
-				waveID, err := strconv.ParseInt(args[0], 10, 64)
+				waveID, err := parseID(args[0], "wave id")
 				if err != nil {
-					return nil, domain.NewError(domain.ErrValidation, "wave id is not numeric", map[string]any{"value": args[0]})
+					return nil, err
 				}
 				rt, err := opts.open(ctx, true)
 				if err != nil {
@@ -103,13 +104,13 @@ func newPlanWaveReorderCommand(opts *runtimeOptions) *cobra.Command {
 		Args:  cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runJSON(cmd, func(ctx context.Context) (any, error) {
-				waveID, err := strconv.ParseInt(args[0], 10, 64)
+				waveID, err := parseID(args[0], "wave id")
 				if err != nil {
-					return nil, domain.NewError(domain.ErrValidation, "wave id is not numeric", map[string]any{"value": args[0]})
+					return nil, err
 				}
 				position, err := strconv.Atoi(args[1])
-				if err != nil {
-					return nil, domain.NewError(domain.ErrValidation, "position is not numeric", map[string]any{"value": args[1]})
+				if err != nil || position <= 0 {
+					return nil, domain.NewError(domain.ErrValidation, fmt.Sprintf(t("cli.err.id_positive_fmt"), "position"), map[string]any{"value": args[1]})
 				}
 				rt, err := opts.open(ctx, true)
 				if err != nil {
@@ -135,9 +136,9 @@ func newPlanUnassignCommand(opts *runtimeOptions) *cobra.Command {
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runJSON(cmd, func(ctx context.Context) (any, error) {
-				taskID, err := strconv.ParseInt(args[0], 10, 64)
+				taskID, err := parseID(args[0], "task id")
 				if err != nil {
-					return nil, domain.NewError(domain.ErrValidation, "task id is not numeric", map[string]any{"value": args[0]})
+					return nil, err
 				}
 				rt, err := opts.open(ctx, true)
 				if err != nil {
@@ -371,13 +372,13 @@ func newPlanAssignCommand(opts *runtimeOptions) *cobra.Command {
 		Args:  cobra.ExactArgs(3),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runJSON(cmd, func(ctx context.Context) (any, error) {
-				waveID, err := strconv.ParseInt(args[1], 10, 64)
+				waveID, err := parseID(args[1], "wave id")
 				if err != nil {
-					return nil, domain.NewError(domain.ErrValidation, "wave id is not numeric", map[string]any{"value": args[1]})
+					return nil, err
 				}
-				taskID, err := strconv.ParseInt(args[2], 10, 64)
+				taskID, err := parseID(args[2], "task id")
 				if err != nil {
-					return nil, domain.NewError(domain.ErrValidation, "task id is not numeric", map[string]any{"value": args[2]})
+					return nil, err
 				}
 				rt, err := opts.open(ctx, true)
 				if err != nil {

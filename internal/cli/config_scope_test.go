@@ -43,6 +43,11 @@ func TestCLIConfigLanguageTargetsLocalGlobalAndExplicitProfiles(t *testing.T) {
 			runCLI(t, db, path, "config", "language", "reset", "--global")
 		})
 	}
+	stale := "version: 1\nmcp: {}\n"
+	writeFile(t, local, stale)
+	runCLI(t, db, "", "config", "language", "set", "--agent", "Portuguese", "--global")
+	runCLI(t, db, "", "config", "language", "reset", "--global")
+	readBackEquals(t, local, stale)
 }
 
 func TestCLIConfigInspectionReportsInvalidSources(t *testing.T) {
@@ -55,7 +60,7 @@ func TestCLIConfigInspectionReportsInvalidSources(t *testing.T) {
 	writeFile(t, scalar, "plain scalar\n")
 	writeFile(t, empty, "")
 	value := decodeEnvelope(t, runCLI(t, db, cfg, "config", "why", "config.workflow.active"))["data"].(map[string]any)
-	if value["source"] != "global" || value["value"] != "omakase" {
+	if value["source"] != "explicit" || value["value"] != "omakase" {
 		t.Fatalf("global discovery lost the preset: %v", value)
 	}
 	value = decodeEnvelope(t, runCLI(t, db, cfg, "config", "why", "version.child"))["data"].(map[string]any)
@@ -82,8 +87,8 @@ func TestCLIConfigInspectionReportsInvalidSources(t *testing.T) {
 		"broken why":      {"--config", broken, "config", "why", "broken", "--layer", "global"},
 	} {
 		t.Run(name, func(t *testing.T) {
-			envelope := runCLIExpectError(t, db, cfg, "internal_error", args...)
-			if !strings.Contains(envelope["msg"].(string), root) {
+			envelope := runCLIExpectError(t, db, cfg, "config_invalid", args...)
+			if !strings.Contains(envelope["details"].(map[string]any)["path"].(string), root) {
 				t.Fatalf("source path absent: %v", envelope)
 			}
 		})

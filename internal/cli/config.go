@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -46,6 +47,14 @@ func validationRepairCommand(path, kind string) string {
 	default:
 		return "${EDITOR:-vi} " + shellQuoteArg(path)
 	}
+}
+
+func isManagedConfigProfile(path string) bool {
+	profile, err := validateManagedConfigProfilePath(path)
+	if err != nil {
+		return false
+	}
+	return config.ValidateDefaultRefreshRoot(config.ConfigRootFromYAMLPath(profile), profile) == nil
 }
 
 // classifyValidationError maps a single LoadBundle / ValidateBundle
@@ -100,14 +109,23 @@ func classifyValidationError(err error) string {
 // cannot invent new ones (`law: no-assumptions`).
 func buildValidateFailureDetails(path string, err error, warnings []string) map[string]any {
 	kind := classifyValidationError(err)
-	command := validationRepairCommand(path, kind)
-	hint := fmt.Sprintf(t("cli.config.validate.remediation."+kind), command)
+	repairPath := path
+	var source *config.SourceError
+	if errors.As(err, &source) {
+		repairPath = source.Path
+	}
+	remediation := kind
+	if kind == "unknown_schema_key" && source == nil && isManagedConfigProfile(path) {
+		remediation = "missing_shipped_file"
+	}
+	command := validationRepairCommand(repairPath, remediation)
+	hint := fmt.Sprintf(t("cli.config.validate.remediation."+remediation), command)
 	return map[string]any{
 		"path": path,
 		"errors": []map[string]any{
 			{
 				"kind":              kind,
-				"path":              path,
+				"path":              repairPath,
 				"message":           domain.SafeError(err),
 				"suggested_command": command,
 				"hint":              hint,
@@ -169,6 +187,11 @@ func newConfigValidateCommand(opts *runtimeOptions) *cobra.Command {
 
 func runConfigValidate(cmd *cobra.Command, opts *runtimeOptions, args []string, migrate bool) error {
 	return runJSON(cmd, func(ctx context.Context) (any, error) {
+		if len(args) == 0 && opts.configPath == "" {
+			if err := primeDiscoveryStart(ctx, opts); err != nil {
+				return nil, err
+			}
+		}
 		path, err := validationConfigPath(opts, args)
 		if err != nil {
 			return nil, err
@@ -195,7 +218,7 @@ func runV030TransitionValidation(ctx context.Context, opts *runtimeOptions, path
 	if err := sqlite.ValidateV030ReleaseDatabase(ctx, dbPath); err != nil {
 		return nil, configValidationFailure(path, err)
 	}
-	configPath, err := validateV030ManagedConfigPath(path)
+	configPath, err := validateManagedConfigProfilePath(path)
 	if err != nil {
 		return nil, configValidationFailure(path, err)
 	}
@@ -208,7 +231,7 @@ func runV030TransitionValidation(ctx context.Context, opts *runtimeOptions, path
 	}, nil
 }
 
-func validateV030ManagedConfigPath(path string) (string, error) {
+func validateManagedConfigProfilePath(path string) (string, error) {
 	absolutePath, err := filepath.Abs(path)
 	if err != nil {
 		return "", fmt.Errorf("config path is invalid: %w", err)
@@ -216,15 +239,15 @@ func validateV030ManagedConfigPath(path string) (string, error) {
 	rootDir := config.ConfigRootFromYAMLPath(absolutePath)
 	configDir := filepath.Join(rootDir, "config")
 	if filepath.Dir(absolutePath) != configDir {
-		return "", fmt.Errorf("transition requires an official managed preset under %s", configDir)
+		return "", fmt.Errorf("config requires an official managed preset under %s", configDir)
 	}
 	base := filepath.Base(absolutePath)
 	if filepath.Ext(base) != ".yaml" {
-		return "", fmt.Errorf("transition requires an official managed preset under %s", configDir)
+		return "", fmt.Errorf("config requires an official managed preset under %s", configDir)
 	}
 	name := strings.TrimSuffix(base, filepath.Ext(base))
 	if _, ok := config.PresetByName(name); !ok || base != name+".yaml" {
-		return "", fmt.Errorf("transition requires one of the official managed presets: omakase.yaml, izakaya.yaml, kaiseki.yaml, shokunin.yaml")
+		return "", fmt.Errorf("config requires one of the official managed presets: omakase.yaml, izakaya.yaml, kaiseki.yaml, shokunin.yaml")
 	}
 	return absolutePath, nil
 }
@@ -262,51 +285,52 @@ func newConfigPresetsCommand(opts *runtimeOptions) *cobra.Command {
 
 func newConfigRefreshDefaultsCommand(opts *runtimeOptions) *cobra.Command {
 	return &cobra.Command{
-		Use:   "refresh-defaults",
-		Short: opts.t("cli.config.refresh_defaults.short"),
+		Use:     "refresh-defaults",
+		Short:   opts.t("cli.config.refresh_defaults.short"),
+		Args:    cobra.NoArgs,
+		Example: "  okt config refresh-defaults\n  okt --config /path/to/.omakiten/config/omakase.yaml config refresh-defaults",
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			return runJSON(cmd, func(context.Context) (any, error) {
-				root, err := opts.resolvedConfigRoot()
-				if err != nil {
-					return nil, err
-				}
-				configPath := ""
-				if resolved, err := opts.resolvedConfigPath(); err == nil {
-					configPath = resolved
-				} else if opts.configPath != "" || !os.IsNotExist(err) {
-					// When --config is explicit, any resolution error is fatal.
-					// When --config is empty we intentionally fall back to the
-					// XDG-default root, but only for a benign "the default config
-					// file does not exist yet" miss; any other error (permission,
-					// walk-up failure, abs-path failure) is surfaced rather than
-					// silently refreshing a possibly-wrong root.
-					return nil, err
-				}
-				if err := config.ValidateDefaultRefreshRoot(root, configPath); err != nil {
-					return nil, domain.NewError(domain.ErrValidation, "refusing to refresh defaults: "+err.Error(), map[string]any{
-						"root":        root,
-						"config_path": configPath,
-					})
-				}
-				if err := config.RefreshDefaultFiles(root); err != nil {
-					// This failure happens AFTER pre-flight validation passed, so
-					// the prune/recopy was already in progress: a partial overwrite
-					// of managed defaults may have landed before the error. Do not
-					// label it a validation refusal (which implies nothing was
-					// written); report it as an update failure and surface the
-					// idempotent repair command the user can re-run.
-					return nil, domain.NewError(domain.ErrUpdateFailed, "defaults refresh failed mid-write (a partial overwrite may have applied); re-run the repair command to finish: "+err.Error(), map[string]any{
-						"root":           root,
-						"config_path":    configPath,
-						"partial_write":  true,
-						"repair_command": updateDefaultsManualCommandForConfig(configPath),
-						"error":          domain.SafeError(err),
-					})
-				}
-				return refreshIntegrationSkills(root, configPath)
-			})
+			return runConfigRefreshDefaults(cmd, opts)
 		},
 	}
+}
+
+func runConfigRefreshDefaults(cmd *cobra.Command, opts *runtimeOptions) error {
+	return runJSON(cmd, func(ctx context.Context) (any, error) {
+		if opts.configPath == "" {
+			if err := primeDiscoveryStart(ctx, opts); err != nil {
+				return nil, err
+			}
+		}
+		root, err := opts.resolvedConfigRoot()
+		if err != nil {
+			return nil, err
+		}
+		configPath := ""
+		if resolved, err := opts.resolvedConfigPath(); err == nil {
+			configPath = resolved
+		} else if opts.configPath != "" || !os.IsNotExist(err) {
+			// Only a missing implicit profile permits refreshing the default root.
+			return nil, err
+		}
+		if err := config.ValidateDefaultRefreshRoot(root, configPath); err != nil {
+			return nil, domain.NewError(domain.ErrValidation, "refusing to refresh defaults: "+err.Error(), map[string]any{
+				"root":        root,
+				"config_path": configPath,
+			})
+		}
+		if err := config.RefreshDefaultFiles(root); err != nil {
+			// A failed refresh can leave partial writes; its repair is idempotent.
+			return nil, domain.NewError(domain.ErrUpdateFailed, "defaults refresh failed mid-write (a partial overwrite may have applied); re-run the repair command to finish: "+err.Error(), map[string]any{
+				"root":           root,
+				"config_path":    configPath,
+				"partial_write":  true,
+				"repair_command": updateDefaultsManualCommandForConfig(configPath),
+				"error":          domain.SafeError(err),
+			})
+		}
+		return refreshIntegrationSkills(root, configPath)
+	})
 }
 
 func refreshIntegrationSkills(root, configPath string) (map[string]any, error) {

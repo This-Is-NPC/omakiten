@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"fmt"
 	"strconv"
 
 	"github.com/spf13/cobra"
@@ -44,7 +45,7 @@ func newCommentAddCommand(opts *runtimeOptions) *cobra.Command {
 			return runJSON(cmd, func(ctx context.Context) (any, error) {
 				var taskID int64
 				if len(args) == 1 {
-					parsed, err := parseTaskID(args[0])
+					parsed, err := parseID(args[0], "task id")
 					if err != nil {
 						return nil, err
 					}
@@ -103,7 +104,7 @@ func newCommentListCommand(opts *runtimeOptions) *cobra.Command {
 			return runJSON(cmd, func(ctx context.Context) (any, error) {
 				var taskID int64
 				if len(args) == 1 {
-					parsed, err := parseTaskID(args[0])
+					parsed, err := parseID(args[0], "task id")
 					if err != nil {
 						return nil, err
 					}
@@ -157,7 +158,7 @@ func newCommentEditCommand(opts *runtimeOptions) *cobra.Command {
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runJSON(cmd, func(ctx context.Context) (any, error) {
-				commentID, err := parseTaskID(args[0])
+				commentID, err := parseID(args[0], "comment id")
 				if err != nil {
 					return nil, err
 				}
@@ -218,7 +219,7 @@ func newCommentDeleteCommand(opts *runtimeOptions) *cobra.Command {
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runJSON(cmd, func(ctx context.Context) (any, error) {
-				commentID, err := parseTaskID(args[0])
+				commentID, err := parseID(args[0], "comment id")
 				if err != nil {
 					return nil, err
 				}
@@ -240,10 +241,10 @@ func newCommentDeleteCommand(opts *runtimeOptions) *cobra.Command {
 	return del
 }
 
-func parseTaskID(value string) (int64, error) {
+func parseID(value, field string) (int64, error) {
 	taskID, err := strconv.ParseInt(value, 10, 64)
-	if err != nil {
-		return 0, domain.NewError(domain.ErrValidation, t("cli.err.task_id_not_numeric"), map[string]any{"value": value})
+	if err != nil || taskID <= 0 {
+		return 0, domain.NewError(domain.ErrValidation, fmt.Sprintf(t("cli.err.id_positive_fmt"), field), map[string]any{"value": value})
 	}
 	return taskID, nil
 }

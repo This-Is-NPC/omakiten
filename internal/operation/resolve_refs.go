@@ -6,7 +6,7 @@ import (
 )
 
 // resolveLawSlugs expands law slug references into full LawInfo rows using the
-// injected catalog. Unknown slugs reject with validation_error naming the slug.
+// injected catalog. Unknown slugs return the corresponding not-found error.
 func resolveLawSlugs(slugs []string, catalog contract.LawCatalog) ([]contract.LawInfo, error) {
 	if len(slugs) == 0 {
 		return nil, nil
@@ -22,7 +22,7 @@ func resolveLawSlugs(slugs []string, catalog contract.LawCatalog) ([]contract.La
 	for _, slug := range slugs {
 		law, ok := bySlug[slug]
 		if !ok {
-			return nil, domain.NewError(domain.ErrValidation, "law not found", map[string]any{"slug": slug})
+			return nil, domain.NewError(domain.ErrLawNotFound, "law not found", map[string]any{"slug": slug})
 		}
 		out = append(out, law)
 	}
@@ -30,8 +30,7 @@ func resolveLawSlugs(slugs []string, catalog contract.LawCatalog) ([]contract.La
 }
 
 // resolveSkillSlugs expands skill slug references into SkillSummary rows with
-// bodies using the injected catalog. Unknown slugs reject with validation_error
-// naming the missing slug.
+// bodies using the injected catalog. Unknown slugs return ErrSkillNotFound.
 func resolveSkillSlugs(slugs []string, catalog contract.SkillCatalog) ([]contract.SkillSummary, error) {
 	if len(slugs) == 0 {
 		return nil, nil
@@ -47,7 +46,7 @@ func resolveSkillSlugs(slugs []string, catalog contract.SkillCatalog) ([]contrac
 	for _, slug := range slugs {
 		sk, ok := bySlug[slug]
 		if !ok {
-			return nil, domain.NewError(domain.ErrValidation, "skill not found", map[string]any{"slug": slug})
+			return nil, domain.NewError(domain.ErrSkillNotFound, "skill not found", map[string]any{"slug": slug})
 		}
 		out = append(out, contract.SkillSummary(sk))
 	}

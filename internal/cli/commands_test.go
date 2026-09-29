@@ -153,10 +153,10 @@ func runCLI(t *testing.T, dbPath, configPath string, args ...string) string {
 	cmd := NewRootCommand("test")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
-	fullArgs := append([]string{"--db", dbPath, "--config", configPath}, args...)
+	fullArgs := cliArguments(dbPath, configPath, args)
 	cmd.SetArgs(fullArgs)
-	if err := cmd.Execute(); err != nil {
-		t.Fatalf("Execute(%v) error = %v, output = %s", fullArgs, err, out.String())
+	if code := Execute(cmd); code != 0 {
+		t.Fatalf("Execute(%v) exit = %d, output = %s", fullArgs, code, out.String())
 	}
 	trimmed := strings.TrimSpace(out.String())
 	if strings.Count(trimmed, "\n") != 0 {
@@ -177,10 +177,10 @@ func runCLIExpectError(t *testing.T, dbPath, configPath, wantCode string, args .
 	cmd := NewRootCommand("test")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
-	fullArgs := append([]string{"--db", dbPath, "--config", configPath}, args...)
+	fullArgs := cliArguments(dbPath, configPath, args)
 	cmd.SetArgs(fullArgs)
-	if err := cmd.Execute(); err == nil {
-		t.Fatalf("Execute(%v) error = nil, want failure (%s); output = %s", fullArgs, wantCode, out.String())
+	if code := Execute(cmd); code == 0 {
+		t.Fatalf("Execute(%v) exit = 0, want failure (%s); output = %s", fullArgs, wantCode, out.String())
 	}
 	trimmed := strings.TrimSpace(out.String())
 	if strings.Count(trimmed, "\n") != 0 {
@@ -197,4 +197,15 @@ func runCLIExpectError(t *testing.T, dbPath, configPath, wantCode string, args .
 		t.Fatalf("Execute(%v) code = %v, want %s; output = %s", fullArgs, envelope["code"], wantCode, trimmed)
 	}
 	return envelope
+}
+
+func cliArguments(dbPath, configPath string, args []string) []string {
+	var fullArgs []string
+	if dbPath != "" {
+		fullArgs = append(fullArgs, "--db", dbPath)
+	}
+	if configPath != "" {
+		fullArgs = append(fullArgs, "--config", configPath)
+	}
+	return append(fullArgs, args...)
 }

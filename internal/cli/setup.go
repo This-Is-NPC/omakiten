@@ -83,6 +83,7 @@ func newSetupCommand(opts *runtimeOptions) *cobra.Command {
 	cmd.Flags().StringVar(&harnessesCSV, "harnesses", "", opts.t("cli.setup.flag.harnesses"))
 	cmd.Flags().BoolVar(&skipWrapper, "skip-wrapper", false, opts.t("cli.setup.flag.skip-wrapper"))
 	cmd.Flags().BoolVar(&skipHarnesses, "skip-harnesses", false, opts.t("cli.setup.flag.skip-harnesses"))
+	cmd.MarkFlagsMutuallyExclusive("skip-harnesses", "harnesses")
 
 	return cmd
 }

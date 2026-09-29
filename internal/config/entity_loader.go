@@ -283,8 +283,18 @@ func decodeYAMLStrict(data []byte, target any) error {
 	return dec.Decode(target)
 }
 
+// SourceError identifies the file whose contents failed to decode.
+type SourceError struct {
+	Path string
+	Err  error
+}
+
+func (e *SourceError) Error() string { return fmt.Sprintf("%s: %v", e.Path, e.Err) }
+
+func (e *SourceError) Unwrap() error { return e.Err }
+
 func parseError(path string, err error) error {
-	return fmt.Errorf("%s: %w", path, err)
+	return &SourceError{Path: path, Err: err}
 }
 
 // ReadEntityFile reads one entity source with the loader size and path constraints.

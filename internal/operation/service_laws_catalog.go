@@ -73,5 +73,5 @@ func (s *Service) ShowLaw(_ context.Context, input contract.ShowLawInput) (contr
 			}}, nil
 		}
 	}
-	return contract.ShowLawResponse{}, domain.NewError(domain.ErrValidation, "law not found", map[string]any{"slug": slug})
+	return contract.ShowLawResponse{}, domain.NewError(domain.ErrLawNotFound, "law not found", map[string]any{"slug": slug})
 }

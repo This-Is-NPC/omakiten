@@ -32,7 +32,7 @@ func assertLawCatalog(t *testing.T, dbPath, configPath string) {
 	assertLawList(t, dbPath, configPath)
 	assertLawShow(t, dbPath, configPath)
 	assertLawScope(t, dbPath, configPath)
-	runCLIExpectError(t, dbPath, configPath, "validation_error", "law", "show", "no-such-law")
+	runCLIExpectError(t, dbPath, configPath, "law_not_found", "law", "show", "no-such-law")
 }
 
 func assertLawList(t *testing.T, dbPath, configPath string) {
