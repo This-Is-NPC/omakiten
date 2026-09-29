@@ -288,17 +288,19 @@ The local development workflow mirrors the production root under `dev_env/`:
 
 ```text
 <repo>/dev_env/
-├── config/
-├── laws/
-├── skills/
-├── personas/
-├── templates/
-├── themes/
-├── notifications/
-└── languages/
+├── config.yaml
+├── presets/
+│   └── <id>/
+│       ├── preset.yaml
+│       ├── config/
+│       └── <entity folders>/
+└── data/
 ```
 
-`mise run dev:sync` mirrors `defaults/` into `dev_env/` aggressively (managed files overwritten, `custom/` left alone). `dev_env/` itself is gitignored (`.gitignore:24`). The raw-terminal `mise run tui` invokes `dev:install` inside its task body so the nested `dev:sync` + `build` output can be captured without detaching Bubble Tea from its controlling terminal. Both TUI tasks pass an explicit config below `dev_env/`, preventing repo-local `.omakiten/` discovery from escaping the dev environment.
+`mise run dev:install` builds okt and installs the selected workflow repository.
+`dev_env/` is gitignored. `mise run tui` prepares that environment before opening
+the TUI; `mise run tui:bare` keeps its existing selection. Both pass an explicit
+`dev_env/config.yaml`, so repo-local discovery cannot redirect development state.
 
 ## Update when
 

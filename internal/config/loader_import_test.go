@@ -193,10 +193,10 @@ func TestLoadBundleImportedUnknownFieldFails(t *testing.T) {
 func TestLoadBundleSubtaskKitImportsTracked(t *testing.T) {
 	root, profile := importFixture(t)
 
-	subProfile := filepath.Join(root, "config", "izakaya.yaml")
+	subProfile := copyFixtureProfile(t, root, "subtask.yaml")
 	subImport := externalizeTopLevel(t, subProfile, "workflows", "sub-workflows.yml")
 
-	appendTopLevelYAML(t, profile, "subtask_kit: izakaya.yaml\n")
+	appendTopLevelYAML(t, profile, "subtask_kit: subtask.yaml\n")
 
 	bundle, err := LoadBundle(profile)
 	if err != nil {

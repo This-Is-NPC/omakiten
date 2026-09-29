@@ -28,6 +28,5 @@ else
   "$installed_at" setup --update
 fi
 
-IFS= read -r active_preset < "$install_root/config/.active"
 unset OMAKITEN_HOME
-"$installed_at" --config "$install_root/config/$active_preset" init --name Omakiten --slug omakiten --root "$PWD"
+"$installed_at" --config "$install_root/config.yaml" init --name Omakiten --slug omakiten --root "$PWD"

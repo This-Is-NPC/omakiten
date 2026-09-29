@@ -239,7 +239,7 @@ func surfaceBoolVal(p *bool) string {
 }
 
 func TestShippedKitsLoadCompleteSurfaceTable(t *testing.T) {
-	for _, preset := range []string{"omakase", "izakaya", "kaiseki", "shokunin"} {
+	for _, preset := range []string{"omakase"} {
 		t.Run(preset, func(t *testing.T) {
 			assertShippedKitSurfaceTable(t, preset)
 		})

@@ -103,7 +103,7 @@ func assertDefaultLayout(t *testing.T, tmp string) {
 	if _, err := os.Stat(filepath.Join(tmp, "config", "custom")); err != nil {
 		t.Fatalf("config/custom dir missing: %v", err)
 	}
-	for _, name := range []string{"omakase.yaml", "izakaya.yaml", "kaiseki.yaml", "shokunin.yaml"} {
+	for _, name := range []string{"omakase.yaml"} {
 		if _, err := os.Stat(filepath.Join(tmp, "config", name)); err != nil {
 			t.Fatalf("default config profile %s missing: %v", name, err)
 		}

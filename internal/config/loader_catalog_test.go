@@ -47,14 +47,14 @@ func TestLoadBundleCatalogFlagsActive(t *testing.T) {
 	if err := EnsureDefaultFiles(tmp); err != nil {
 		t.Fatalf("EnsureDefaultFiles() error = %v", err)
 	}
-	// omakase wires the Naruto roster — a subset of the shared persona pool.
+	writeFile(t, filepath.Join(tmp, "personas", "custom", "unwired.md"), "---\nschema_version: 2\nname: Unwired\n---\nAn inactive local persona.\n")
 	bundle, err := LoadBundle(filepath.Join(tmp, "config", "omakase.yaml"))
 	if err != nil {
 		t.Fatalf("LoadBundle() error = %v", err)
 	}
 
 	if len(bundle.AllPersonas) <= len(bundle.Personas) {
-		t.Fatalf("AllPersonas (%d) must exceed picked Personas (%d): catalog should list every preset's personas",
+		t.Fatalf("AllPersonas (%d) must exceed picked Personas (%d): inactive entities must remain visible",
 			len(bundle.AllPersonas), len(bundle.Personas))
 	}
 

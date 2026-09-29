@@ -11,7 +11,7 @@ import (
 func TestCLIConfigShowGlobalPrintsRawYaml(t *testing.T) {
 	tmp := t.TempDir()
 	dbPath := filepath.Join(tmp, "omakiten.db")
-	globalConfig := filepath.Join(tmp, "global", "config", "omakase.yaml")
+	globalConfig := filepath.Join(tmp, "global", "config.yaml")
 	t.Chdir(t.TempDir())
 
 	// Materialise the global install first so show has something to print.
@@ -23,22 +23,22 @@ func TestCLIConfigShowGlobalPrintsRawYaml(t *testing.T) {
 	if data["scope"] != "global" {
 		t.Fatalf("scope = %v, want global", data["scope"])
 	}
-	if !strings.Contains(data["content"].(string), "key: omakase") {
-		t.Fatalf("content missing kit body, got %q", data["content"])
+	if !strings.Contains(data["content"].(string), "preset:") {
+		t.Fatalf("content missing preset selection, got %q", data["content"])
 	}
 }
 
 func TestCLIConfigShowLocalWalksUp(t *testing.T) {
 	tmp := t.TempDir()
 	dbPath := filepath.Join(tmp, "omakiten.db")
-	globalConfig := filepath.Join(tmp, "global", "config", "omakase.yaml")
+	globalConfig := filepath.Join(tmp, "global", "config.yaml")
 
 	repo := filepath.Join(tmp, "repo")
 	if err := os.MkdirAll(repo, 0o755); err != nil {
 		t.Fatalf("MkdirAll error = %v", err)
 	}
 	t.Chdir(repo)
-	runCLI(t, dbPath, globalConfig, "config", "init", "--scope", "local", "--preset", "izakaya")
+	runCLI(t, dbPath, globalConfig, "config", "init", "--scope", "local", "--preset", "omakase")
 
 	deep := filepath.Join(repo, "deep", "nest")
 	if err := os.MkdirAll(deep, 0o755); err != nil {
@@ -52,8 +52,8 @@ func TestCLIConfigShowLocalWalksUp(t *testing.T) {
 	if data["scope"] != "local" {
 		t.Fatalf("scope = %v, want local", data["scope"])
 	}
-	if !strings.Contains(data["content"].(string), "key: izakaya") {
-		t.Fatalf("local show should load izakaya overlay, got %q", data["content"])
+	if !strings.Contains(data["content"].(string), "preset:") {
+		t.Fatalf("local show should load project selection, got %q", data["content"])
 	}
 	wantPathPrefix := filepath.Join(repo, ".omakiten", "config")
 	if !strings.HasPrefix(data["path"].(string), wantPathPrefix) {
@@ -64,7 +64,7 @@ func TestCLIConfigShowLocalWalksUp(t *testing.T) {
 func TestCLIConfigShowLocalErrorsWhenMissing(t *testing.T) {
 	tmp := t.TempDir()
 	dbPath := filepath.Join(tmp, "omakiten.db")
-	globalConfig := filepath.Join(tmp, "global", "config", "omakase.yaml")
+	globalConfig := filepath.Join(tmp, "global", "config.yaml")
 	bare := filepath.Join(tmp, "bare")
 	if err := os.MkdirAll(bare, 0o755); err != nil {
 		t.Fatalf("MkdirAll = %v", err)
@@ -76,7 +76,7 @@ func TestCLIConfigShowLocalErrorsWhenMissing(t *testing.T) {
 func TestCLIConfigPathGlobalReturnsConfigRoot(t *testing.T) {
 	tmp := t.TempDir()
 	dbPath := filepath.Join(tmp, "omakiten.db")
-	globalConfig := filepath.Join(tmp, "global", "config", "omakase.yaml")
+	globalConfig := filepath.Join(tmp, "global", "config.yaml")
 	t.Chdir(t.TempDir())
 
 	out := runCLI(t, dbPath, globalConfig, "config", "path", "--scope", "global")
@@ -91,13 +91,13 @@ func TestCLIConfigPathGlobalReturnsConfigRoot(t *testing.T) {
 func TestCLIConfigPathLocalReturnsDiscoveredRoot(t *testing.T) {
 	tmp := t.TempDir()
 	dbPath := filepath.Join(tmp, "omakiten.db")
-	globalConfig := filepath.Join(tmp, "global", "config", "omakase.yaml")
+	globalConfig := filepath.Join(tmp, "global", "config.yaml")
 	repo := filepath.Join(tmp, "repo")
 	if err := os.MkdirAll(repo, 0o755); err != nil {
 		t.Fatalf("MkdirAll = %v", err)
 	}
 	t.Chdir(repo)
-	runCLI(t, dbPath, globalConfig, "config", "init", "--scope", "local", "--preset", "kaiseki")
+	runCLI(t, dbPath, globalConfig, "config", "init", "--scope", "local", "--preset", "omakase")
 
 	deep := filepath.Join(repo, "a", "b", "c")
 	if err := os.MkdirAll(deep, 0o755); err != nil {
@@ -117,7 +117,7 @@ func TestCLIConfigPathLocalReturnsDiscoveredRoot(t *testing.T) {
 func TestCLIConfigPathLocalErrorsWhenMissing(t *testing.T) {
 	tmp := t.TempDir()
 	dbPath := filepath.Join(tmp, "omakiten.db")
-	globalConfig := filepath.Join(tmp, "global", "config", "omakase.yaml")
+	globalConfig := filepath.Join(tmp, "global", "config.yaml")
 	bare := filepath.Join(tmp, "bare")
 	if err := os.MkdirAll(bare, 0o755); err != nil {
 		t.Fatalf("MkdirAll = %v", err)

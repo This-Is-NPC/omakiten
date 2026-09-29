@@ -173,7 +173,7 @@ func TestPresetTransportKeepsOpaqueScriptBytes(t *testing.T) {
 
 func presetFixture(t *testing.T) config.PresetPackage {
 	t.Helper()
-	seed, err := config.SeedInstall(t.TempDir(), "omakase", false)
+	seed, err := config.SeedFixture(t.TempDir(), false)
 	if err != nil {
 		t.Fatal(err)
 	}

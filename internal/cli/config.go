@@ -158,7 +158,6 @@ func newConfigCommand(opts *runtimeOptions) *cobra.Command {
 		Short: opts.t("cli.config.short"),
 	}
 	cmd.AddCommand(newConfigValidateCommand(opts))
-	cmd.AddCommand(newConfigPresetsCommand(opts))
 	cmd.AddCommand(newConfigRefreshDefaultsCommand(opts))
 	cmd.AddCommand(newConfigSurfacesCommand(opts))
 	cmd.AddCommand(newConfigInitCommand(opts))
@@ -269,18 +268,6 @@ func loadConfigForValidation(path string) (config.Bundle, error) {
 
 func configValidationFailure(path string, err error) error {
 	return domain.NewError(domain.ErrConfigInvalid, t("cli.err.config_invalid"), buildValidateFailureDetails(path, err, nil))
-}
-
-func newConfigPresetsCommand(opts *runtimeOptions) *cobra.Command {
-	return &cobra.Command{
-		Use:   "presets",
-		Short: opts.t("cli.config.presets.short"),
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			return runJSON(cmd, func(context.Context) (any, error) {
-				return map[string]any{"presets": resolvedPresets(opts)}, nil
-			})
-		},
-	}
 }
 
 func newConfigRefreshDefaultsCommand(opts *runtimeOptions) *cobra.Command {
@@ -421,6 +408,7 @@ func resolvedPresets(opts *runtimeOptions) []map[string]string {
 	for i, p := range presets {
 		out[i] = map[string]string{
 			"name":        p.Name,
+			"repository":  p.Repository,
 			"title":       opts.t("cli.preset." + p.Name + ".title"),
 			"description": opts.t("cli.preset." + p.Name + ".description"),
 		}

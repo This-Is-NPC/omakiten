@@ -53,13 +53,6 @@ Quick decision matrix:
 
 When in doubt, pick **omakase**. It is the canonical kit and the default selection at install time.
 
-The direct `.active` writes in the fork examples below apply only to targets
-with the supported Unix-family no-follow marker backend. Windows fails closed
-when `.active` is read or written; use `--config <path>` for per-invocation
-profile selection without marker persistence. Plan 9 and other targets without
-the config safe-I/O backend fail closed for marker persistence and default
-materialization, so they need an explicit platform support policy before
-config installation is supported.
 
 ---
 
@@ -160,10 +153,14 @@ Lean spike kit: discovery, creation, and implementation can all bind to the same
 ### How to fork
 
 ```bash
-cp ~/.config/omakiten/config/izakaya.yaml ~/.config/omakiten/config/custom/my-izakaya.yaml
-echo my-izakaya.yaml > ~/.config/omakiten/config/.active
-# edit the copy, run `okt config validate` until clean
+okt preset add izakaya
+okt preset use izakaya
+okt config language set --agent English
+okt preset export --output my-izakaya.md
 ```
+
+Edits create an independent local preset. Modify the repository's modules to
+share custom workflow guards, then install that checkout with `okt preset add`.
 
 ---
 
@@ -240,9 +237,14 @@ Severity (`error` vs `warning`) per law lives in its frontmatter under `defaults
 ### How to fork
 
 ```bash
-cp ~/.config/omakiten/config/omakase.yaml ~/.config/omakiten/config/custom/my-omakase.yaml
-echo my-omakase.yaml > ~/.config/omakiten/config/.active
+okt preset add omakase
+okt preset use omakase
+okt config language set --agent English
+okt preset export --output my-omakase.md
 ```
+
+Edits create an independent local preset. Modify the repository's modules to
+share custom workflow guards, then install that checkout with `okt preset add`.
 
 ---
 
@@ -312,9 +314,14 @@ The decision-record format is the project's call — Nygard ADR, RFC, design doc
 ### How to fork
 
 ```bash
-cp ~/.config/omakiten/config/kaiseki.yaml ~/.config/omakiten/config/custom/my-kaiseki.yaml
-echo my-kaiseki.yaml > ~/.config/omakiten/config/.active
+okt preset add kaiseki
+okt preset use kaiseki
+okt config language set --agent English
+okt preset export --output my-kaiseki.md
 ```
+
+Edits create an independent local preset. Modify the repository's modules to
+share custom workflow guards, then install that checkout with `okt preset add`.
 
 ---
 
@@ -384,9 +391,14 @@ Same six-bucket shape, but every gate is tightened. The Owner role frames blast 
 ### How to fork
 
 ```bash
-cp ~/.config/omakiten/config/shokunin.yaml ~/.config/omakiten/config/custom/my-shokunin.yaml
-echo my-shokunin.yaml > ~/.config/omakiten/config/.active
+okt preset add shokunin
+okt preset use shokunin
+okt config language set --agent English
+okt preset export --output my-shokunin.md
 ```
+
+Edits create an independent local preset. Modify the repository's modules to
+share custom workflow guards, then install that checkout with `okt preset add`.
 
 ---
 
@@ -694,7 +706,9 @@ If a law / persona / template you authored contains any of the above, it has lea
 Run these locally before activating a custom preset:
 
 ```bash
-okt config validate <config-dir>/config/custom/<my-preset>.yaml
+okt preset add /path/to/my-workflow
+okt preset use my-workflow
+okt config validate
 ```
 
 The validator rejects missing required config blocks, bad enum rows, invalid workflow references, unknown guard types, contradictory `commands` law rules, and command skills outside the persona repertoire. The field-level rules live in the configuration-guide modules above.
@@ -703,23 +717,18 @@ Warnings (non-fatal) flag template slug-vs-name mismatches and other low-severit
 
 ### Activating your preset
 
-1. Drop the yaml in `<config-dir>/config/custom/<my-preset>.yaml` (preserves across `okt config defaults refresh`).
-2. Set `.active` to `<my-preset>.yaml` on a supported Unix-family target:
-   ```bash
-   echo my-preset.yaml > <config-dir>/config/.active
-   ```
-3. The next CLI / TUI invocation resolves the new preset. On Windows,
-   pass `--config <path>` instead. On Plan 9 and other unsupported targets,
-   config installation and marker persistence remain unavailable until a
-   safe-I/O backend is provided.
+Install and activate a repository package in the target project:
 
-On supported Unix-family targets, the TUI Settings › Config picker writes
-`.active` through the descriptor-relative no-follow writer and atomically
-replaces the marker. On Windows and Plan 9, the picker and setup cannot persist
-or consume `.active` because those operations fail closed. The CLI accepts a
-per-invocation `--config <path>` override; this bypasses marker selection on
-Windows. Plan 9 and other unsupported targets still require safe-I/O support
-for config installation.
+```sh
+okt preset add /path/to/my-workflow
+okt preset use my-workflow
+okt config validate
+```
+
+Use `--scope global` on `add` and `use` for user-wide selection. Omakiten stores
+an independent snapshot and selects it through `<scope>/config.yaml`. A source
+checkout is required only when capturing a new revision. CLI and Studio edits
+create a modified preset while retaining the original snapshot.
 
 ### When to author vs fork
 

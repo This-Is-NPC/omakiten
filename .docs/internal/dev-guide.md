@@ -96,9 +96,8 @@ state; source-file timestamps alone do not establish that the binary is current.
 | `install` | `build` → installs `.tmp/build/okt` to `$HOME/.local/bin/okt`, syncs `defaults/` into `$HOME/.config/omakiten`, then runs `okt setup --update` (the same bubbletea picker `curl\|bash` users get; honours every `OKT_*` env var). The `--update` flag is load-bearing — it force-refreshes shipped defaults so repeat runs pick up edits under `defaults/` instead of silently keeping the pre-install copy on disk. Finishes with `okt init` against the repo. |
 | `uninstall` | Confirms before removing `~/.local/bin/okt` and the shell wrapper. **Does not** touch config or data. |
 | `purge` | Confirms before deleting `~/.config/omakiten` and `~/.local/share/omakiten`. Use after `uninstall` for a fresh-machine simulation. |
-| `dev:sync` | Mirrors `defaults/` into `dev_env/` (overwrites root, leaves `dev_env/custom/`). |
-| `dev:install` | Confirms the reset of dev-only `custom/` overlays, then syncs defaults, builds `.tmp/build/okt`, and runs `okt setup --update --skip-wrapper --skip-harnesses`. Use `tui:bare` when custom overlays or seeded fixtures must survive. |
-| `tui` | Runs `dev:install` inside its raw-terminal task, then opens the TUI against the synchronized `dev_env/config/omakase.yaml`; `tui:bare` skips installation and opens the preset named by `dev_env/config/.active` so seeded fixtures survive without repo-local config discovery. |
+| `dev:install` | Builds okt and installs the chosen workflow repository under `dev_env/`. |
+| `tui` | Runs `dev:install` inside its raw-terminal task, then opens the TUI against `dev_env/config.yaml`; `tui:bare` keeps the installed selection. |
 | `gallery` | Opens the dev-only TUI component gallery (`cmd/okt-gallery`) — one shared component at a time, against the shipped theme. Not part of `build`; nothing in the `okt` binary imports it. |
 | `gallery:dump` | Renders every component variant to stdout with no TTY, so it pipes to a file and diffs across a refactor. |
 
@@ -133,7 +132,7 @@ internal/
   testfixtures/          shared YAML-loader for tests
   token/                 token estimation
 defaults/                ships into ~/.config/omakiten on first run
-  config/                official presets (omakase / izakaya / kaiseki / shokunin)
+  config/                Omakase development fixture and shared settings modules
   languages/             21 bundled CLI/TUI language packs (en / pt-br / jp / …)
   themes/, notifications/, skills/, laws/, personas/, templates/
 scripts/                 install / uninstall / wrapper helpers + tests

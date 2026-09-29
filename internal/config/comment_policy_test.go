@@ -127,7 +127,7 @@ func TestValidatePermissionScopesRejectsEmptyTagName(t *testing.T) {
 // whose Allow flag matches the original bool and whose Evaluate(nil) preserves
 // the pre-#405 verdict — proving bare bools resolve identically.
 func TestShippedKitsParseCommentPolicyBackCompat(t *testing.T) {
-	for _, preset := range []string{"omakase", "izakaya", "kaiseki", "shokunin"} {
+	for _, preset := range []string{"omakase"} {
 		t.Run(preset, func(t *testing.T) {
 			assertShippedKitCommentPolicies(t, preset)
 		})

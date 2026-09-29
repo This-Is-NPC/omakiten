@@ -18,7 +18,7 @@ func TestExecuteConfigRecoveryFromAncestor(t *testing.T) {
 	t.Setenv("HOME", home)
 	t.Setenv("OMAKITEN_HOME", filepath.Join(home, "global"))
 	root := filepath.Join(home, "Projects", ".omakiten")
-	seed, err := config.SeedInstall(root, "omakase", true)
+	seed, err := config.SeedFixture(root, true)
 	if err != nil {
 		t.Fatal(err)
 	}

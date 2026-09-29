@@ -43,15 +43,10 @@ description = "Install locally with English, the omakase preset, and no integrat
 depends = ["build"]
 run = "scripts/install-local.sh --silent"
 
-[tasks."dev:sync"]
-description = "Mirror defaults/ into dev_env/ aggressively (overwrite root, leave custom/)"
-run = "scripts/sync-defaults.sh dev_env"
-
 [tasks."dev:install"]
-description = "Simulate a fresh omakiten install into dev_env/ — sync defaults, reset dev-only custom overlays, then pin .active to a stock preset"
-confirm = "Reset custom development overlays under dev_env/?"
+description = "Install the selected workflow repository into dev_env/"
 env = { OMAKITEN_HOME = "dev_env", OKT_PRESET = "omakase", OKT_CLI_LANG = "en", OKT_TUI_LANG = "en", OKT_AGENT_LANG = "en", OKT_HARNESSES = "0" }
-depends = ["dev:sync", "build"]
+depends = ["build"]
 run = "scripts/dev-install.sh"
 
 [tasks.uninstall]

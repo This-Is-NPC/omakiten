@@ -60,7 +60,7 @@ func runInit(ctx context.Context, opts *runtimeOptions, inputs initInputs) (any,
 	if err != nil {
 		return nil, err
 	}
-	projectRoot, presetResult, err := installInitPreset(projectRoot, inputs, opts)
+	projectRoot, presetResult, err := installInitPreset(ctx, projectRoot, inputs, opts)
 	if err != nil {
 		return nil, err
 	}
@@ -99,7 +99,7 @@ func initProjectRoot(root string) (string, error) {
 	return os.Getwd()
 }
 
-func installInitPreset(projectRoot string, inputs initInputs, opts *runtimeOptions) (string, map[string]any, error) {
+func installInitPreset(ctx context.Context, projectRoot string, inputs initInputs, opts *runtimeOptions) (string, map[string]any, error) {
 	if inputs.presetName == "" {
 		return projectRoot, nil, nil
 	}
@@ -110,7 +110,7 @@ func installInitPreset(projectRoot string, inputs initInputs, opts *runtimeOptio
 	if inputs.root == "" {
 		projectRoot = installRoot
 	}
-	res, err := config.SeedInstall(filepath.Join(installRoot, config.RepoLocalDirName), inputs.presetName, inputs.presetForce)
+	res, err := installer.InstallPreset(ctx, filepath.Join(installRoot, config.RepoLocalDirName), inputs.presetName, inputs.presetForce)
 	if err != nil {
 		return "", nil, presetCLIError(opts, err)
 	}

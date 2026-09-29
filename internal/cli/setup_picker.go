@@ -64,7 +64,7 @@ type langOption struct {
 // presetOption is one row in the preset picker. Title/Description are
 // resolved against the chosen CLI language's catalog so the rows render
 // in the user's freshly-picked language; Name is the canonical slug
-// used by SeedInstall.
+// used by preset installation.
 type presetOption struct {
 	Name        string
 	Title       string
@@ -462,7 +462,7 @@ func (m *setupPickerModel) advancePastResolved() {
 	}
 }
 
-// preparePresets resolves the four bundled presets' title + description
+// preparePresets resolves official workflow titles and descriptions
 // against the chosen CLI catalog. Falls back to the bundled en pack on
 // a missing key so a partial / custom language pack still renders
 // reasonable rows instead of bare slugs.

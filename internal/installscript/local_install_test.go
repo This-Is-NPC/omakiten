@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"omakiten/internal/testfixtures"
 )
 
 func TestInstallerLocalKeepsSetupAndRegistrationInOneScope(t *testing.T) {
@@ -13,6 +15,11 @@ func TestInstallerLocalKeepsSetupAndRegistrationInOneScope(t *testing.T) {
 		t.Skip("Bash is not installed")
 	}
 	binary := filepath.Join(t.TempDir(), "okt")
+	gitConfig, err := testfixtures.PresetGitConfig(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("GIT_CONFIG_GLOBAL", gitConfig)
 	build := exec.Command("go", "build", "-o", binary, "./cmd/okt")
 	build.Dir = repoRoot(t)
 	if output, err := build.CombinedOutput(); err != nil {
@@ -47,18 +54,14 @@ func checkLocalInstallationScope(t *testing.T, binary string, args []string) {
 		"OMAKITEN_HOME="+filepath.Join(home, "another-install"), "XDG_DATA_HOME="+filepath.Join(home, "data"),
 		"XDG_CONFIG_HOME="+filepath.Join(home, ".config"), "XDG_STATE_HOME="+filepath.Join(home, "state"),
 		"XDG_CACHE_HOME="+filepath.Join(home, "cache"),
-		"MISE_PROJECT_ROOT="+repository, "OKT_PRESET=kaiseki", "OKT_CLI_LANG=en", "OKT_TUI_LANG=en",
+		"MISE_PROJECT_ROOT="+repository, "OKT_PRESET=omakase", "OKT_CLI_LANG=en", "OKT_TUI_LANG=en",
 		"OKT_AGENT_LANG=en", "OKT_HARNESSES=0")
 	install := exec.Command("bash", append([]string{filepath.Join(repository, "scripts", "install-local.sh")}, args...)...)
 	install.Env, install.Dir = environment, repository
 	if output, err := install.CombinedOutput(); err != nil {
 		t.Fatalf("install: %v\n%s", err, output)
 	}
-	preset := "kaiseki"
-	if len(args) > 0 {
-		preset = "omakase"
-	}
-	global := filepath.Join(home, ".config", "omakiten", "config", preset+".yaml")
+	global := filepath.Join(home, ".config", "omakiten", "config.yaml")
 	installed := filepath.Join(home, ".local", "bin", "okt")
 	command := exec.Command(installed, "--config", global, "--project", "omakiten", "project", "resume")
 	command.Env, command.Dir = append(environment, "OMAKITEN_HOME="), repository

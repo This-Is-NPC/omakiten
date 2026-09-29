@@ -207,7 +207,7 @@ type runSetupOptions struct {
 // runSetup installs the selected configuration, languages, wrapper and skills.
 // Update refreshes managed files and preserves unrelated user content.
 func runSetup(ctx context.Context, opts *runtimeOptions, inputs setupInputs, runOpts runSetupOptions) (any, error) {
-	rootDir, seedRes, activeDir, err := prepareSetupConfig(opts, inputs, runOpts.Update)
+	rootDir, seedRes, activeDir, err := prepareSetupConfig(ctx, opts, inputs, runOpts.Update)
 	if err != nil {
 		return nil, err
 	}
@@ -243,33 +243,29 @@ func runSetup(ctx context.Context, opts *runtimeOptions, inputs setupInputs, run
 	return result, nil
 }
 
-func prepareSetupConfig(opts *runtimeOptions, inputs setupInputs, update bool) (string, config.SeedResult, string, error) {
+func prepareSetupConfig(ctx context.Context, opts *runtimeOptions, inputs setupInputs, update bool) (string, config.PresetResult, string, error) {
 	rootDir, err := paths.ConfigRoot()
 	if err != nil {
-		return "", config.SeedResult{}, "", err
+		return "", config.PresetResult{}, "", err
 	}
-	seedRes, err := config.SeedInstall(rootDir, inputs.Preset, update)
+	seedRes, err := installer.InstallPreset(ctx, rootDir, inputs.Preset, update)
 	if err != nil {
-		return "", config.SeedResult{}, "", presetCLIError(opts, err)
+		return "", config.PresetResult{}, "", presetCLIError(opts, err)
 	}
 	bundle, err := config.LoadBundle(seedRes.Path)
 	if err != nil {
-		return "", config.SeedResult{}, "", domain.NewError(domain.ErrConfigInvalid, t("cli.err.init_seeded_config_invalid"), map[string]any{"path": seedRes.Path, "error": fmt.Sprint(err)})
+		return "", config.PresetResult{}, "", domain.NewError(domain.ErrConfigInvalid, t("cli.err.init_seeded_config_invalid"), map[string]any{"path": seedRes.Path, "error": fmt.Sprint(err)})
 	}
 	bundle.Config.Languages = config.LanguageSettings{CLI: inputs.CLILang, TUI: inputs.TUILang, AgentOutput: inputs.AgentLang}
 	for _, choice := range []struct{ flag, value string }{{"cli-lang", inputs.CLILang}, {"tui-lang", inputs.TUILang}} {
 		if err := validateInitLanguageChoice(choice.flag, choice.value, availableLanguageCodes(bundle.Languages)); err != nil {
-			return "", config.SeedResult{}, "", err
+			return "", config.PresetResult{}, "", err
 		}
 	}
 	if err := config.SaveBundle(seedRes.Path, bundle); err != nil {
-		return "", config.SeedResult{}, "", fmt.Errorf("save %s: %w", seedRes.Path, err)
+		return "", config.PresetResult{}, "", fmt.Errorf("save %s: %w", seedRes.Path, err)
 	}
-	activeDir, err := installer.WriteActivePreset(inputs.Preset)
-	if err != nil {
-		return "", config.SeedResult{}, "", err
-	}
-	return rootDir, seedRes, activeDir, nil
+	return rootDir, seedRes, rootDir, nil
 }
 
 func setupWrappers() (map[string]any, error) {

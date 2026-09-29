@@ -10,9 +10,9 @@ import (
 // scenario — the validator already guarantees every required leaf is
 // present, so the diff has full overlap to classify.
 func TestComputeSettingsSources_DefaultBaselineAllDefault(t *testing.T) {
-	kit, err := LoadKitConfigByKey("omakase")
+	kit, err := LoadKitConfig()
 	if err != nil {
-		t.Fatalf("LoadKitConfigByKey(omakase): %v", err)
+		t.Fatalf("LoadKitConfig(): %v", err)
 	}
 	sources := computeSettingsSources(kit, kit)
 	if len(sources) == 0 {
@@ -31,9 +31,9 @@ func TestComputeSettingsSources_DefaultBaselineAllDefault(t *testing.T) {
 // relies on this so the viewer column highlights only the leaves the
 // user actually edited.
 func TestComputeSettingsSources_ProjectOverrideFlipsOneLeaf(t *testing.T) {
-	kit, err := LoadKitConfigByKey("omakase")
+	kit, err := LoadKitConfig()
 	if err != nil {
-		t.Fatalf("LoadKitConfigByKey(omakase): %v", err)
+		t.Fatalf("LoadKitConfig(): %v", err)
 	}
 	user := kit
 	user.Agent.RecentCommentLimit = kit.Agent.RecentCommentLimit + 99
@@ -62,9 +62,9 @@ func TestComputeSettingsSources_ProjectOverrideFlipsOneLeaf(t *testing.T) {
 // baseline to compare against. The classifier's nil-kit branch handles
 // it without panicking on the missing counterpart.
 func TestComputeSettingsSources_UserOnlyLeafIsProject(t *testing.T) {
-	kit, err := LoadKitConfigByKey("omakase")
+	kit, err := LoadKitConfig()
 	if err != nil {
-		t.Fatalf("LoadKitConfigByKey(omakase): %v", err)
+		t.Fatalf("LoadKitConfig(): %v", err)
 	}
 	user := kit
 	user.TagSynonyms = map[string]string{"feat": "feature"}
