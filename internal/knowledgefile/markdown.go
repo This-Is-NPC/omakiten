@@ -111,12 +111,29 @@ func parseMarkdown(data []byte) (markdownMeta, string, error) {
 }
 
 func appendMarkdownLinks(project domain.ProjectContext, id, body, path, sourceRoot string, result *domain.KnowledgeSnapshot) {
-	for _, match := range markdownLink.FindAllStringSubmatch(body, -1) {
-		target := strings.SplitN(match[1], "#", 2)[0]
-		target = strings.Trim(target, "<>")
-		to := markdownTarget(project, target, path, sourceRoot)
-		if to != "" {
-			result.Relations = append(result.Relations, domain.KnowledgeRelation{From: project.Slug + ":" + id, To: to, Kind: "references"})
+	fence := ""
+	for _, line := range strings.Split(body, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "```") || strings.HasPrefix(trimmed, "~~~") {
+			marker := trimmed[:3]
+			switch fence {
+			case "":
+				fence = marker
+			case marker:
+				fence = ""
+			}
+			continue
+		}
+		if fence != "" {
+			continue
+		}
+		for _, match := range markdownLink.FindAllStringSubmatch(line, -1) {
+			target := strings.SplitN(match[1], "#", 2)[0]
+			target = strings.Trim(target, "<>")
+			to := markdownTarget(project, target, path, sourceRoot)
+			if to != "" {
+				result.Relations = append(result.Relations, domain.KnowledgeRelation{From: project.Slug + ":" + id, To: to, Kind: "references"})
+			}
 		}
 	}
 }

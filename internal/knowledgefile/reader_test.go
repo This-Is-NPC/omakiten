@@ -68,6 +68,15 @@ func TestLoadDefaultMarkdownFromDocs(t *testing.T) {
 	}
 }
 
+func TestLoadIgnoresLinksInMarkdownCodeFences(t *testing.T) {
+	root := t.TempDir()
+	writeKnowledgeTestFile(t, filepath.Join(root, "docs", "guide.md"), "# Guide\n\n```markdown\n[example](okt://api/openapi:createOrder)\n```\n")
+	snapshot := Load(context.Background(), domain.ProjectContext{Slug: "test", RootPath: root}, true, nil)
+	if len(snapshot.Relations) != 0 || len(snapshot.Diagnostics) != 0 {
+		t.Fatalf("example link became a graph edge: %+v", snapshot)
+	}
+}
+
 func TestLoadCLIDocumentLinksToOpenAPI(t *testing.T) {
 	root := t.TempDir()
 	writeKnowledgeTestFile(t, filepath.Join(root, "docs", "knowledge.yaml"), "version: 1\nsources:\n  - {format: cli, path: docs/commands.yaml}\n  - {format: openapi, path: openapi.yaml}\n")
