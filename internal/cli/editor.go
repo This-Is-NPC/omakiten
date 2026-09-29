@@ -19,13 +19,13 @@ func openEditorAndReimport(ctx context.Context, rt *runtime, path string) error 
 	if path == "" {
 		return nil
 	}
-	if err := runEditorCommand(path); err != nil {
+	if err := runEditorCommand(ctx, path); err != nil {
 		return domain.NewError(domain.ErrEditorFailed, err.Error(), map[string]any{"path": path})
 	}
 	return rt.operationService().ReimportBundle(ctx)
 }
 
-func runEditorCommand(path string) error {
+func runEditorCommand(ctx context.Context, path string) error {
 	editor := processutil.ResolveEditor()
 	parts := strings.Fields(editor)
 	if len(parts) == 0 {
@@ -36,9 +36,9 @@ func runEditorCommand(path string) error {
 		return err
 	}
 	args := append(parts[1:], path)
-	cmd := exec.Command(resolved, args...)
+	cmd := exec.CommandContext(ctx, resolved, args...)
 	cmd.Stdin = os.Stdin
-	cmd.Stdout = os.Stdout
+	cmd.Stdout = os.Stderr
 	cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("editor %q exited: %w", editor, err)

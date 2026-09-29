@@ -28,7 +28,7 @@ func newDependAddCommand(opts *runtimeOptions) *cobra.Command {
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runJSON(cmd, func(ctx context.Context) (any, error) {
-				taskID, err := parseTaskID(args[0])
+				taskID, err := parseID(args[0], "task id")
 				if err != nil {
 					return nil, err
 				}
@@ -59,7 +59,7 @@ func newDependRemoveCommand(opts *runtimeOptions) *cobra.Command {
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runJSON(cmd, func(ctx context.Context) (any, error) {
-				taskID, err := parseTaskID(args[0])
+				taskID, err := parseID(args[0], "task id")
 				if err != nil {
 					return nil, err
 				}
@@ -90,7 +90,7 @@ func newDependListCommand(opts *runtimeOptions) *cobra.Command {
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runJSON(cmd, func(ctx context.Context) (any, error) {
-				taskID, err := parseTaskID(args[0])
+				taskID, err := parseID(args[0], "task id")
 				if err != nil {
 					return nil, err
 				}

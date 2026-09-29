@@ -1,9 +1,7 @@
 package cli
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -27,7 +25,7 @@ func TestCLIWalkUpStandaloneInstall(t *testing.T) {
 	// root; we materialise the install manually here so the test does not
 	// have to fabricate a .git directory.
 	repoLocalRoot := filepath.Join(repoDir, ".omakiten")
-	out := runCLIWithoutConfig(t, dbPath, "config", "init", "--scope", "local", "--preset", "izakaya")
+	out := runCLI(t, dbPath, "", "config", "init", "--scope", "local", "--preset", "izakaya")
 	if !strings.Contains(out, `"name":"izakaya"`) {
 		t.Skipf("okt config init --scope local not wired yet; output = %s", out)
 	}
@@ -40,7 +38,7 @@ func TestCLIWalkUpStandaloneInstall(t *testing.T) {
 		t.Fatalf("MkdirAll(deep) error = %v", err)
 	}
 	t.Chdir(deep)
-	out = runCLIWithoutConfig(t, dbPath, "config", "validate")
+	out = runCLI(t, dbPath, "", "config", "validate")
 	if !strings.Contains(out, repoLocalRoot) {
 		t.Fatalf("validate output = %s, want path under repo-local %s", out, repoLocalRoot)
 	}
@@ -69,24 +67,47 @@ func TestCLIProjectFlagPicksProjectRepoLocal(t *testing.T) {
 
 	// Seed A with omakase + register in DB.
 	t.Chdir(projectA)
-	runCLIWithoutConfig(t, dbPath, "config", "init", "--scope", "local", "--preset", "omakase")
-	runCLIWithoutConfig(t, dbPath, "init", "--name", "Repo A", "--slug", "repo-a", "--root", projectA)
+	runCLI(t, dbPath, "", "config", "init", "--scope", "local", "--preset", "omakase")
+	runCLI(t, dbPath, "", "init", "--name", "Repo A", "--slug", "repo-a", "--root", projectA)
 
 	// Seed B with izakaya + register in DB.
 	t.Chdir(projectB)
-	runCLIWithoutConfig(t, dbPath, "config", "init", "--scope", "local", "--preset", "izakaya")
-	runCLIWithoutConfig(t, dbPath, "init", "--name", "Repo B", "--slug", "repo-b", "--root", projectB)
+	runCLI(t, dbPath, "", "config", "init", "--scope", "local", "--preset", "izakaya")
+	runCLI(t, dbPath, "", "init", "--name", "Repo B", "--slug", "repo-b", "--root", projectB)
 
 	// chdir to a third unrelated directory; --project B must still pick
 	// B's .omakiten/ via project.root_path walk-up rather than CWD.
 	t.Chdir(tmp)
-	out := runCLIWithoutConfig(t, dbPath, "--project", "repo-b", "config", "show", "--scope", "local")
+	out := runCLI(t, dbPath, "", "--project", "repo-b", "config", "show", "--scope", "local")
 	if !strings.Contains(out, "key: izakaya") {
 		t.Fatalf("--project repo-b output = %s, want izakaya kit", out)
 	}
 	if strings.Contains(out, "key: omakase") {
 		t.Fatalf("--project repo-b leaked into omakase from repo-a")
 	}
+	assertProjectConfigCommands(t, dbPath, projectB)
+}
+
+func assertProjectConfigCommands(t *testing.T, dbPath, projectRoot string) {
+	t.Helper()
+	path := filepath.Join(projectRoot, ".omakiten", "config", "izakaya.yaml")
+	for _, args := range [][]string{
+		{"config", "validate"},
+		{"config", "language", "show"},
+		{"config", "language", "set", "--agent", "Japanese"},
+		{"config", "language", "reset"},
+	} {
+		out := runCLI(t, dbPath, "", append([]string{"--project", "repo-b"}, args...)...)
+		if !strings.Contains(out, path) {
+			t.Fatalf("selected project lost for %v: %s", args, out)
+		}
+	}
+	writeFile(t, path, "version: 1\nmcp: {}\n")
+	out := runCLI(t, dbPath, "", "--project", "repo-b", "config", "refresh-defaults")
+	if !strings.Contains(out, filepath.Join(projectRoot, ".omakiten")) {
+		t.Fatalf("refresh targeted another install: %s", out)
+	}
+	runCLI(t, dbPath, "", "--project", "repo-b", "config", "validate")
 }
 
 // TestCLIPerProjectListIsolatesTasks is the Phase 3c acceptance check
@@ -110,17 +131,17 @@ func TestCLIPerProjectListIsolatesTasks(t *testing.T) {
 	}
 
 	t.Chdir(projectA)
-	runCLIWithoutConfig(t, dbPath, "config", "init", "--scope", "local", "--preset", "omakase")
-	runCLIWithoutConfig(t, dbPath, "init", "--name", "Proj A", "--slug", "proj-a", "--root", projectA)
-	runCLIWithoutConfig(t, dbPath, "--project", "proj-a", "task", "create", "--confirm", "-t", "task-only-in-a")
+	runCLI(t, dbPath, "", "config", "init", "--scope", "local", "--preset", "omakase")
+	runCLI(t, dbPath, "", "init", "--name", "Proj A", "--slug", "proj-a", "--root", projectA)
+	runCLI(t, dbPath, "", "--project", "proj-a", "task", "create", "--confirm", "-t", "task-only-in-a")
 
 	t.Chdir(projectB)
-	runCLIWithoutConfig(t, dbPath, "config", "init", "--scope", "local", "--preset", "omakase")
-	runCLIWithoutConfig(t, dbPath, "init", "--name", "Proj B", "--slug", "proj-b", "--root", projectB)
-	runCLIWithoutConfig(t, dbPath, "--project", "proj-b", "task", "create", "--confirm", "-t", "task-only-in-b")
+	runCLI(t, dbPath, "", "config", "init", "--scope", "local", "--preset", "omakase")
+	runCLI(t, dbPath, "", "init", "--name", "Proj B", "--slug", "proj-b", "--root", projectB)
+	runCLI(t, dbPath, "", "--project", "proj-b", "task", "create", "--confirm", "-t", "task-only-in-b")
 
 	t.Chdir(tmp)
-	outA := runCLIWithoutConfig(t, dbPath, "--project", "proj-a", "list")
+	outA := runCLI(t, dbPath, "", "--project", "proj-a", "list")
 	if !strings.Contains(outA, "task-only-in-a") {
 		t.Fatalf("--project proj-a list = %s, want task-only-in-a", outA)
 	}
@@ -128,7 +149,7 @@ func TestCLIPerProjectListIsolatesTasks(t *testing.T) {
 		t.Fatalf("--project proj-a list leaked task-only-in-b: %s", outA)
 	}
 
-	outB := runCLIWithoutConfig(t, dbPath, "--project", "proj-b", "list")
+	outB := runCLI(t, dbPath, "", "--project", "proj-b", "list")
 	if !strings.Contains(outB, "task-only-in-b") {
 		t.Fatalf("--project proj-b list = %s, want task-only-in-b", outB)
 	}
@@ -151,7 +172,7 @@ func TestCLIPerProjectBundleCacheSeeded(t *testing.T) {
 
 	// Seed the global install so open(materializeConfig=true) finds a
 	// bundle to parse.
-	runCLIWithoutConfig(t, dbPath, "config", "init", "--scope", "global", "--preset", "omakase")
+	runCLI(t, dbPath, "", "config", "init", "--scope", "global", "--preset", "omakase")
 
 	opts := &runtimeOptions{dbPath: dbPath}
 	rt, err := opts.open(context.Background(), true)
@@ -177,27 +198,4 @@ func TestCLIPerProjectBundleCacheSeeded(t *testing.T) {
 		t.Fatalf("activeRegistry()=%p does not match ProjectRuntime.EnumRegistry=%p — service helpers would skip the cache", rt.activeRegistry(), pr.EnumRegistry)
 	}
 
-}
-
-// runCLIWithoutConfig mirrors runCLI but does NOT inject --config so the
-// resolver's $OMAKITEN_HOME + walk-up paths run end-to-end.
-func runCLIWithoutConfig(t *testing.T, dbPath string, args ...string) string {
-	t.Helper()
-	cmd := NewRootCommand("test")
-	var out bytes.Buffer
-	cmd.SetOut(&out)
-	full := append([]string{"--db", dbPath}, args...)
-	cmd.SetArgs(full)
-	if err := cmd.Execute(); err != nil {
-		t.Fatalf("Execute(%v) error = %v, output = %s", full, err, out.String())
-	}
-	trimmed := strings.TrimSpace(out.String())
-	var envelope map[string]any
-	if err := json.Unmarshal([]byte(trimmed), &envelope); err != nil {
-		t.Fatalf("json.Unmarshal(%v) error = %v, output = %s", full, err, trimmed)
-	}
-	if envelope["ok"] != true {
-		t.Fatalf("Execute(%v) ok = %v, output = %s", full, envelope["ok"], trimmed)
-	}
-	return trimmed
 }

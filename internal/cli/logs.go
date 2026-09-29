@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -12,25 +13,8 @@ import (
 	"omakiten/internal/domain"
 )
 
-// newLogsCommand wires `okt logs` — the unified Logs inspector read
-// surface. The command shells `internal/sqlite.Store.ListEvents` with a
-// caller-built `domain.EventFilter`, then projects each row into a
-// 5-field JSON object whose `detail` column is `domain.SummarizeEvent`
-// applied verbatim. The set of categories the CLI accepts mirrors
-// `domain.KnownEventCategories` exactly so the chip vocabulary stays
-// canonical across the CLI / TUI triad.
-//
-// Default scope: last `Snapshot.LogsWindowDays()` of every category for
-// the resolved project. `--since` overrides the time floor and
-// `--category` (repeatable, comma-separated) restricts the category
-// set; the resolved set ANDs across both axes the same way SQLite
-// expects via `EventFilter`.
-//
-// Breaking change vs the legacy `activity_logs` JSON shape (umbrella
-// #320 D3): rows now carry the EventRow projection (`event_type`,
-// `entity_type`, `author_type`, `summary`) instead of the
-// `ActivityLog`/`source` shape. The CHANGELOG note under
-// `feat(cli)!` flags the break for downstream tooling.
+// newLogsCommand filters unified events by project, category and time.
+// Categories use domain.KnownEventCategories; the snapshot supplies the time floor.
 func newLogsCommand(opts *runtimeOptions) *cobra.Command {
 	var (
 		categoryFlags []string
@@ -273,7 +257,10 @@ func resolveLogSince(flag string, snap interface{ LogsWindowDays() time.Duration
 				map[string]any{"since": flag, "error": err.Error()},
 			)
 		}
-		if dur <= 0 {
+		if dur < 0 {
+			return time.Time{}, domain.NewError(domain.ErrValidation, t("cli.err.logs_invalid_since"), map[string]any{"since": flag})
+		}
+		if dur == 0 {
 			return time.Time{}, nil
 		}
 		return nowUTC.Add(-dur), nil
@@ -300,12 +287,12 @@ func parseLogDuration(value string) (time.Duration, error) {
 		return 0, fmt.Errorf("empty duration")
 	}
 	if strings.HasSuffix(v, "d") {
-		var days int
-		if _, err := fmt.Sscanf(v, "%dd", &days); err != nil {
+		days, err := strconv.ParseInt(strings.TrimSuffix(v, "d"), 10, 64)
+		if err != nil {
 			return 0, err
 		}
-		if days < 0 {
-			return 0, fmt.Errorf("negative days: %s", v)
+		if days < 0 || days > int64((1<<63-1)/(24*time.Hour)) {
+			return 0, fmt.Errorf("days out of range: %s", v)
 		}
 		return time.Duration(days) * 24 * time.Hour, nil
 	}

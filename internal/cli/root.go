@@ -131,6 +131,8 @@ func NewRootCommand(version string, interactive ...func(context.Context, agentru
 	}
 	configureRootFlags(cmd, opts)
 	addRootCommands(cmd, opts, version, interactive...)
+	cmd.MarkFlagsMutuallyExclusive("project", "project-id")
+	configureCommandTree(cmd)
 	return cmd
 }
 
@@ -139,6 +141,8 @@ func configureRootFlags(cmd *cobra.Command, opts *runtimeOptions) {
 	cmd.PersistentFlags().StringVar(&opts.configPath, "config", "", opts.t("cli.root.flag.config"))
 	cmd.PersistentFlags().StringVarP(&opts.project, "project", "p", "", opts.t("cli.root.flag.project"))
 	cmd.PersistentFlags().Int64Var(&opts.projectID, "project-id", 0, opts.t("cli.root.flag.project-id"))
+	_ = cmd.MarkPersistentFlagFilename("config", "yaml", "yml")
+	_ = cmd.MarkPersistentFlagFilename("db", "db")
 }
 
 func addRootCommands(cmd *cobra.Command, opts *runtimeOptions, version string, interactive ...func(context.Context, agentruntime.Session) error) {
@@ -400,6 +404,15 @@ func writeSuccess(cmd *cobra.Command, data any) error {
 }
 
 func writeError(cmd *cobra.Command, err error) error {
+	envelope := commandFailure(cmd, err)
+	if streamIsTTY(cmd.ErrOrStderr()) {
+		printCommandFailure(cmd.ErrOrStderr(), envelope)
+	}
+	_ = output.Write(cmd.OutOrStdout(), envelope)
+	return exitError{code: 1}
+}
+
+func commandFailure(cmd *cobra.Command, err error) output.Envelope {
 	code, message, details := "internal_error", err.Error(), map[string]any(nil)
 	var coded *domain.CodedError
 	if errors.As(err, &coded) {
@@ -407,8 +420,8 @@ func writeError(cmd *cobra.Command, err error) error {
 	} else if coded = codedFromOperationDenied(err); coded != nil {
 		code, message, details = string(coded.Code), coded.Message, coded.Details
 	}
-	_ = output.Write(cmd.OutOrStdout(), output.Failure(code, message, details))
-	return exitError{code: 1}
+	details = failureGuidance(cmd, code, details)
+	return output.Failure(code, message, details)
 }
 
 // codedFromOperationDenied maps a surfaces deny onto the named

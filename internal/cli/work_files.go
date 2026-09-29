@@ -5,7 +5,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"strconv"
 
 	"github.com/spf13/cobra"
 	"omakiten/internal/config"
@@ -110,19 +109,23 @@ func newWorkExportCommand(opts *runtimeOptions, kind string) *cobra.Command {
 }
 
 func exportWorkDocument(ctx context.Context, opts *runtimeOptions, kind, selector string) (domain.WorkDocument, error) {
+	input := contract.ExportWorkInput{ProjectSelector: opts.projectSelector()}
+	if kind == "task" {
+		id, err := parseID(selector, "task id")
+		if err != nil {
+			return domain.WorkDocument{}, err
+		}
+		input.TaskID = id
+	} else {
+		input.Slug = selector
+	}
 	rt, err := opts.open(ctx, true)
 	if err != nil {
 		return domain.WorkDocument{}, err
 	}
 	defer rt.close()
-	input := contract.ExportWorkInput{ProjectSelector: opts.projectSelector()}
 	if kind == "plan" {
-		input.Slug = selector
 		return rt.operationService().ExportPlan(ctx, input)
-	}
-	input.TaskID, err = strconv.ParseInt(selector, 10, 64)
-	if err != nil {
-		return domain.WorkDocument{}, domain.NewError(domain.ErrValidation, "task id must be numeric", nil)
 	}
 	return rt.operationService().ExportTask(ctx, input)
 }

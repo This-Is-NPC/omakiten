@@ -2,12 +2,10 @@ package cli
 
 import (
 	"context"
-	"strconv"
 
 	"github.com/spf13/cobra"
 
 	"omakiten/internal/contract"
-	"omakiten/internal/domain"
 )
 
 func newTaskCommand(opts *runtimeOptions) *cobra.Command {
@@ -31,9 +29,9 @@ func newTaskContinueCommand(opts *runtimeOptions) *cobra.Command {
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runJSON(cmd, func(ctx context.Context) (any, error) {
-				taskID, err := strconv.ParseInt(args[0], 10, 64)
+				taskID, err := parseID(args[0], "task id")
 				if err != nil {
-					return nil, domain.NewError(domain.ErrValidation, "task id is not numeric", map[string]any{"value": args[0]})
+					return nil, err
 				}
 				rt, err := opts.open(ctx, true)
 				if err != nil {
@@ -64,9 +62,9 @@ func newTaskActivityCommand(opts *runtimeOptions) *cobra.Command {
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runJSON(cmd, func(ctx context.Context) (any, error) {
-				taskID, err := strconv.ParseInt(args[0], 10, 64)
+				taskID, err := parseID(args[0], "task id")
 				if err != nil {
-					return nil, domain.NewError(domain.ErrValidation, "task id is not numeric", map[string]any{"value": args[0]})
+					return nil, err
 				}
 				rt, err := opts.open(ctx, true)
 				if err != nil {

@@ -1,7 +1,5 @@
-// Package cli is the cobra-rooted command tree behind the `okt` binary.
-// Every leaf command parses flags, opens the runtime, calls into
-// internal/app or internal/agent, and emits a one-line JSON envelope so
-// agents can parse stdout without an interactive terminal. Errors are
-// rendered as a coded envelope (ok=false, code, msg, details) so the
-// caller can branch on the code without string-matching.
+// Package cli defines the Cobra command tree behind the okt binary.
+// Commands validate scoped input and invoke the operation facade through the runtime.
+// Data commands emit JSON on stdout; diagnostics, prompts and editors use stderr.
+// Command metadata supplies shared validation, help and shell completions.
 package cli

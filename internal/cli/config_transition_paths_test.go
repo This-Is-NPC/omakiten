@@ -8,7 +8,7 @@ import (
 func TestValidateV030ManagedConfigPathRejectsNonOfficialPaths(t *testing.T) {
 	root := t.TempDir()
 	official := filepath.Join(root, "config", "omakase.yaml")
-	if got, err := validateV030ManagedConfigPath(official); err != nil || got != official {
+	if got, err := validateManagedConfigProfilePath(official); err != nil || got != official {
 		t.Fatalf("absent official path = %q, %v; want acceptance", got, err)
 	}
 
@@ -29,7 +29,7 @@ func TestValidateV030ManagedConfigPathRejectsNonOfficialPaths(t *testing.T) {
 
 func assertTransitionPathRejected(t *testing.T, path string) {
 	t.Helper()
-	if _, err := validateV030ManagedConfigPath(path); err == nil {
-		t.Fatalf("validateV030ManagedConfigPath(%q) accepted a non-official path", path)
+	if _, err := validateManagedConfigProfilePath(path); err == nil {
+		t.Fatalf("validateManagedConfigProfilePath(%q) accepted a non-official path", path)
 	}
 }

@@ -135,7 +135,7 @@ func TestCLISkillRemovePrunesPersonaRefs(t *testing.T) {
 	if strings.Contains(out, `"slug":"implementation"`) {
 		t.Fatalf("skill list still has removed skill: %s", out)
 	}
-	runCLIExpectError(t, dbPath, configPath, "validation_error", "skill", "show", "implementation")
+	runCLIExpectError(t, dbPath, configPath, "skill_not_found", "skill", "show", "implementation")
 }
 
 // TestCLIEditorShellOut spins up a stub editor (a tiny sh script) that writes

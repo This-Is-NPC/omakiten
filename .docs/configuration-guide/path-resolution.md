@@ -184,8 +184,14 @@ When a `--config` flag points at a yaml file, the resolver derives `<root>` from
 | `okt config init --scope <global\|local> --preset <name> [--force]` | Materialise a complete install (config + entity folders + preset library) into the chosen scope. `--force` re-copies every embedded shipped file; user `custom/` subtrees are never touched. |
 | `okt config show --scope <global\|local>` | Print the raw bytes of the chosen scope's active yaml. |
 | `okt config path --scope <global\|local>` | Print the install root directory (the ConfigRoot for global, the discovered `.omakiten/` for local). |
-| `okt config why <key> [--layer <global\|local>]` | Walk the active config (or a pinned layer) by dotted YAML key path and report `{key, value, source, path}`. Missing keys return `source = "not_set"`. |
-| `okt config diff <left> <right>` | Structural YAML diff between two sources. Operands accept `global`, `local`, `local:<path>`, or any raw yaml file path. Emits one entry per divergent leaf (`added` / `removed` / `changed`). |
+| `okt config why <key> [--layer <global\|local>]` | Expand imports and walk the active config (or a pinned layer) by dotted YAML key path and report `{key, value, source, path}`. Missing keys return `source = "not_set"`. |
+| `okt config diff <left> <right>` | Structural YAML diff between two sources after import expansion. Operands accept `global`, `local`, `local:<path>`, or any raw yaml file path. Emits one entry per divergent leaf (`added` / `removed` / `changed`). |
+
+CLI discovery starts at the project selected by `--project` or `--project-id`,
+or at CWD when neither is supplied. An explicit `--config` selects that file;
+`config why` reports its source as `explicit` unless a layer is pinned.
+Validation, language commands and default refresh use the same selection.
+A global language write reloads its target even when a local profile is invalid.
 
 ## TUI scope badge
 

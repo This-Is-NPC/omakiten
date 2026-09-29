@@ -3,7 +3,6 @@ package cli
 import (
 	"context"
 	"errors"
-	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -11,7 +10,6 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
-	"gopkg.in/yaml.v3"
 
 	"omakiten/internal/config"
 	"omakiten/internal/domain"
@@ -95,78 +93,52 @@ func resolveWhy(opts *runtimeOptions, key, layerFilter string) (any, error) {
 	if layerFilter != "" {
 		return resolveWhyLayer(opts, key, parts, layerFilter)
 	}
-	return resolveWhyDiscovered(opts, key, parts)
-}
-
-func resolveWhyLayer(opts *runtimeOptions, key string, parts []string, layer string) (any, error) {
-	consult := func(layer string) (any, string, bool, error) {
-		path, err := resolveActiveFileForScope(opts, layer)
-		if err != nil {
-			return nil, "", false, err
-		}
-		val, ok, err := lookupYAMLKey(path, parts)
-		if err != nil {
-			return nil, "", false, err
-		}
-		return val, path, ok, nil
-	}
-	value, path, found, err := consult(layer)
-	if err != nil {
-		// Missing local install is a "not_set" answer rather than a
-		// hard error so callers can ask the question safely.
-		var coded *domain.CodedError
-		if layer == "local" && errors.As(err, &coded) && coded.Code == domain.ErrValidation {
-			return map[string]any{"key": key, "source": "not_set", "layer": layer}, nil
-		}
-		return nil, err
-	}
-	if !found {
-		return map[string]any{"key": key, "source": "not_set", "layer": layer}, nil
-	}
-	return map[string]any{"key": key, "value": value, "source": layer, "path": path}, nil
-}
-
-func resolveWhyDiscovered(opts *runtimeOptions, key string, parts []string) (any, error) {
-	// No filter: resolver decides. Walk up from discoveryStart (or CWD)
-	// for .omakiten/; fall back to global. Matches runtime resolution.
-	start := opts.discoveryStart
-	if start == "" {
-		cwd, err := os.Getwd()
+	if opts.configPath != "" {
+		path, err := opts.resolvedConfigPath()
 		if err != nil {
 			return nil, err
 		}
-		start = cwd
+		return resolveWhyFile(path, key, parts, "explicit")
 	}
-	dir, ok, err := config.FindRepoLocal(start)
+	root, err := opts.discoverRepoLocalRoot()
 	if err != nil {
 		return nil, err
 	}
-	if ok {
-		path, err := paths.ActiveConfigFileInDir(filepath.Join(dir, "config"))
+	if root != "" {
+		path, err := paths.ActiveConfigFileInDir(filepath.Join(root, "config"))
 		if err != nil {
 			return nil, err
 		}
-		val, found, err := lookupYAMLKey(path, parts)
-		if err != nil {
-			return nil, err
-		}
-		if found {
-			return map[string]any{"key": key, "value": val, "source": "local", "path": path}, nil
-		}
-		return map[string]any{"key": key, "source": "not_set", "path": path}, nil
+		return resolveWhyFile(path, key, parts, "local")
 	}
 	path, err := resolveActiveFileForScope(opts, "global")
 	if err != nil {
 		return nil, err
 	}
+	return resolveWhyFile(path, key, parts, "global")
+}
+
+func resolveWhyLayer(opts *runtimeOptions, key string, parts []string, layer string) (any, error) {
+	path, err := resolveActiveFileForScope(opts, layer)
+	if err != nil {
+		var coded *domain.CodedError
+		if layer == "local" && errors.As(err, &coded) && coded.Code == domain.ErrValidation && coded.Details["start"] != nil {
+			return map[string]any{"key": key, "source": "not_set", "layer": layer}, nil
+		}
+		return nil, err
+	}
+	return resolveWhyFile(path, key, parts, layer)
+}
+
+func resolveWhyFile(path, key string, parts []string, source string) (any, error) {
 	value, found, err := lookupYAMLKey(path, parts)
 	if err != nil {
 		return nil, err
 	}
 	if !found {
-		return map[string]any{"key": key, "source": "not_set"}, nil
+		return map[string]any{"key": key, "source": "not_set", "path": path}, nil
 	}
-	return map[string]any{"key": key, "value": value, "source": "global", "path": path}, nil
+	return map[string]any{"key": key, "value": value, "source": source, "path": path}, nil
 }
 
 func resolveDiffSource(opts *runtimeOptions, spec string) (string, error) {
@@ -222,22 +194,11 @@ func lookupYAMLKey(path string, parts []string) (any, bool, error) {
 }
 
 func readYAMLMap(path string) (map[string]any, error) {
-	data, err := os.ReadFile(path)
+	values, err := config.ReadConfigMap(path)
 	if err != nil {
-		return nil, fmt.Errorf("read %s: %w", path, err)
+		return nil, configValidationFailure(path, err)
 	}
-	var node yaml.Node
-	if err := yaml.Unmarshal(data, &node); err != nil {
-		return nil, fmt.Errorf("parse %s: %w", path, err)
-	}
-	if node.Kind == 0 {
-		return map[string]any{}, nil
-	}
-	var m map[string]any
-	if err := node.Decode(&m); err != nil {
-		return nil, fmt.Errorf("decode %s: %w", path, err)
-	}
-	return m, nil
+	return values, nil
 }
 
 type diffEntry struct {

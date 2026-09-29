@@ -44,7 +44,7 @@ func newLawListCommand(opts *runtimeOptions) *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&scope, "scope", "", opts.t("cli.law.list.flag.scope"))
-	cmd.Flags().StringVar(&project, "project", "", opts.t("cli.law.list.flag.project"))
+	cmd.Flags().StringVar(&project, "scope-project", "", opts.t("cli.law.list.flag.project"))
 	cmd.Flags().StringVar(&persona, "persona", "", opts.t("cli.law.list.flag.persona"))
 	return cmd
 }
@@ -90,7 +90,7 @@ func newLawAddCommand(opts *runtimeOptions) *cobra.Command {
 	cmd.Flags().StringVarP(&severity, "severity", "s", "error", opts.t("cli.law.add.flag.severity"))
 	cmd.Flags().StringVarP(&body, "body", "b", "", opts.t("cli.law.add.flag.body"))
 	cmd.Flags().StringVar(&scope, "scope", "global", opts.t("cli.law.add.flag.scope"))
-	cmd.Flags().StringVar(&project, "project", "", opts.t("cli.law.add.flag.project"))
+	cmd.Flags().StringVar(&project, "scope-project", "", opts.t("cli.law.add.flag.project"))
 	cmd.Flags().StringVar(&persona, "persona", "", opts.t("cli.law.add.flag.persona"))
 	cmd.Flags().BoolVar(&noEdit, "no-edit", false, opts.t("cli.law.add.flag.no-edit"))
 	_ = cmd.MarkFlagRequired("key")
@@ -124,7 +124,7 @@ func newLawEditCommand(opts *runtimeOptions) *cobra.Command {
 
 func runLawAdd(ctx context.Context, rt *runtime, key, name, severity, body, scope, project, persona string, noEdit bool) (any, error) {
 	if body == "" {
-		body = " "
+		body = "# " + key + "\n"
 	}
 	severityID, err := parseSeverity(severity, rt.activeRegistry())
 	if err != nil {

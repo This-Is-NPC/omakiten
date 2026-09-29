@@ -67,9 +67,7 @@ func newConfigPathCommand(opts *runtimeOptions) *cobra.Command {
 // primeDiscoveryStart populates opts.discoveryStart so walk-up honours
 // --project / --project-id when supplied. Subcommands that do not need a
 // full runtime open the DB just long enough to do the project lookup,
-// then close it. Failures fall back to CWD silently so the subcommand can
-// proceed with the user-global resolver when the DB is fresh or the
-// project isn't registered yet.
+// then close it. Explicit project resolution failures stop the command.
 func primeDiscoveryStart(ctx context.Context, opts *runtimeOptions) error {
 	if opts.discoveryStart != "" {
 		return nil
@@ -88,10 +86,7 @@ func primeDiscoveryStart(ctx context.Context, opts *runtimeOptions) error {
 	}
 	store, err := sqlite.Open(ctx, dbPath)
 	if err != nil {
-		// DB not openable yet — fall back to CWD.
-		cwd, _ := os.Getwd()
-		opts.discoveryStart = cwd
-		return nil
+		return err
 	}
 	defer func() { _ = store.Close() }()
 	start, err := opts.resolveDiscoveryStart(ctx, store)

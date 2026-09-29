@@ -392,11 +392,7 @@ func readWiringDetailedRawReader(path string, raw []byte, reader bundleSourceRea
 	// Parse once into a node tree, expand value-level `from:` directives, then
 	// re-encode so the existing strict-decode path runs unchanged over the
 	// resolved YAML.
-	var probe yaml.Node
-	if err := yaml.Unmarshal(raw, &probe); err != nil {
-		return wiring{}, nil, nil, err
-	}
-	resolved, sources, err := resolveImportsWithReader(&probe, path, reader)
+	resolved, sources, err := resolveConfigNode(path, raw, reader)
 	if err != nil {
 		return wiring{}, nil, nil, err
 	}
@@ -424,6 +420,35 @@ func readWiringDetailedRawReader(path string, raw []byte, reader bundleSourceRea
 		return wiring{}, nil, nil, err
 	}
 	return w, fields, importSources, nil
+}
+
+func resolveConfigNode(path string, raw []byte, reader bundleSourceReader) (*yaml.Node, []string, error) {
+	var probe yaml.Node
+	if err := yaml.Unmarshal(raw, &probe); err != nil {
+		return nil, nil, parseError(path, err)
+	}
+	return resolveImportsWithReader(&probe, path, reader)
+}
+
+// ReadConfigMap reads a bounded YAML document and expands its config imports.
+// Inspection commands share the bundle loader's import and path constraints.
+func ReadConfigMap(path string) (map[string]any, error) {
+	raw, err := readFileBounded(path, MaxWiringFileBytes)
+	if err != nil {
+		return nil, err
+	}
+	resolved, _, err := resolveConfigNode(path, raw, nil)
+	if err != nil {
+		return nil, err
+	}
+	if resolved.Kind == 0 {
+		return map[string]any{}, nil
+	}
+	var values map[string]any
+	if err := resolved.Decode(&values); err != nil {
+		return nil, parseError(path, err)
+	}
+	return values, nil
 }
 
 func topLevelYAMLFields(raw []byte) map[string]struct{} {

@@ -44,7 +44,7 @@ func TestShowLawRejectsUnknownSlug(t *testing.T) {
 	fixture.service.SetSnapshot(snapshotWithEntities(t, nil, nil, nil, nil, nil))
 
 	_, err := fixture.service.ShowLaw(fixture.ctx, contract.ShowLawInput{Slug: "ghost"})
-	assertCodedError(t, err, domain.ErrValidation)
+	assertCodedError(t, err, domain.ErrLawNotFound)
 }
 
 func TestListLawsFilters(t *testing.T) {
