@@ -73,6 +73,10 @@ commit to be clean HEAD, runs `mise run check`, and posts a `local-check` status
 for that commit. The gate consists of formatting, all-package tests with real
 Cosign and PowerShell installer assurance, cross-builds, lint, vulnerability,
 workspace, and shell checks. The same scripts back manual tasks and hooks.
+The hook starts an independent publisher after validation. It waits for GitHub
+to receive that commit and publishes its status automatically. Authentication
+failure or a missing session launcher aborts the push. Publisher output is written to
+`.tmp/local-check/<sha>.log`.
 
 Installer tests execute on the host operating system. Cross-builds compile
 filesystem safety tests for Linux, macOS, Windows, and Plan 9 under `.tmp/tests/`;
