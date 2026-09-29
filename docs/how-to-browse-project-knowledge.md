@@ -8,15 +8,16 @@ relates_to: [cli:knowledge]
 registered project in Omakiten, and optionally follow links to another project?
 
 Open the project in the TUI with `Ctrl+P`, then press `Shift+K` (uppercase K).
-Lowercase `k` scrolls upward on the project screen. The knowledge screen starts
-with interfaces: enter `CLI`, then `okt`, `okt task`, and `okt task create` to
-see that command's options and linked guides. `API` groups OpenAPI operations;
-the flat list keeps unlinked pages discoverable. Use `j`/`k` to select,
-`enter` to follow a relation, and `esc` to go to its parent. Press `l` for a
-flat resource list, `g` to return to the focused graph, and `r` to reread the
-project files.
-When a project has no CLI or API inventory, the graph starts at its Markdown
-documentation. The catalog does not write resources or relations to SQLite.
+Lowercase `k` scrolls upward on the project screen. The knowledge screen shows
+the whole graph immediately: `CLI → okt → okt task → okt task create → guide`
+appears as an indented tree, with OpenAPI operations and their linked guides
+under `API`. Use `j`/`k` or page keys to move through nodes, `g`/`G` to jump
+to the top or bottom, and `enter` to read the selected item's full details.
+`esc` returns to the graph at the same node. Press `r` to reread project files.
+Unlinked pages remain visible under `Documentation`; other resources without
+a path from an interface appear under `Other resources`. When a project has no
+CLI or API inventory, the graph starts at its Markdown documentation. The
+catalog does not write resources or relations to SQLite.
 
 ## Start with Markdown
 

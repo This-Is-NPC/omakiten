@@ -480,7 +480,7 @@ func (m *Model) editHomeProject(projectID int64) {
 
 func (m *Model) openProjectKnowledge() {
 	snapshot := m.projectScreen.Payload().Knowledge
-	m.projectKnowledgeScreen = m.projectKnowledgeScreen.Apply(snapshot, knowledgegraph.KnowledgeViews(snapshot))
+	m.projectKnowledgeScreen = m.projectKnowledgeScreen.Apply(snapshot, knowledgegraph.ProjectKnowledge(snapshot))
 	m.pushScreen(screenhost.ProjectKnowledge)
 }
 
@@ -695,7 +695,7 @@ func (m *Model) reloadScreenOutcome(outcome screenhost.Outcome) tea.Cmd {
 	if _, ok := outcome.Screen.(knowledge.Screen); ok {
 		if m.repos.Knowledge != nil {
 			snapshot := m.repos.Knowledge(m.ctx, m.project)
-			m.projectKnowledgeScreen = m.projectKnowledgeScreen.Apply(snapshot, knowledgegraph.KnowledgeViews(snapshot))
+			m.projectKnowledgeScreen = m.projectKnowledgeScreen.Apply(snapshot, knowledgegraph.ProjectKnowledge(snapshot))
 		}
 		return outcome.Command
 	}

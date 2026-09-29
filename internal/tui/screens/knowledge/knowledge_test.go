@@ -10,7 +10,7 @@ import (
 	"omakiten/internal/tui/screens/screentest"
 )
 
-func TestKnowledgeScreenNavigatesFromCommandToItsDocumentation(t *testing.T) {
+func TestKnowledgeScreenNavigatesCompleteGraph(t *testing.T) {
 	frame := screentest.FrameAt(t, 100, 30)
 	snapshot := domain.KnowledgeSnapshot{
 		Resources: []domain.KnowledgeResource{
@@ -25,30 +25,26 @@ func TestKnowledgeScreenNavigatesFromCommandToItsDocumentation(t *testing.T) {
 			{From: "okt:cli:task.create", To: "okt:markdown:docs/task", Kind: "documented_by"},
 		},
 	}
-	screen := New().Apply(snapshot, graph.KnowledgeViews(snapshot))
+	screen := New().Apply(snapshot, graph.ProjectKnowledge(snapshot))
 	screen = screen.Lifecycle(frame, screenhost.LifecycleEnter).Screen.(Screen)
-	if view := screentest.StripANSI(screen.View(frame)); !strings.Contains(view, "CLI → commands") || strings.Contains(view, "Work on a task") {
-		t.Fatalf("entry is not interface-first: %s", view)
-	}
-	for _, focus := range []string{"category:cli", "okt:cli:okt", "okt:cli:task", "okt:cli:task.create"} {
-		screen = screen.Update(frame, screentest.Key("enter")).Screen.(Screen)
-		if screen.focus != focus {
-			t.Fatalf("focus = %q, want %q", screen.focus, focus)
-		}
-		if focus == "okt:cli:okt" || focus == "okt:cli:task" {
-			screen = screen.Update(frame, screentest.Key("j")).Screen.(Screen)
+	view := screentest.StripANSI(screen.View(frame))
+	for _, want := range []string{"CLI", "okt task create", "documented_by → Work on a task"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("complete graph missing %q: %s", want, view)
 		}
 	}
-	if view := screentest.StripANSI(screen.View(frame)); !strings.Contains(view, "documentation → Work on a task") {
-		t.Fatalf("command documentation missing: %s", view)
+	for range 3 {
+		screen = screen.Update(frame, screentest.Key("j")).Screen.(Screen)
 	}
-	screen = screen.Update(frame, screentest.Key("j")).Screen.(Screen)
+	if index, ok := screen.selectedResource(); !ok || snapshot.Resources[index].Title != "Work on a task" {
+		t.Fatalf("cursor did not reach linked guide: index=%d ok=%t", index, ok)
+	}
 	screen = screen.Update(frame, screentest.Key("enter")).Screen.(Screen)
 	if view := screentest.StripANSI(screen.View(frame)); !strings.Contains(view, "Create one.") {
 		t.Fatalf("document body missing: %s", view)
 	}
 	screen = screen.Update(frame, screentest.Key("esc")).Screen.(Screen)
-	if screen.detail || screen.focus != "okt:cli:task.create" {
-		t.Fatalf("return from document = detail %t, focus %q", screen.detail, screen.focus)
+	if index, ok := screen.selectedResource(); screen.detail || !ok || snapshot.Resources[index].Title != "Work on a task" {
+		t.Fatalf("return did not preserve graph cursor: index=%d ok=%t detail=%t", index, ok, screen.detail)
 	}
 }

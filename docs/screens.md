@@ -75,10 +75,10 @@ a separate plan-network presentation. A wave is an ordering rule, not another
 task bucket.
 
 Project Knowledge reads Markdown, OpenAPI, and declared CLI inventories from
-the registered root. Its default view starts with CLI, API, and documentation;
-select an interface to see its immediate commands, schemas, and linked guides.
-Use `enter` to follow a relation, `esc` to return to its parent, `l` for the
-flat resource list, `g` for the focused graph, and `r` to reread source files.
+the registered root. Its single scrollable graph shows CLI commands, API
+operations, linked guides, and unlinked documentation together. Move with
+`j`/`k`, page keys, or `g`/`G`; `enter` opens full details, `esc` returns to
+the same graph node, and `r` rereads source files.
 See [the knowledge guide](how-to-browse-project-knowledge.md)
 for source and cross-project rules.
 

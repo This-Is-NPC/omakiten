@@ -1,159 +1,159 @@
 package graph
 
 import (
-	"fmt"
 	"sort"
 	"strings"
 
 	"omakiten/internal/domain"
 )
 
-const KnowledgeRoot = "root"
-
-const (
-	knowledgeCLI  = "category:cli"
-	knowledgeAPI  = "category:api"
-	knowledgeDocs = "category:docs"
-)
-
-// KnowledgeLine opens a neighboring item or its document.
+// KnowledgeLine is one visible node or relation in the project graph.
 type KnowledgeLine struct {
 	Text       string
-	FocusID    string
 	ResourceID string
 }
 
-// KnowledgeView is one prepared neighborhood in the project knowledge graph.
-type KnowledgeView struct {
-	Title  string
-	Parent string
-	Lines  []KnowledgeLine
+// KnowledgeGraph is the complete, scrollable project knowledge graph.
+type KnowledgeGraph struct {
+	Lines []KnowledgeLine
 }
 
-// KnowledgeMap contains the project entry and every navigable neighborhood.
-type KnowledgeMap struct {
-	Views map[string]KnowledgeView
+type knowledgeIndex struct {
+	resources map[string]domain.KnowledgeResource
+	children  map[string][]domain.KnowledgeRelation
+	contained map[string]bool
+	visited   map[string]bool
+	graph     KnowledgeGraph
 }
 
-// KnowledgeViews projects interfaces first and attaches documents to their items.
-func KnowledgeViews(snapshot domain.KnowledgeSnapshot) KnowledgeMap {
-	resources := make(map[string]domain.KnowledgeResource, len(snapshot.Resources))
-	children := make(map[string][]domain.KnowledgeRelation)
-	parents := make(map[string]string)
+// ProjectKnowledge places interfaces first and follows their relations in one tree.
+func ProjectKnowledge(snapshot domain.KnowledgeSnapshot) KnowledgeGraph {
+	index := newKnowledgeIndex(snapshot)
+	cli, api, docs := index.roots()
+	index.addCategory("CLI", cli)
+	index.addCategory("API", api)
+	var unlinked []string
+	for _, id := range docs {
+		if !index.visited[id] {
+			unlinked = append(unlinked, id)
+		}
+	}
+	index.addCategory("Documentation", unlinked)
+	var other []string
+	for id := range index.resources {
+		if !index.visited[id] {
+			other = append(other, id)
+		}
+	}
+	sort.Slice(other, func(i, j int) bool { return index.lessTitle(other[i], other[j]) })
+	index.addCategory("Other resources", other)
+	return index.graph
+}
+
+func newKnowledgeIndex(snapshot domain.KnowledgeSnapshot) *knowledgeIndex {
+	index := &knowledgeIndex{
+		resources: make(map[string]domain.KnowledgeResource, len(snapshot.Resources)),
+		children:  make(map[string][]domain.KnowledgeRelation),
+		contained: make(map[string]bool),
+		visited:   make(map[string]bool, len(snapshot.Resources)),
+	}
 	for _, item := range snapshot.Resources {
-		resources[item.Project+":"+item.ID] = item
+		index.resources[item.Project+":"+item.ID] = item
 	}
 	for _, relation := range snapshot.Relations {
-		children[relation.From] = append(children[relation.From], relation)
-		if relation.Kind == "contains" {
-			parents[relation.To] = relation.From
-		}
-	}
-	result := KnowledgeMap{Views: make(map[string]KnowledgeView, len(resources)+4)}
-	cli, api, docs := knowledgeCategories(resources, parents)
-	result.Views[KnowledgeRoot] = knowledgeRootView(cli, api, docs)
-	result.Views[knowledgeCLI] = knowledgeCategoryView("CLI", KnowledgeRoot, cli, resources)
-	result.Views[knowledgeAPI] = knowledgeCategoryView("API", KnowledgeRoot, api, resources)
-	if len(cli) == 0 && len(api) == 0 {
-		result.Views[knowledgeDocs] = knowledgeCategoryView("Documentation", KnowledgeRoot, docs, resources)
-	}
-	for id, item := range resources {
-		if !knowledgeInterface(item) {
+		if _, ok := index.resources[relation.From]; !ok {
 			continue
 		}
-		parent := parents[id]
-		if parent == "" {
-			parent = knowledgeAPI
-			if strings.HasPrefix(item.ID, "cli:") {
-				parent = knowledgeCLI
-			}
+		if _, ok := index.resources[relation.To]; !ok {
+			continue
 		}
-		result.Views[id] = knowledgeResourceView(id, item, parent, children[id], resources)
+		index.children[relation.From] = append(index.children[relation.From], relation)
+		if relation.Kind == "contains" {
+			index.contained[relation.To] = true
+		}
 	}
-	return result
+	for id := range index.children {
+		sort.Slice(index.children[id], func(i, j int) bool {
+			return index.lessRelation(index.children[id][i], index.children[id][j])
+		})
+	}
+	return index
 }
 
-func knowledgeInterface(item domain.KnowledgeResource) bool {
-	return strings.HasPrefix(item.ID, "cli:") || strings.HasPrefix(item.ID, "openapi:")
+func (index *knowledgeIndex) lessRelation(a, b domain.KnowledgeRelation) bool {
+	if relationOrder(a.Kind) != relationOrder(b.Kind) {
+		return relationOrder(a.Kind) < relationOrder(b.Kind)
+	}
+	if a.Kind != b.Kind {
+		return a.Kind < b.Kind
+	}
+	return index.lessTitle(a.To, b.To)
 }
 
-func knowledgeCategories(resources map[string]domain.KnowledgeResource, parents map[string]string) (cli, api, docs []string) {
-	for id, item := range resources {
+func (index *knowledgeIndex) lessTitle(a, b string) bool {
+	if index.resources[a].Title != index.resources[b].Title {
+		return index.resources[a].Title < index.resources[b].Title
+	}
+	return a < b
+}
+
+func (index *knowledgeIndex) roots() (cli, api, docs []string) {
+	for id, item := range index.resources {
 		switch {
-		case strings.HasPrefix(item.ID, "cli:") && parents[id] == "":
+		case strings.HasPrefix(item.ID, "cli:") && !index.contained[id]:
 			cli = append(cli, id)
 		case strings.HasPrefix(item.ID, "openapi:") && !strings.HasPrefix(item.ID, "openapi:schema:"):
 			api = append(api, id)
-		case !knowledgeInterface(item):
+		case !strings.HasPrefix(item.ID, "cli:") && !strings.HasPrefix(item.ID, "openapi:"):
 			docs = append(docs, id)
 		}
 	}
-	sort.Strings(cli)
-	sort.Strings(api)
-	sort.Strings(docs)
+	for _, ids := range [][]string{cli, api, docs} {
+		sort.Slice(ids, func(i, j int) bool { return index.lessTitle(ids[i], ids[j]) })
+	}
 	return cli, api, docs
 }
 
-func knowledgeRootView(cli, api, docs []string) KnowledgeView {
-	view := KnowledgeView{Title: "PROJECT KNOWLEDGE"}
-	if len(cli) > 0 {
-		view.Lines = append(view.Lines, KnowledgeLine{Text: "CLI → commands", FocusID: knowledgeCLI})
+func (index *knowledgeIndex) addCategory(title string, roots []string) {
+	if len(roots) == 0 {
+		return
 	}
-	if len(api) > 0 {
-		view.Lines = append(view.Lines, KnowledgeLine{Text: fmt.Sprintf("API → %d endpoints", len(api)), FocusID: knowledgeAPI})
+	index.graph.Lines = append(index.graph.Lines, KnowledgeLine{Text: title})
+	for i, id := range roots {
+		index.walk(id, "", i == len(roots)-1, "")
 	}
-	if len(docs) > 0 && len(cli) == 0 && len(api) == 0 {
-		view.Lines = append(view.Lines, KnowledgeLine{Text: fmt.Sprintf("Documentation → %d pages", len(docs)), FocusID: knowledgeDocs})
-	}
-	return view
 }
 
-func knowledgeCategoryView(title, parent string, ids []string, resources map[string]domain.KnowledgeResource) KnowledgeView {
-	view := KnowledgeView{Title: title, Parent: parent}
-	for _, id := range ids {
-		item := resources[id]
-		line := KnowledgeLine{Text: "● " + item.Title, ResourceID: id}
-		if knowledgeInterface(item) {
-			line.FocusID = id
-		}
-		view.Lines = append(view.Lines, line)
+func (index *knowledgeIndex) walk(id, prefix string, last bool, edge string) {
+	branch, continuation := "├─ ", "│  "
+	if last {
+		branch, continuation = "└─ ", "   "
 	}
-	return view
+	label := index.resources[id].Title
+	if edge != "" && edge != "contains" {
+		label = edge + " → " + label
+	}
+	if index.visited[id] {
+		label += " ↗"
+	}
+	index.graph.Lines = append(index.graph.Lines, KnowledgeLine{Text: prefix + branch + label, ResourceID: id})
+	if index.visited[id] {
+		return
+	}
+	index.visited[id] = true
+	outgoing := index.children[id]
+	for i, relation := range outgoing {
+		index.walk(relation.To, prefix+continuation, i == len(outgoing)-1, relation.Kind)
+	}
 }
 
-func knowledgeResourceView(id string, item domain.KnowledgeResource, parent string, outgoing []domain.KnowledgeRelation, resources map[string]domain.KnowledgeResource) KnowledgeView {
-	category := "API"
-	if strings.HasPrefix(item.ID, "cli:") {
-		category = "CLI"
+func relationOrder(kind string) int {
+	switch kind {
+	case "contains":
+		return 0
+	case "documented_by":
+		return 1
+	default:
+		return 2
 	}
-	view := KnowledgeView{Title: category + " › " + item.Title, Parent: parent, Lines: []KnowledgeLine{{Text: "● " + item.Title + "  ·  open details and options", ResourceID: id}}}
-	sort.Slice(outgoing, func(i, j int) bool {
-		return outgoing[i].Kind+":"+outgoing[i].To < outgoing[j].Kind+":"+outgoing[j].To
-	})
-	visible := make([]domain.KnowledgeRelation, 0, len(outgoing))
-	for _, relation := range outgoing {
-		if _, ok := resources[relation.To]; ok {
-			visible = append(visible, relation)
-		}
-	}
-	for i, relation := range visible {
-		target := resources[relation.To]
-		label := relation.Kind
-		if label == "contains" {
-			label = "command"
-		}
-		if label == "documented_by" {
-			label = "documentation"
-		}
-		branch := "├─ "
-		if i == len(visible)-1 {
-			branch = "└─ "
-		}
-		line := KnowledgeLine{Text: "  " + branch + label + " → " + target.Title, ResourceID: relation.To}
-		if knowledgeInterface(target) {
-			line.FocusID = relation.To
-		}
-		view.Lines = append(view.Lines, line)
-	}
-	return view
 }

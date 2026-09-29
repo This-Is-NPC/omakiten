@@ -7,7 +7,7 @@ import (
 	"omakiten/internal/domain"
 )
 
-func TestKnowledgeViewsFollowCommandTreeToDocumentation(t *testing.T) {
+func TestProjectKnowledgeShowsCommandAndDocumentationInOneGraph(t *testing.T) {
 	snapshot := domain.KnowledgeSnapshot{
 		Resources: []domain.KnowledgeResource{
 			{Project: "okt", ID: "cli:okt", Kind: "CLI Command", Title: "okt"},
@@ -21,15 +21,34 @@ func TestKnowledgeViewsFollowCommandTreeToDocumentation(t *testing.T) {
 			{From: "okt:cli:task.create", To: "okt:markdown:docs/tasks", Kind: "documented_by"},
 		},
 	}
-	views := KnowledgeViews(snapshot).Views
-	if len(views[KnowledgeRoot].Lines) != 1 || views[knowledgeCLI].Lines[0].FocusID != "okt:cli:okt" {
-		t.Fatalf("project entry = %+v; CLI entry = %+v", views[KnowledgeRoot], views[knowledgeCLI])
+	lines := ProjectKnowledge(snapshot).Lines
+	if len(lines) != 5 {
+		t.Fatalf("graph lines = %+v", lines)
 	}
-	if views["okt:cli:task"].Parent != "okt:cli:okt" || views["okt:cli:task"].Lines[1].FocusID != "okt:cli:task.create" {
-		t.Fatalf("task command neighborhood = %+v", views["okt:cli:task"])
+	for i, want := range []string{"CLI", "└─ okt", "   └─ okt task", "      └─ okt task create", "         └─ documented_by → Work on a task"} {
+		if !strings.Contains(lines[i].Text, want) {
+			t.Errorf("line %d = %q, want %q", i, lines[i].Text, want)
+		}
 	}
-	leaf := views["okt:cli:task.create"]
-	if len(leaf.Lines) != 2 || leaf.Lines[1].ResourceID != "okt:markdown:docs/tasks" || !strings.Contains(leaf.Lines[1].Text, "documentation") {
-		t.Fatalf("command documentation = %+v", leaf)
+	if lines[4].ResourceID != "okt:markdown:docs/tasks" {
+		t.Fatalf("linked guide = %+v", lines[4])
+	}
+}
+
+func TestProjectKnowledgeKeepsCycleVisibleWithoutLooping(t *testing.T) {
+	snapshot := domain.KnowledgeSnapshot{
+		Resources: []domain.KnowledgeResource{
+			{Project: "api", ID: "openapi:orders", Title: "POST /orders"},
+			{Project: "api", ID: "openapi:schema:Unused", Title: "Unused schema"},
+			{Project: "api", ID: "markdown:docs/orders", Title: "Orders"},
+		},
+		Relations: []domain.KnowledgeRelation{
+			{From: "api:openapi:orders", To: "api:markdown:docs/orders", Kind: "documented_by"},
+			{From: "api:markdown:docs/orders", To: "api:openapi:orders", Kind: "links_to"},
+		},
+	}
+	lines := ProjectKnowledge(snapshot).Lines
+	if len(lines) != 6 || !strings.Contains(lines[3].Text, "↗") || lines[5].ResourceID != "api:openapi:schema:Unused" {
+		t.Fatalf("cycle projection = %+v", lines)
 	}
 }
