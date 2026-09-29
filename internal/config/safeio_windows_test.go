@@ -39,7 +39,7 @@ func TestWindowsNTStatusClassificationUsesWin32Errno(t *testing.T) {
 	}{
 		"missing directory": {windows.STATUS_OBJECT_PATH_NOT_FOUND, windows.ERROR_PATH_NOT_FOUND},
 		"missing target":    {windows.STATUS_OBJECT_NAME_NOT_FOUND, windows.ERROR_FILE_NOT_FOUND},
-		"existing target":   {windows.STATUS_OBJECT_NAME_COLLISION, windows.ERROR_FILE_EXISTS},
+		"existing target":   {windows.STATUS_OBJECT_NAME_COLLISION, windows.ERROR_ALREADY_EXISTS},
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -134,13 +134,13 @@ func TestWindowsRenameAndRemovePinDirectoryHandlesAcrossPathSwap(t *testing.T) {
 			_ = windows.CloseHandle(sourceHandle)
 			_ = windows.CloseHandle(destinationHandle)
 		}()
+		swapWindowsDirectoryForJunction(t, sourceDir, filepath.Join(outside, "source"))
+		swapWindowsDirectoryForJunction(t, destinationDir, filepath.Join(outside, "destination"))
 		fileHandle, err := openRelative(sourceHandle, "source.yaml", windows.FILE_GENERIC_READ|windows.DELETE, windows.FILE_OPEN, windows.FILE_OPEN_REPARSE_POINT)
 		if err != nil {
 			t.Fatalf("open source handle: %v", err)
 		}
 		defer func() { _ = windows.CloseHandle(fileHandle) }()
-		swapWindowsDirectoryForJunction(t, sourceDir, filepath.Join(outside, "source"))
-		swapWindowsDirectoryForJunction(t, destinationDir, filepath.Join(outside, "destination"))
 
 		if err := renameHandle(fileHandle, destinationHandle, "moved.yaml"); err != nil {
 			t.Fatalf("rename pinned source: %v", err)

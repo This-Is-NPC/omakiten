@@ -169,7 +169,7 @@ func createActiveTemp(dirFD int) (string, int, error) {
 }
 
 func openConfigDir(dir string, create bool) (int, string, error) {
-	absoluteDir, err := filepath.Abs(dir)
+	absoluteDir, err := AbsolutePath(dir)
 	if err != nil {
 		return -1, "", err
 	}

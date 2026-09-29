@@ -48,7 +48,7 @@ func openDirNoFollowAccess(path string, create bool, access uint32) (windows.Han
 			componentAccess = access
 		}
 		next, openErr := openRelative(current, component, componentAccess, windows.FILE_OPEN, windows.FILE_DIRECTORY_FILE|windows.FILE_OPEN_REPARSE_POINT)
-		if openErr != nil && windowsErrorIs(openErr, syscall.ERROR_PATH_NOT_FOUND) && create {
+		if openErr != nil && create && (windowsErrorIs(openErr, syscall.ERROR_PATH_NOT_FOUND) || windowsErrorIs(openErr, syscall.ERROR_FILE_NOT_FOUND)) {
 			createAccess := componentAccess | windows.FILE_GENERIC_WRITE
 			next, openErr = openRelative(current, component, createAccess, windows.FILE_OPEN_IF, windows.FILE_DIRECTORY_FILE|windows.FILE_OPEN_REPARSE_POINT)
 		}
@@ -76,7 +76,7 @@ func openRelative(parent windows.Handle, name string, access, disposition, optio
 	var handle windows.Handle
 	var status windows.IO_STATUS_BLOCK
 	var allocation int64
-	err = windows.NtCreateFile(&handle, access,
+	err = windows.NtCreateFile(&handle, access|windows.SYNCHRONIZE,
 		oa, &status, &allocation, 0,
 		windows.FILE_SHARE_READ|windows.FILE_SHARE_WRITE|windows.FILE_SHARE_DELETE,
 		disposition, options|windows.FILE_SYNCHRONOUS_IO_NONALERT, 0, 0)
@@ -419,7 +419,7 @@ func createAtomicTemp(dir windows.Handle) (string, windows.Handle, error) {
 		if err == nil {
 			return name, handle, nil
 		}
-		if !windowsErrorIs(err, syscall.ERROR_FILE_EXISTS) {
+		if !windowsErrorIs(err, syscall.ERROR_ALREADY_EXISTS) {
 			return "", windows.InvalidHandle, err
 		}
 	}
