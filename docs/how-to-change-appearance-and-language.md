@@ -38,7 +38,7 @@ okt config language reset
 ```
 
 The language catalogs ship inside the executable. Adding a catalog is an
-Omakiten contribution, described in [development](development.md#languages).
+Omakiten contribution, described in [development](internal/development.md#languages).
 
 ## Choose a color theme
 

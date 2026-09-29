@@ -1,7 +1,7 @@
 # Working on Omakiten
 
 This page is for changes to the repository. For installing the product, start
-with [installation](how-to-install-and-remove.md).
+with [installation](../how-to-install-and-remove.md).
 
 ## Prepare the checkout
 
@@ -16,7 +16,7 @@ git config core.hooksPath scripts/hooks
 implement the jobs; mise, hooks, and CI consume those jobs. Use
 `mise tasks ls` and `mise tasks info NAME` to inspect the current tasks.
 
-Read [CONTRIBUTING.md](../CONTRIBUTING.md), [design](design.md), and the
+Read [CONTRIBUTING.md](../../CONTRIBUTING.md), [design](design.md), and the
 [requirements](requirements.md) before changing behavior. For TUI work,
 [screen assembly](tui-screen-assembly.md) is normative.
 
@@ -80,7 +80,7 @@ mise exec -- gh auth login
 ```
 
 Agents create commits; the human publishes them. Follow the commit procedure
-in [AGENTS.md](../AGENTS.md). Draft the PR using `defaults/templates/pull-request.md`
+in [AGENTS.md](../../AGENTS.md). Draft the PR using `defaults/templates/pull-request.md`
 and report only verification that actually ran against the described change.
 
 ## Generated files and local state
@@ -112,7 +112,7 @@ mise run language:new vi "Tiếng Việt" "Vietnamese"
 Translate the generated values, preserving format placeholders, CLI flags,
 bucket keys, and entity slugs. Bundled language tests check decoding and key
 parity. Verify the picker and the affected CLI/TUI surface. Application language
-preferences are described in the [language guide](how-to-change-appearance-and-language.md).
+preferences are described in the [language guide](../how-to-change-appearance-and-language.md).
 
 ## Releases
 

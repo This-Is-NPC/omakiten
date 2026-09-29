@@ -33,12 +33,20 @@ can add them when the work needs them.
 | [How to change the appearance and language](how-to-change-appearance-and-language.md) | Color themes, persona themes, and application language preferences. |
 | [How to keep and recover the board](how-to-back-up-and-recover.md) | Database snapshots, restore, search integrity, and recovery before deletion. |
 | [When a command refuses](troubleshooting.md) | Configuration errors, workflow gates, wrong project selection, and import failures. |
-| [How it is built](design.md) | Ports, adapters, runtime ownership, and publication of configuration. |
-| [What the database holds](data-model.md) | Operational tables, relationships, events, and work-document metadata. |
-| [Working on Omakiten](development.md) | Mise, development state, focused verification, the pre-push gate, and releases. |
-| [The behavior the project promises](requirements.md) | Project isolation, workflow enforcement, atomic imports, and recovery. |
-| [Assembling a TUI screen](tui-screen-assembly.md) | The normative presentation and component ownership rules. |
-| [Reviewing a change](review-guide.md) | Severity, evidence, and routing a finding. |
+
+## Working on Omakiten
+
+Contributor guides live in `internal/`. They describe implementation contracts
+and maintenance, rather than the steps to use the application.
+
+| The page | What it answers |
+| --- | --- |
+| [How it is built](internal/design.md) | Ports, adapters, runtime ownership, and publication of configuration. |
+| [What the database holds](internal/data-model.md) | Operational tables, relationships, events, and work-document metadata. |
+| [Working on Omakiten](internal/development.md) | Mise, development state, focused verification, the pre-push gate, and releases. |
+| [The behavior the project promises](internal/requirements.md) | Project isolation, workflow enforcement, atomic imports, and recovery. |
+| [Assembling a TUI screen](internal/tui-screen-assembly.md) | The normative presentation and component ownership rules. |
+| [Reviewing a change](internal/review-guide.md) | Severity, evidence, and routing a finding. |
 
 ## Conventions across the pages
 
@@ -57,6 +65,6 @@ agents. Installed preset files describe policy; SQLite holds the work.
 than reproducing every flag table.
 
 Documentation is hand-written in English. Put usage in the how-to pages,
-terminal behavior in `screens.md`, and contributor constraints in the design
-and development pages. Describe current behavior and link to its owner rather
+terminal behavior in `screens.md`, and contributor constraints in `internal/`.
+Describe current behavior and link to its owner rather
 than maintaining the same explanation in several places.

@@ -96,7 +96,7 @@ type logsBlockCache struct {
 // row budget: the feed composes all of its rows whatever height it is handed
 // and the arranger is what windows them, so its composition does not depend on
 // canvas.Rows() and canvas.Rows() is not in this key (P2 in
-// docs/tui-screen-assembly.md).
+// docs/internal/tui-screen-assembly.md).
 //
 // The CURSOR is deliberately absent too. The build renders every row unmarked
 // and [Screen.feedItems] repaints the single row under the cursor on top of it,

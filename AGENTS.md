@@ -165,7 +165,7 @@ assuming a version or inventing a command.
   A full-tree run never rewrites fixtures, and `-update` is the single supported switch.
 
 Generated output belongs under `.tmp/`; see the generated-file layout in
-`docs/development.md`. Profiling commands must set both `-o` and
+`docs/internal/development.md`. Profiling commands must set both `-o` and
 `-outputdir` so Go does not leave a test binary in the working directory.
 
 ### Architecture boundaries
@@ -193,14 +193,14 @@ other number a screen might want is received rather than computed:
 - Style is declared per box; a screen constructs none of its own.
 
 The logic that used to live in screens was removed deliberately and does not return. Read
-`docs/tui-screen-assembly.md` — it is normative — before adding or refactoring a screen.
+`docs/internal/tui-screen-assembly.md` — it is normative — before adding or refactoring a screen.
 
 ### Where the knowledge lives
 
 - `CONTRIBUTING.md` — the rules every PR follows.
 - `docs/README.md` — index and authoring rules for all documentation.
-- `docs/development.md` — prerequisites, local workflow, release mechanics.
-- `docs/design.md` and `docs/requirements.md` — the verified
+- `docs/internal/development.md` — prerequisites, local workflow, release mechanics.
+- `docs/internal/design.md` and `docs/internal/requirements.md` — the verified
   project knowledge base. Align planning and implementation with what they document.
 
 Update the guide that covers a behavior in the same PR that changes it.
