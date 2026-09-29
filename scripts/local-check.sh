@@ -44,19 +44,25 @@ if [[ "$pre_push" == true ]] && (( rc != 0 )); then
   exit "$rc"
 fi
 if ! slug="$(gh repo view --json nameWithOwner --jq .nameWithOwner 2>/dev/null)"; then
-  printf 'local-check: checks completed; GitHub authentication or repository lookup failed.\n' >&2
-  [[ "$pre_push" == true ]] && exit "$rc"
+  printf 'local-check: GitHub authentication or repository lookup failed; run mise exec -- gh auth status.\n' >&2
   exit 1
 fi
 
 export OKT_CHECK_REPO="$slug" OKT_CHECK_SHA="$sha" OKT_CHECK_STATE="$state"
-export OKT_CHECK_DESCRIPTION="$description" OKT_CHECK_WAIT="$pre_push" OKT_CHECK_DRY_RUN="$dry_run"
+export OKT_CHECK_DESCRIPTION="$description" OKT_CHECK_DRY_RUN="$dry_run" OKT_CHECK_WAIT="$pre_push"
 if [[ "$pre_push" == true && "$dry_run" != true ]]; then
+  if ! command -v setsid >/dev/null 2>&1; then
+    printf 'local-check: setsid is required to publish the status after push; install util-linux.\n' >&2
+    exit 1
+  fi
   mkdir -p .tmp/local-check
-  nohup "$repo_root/scripts/post-check-status.sh" \
+  setsid nohup "$repo_root/scripts/post-check-status.sh" \
     </dev/null >".tmp/local-check/$sha.log" 2>&1 &
   disown 2>/dev/null || true
 else
-  scripts/post-check-status.sh
+  if ! scripts/post-check-status.sh; then
+    printf 'local-check: status publication failed. Check GitHub access and retry.\n' >&2
+    exit 1
+  fi
 fi
 exit "$rc"
