@@ -29,6 +29,14 @@ import (
 // would close the rest of the gap (see task #222 in the code-review
 // plan for the full-fidelity option).
 func SaveBundle(path string, bundle Bundle) error {
+	if _, selected, err := ResolvePresetSelection(path); err != nil {
+		return err
+	} else if selected {
+		return EditBundle(path, func(working string) error { return SaveBundle(working, bundle) })
+	}
+	if err := validateEditablePresetConfig(path); err != nil {
+		return err
+	}
 	if err := validateCurrentConfigLayout(path); err != nil {
 		return err
 	}
@@ -310,6 +318,9 @@ func EntityFilePath(rootDir string, kind EntityKind, slug string) string {
 // These files are preserved across default refreshes and override same-slug
 // defaults at load time.
 func CustomEntityFilePath(rootDir string, kind EntityKind, slug string) string {
+	if isPresetRoot(rootDir) {
+		return EntityFilePath(rootDir, kind, slug)
+	}
 	return filepath.Join(rootDir, kind.Folder(), "custom", slug+".md")
 }
 

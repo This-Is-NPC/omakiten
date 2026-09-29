@@ -104,14 +104,7 @@ func primeDiscoveryStart(ctx context.Context, opts *runtimeOptions) error {
 func resolveInstallRootForScope(opts *runtimeOptions, scope string) (string, error) {
 	switch scope {
 	case "global":
-		if opts.configPath != "" {
-			abs, err := filepath.Abs(opts.configPath)
-			if err != nil {
-				return "", err
-			}
-			return config.ConfigRootFromYAMLPath(abs), nil
-		}
-		return paths.ConfigRoot()
+		return resolveScopeRoot(opts, scope)
 	case "local":
 		start := opts.discoveryStart
 		if start == "" {

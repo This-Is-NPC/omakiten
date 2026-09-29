@@ -51,17 +51,33 @@ func LoadBundle(path string) (Bundle, error) {
 // captured bytes, and returns their hashes. A caller can therefore pair a
 // planned value with the exact bytes that produced it without a second read.
 func LoadBundlePlan(path string) (Bundle, map[string]string, error) {
-	raw, err := readFileBounded(path, MaxWiringFileBytes)
-	if err != nil {
-		return Bundle{}, nil, err
-	}
-	reader := newPlanSourceReader()
-	reader.capture(path, raw)
-	bundle, err := loadBundleFromRawReader(path, raw, loadBundleOptions{}, reader)
+	bundle, reader, err := loadBundlePlanSources(path)
 	if err != nil {
 		return Bundle{}, nil, err
 	}
 	return bundle, reader.hashes, nil
+}
+
+func loadBundlePlanSources(path string) (Bundle, *planSourceReader, error) {
+	reader := newPlanSourceReader()
+	selection, err := reader.readFile(path, MaxWiringFileBytes)
+	if err != nil {
+		return Bundle{}, nil, err
+	}
+	physical, _, err := resolvePresetSelectionRaw(path, selection)
+	if err != nil {
+		return Bundle{}, nil, err
+	}
+
+	raw, err := reader.readFile(physical, MaxWiringFileBytes)
+	if err != nil {
+		return Bundle{}, nil, err
+	}
+	bundle, err := loadBundleFromRawReader(physical, raw, loadBundleOptions{}, reader)
+	if path != physical {
+		bundle.SourcePaths = append([]string{path}, bundle.SourcePaths...)
+	}
+	return bundle, reader, err
 }
 
 type planSourceReader struct {
@@ -107,11 +123,19 @@ func (r *planSourceReader) listFiles(dir string, suffixes []string, isCustom boo
 }
 
 func loadBundle(path string, opts loadBundleOptions) (Bundle, error) {
-	raw, err := readFileBounded(path, MaxWiringFileBytes)
+	physical, _, err := ResolvePresetSelection(path)
 	if err != nil {
 		return Bundle{}, err
 	}
-	return loadBundleFromRaw(path, raw, opts)
+	raw, err := readFileBounded(physical, MaxWiringFileBytes)
+	if err != nil {
+		return Bundle{}, err
+	}
+	bundle, err := loadBundleFromRaw(physical, raw, opts)
+	if physical != path {
+		bundle.SourcePaths = append([]string{path}, bundle.SourcePaths...)
+	}
+	return bundle, err
 }
 
 func loadBundleFromRaw(path string, raw []byte, opts loadBundleOptions) (Bundle, error) {
@@ -146,16 +170,17 @@ func finishBundleLoad(path, rootDir string, wired wiring, importSources []string
 	theme, themePath, themeErr := resolveActiveThemeReader(rootDir, wired.Config.Theme.Active, reader)
 
 	bundle := Bundle{
-		Version:        wired.Version,
-		Kit:            wired.Kit,
-		SubtaskKit:     strings.TrimSpace(wired.SubtaskKit),
-		Config:         wired.Config,
-		Workflows:      wired.Workflows,
-		Surfaces:       wired.Surfaces,
-		Notifications:  entities.notifications,
-		Languages:      entities.languages,
-		ActiveTheme:    theme,
-		ActiveThemeErr: themeErr,
+		Version:         wired.Version,
+		Kit:             wired.Kit,
+		SubtaskKit:      strings.TrimSpace(wired.SubtaskKit),
+		Config:          wired.Config,
+		Workflows:       wired.Workflows,
+		Surfaces:        wired.Surfaces,
+		Notifications:   entities.notifications,
+		Languages:       entities.languages,
+		ActiveTheme:     theme,
+		ActiveThemePath: themePath,
+		ActiveThemeErr:  themeErr,
 		// Root profile first, then every file it pulled in via a `from:`
 		// import directive (stable first-encounter order from the resolver).
 		// Hot reload watches all of these — editing an imported file triggers
@@ -321,6 +346,9 @@ func buildSettingsSources(user Settings, kitKey string) map[string]string {
 // profile — without it, entity folders would be searched at
 // <root>/config/custom/<entity> instead of <root>/<entity>.
 func ConfigRootFromYAMLPath(path string) string {
+	if physical, selected, err := ResolvePresetSelection(path); err == nil && selected {
+		path = physical
+	}
 	configDir := filepath.Dir(path)
 	base := filepath.Base(configDir)
 	if base == "custom" {
@@ -433,6 +461,11 @@ func resolveConfigNode(path string, raw []byte, reader bundleSourceReader) (*yam
 // ReadConfigMap reads a bounded YAML document and expands its config imports.
 // Inspection commands share the bundle loader's import and path constraints.
 func ReadConfigMap(path string) (map[string]any, error) {
+	physical, _, err := ResolvePresetSelection(path)
+	if err != nil {
+		return nil, err
+	}
+	path = physical
 	raw, err := readFileBounded(path, MaxWiringFileBytes)
 	if err != nil {
 		return nil, err

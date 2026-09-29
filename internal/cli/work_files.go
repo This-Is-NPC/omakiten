@@ -80,28 +80,9 @@ func newWorkExportCommand(opts *runtimeOptions, kind string) *cobra.Command {
 		cmd.Use = "export TASK_ID"
 	}
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
-		writer := cmd.OutOrStdout()
-		var envelope bytes.Buffer
-		if output == "-" {
-			cmd.SetOut(&envelope)
-			defer cmd.SetOut(writer)
-		}
-		var markdown []byte
-		err := runJSON(cmd, func(ctx context.Context) (any, error) {
-			var result any
-			var err error
-			result, markdown, err = exportWorkFile(ctx, opts, kind, args[0], output, force)
-			return result, err
+		return runDocumentExport(cmd, output, func(ctx context.Context) (any, []byte, error) {
+			return exportWorkFile(ctx, opts, kind, args[0], output, force)
 		})
-		if output != "-" {
-			return err
-		}
-		if err != nil {
-			_, _ = writer.Write(envelope.Bytes())
-			return err
-		}
-		_, err = writer.Write(markdown)
-		return err
 	}
 	cmd.Flags().StringVar(&output, "output", "-", opts.t("cli.work.flag.output"))
 	cmd.Flags().BoolVar(&force, "force", false, opts.t("cli.work.flag.force"))
@@ -171,4 +152,28 @@ func exportWorkFile(ctx context.Context, opts *runtimeOptions, kind, selector, o
 		}
 	}
 	return map[string]any{"path": output, "type": doc.Type}, markdown, nil
+}
+
+func runDocumentExport(cmd *cobra.Command, output string, export func(context.Context) (any, []byte, error)) error {
+	writer := cmd.OutOrStdout()
+	var envelope bytes.Buffer
+	if output == "-" {
+		cmd.SetOut(&envelope)
+		defer cmd.SetOut(writer)
+	}
+	var document []byte
+	err := runJSON(cmd, func(ctx context.Context) (any, error) {
+		result, raw, err := export(ctx)
+		document = raw
+		return result, err
+	})
+	if output != "-" {
+		return err
+	}
+	if err != nil {
+		_, _ = writer.Write(envelope.Bytes())
+		return err
+	}
+	_, err = writer.Write(document)
+	return err
 }

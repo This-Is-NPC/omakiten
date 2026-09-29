@@ -11,6 +11,7 @@ import (
 
 	"omakiten/internal/config"
 	"omakiten/internal/testfixtures/bundleeditor"
+	"omakiten/internal/testutil"
 )
 
 func TestStudioDraftMutatesCandidateWithoutWriting(t *testing.T) {
@@ -622,6 +623,7 @@ func studioDraftBundle() config.Bundle {
 }
 
 type studioDraftStore struct {
+	testutil.DirectBundleEdits
 	bundle config.Bundle
 	saves  int
 }

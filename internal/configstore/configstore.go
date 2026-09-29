@@ -110,3 +110,7 @@ func (Adapter) Slugify(s string) string {
 func (Adapter) ReadTemplateFile(path string) ([]byte, error) {
 	return config.ReadEntityFile(path)
 }
+
+func (Adapter) EditBundle(path string, edit func(string) error) error {
+	return config.EditBundle(path, edit)
+}

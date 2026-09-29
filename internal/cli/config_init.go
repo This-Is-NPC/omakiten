@@ -302,6 +302,9 @@ func resolveScopeRoot(opts *runtimeOptions, scope string) (string, error) {
 			if err != nil {
 				return "", err
 			}
+			if filepath.Base(abs) == config.PresetSelectionFile {
+				return filepath.Dir(abs), nil
+			}
 			return config.ConfigRootFromYAMLPath(abs), nil
 		}
 		return paths.ConfigRoot()
@@ -309,6 +312,9 @@ func resolveScopeRoot(opts *runtimeOptions, scope string) (string, error) {
 		cwd, err := os.Getwd()
 		if err != nil {
 			return "", err
+		}
+		if opts.discoveryStart != "" {
+			cwd = opts.discoveryStart
 		}
 		root := filepath.Join(cwd, config.RepoLocalDirName)
 		if err := config.ValidateRepoLocalRoot(root); err != nil {

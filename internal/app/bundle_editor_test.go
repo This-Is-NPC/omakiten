@@ -14,6 +14,7 @@ import (
 
 	"omakiten/internal/app"
 	"omakiten/internal/config"
+	"omakiten/internal/testutil"
 )
 
 func TestBundleEditorRejectsStaleBundleWithoutOverwritingNewerContent(t *testing.T) {
@@ -250,6 +251,7 @@ func TestBundleEditorReportsAmbiguousPostPublicationWiringError(t *testing.T) {
 }
 
 type bundleEditorTestStore struct {
+	testutil.DirectBundleEdits
 	bundle       config.Bundle
 	files        map[string][]byte
 	hashCalls    map[string]int
@@ -503,6 +505,7 @@ func TestBundleEditorsForDifferentProfilesSharePublicationLock(t *testing.T) {
 }
 
 type synchronizedBundleEditorStore struct {
+	testutil.DirectBundleEdits
 	inner            *bundleEditorTestStore
 	mu               sync.Mutex
 	firstSaveStarted chan struct{}

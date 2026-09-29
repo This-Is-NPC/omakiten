@@ -45,6 +45,14 @@ func ensureCustomDir(dir string) error {
 // EnsureDefaultFiles materializes the embedded default kit into a config root.
 // Existing files are not overwritten; user-owned custom folders are created.
 func EnsureDefaultFiles(rootDir string) error {
+	if isPresetRoot(rootDir) {
+		return nil
+	}
+	if _, selected, err := ResolvePresetSelection(filepath.Join(rootDir, PresetSelectionFile)); err != nil {
+		return err
+	} else if selected {
+		return nil
+	}
 	if err := hardenDir(rootDir); err != nil {
 		return fmt.Errorf("harden config root: %w", err)
 	}

@@ -269,6 +269,30 @@ Presets:
 
 ---
 
+## `okt preset` — repository packages
+
+| Command | Behavior |
+|---|---|
+| `add DIRECTORY` | Capture and validate a local package repository; install without activation. |
+| `use NAME_OR_ID` | Validate and activate an installed snapshot. |
+| `list` | List installed ids, names, origin, `dirty`, and `active`. |
+| `export` | Export the active package to one Markdown file; stdout by default. |
+| `import --file PATH` | Install the complete Markdown package; `-` reads stdin. |
+
+`add`, `use`, `list`, and `import` accept `--scope local|global` (default:
+`local`). Local operations use CWD or the explicitly selected project's root.
+`export` honors configuration discovery and `--config`; `--output PATH`
+selects a file, `--force` permits replacement, and `--name` / `--version`
+override package metadata. File exports and installation commands return the
+normal JSON envelope. Stdout exports contain only Markdown; export failures
+return the JSON error envelope. Installation performs structural validation
+without running or analyzing hook code.
+
+See [presets.md](presets.md#repository-packages) for the package layout,
+independent edits, modification tracking, and source-checkout independence.
+
+---
+
 ## Tasks
 
 Run `okt <subcommand> --help` for the full flag list of any task command. Notes below cover behavior not obvious from `--help`.
