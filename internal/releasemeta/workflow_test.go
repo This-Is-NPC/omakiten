@@ -20,21 +20,14 @@ type workflowFile struct {
 
 type workflowJob struct {
 	Needs       any               `yaml:"needs"`
-	RunsOn      string            `yaml:"runs-on"`
 	Permissions map[string]string `yaml:"permissions"`
 	Outputs     map[string]string `yaml:"outputs"`
-	Strategy    struct {
-		Matrix struct {
-			OS []string `yaml:"os"`
-		} `yaml:"matrix"`
-	} `yaml:"strategy"`
-	Steps []workflowStep `yaml:"steps"`
+	Steps       []workflowStep    `yaml:"steps"`
 }
 
 type workflowStep struct {
 	Name  string         `yaml:"name"`
 	ID    string         `yaml:"id"`
-	If    string         `yaml:"if"`
 	Shell string         `yaml:"shell"`
 	Uses  string         `yaml:"uses"`
 	Run   string         `yaml:"run"`
@@ -143,42 +136,6 @@ func assertReleasePublishJob(t *testing.T, workflow workflowFile) {
 	}
 	assertExactLine(t, upload.Run, `gh release upload "$TAG" "${assets[@]}" --repo "$GITHUB_REPOSITORY"`)
 	assertExactLine(t, upload.Run, `test "$(find .tmp/release -maxdepth 1 -type f | wc -l)" -eq "${#assets[@]}"`)
-}
-
-func TestInstallerAssuranceWorkflowCoversRequiredPlatformsAndCosign(t *testing.T) {
-	t.Parallel()
-	workflow := readWorkflow(t, "assurance.yml")
-	job, ok := workflow.Jobs["installer-assurance"]
-	if !ok {
-		t.Fatal("assurance workflow is missing installer-assurance job")
-	}
-	if !sameStrings(job.Strategy.Matrix.OS, []string{"ubuntu-latest", "macos-latest", "windows-latest"}) {
-		t.Errorf("assurance OS matrix = %v", job.Strategy.Matrix.OS)
-	}
-	if job.RunsOn != "${{ matrix.os }}" {
-		t.Errorf("assurance runner selection = %q", job.RunsOn)
-	}
-	for _, step := range job.Steps {
-		if step.Uses != "" && !regexp.MustCompile(`^[^@]+@[0-9a-f]{40}$`).MatchString(step.Uses) {
-			t.Errorf("assurance action is not commit-pinned: %s", step.Uses)
-		}
-	}
-	unixCosign := requireStep(t, job, "Install Cosign on Linux and macOS")
-	if unixCosign.If != "runner.os != 'Windows'" || unixCosign.With["cosign-release"] != "v3.1.1" {
-		t.Errorf("Unix Cosign step = %#v", unixCosign)
-	}
-	windowsCosign := requireStep(t, job, "Install Cosign on Windows")
-	if windowsCosign.If != "runner.os == 'Windows'" || strings.TrimSpace(windowsCosign.Run) != "go install github.com/sigstore/cosign/v3/cmd/cosign@v3.1.1" {
-		t.Errorf("Windows Cosign step = %#v", windowsCosign)
-	}
-	unixTests := requireStep(t, job, "Run installer and release assurance tests")
-	if unixTests.If != "runner.os != 'Windows'" || unixTests.Shell != "bash" || strings.TrimSpace(unixTests.Run) != "OKT_REQUIRE_REAL_COSIGN=1 OKT_REQUIRE_PWSH=1 go test ./internal/installscript ./internal/installer ./internal/releasemeta ./internal/releaseverify" {
-		t.Errorf("Unix assurance command = %#v", unixTests)
-	}
-	windowsTests := requireStep(t, job, "Run Windows-native installer assurance tests")
-	for _, line := range []string{`$env:OKT_REQUIRE_REAL_COSIGN = "1"`, `$env:OKT_REQUIRE_PWSH = "1"`, `go test ./internal/installscript -run 'TestRealCosignOfflinePositivePath|TestInstallerSemVerParity/powershell'`, `go test ./internal/installer -run '^TestWrapperBootstrapUninstallRoundTrip$/powershell'`} {
-		assertExactLine(t, windowsTests.Run, line)
-	}
 }
 
 func TestReleasePleaseCreatesDraftUntilSigningSucceeds(t *testing.T) {

@@ -21,8 +21,8 @@ description = "Fail if Go source directories are not gofmt-clean (CI gate)"
 run = "scripts/format.sh --check"
 
 [tasks.test]
-description = "Run tests, coverage and concurrency race checks"
-env = { OKT_REQUIRE_PWSH = "1" }
+description = "Run tests, real installer assurance, coverage and concurrency race checks"
+env = { OKT_REQUIRE_PWSH = "1", OKT_REQUIRE_REAL_COSIGN = "1" }
 run = "scripts/test.sh"
 
 [tasks.build]
@@ -90,7 +90,7 @@ run = "scripts/vuln.sh"
 
 [tasks.check]
 description = "Run the full verification suite"
-depends = ["fmt:check", "test", "lint", "vuln", "workspace:check", "scripts:check"]
+depends = ["fmt:check", "test", "test:cross-build", "lint", "vuln", "workspace:check", "scripts:check"]
 
 [tasks."workspace:check"]
 description = "Reject generated artifacts outside .tmp/ and persistent local-state directories"
@@ -119,7 +119,7 @@ run = "scripts/check-coverage_test.sh"
 
 [tasks."test:installer"]
 description = "Run setup selection, wrapper, and installer assurance tests"
-env = { OKT_REQUIRE_PWSH = "1" }
+env = { OKT_REQUIRE_PWSH = "1", OKT_REQUIRE_REAL_COSIGN = "1" }
 run = "scripts/test-installer.sh"
 
 [tasks."language:new"]

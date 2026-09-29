@@ -15,7 +15,8 @@ the agent contract and commit procedure.
 
 Set `core.hooksPath` to `scripts/hooks`. The pre-push hook runs the full gate
 for clean HEAD and reports the `local-check` commit status. The gate runs
-formatting, tests, lint, vulnerability, workspace, and shell checks.
+formatting, tests with real Cosign and PowerShell installer assurance,
+cross-builds, lint, vulnerability, workspace, and shell checks.
 
 ## Architecture boundaries
 
