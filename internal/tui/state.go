@@ -25,6 +25,7 @@ import (
 	"omakiten/internal/tui/screens/graph"
 	"omakiten/internal/tui/screens/home"
 	"omakiten/internal/tui/screens/insights"
+	"omakiten/internal/tui/screens/knowledge"
 	"omakiten/internal/tui/screens/logs"
 	"omakiten/internal/tui/screens/plannetwork"
 	"omakiten/internal/tui/screens/plans"
@@ -67,6 +68,7 @@ type Repositories struct {
 	DeleteProject         contract.ProjectDeleter
 	Tasks                 TaskStore
 	Projects              ProjectStore
+	Knowledge             func(context.Context, domain.ProjectContext) domain.KnowledgeSnapshot
 	Comments              CommentStore
 	Dependencies          interface {
 		ListTaskDependencies(ctx context.Context, projectID, taskID int64) ([]domain.TaskDependency, error)
@@ -365,6 +367,7 @@ type Model struct {
 	projectScreen           projectscreen.Screen
 	projectFormReaderScreen projectscreen.FormScreen
 	projectResumeScreen     projectresume.Screen
+	projectKnowledgeScreen  knowledge.Screen
 	settingsGeneralScreen   settingsscreen.Screen
 	settingsGuardsScreen    settingsscreen.Screen
 	themePickerScreen       settingspicker.Screen

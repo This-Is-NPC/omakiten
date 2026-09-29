@@ -175,6 +175,7 @@ func addRootCommands(cmd *cobra.Command, opts *runtimeOptions, version string, i
 	cmd.AddCommand(newPersonaCommand(opts))
 	cmd.AddCommand(newTemplateCommand(opts))
 	cmd.AddCommand(newSearchCommand(opts))
+	cmd.AddCommand(newKnowledgeCommand(opts))
 	cmd.AddCommand(newTagCommand(opts))
 	var run func(context.Context, agentruntime.Session) error
 	if len(interactive) > 0 {

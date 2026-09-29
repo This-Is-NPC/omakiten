@@ -2,6 +2,18 @@ code: sv
 name: Swedish
 native: Svenska
 keys:
+  cli.knowledge.short: "Read project documentation and API contracts"
+  cli.knowledge.validate.short: "Validate project knowledge sources"
+  cli.knowledge.list.short: "List project knowledge resources"
+  cli.knowledge.show.short: "Show one knowledge resource"
+  cli.knowledge.search.short: "Search project knowledge files"
+  cli.knowledge.flag.include-related: "Include declared related projects"
+  cli.knowledge.flag.type: "Filter by resource type"
+  tui.knowledge.title: "PROJECT KNOWLEDGE"
+  tui.knowledge.label: "knowledge"
+  tui.knowledge.open: "open resource"
+  tui.knowledge.open_catalog: "open project knowledge"
+  tui.knowledge.empty: "No knowledge sources found; add docs/ or docs/knowledge.yaml"
   cli.db.check.short: "Kontrollera integriteten för det enhetliga sökindexet"
   cli.db.check.long: "Jämför FTS5-indexet med exakt fem fysiska källtyper: task, comment event, error, solution och plan."
   cli.db.reindex.short: "Bygg om det enhetliga sökindexet atomärt"

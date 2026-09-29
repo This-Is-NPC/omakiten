@@ -72,6 +72,7 @@ type Payload struct {
 	Activity    []domain.Event
 	Dashboard   Dashboard
 	Tasks       []domain.Task
+	Knowledge   domain.KnowledgeSnapshot
 }
 
 type Result struct {
@@ -214,6 +215,8 @@ func (s Screen) handleProjectAction(key tea.KeyMsg) (screenhost.Outcome, bool) {
 		return screenhost.OpenProjectForm(s, nil), true
 	case "R":
 		return screenhost.OpenProjectResume(s, nil), true
+	case "K":
+		return screenhost.OpenProjectKnowledge(s, nil), true
 	case "enter":
 		if cursor := s.ActivityCursor(); cursor >= 0 && cursor < len(s.payload.Activity) {
 			event := s.payload.Activity[cursor]
@@ -265,7 +268,7 @@ func (s Screen) OwnsKey(key tea.KeyMsg) bool {
 	}
 	switch spelling {
 	// "pgdn" is the arranger's spelling of pgdown; the rest are this screen's.
-	case "f", "R", "enter", "r", "esc", "n", "e", "c", "m", "A":
+	case "f", "R", "K", "enter", "r", "esc", "n", "e", "c", "m", "A":
 		return true
 	}
 	return false
@@ -274,7 +277,7 @@ func (s Screen) OwnsKey(key tea.KeyMsg) bool {
 func (s Screen) OwnsFooter() bool { return true }
 
 func (s Screen) Footer(frame screenhost.Frame) []screenhost.FooterBinding {
-	bindings := []screenhost.FooterBinding{{Key: keynav.Default.Zones.Primary(), Label: frame.Text("tui.footer.zone"), Primary: true}, {Key: "f", Label: frame.Text("tui.footer.focus_description"), Primary: true}, {Key: "R", Label: frame.Text("tui.footer.project_resume"), Primary: true}}
+	bindings := []screenhost.FooterBinding{{Key: keynav.Default.Zones.Primary(), Label: frame.Text("tui.footer.zone"), Primary: true}, {Key: "f", Label: frame.Text("tui.footer.focus_description"), Primary: true}, {Key: "R", Label: frame.Text("tui.footer.project_resume"), Primary: true}, {Key: "K", Label: frame.Text("tui.knowledge.label"), Primary: true}}
 	// The motion vocabulary is advertised in every zone because it now WORKS
 	// in every zone: j/k nudge the document (or walk the feed cursor when the
 	// feed holds focus), pgup/pgdn page it, g/G jump to either end. Advertising
@@ -300,6 +303,7 @@ func (s Screen) Help(frame screenhost.Frame) []screenhost.HelpGroup {
 		{Key: keynav.Default.Zones.Primary(), Description: frame.Text("tui.footer.zone")},
 		{Key: "f", Description: frame.Text("tui.footer.focus_description")},
 		{Key: "R", Description: frame.Text("tui.footer.project_resume")},
+		{Key: "K", Description: frame.Text("tui.knowledge.open_catalog")},
 		{Key: "j k · ↑ ↓", Description: frame.Text("tui.footer.scroll")},
 		{Key: "pgup · pgdn", Description: frame.Text("tui.footer.page")},
 		{Key: "g · G", Description: frame.Text("tui.footer.top_bottom")},
@@ -527,8 +531,11 @@ func (s Screen) metaRows(kit screenkit.Kit, contentWidth int, focused bool) [][]
 		Row(kit.T("tui.row.root_path"), root).
 		Row(kit.T("tui.row.id"), fmt.Sprintf("%d", s.payload.Project.ID)).
 		Row(kit.T("tui.row.tags"), tags).
-		Row(kit.T("tui.row.comments"), fmt.Sprintf("%d", len(s.payload.Activity))).
-		Kicker(kit.T("tui.kicker.description")).Span(gridtable.Styled(s.inlineDescription(kit, contentWidth)))
+		Row(kit.T("tui.row.comments"), fmt.Sprintf("%d", len(s.payload.Activity)))
+	if len(s.payload.Knowledge.Resources) > 0 || len(s.payload.Knowledge.Diagnostics) > 0 {
+		detail = detail.Row(kit.T("tui.knowledge.label"), fmt.Sprintf("%d", len(s.payload.Knowledge.Resources)))
+	}
+	detail = detail.Kicker(kit.T("tui.kicker.description")).Span(gridtable.Styled(s.inlineDescription(kit, contentWidth)))
 	return detail.Cells()
 }
 
@@ -585,6 +592,9 @@ func clonePayload(payload Payload) Payload {
 	payload.Activity = append([]domain.Event(nil), payload.Activity...)
 	payload.Dashboard.Buckets = append([]BucketCount(nil), payload.Dashboard.Buckets...)
 	payload.Tasks = append([]domain.Task(nil), payload.Tasks...)
+	payload.Knowledge.Resources = append([]domain.KnowledgeResource(nil), payload.Knowledge.Resources...)
+	payload.Knowledge.Relations = append([]domain.KnowledgeRelation(nil), payload.Knowledge.Relations...)
+	payload.Knowledge.Diagnostics = append([]string(nil), payload.Knowledge.Diagnostics...)
 	return payload
 }
 

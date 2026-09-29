@@ -20,6 +20,7 @@ import (
 	"omakiten/internal/tui/screens/graph"
 	"omakiten/internal/tui/screens/home"
 	"omakiten/internal/tui/screens/insights"
+	"omakiten/internal/tui/screens/knowledge"
 	"omakiten/internal/tui/screens/logs"
 	"omakiten/internal/tui/screens/plannetwork"
 	"omakiten/internal/tui/screens/plans"
@@ -105,6 +106,8 @@ func (m Model) hostedTopScreen(id screenhost.ID) (screenhost.Screen, bool) {
 		return m.boundProjectFormScreen(), true
 	case screenhost.ProjectResume:
 		return m.boundProjectResumeScreen(), true
+	case screenhost.ProjectKnowledge:
+		return m.projectKnowledgeScreen, true
 	case screenhost.StatsGeneral:
 		return m.boundStatsScreen(), true
 	case screenhost.StatsLogs:
@@ -197,6 +200,8 @@ func (m *Model) storeScreen(screen screenhost.Screen) {
 		m.projectFormReaderScreen = typed
 	case projectresume.Screen:
 		m.projectResumeScreen = typed
+	case knowledge.Screen:
+		m.projectKnowledgeScreen = typed
 	case stats.Screen:
 		m.statsScreen = typed
 	case logs.Screen:
@@ -432,18 +437,17 @@ func (m *Model) applyProjectOutcome(outcome screenhost.Outcome) (tea.Cmd, bool) 
 	case screenhost.ActionCreateProject:
 		m.status = "Create a project with: okt init --name MyProject --slug my-project"
 	case screenhost.ActionEditProject:
-		if m.selectHomeProjectID(outcome.Action.ProjectID) {
-			m.openProjectView()
-		}
+		m.editHomeProject(outcome.Action.ProjectID)
 	case screenhost.ActionPrepareProjectDelete:
 		m.prepareHomeProjectDelete(outcome.Action.ProjectID)
 	case screenhost.ActionDeleteProject:
 		return m.executeHomeProjectDeleteAction(outcome.Action), true
 	case screenhost.ActionOpenProjectForm:
-		m.projectFormReaderScreen = m.boundProjectFormScreen().Apply(m.projectScreen.Payload())
-		m.pushScreen(screenhost.ProjectForm)
+		m.openProjectForm()
 	case screenhost.ActionOpenProjectResume:
 		m.openProjectResume()
+	case screenhost.ActionOpenProjectKnowledge:
+		m.openProjectKnowledge()
 	case screenhost.ActionOpenProjectComment:
 		m.openProjectComment(outcome.Action.CommentID)
 	case screenhost.ActionOpenThemePicker:
@@ -460,6 +464,22 @@ func (m *Model) applyProjectOutcome(outcome screenhost.Outcome) (tea.Cmd, bool) 
 		return nil, false
 	}
 	return outcome.Command, true
+}
+
+func (m *Model) openProjectForm() {
+	m.projectFormReaderScreen = m.boundProjectFormScreen().Apply(m.projectScreen.Payload())
+	m.pushScreen(screenhost.ProjectForm)
+}
+
+func (m *Model) editHomeProject(projectID int64) {
+	if m.selectHomeProjectID(projectID) {
+		m.openProjectView()
+	}
+}
+
+func (m *Model) openProjectKnowledge() {
+	m.projectKnowledgeScreen = m.projectKnowledgeScreen.Apply(m.projectScreen.Payload().Knowledge)
+	m.pushScreen(screenhost.ProjectKnowledge)
 }
 
 func (m *Model) openConfigEditorOutcome(outcome screenhost.Outcome) (tea.Cmd, bool) {
@@ -668,6 +688,12 @@ func (m *Model) reloadScreenOutcome(outcome screenhost.Outcome) tea.Cmd {
 	}
 	if _, ok := outcome.Screen.(projectresume.Screen); ok {
 		m.setRefreshStatus(m.refreshProjectResume())
+		return outcome.Command
+	}
+	if _, ok := outcome.Screen.(knowledge.Screen); ok {
+		if m.repos.Knowledge != nil {
+			m.projectKnowledgeScreen = m.projectKnowledgeScreen.Apply(m.repos.Knowledge(m.ctx, m.project))
+		}
 		return outcome.Command
 	}
 	if err := m.refreshCurrentView(); err != nil {

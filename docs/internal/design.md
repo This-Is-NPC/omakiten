@@ -57,6 +57,7 @@ injected interactive runner and imports no TUI. The executable composes both.
 | `internal/sqlite` | Transactions, operational queries, events, and live snapshots. |
 | `internal/agentruntime` | Bootstrap, per-project runtime cache, reload, and shutdown. |
 | `internal/workfile` | Bounded UTF-8 OKF Markdown codec. |
+| `internal/knowledgefile` | File-backed Markdown, OpenAPI, and CLI knowledge reader. |
 | `internal/recovery` | Recovery images, directory leases, and retention. |
 | `internal/installer`, `internal/updater` | Package capture, setup, and executable updates. |
 | `internal/releaseverify`, `internal/releasemeta` | Release verification policy and metadata. |
@@ -95,6 +96,10 @@ the complete record under a consistent transaction snapshot.
 Business fields remain in their operational tables. Entity-owned document
 metadata preserves file-local keys and producer extensions; export combines
 both. The [data model](data-model.md) describes the relationships.
+
+Project knowledge is separate from operational work documents. Its readers
+build an in-memory projection from registered project files on each explicit
+read or TUI refresh. No knowledge node or relation is written to SQLite.
 
 ## 5. Events and hooks
 

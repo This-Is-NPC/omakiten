@@ -46,6 +46,7 @@ working directory. Configuration discovery is described in
 | `plan wave-add`, `wave-remove`, `wave-rename`, `wave-reorder` | Ordered plan waves. |
 | `plan assign`, `unassign`, `continue`, `claim` | Membership, next-work preview, and atomic assignment. |
 | `search` | Full-text search across operational records. |
+| `knowledge validate`, `list`, `show`, `search` | Read project files as a knowledge catalog; optionally include declared related projects. |
 | `error record` | Reusable development failures. |
 | `solution add`, `confirm`, `list-top` | Fixes, observed outcomes, and ranked reuse. |
 | `progress` | Material progress on a task. |

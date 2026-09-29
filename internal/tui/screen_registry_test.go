@@ -26,6 +26,7 @@ func TestScreenRegistryRepresentsEveryLegacyRouteOnce(t *testing.T) {
 		screenhost.Project,
 		screenhost.ProjectForm,
 		screenhost.ProjectResume,
+		screenhost.ProjectKnowledge,
 		screenhost.StatsGeneral,
 		screenhost.StatsLogs,
 		screenhost.StatsInsights,

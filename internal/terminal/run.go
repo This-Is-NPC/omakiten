@@ -12,7 +12,9 @@ import (
 	"omakiten/internal/config"
 	"omakiten/internal/configstore"
 	"omakiten/internal/contract"
+	"omakiten/internal/domain"
 	hookactions "omakiten/internal/hooks/actions"
+	"omakiten/internal/knowledgefile"
 	"omakiten/internal/paths"
 	"omakiten/internal/token"
 	"omakiten/internal/tui"
@@ -34,22 +36,25 @@ func Run(ctx context.Context, session agentruntime.Session) error {
 		DeleteProject:         agentruntime.ProjectDeleter(session.Store, session.Store, session.DBPath, session.Snapshot.Settings().Backup.RetentionCount),
 		Tasks:                 session.Store,
 		Projects:              session.Store,
-		Comments:              session.Store,
-		Dependencies:          session.Store,
-		Tags:                  session.Store,
-		BundleStore:           bundleStore,
-		ActivityLogs:          session.Store,
-		Events:                session.Store,
-		Orphans:               session.Store,
-		Plans:                 session.Store,
-		Watermark:             session.Store,
-		ConfigPath:            session.ConfigPath,
-		DBPath:                session.DBPath,
-		Version:               session.Version,
-		RepoLocalDir:          session.RepoLocalDir,
-		Cache:                 session.Cache,
-		ProjectID:             session.CacheProjectID,
-		Catalog:               session.Snapshot.Catalog(config.SurfaceTUI),
+		Knowledge: func(ctx context.Context, project domain.ProjectContext) domain.KnowledgeSnapshot {
+			return knowledgefile.Load(ctx, project, true, session.Store.FindProjectBySlug)
+		},
+		Comments:     session.Store,
+		Dependencies: session.Store,
+		Tags:         session.Store,
+		BundleStore:  bundleStore,
+		ActivityLogs: session.Store,
+		Events:       session.Store,
+		Orphans:      session.Store,
+		Plans:        session.Store,
+		Watermark:    session.Store,
+		ConfigPath:   session.ConfigPath,
+		DBPath:       session.DBPath,
+		Version:      session.Version,
+		RepoLocalDir: session.RepoLocalDir,
+		Cache:        session.Cache,
+		ProjectID:    session.CacheProjectID,
+		Catalog:      session.Snapshot.Catalog(config.SurfaceTUI),
 	}, session.ConfigPath), theme, token.NewCounter(), session.Snapshot.Settings().TUI.TokenBadge, session.Snapshot.Priorities(), session.Snapshot.Severities(), tui.NotificationBinding{
 		Notifications: session.Snapshot.Notifications(),
 	})

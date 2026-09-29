@@ -34,6 +34,7 @@ import (
 	"omakiten/internal/tui/screens/graph"
 	"omakiten/internal/tui/screens/home"
 	"omakiten/internal/tui/screens/insights"
+	"omakiten/internal/tui/screens/knowledge"
 	"omakiten/internal/tui/screens/logs"
 	"omakiten/internal/tui/screens/plannetwork"
 	"omakiten/internal/tui/screens/plans"
@@ -96,6 +97,7 @@ func NewModel(ctx context.Context, project domain.ProjectContext, repos Reposito
 		projectScreen:           projectscreen.New(),
 		projectFormReaderScreen: projectscreen.NewForm(),
 		projectResumeScreen:     projectresume.New(),
+		projectKnowledgeScreen:  knowledge.New(),
 		settingsGeneralScreen:   settingsscreen.NewGeneral(),
 		settingsGuardsScreen:    settingsscreen.NewGuards(),
 		entityDetailScreen:      entitydetail.New(),
