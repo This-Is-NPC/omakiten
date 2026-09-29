@@ -14,7 +14,7 @@ const (
 // against On (event_type) and When (top-level payload equality, AND
 // across keys); when both match it dispatches Do with Args. Args is
 // generic — each action interprets the keys it cares about; the per-
-// action contract is documented in .docs/hooks.md.
+// action contract is documented in docs/how-to-use-hooks.md.
 type Hook struct {
 	On           string                 `yaml:"on" json:"on"`
 	When         map[string]string      `yaml:"when,omitempty" json:"when,omitempty"`

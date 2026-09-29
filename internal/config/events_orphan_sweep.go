@@ -46,7 +46,7 @@ const (
 // (Store.DeleteProject / DeleteProjectWithBackup) already removes every
 // event row for the project inside the same transaction as the projects
 // row. The sweep only picks up what a process that bypassed that
-// sequence left behind — see .docs/configuration-guide/system.md.
+// sequence left behind — see docs/data-model.md.
 type EventsOrphanSweepSettings struct {
 	// Enabled gates the whole sweep. nil inherits (default: on).
 	Enabled *bool `yaml:"enabled,omitempty" json:"enabled,omitempty"`

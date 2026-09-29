@@ -57,8 +57,7 @@ behavioral change.
 
 Performance measurements use the existing focused benchmarks and profiling
 commands in `.mise.toml`. Put generated binaries and profiles under `.tmp/`.
-Removed budget and scroll guard tests are not part of the enforcement contract;
-do not recreate them as part of a refactor.
+Use existing tests that protect observable scroll and layout behavior.
 
 ## Refactoring a screen
 
