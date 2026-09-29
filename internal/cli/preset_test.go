@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bytes"
+	"maps"
 	"os"
 	"path/filepath"
 	"strings"
@@ -48,6 +49,7 @@ func TestPresetRepositoryOfflineEditingAndTransport(t *testing.T) {
 	if doc.Files["scripts/on-task.sh"] != p.Files["scripts/on-task.sh"] {
 		t.Fatal("script contents or executable mode changed")
 	}
+	assertPresetModularEdits(t, p, doc)
 	target := filepath.Join(root, "target", "config.yaml")
 	runCLI(t, db, target, "preset", "import", "--file", exported, "--scope", "global")
 	runCLI(t, db, target, "preset", "use", doc.Manifest.Name, "--scope", "global")
@@ -57,6 +59,18 @@ func TestPresetRepositoryOfflineEditingAndTransport(t *testing.T) {
 		t.Fatalf("round trip: language=%q error=%v", bundle.Config.Languages.AgentOutput, err)
 	}
 	assertPresetOriginalUnchanged(t, root, p)
+}
+
+func assertPresetModularEdits(t *testing.T, before, after config.PresetPackage) {
+	t.Helper()
+	for name, original := range before.Files {
+		if strings.HasPrefix(name, "config/") && name != "config/settings.yaml" && after.Files[name] != original {
+			t.Fatalf("unrelated config module changed after settings and entity edits: %s", name)
+		}
+	}
+	if after.Files["config/settings.yaml"] == before.Files["config/settings.yaml"] {
+		t.Fatal("language edit did not update its owning settings module")
+	}
 }
 
 func assertPresetOriginalUnchanged(t *testing.T, root string, original config.PresetPackage) {
@@ -70,7 +84,7 @@ func assertPresetOriginalUnchanged(t *testing.T, root string, original config.Pr
 			continue
 		}
 		base, err := config.ReadPresetDirectory(item.Path)
-		if err != nil || base.Files[original.Manifest.Config] != original.Files[original.Manifest.Config] || item.Dirty {
+		if err != nil || !maps.Equal(base.Files, original.Files) || item.Dirty {
 			t.Fatalf("source package was changed: %+v, %v", item, err)
 		}
 		return

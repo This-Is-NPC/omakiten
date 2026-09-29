@@ -1,7 +1,6 @@
 package config
 
 import (
-	"bytes"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -11,23 +10,9 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// SaveBundle writes only the wiring file (omakiten.yaml). Per-entity files are
-// written separately via the SkillFile / LawFile / PersonaFile helpers below or
-// through the BundleEditor's multi-file publication path. Each file is
-// published as an independent whole-file atomic write; a later failure can
-// leave earlier files published, so callers should reload to inspect the
-// current state and then retry or repair the affected paths.
-//
-// Comment-preservation scope: the saver currently round-trips the
-// wiring through the struct-typed yaml encoder, which loses inline +
-// mid-file comments. As a partial fix the header block at the top of
-// the existing file (every line up to the first non-comment, non-
-// blank line) is captured before the rewrite and re-prepended to the
-// new bytes — that covers the common case of a banner comment block
-// documenting the workflow. Inline `# trailing` comments and comments
-// between keys still drop; a future migration to the yaml.Node API
-// would close the rest of the gap (see task #222 in the code-review
-// plan for the full-fidelity option).
+// SaveBundle writes configuration separately from entity files. Repository
+// packages retain their imports and update the modules that own changed values.
+// BundleEditor stages package writes before publishing the selection atomically.
 func SaveBundle(path string, bundle Bundle) error {
 	if _, selected, err := ResolvePresetSelection(path); err != nil {
 		return err
@@ -44,7 +29,10 @@ func SaveBundle(path string, bundle Bundle) error {
 	if err != nil {
 		return err
 	}
-	data, err := marshalWiring(w)
+	if isPresetRoot(ConfigRootFromYAMLPath(path)) {
+		return savePresetWiring(path, w)
+	}
+	data, err := encodeYAML(w)
 	if err != nil {
 		return err
 	}
@@ -242,20 +230,6 @@ func appendProjectLaws(w *wiring, bundle Bundle, projectWiring map[string]int) e
 		}
 	}
 	return nil
-}
-
-func marshalWiring(w wiring) ([]byte, error) {
-	var buf bytes.Buffer
-	enc := yaml.NewEncoder(&buf)
-	enc.SetIndent(2)
-	if err := enc.Encode(w); err != nil {
-		_ = enc.Close()
-		return nil, err
-	}
-	if err := enc.Close(); err != nil {
-		return nil, err
-	}
-	return buf.Bytes(), nil
 }
 
 // SkillFileBytes renders skills/<slug>.md content.
