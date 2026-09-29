@@ -187,6 +187,7 @@ func copyBool(b *bool) *bool {
 // the contract "snapshot is immutable" enforceable even when a caller
 // mistakenly mutates the returned slice.
 type Snapshot struct {
+	languageSettings   LanguageSettings
 	eventRegistry      *domain.EventRegistry
 	kit                Kit
 	subtaskKitPath     string
@@ -373,7 +374,8 @@ func populateSnapshotLanguages(snap *Snapshot, bundle Bundle) {
 		snap.languagesByCode[lang.Code] = i
 	}
 	snap.warnings = append(snap.warnings, bundle.Warnings...)
-	eff := bundle.Config.EffectiveLanguages()
+	eff := bundle.LanguageSettings.Effective()
+	snap.languageSettings = eff
 	baseline := snap.lookupLanguage("en")
 	snap.catalogCLI = buildSurfaceCatalog(snap, eff.CLI, baseline)
 	snap.catalogTUI = buildSurfaceCatalog(snap, eff.TUI, baseline)
@@ -947,3 +949,6 @@ func (s *Snapshot) EventRegistry() *domain.EventRegistry {
 	}
 	return s.eventRegistry
 }
+
+// LanguageSettings returns application language preferences with defaults applied.
+func (s *Snapshot) LanguageSettings() LanguageSettings { return s.languageSettings }

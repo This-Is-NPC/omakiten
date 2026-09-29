@@ -9,45 +9,52 @@ import (
 	"omakiten/internal/config"
 )
 
-func TestCLIConfigLanguageTargetsLocalGlobalAndExplicitProfiles(t *testing.T) {
+func TestCLIApplicationLanguagePreferencesLeavePresetsIntact(t *testing.T) {
 	root := t.TempDir()
 	t.Chdir(root)
-	globalRoot := filepath.Join(root, "global")
-	t.Setenv("OMAKITEN_HOME", globalRoot)
-	db := filepath.Join(root, "state.db")
-	global := filepath.Join(globalRoot, "config.yaml")
-	local := filepath.Join(root, ".omakiten", "config.yaml")
-	runCLI(t, db, global, "config", "init", "--scope", "global", "--preset", "omakase")
-	runCLI(t, db, global, "config", "init", "--scope", "local", "--preset", "omakase")
-	for name, args := range map[string][]string{
-		"local":    {"config", "language", "set", "--tui", "pt-br", "--agent", "Português"},
-		"global":   {"config", "language", "set", "--tui", "pt-br", "--global"},
-		"explicit": {"--config", local, "config", "language", "set", "--tui", "pt-br", "--global"},
-	} {
-		t.Run(name, func(t *testing.T) {
-			beforeGlobal, beforeLocal := readFile(t, global), readFile(t, local)
-			out := runCLI(t, db, "", args...)
-			path := local
-			untouched, before := global, beforeGlobal
-			if name == "global" {
-				path, untouched, before = global, local, beforeLocal
-			}
-			if got := decodeEnvelope(t, out)["data"].(map[string]any)["path"]; got != path {
-				t.Fatalf("wrong write target: %v, want %s", got, path)
-			}
-			readBackEquals(t, untouched, before)
-			bundle, err := config.LoadBundle(path)
-			if err != nil || bundle.Config.Languages.TUI != "pt-br" {
-				t.Fatalf("language not persisted: %+v, %v", bundle.Config.Languages, err)
-			}
-			runCLI(t, db, path, "config", "language", "reset", "--global")
-		})
+	t.Setenv("OMAKITEN_HOME", filepath.Join(root, "application"))
+	db, selection := filepath.Join(root, "state.db"), filepath.Join(root, ".omakiten", "config.yaml")
+	runCLI(t, db, "", "config", "init", "--scope", "local", "--preset", "omakase")
+	before := readFile(t, selection)
+	out := runCLI(t, db, selection, "config", "language", "set", "--cli", "pt-br", "--agent", "Portuguese")
+	path, err := config.PreferencesPath()
+	if err != nil {
+		t.Fatal(err)
 	}
-	stale := "version: 1\nmcp: {}\n"
-	writeFile(t, local, stale)
-	runCLI(t, db, "", "config", "language", "set", "--agent", "Portuguese", "--global")
-	runCLI(t, db, "", "config", "language", "reset", "--global")
-	readBackEquals(t, local, stale)
+	if decodeEnvelope(t, out)["data"].(map[string]any)["path"] != path {
+		t.Fatalf("preferences were routed through the preset: %s", out)
+	}
+	readBackEquals(t, selection, before)
+	items, err := config.InstalledPresets(filepath.Dir(selection))
+	if err != nil || len(items) != 1 || items[0].Dirty {
+		t.Fatalf("language change created a modified preset: %+v, %v", items, err)
+	}
+	writeFile(t, selection, "unsupported: true\n")
+	portuguese, err := config.LoadBundledLanguage("pt-br")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bootstrapCatalog().Get("cli.root.short") != portuguese.Keys["cli.root.short"] {
+		t.Fatal("CLI help does not use application preferences independently of the preset")
+	}
+	out = runCLI(t, db, selection, "config", "language", "show")
+	if !strings.Contains(out, "Portuguese") {
+		t.Fatalf("preferences depend on a valid preset: %s", out)
+	}
+	writeFile(t, path, "languages: {cli: unknown}\n")
+	english, err := config.LoadBundledLanguage("en")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bootstrapCatalog().Get("cli.root.short") != english.Keys["cli.root.short"] {
+		t.Fatal("invalid preferences prevent English recovery help")
+	}
+	runCLIExpectError(t, db, selection, "config_invalid", "config", "language", "show")
+	runCLI(t, db, selection, "config", "language", "reset")
+	p, err := config.LoadPreferences()
+	if err != nil || p.Languages.Effective().CLI != "en" {
+		t.Fatalf("reset failed to repair preferences: %+v, %v", p, err)
+	}
 }
 
 func TestCLIConfigInspectionReportsInvalidSources(t *testing.T) {

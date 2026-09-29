@@ -57,8 +57,6 @@ activation, portable exports, and validated editing.
 ├── themes/custom/<slug>.yaml
 ├── notifications/<slug>.yaml
 ├── notifications/custom/<slug>.yaml
-├── languages/<code>.yaml
-└── languages/custom/<code>.yaml
 ```
 
 Data (SQLite db) lives under a parallel root: `$OMAKITEN_HOME/data/` or `$XDG_DATA_HOME/omakiten/` or `~/.local/share/omakiten/`. Recoverable state, currently database backups, lives under `$OMAKITEN_HOME/state/` or `$XDG_STATE_HOME/omakiten/` or `~/.local/state/omakiten/`.
@@ -182,7 +180,7 @@ Imported documents may themselves contain directives. The resolver walks the who
 
 ### Supported scope
 
-Imports are expanded for the **active profile yaml values** only. Entity body/frontmatter loaders (laws, skills, personas, templates, themes, notifications, languages — see [entities.md](entities.md)) do not honor `from:`, but they do use the same bounded no-follow reads. On Linux and supported Unix-family targets, directory enumeration and file reads are pinned to descriptor-relative handles; Windows uses native handle-relative no-reparse opens. Symlinked entity files or custom directories are rejected rather than followed, while Plan 9 and other unsupported targets fail closed. Because expansion happens entirely inside the config loader, **the TUI, CLI, and CLI consume the already-resolved config and need no import awareness** — they see the same materialised `Bundle`/`Snapshot` whether a section was inline or imported.
+Imports are expanded for the **active profile yaml values** only. Entity body/frontmatter loaders (laws, skills, personas, templates, themes, notifications — see [entities.md](entities.md)) do not honor `from:`, but they do use the same bounded no-follow reads. On Linux and supported Unix-family targets, directory enumeration and file reads are pinned to descriptor-relative handles; Windows uses native handle-relative no-reparse opens. Symlinked entity files or custom directories are rejected rather than followed, while Plan 9 and other unsupported targets fail closed. Because expansion happens entirely inside the config loader, **the TUI, CLI, and CLI consume the already-resolved config and need no import awareness** — they see the same materialised `Bundle`/`Snapshot` whether a section was inline or imported.
 
 ## <a id="config-root-from-yaml-path"></a>`ConfigRootFromYAMLPath` recognized shapes
 
@@ -209,8 +207,9 @@ When a `--config` flag points at a yaml file, the resolver derives `<root>` from
 CLI discovery starts at the project selected by `--project` or `--project-id`,
 or at CWD when neither is supplied. An explicit `--config` selects that file;
 `config why` reports its source as `explicit` unless a layer is pinned.
-Validation, language commands and default refresh use the same selection.
-A global language write reloads its target even when a local profile is invalid.
+Validation and default refresh use the workflow selection. Application language
+commands use the Omakiten configuration root's `preferences.yaml` independently
+of project discovery, `--config`, or workflow validity.
 
 ## TUI scope badge
 

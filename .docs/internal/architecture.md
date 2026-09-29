@@ -34,6 +34,16 @@
 | `github.com/dustin/go-humanize` | v1.0.1 | Human-readable formatting in TUI |
 | `golang.org/x/term` | v0.43.0 | Terminal raw-mode + size detection (used by `internal/cli/setup_picker.go` during installer) |
 
+## Application languages
+
+`internal/config/preferences.go` owns the user-wide language preferences in
+`<Omakiten config root>/preferences.yaml`. CLI language commands and setup write
+that file without opening workflow state or SQLite. The bundle's runtime language
+settings are separate from its workflow settings; snapshots project them to CLI,
+TUI and agent consumers. The runtime cache watches application preferences
+independently from preset edit hashes. `internal/config/language.go` caches the
+embedded locale catalog and returns independent copies to consumers.
+
 ## Preset package publication
 
 `internal/config/presets.go` contains official repository metadata.

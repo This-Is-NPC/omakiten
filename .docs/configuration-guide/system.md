@@ -14,7 +14,7 @@ For ConfigRoot precedence, `.active` resolution, and the `<root>/` layout, see [
 - [`config.output`](#configoutput)
 - [`config.workflow`](#configworkflow)
 - [`config.theme`](#configtheme)
-- [`config.languages`](#configlanguages)
+- [Application languages](#application-languages)
 - [`config.agent`](#configagent)
 - [`config.tui`](#configtui)
 - [`config.sqlite`](#configsqlite)
@@ -57,7 +57,10 @@ commands: { <slug>: { persona?, laws?, laws_disabled?, templates? } }
 | `projects` | list of `ProjectWiring` | no | Declarative project wiring; the runtime project list is in SQLite. |
 | `commands` | map | no | Binds `okt-*` agent playbooks to a persona, skills, laws, and templates. See [command-bindings.md](command-bindings.md). |
 
-Two additional inputs are loaded from sibling folders rather than `omakiten.yaml` top-level keys: `notifications/<slug>.yaml` (kit-wide notification cards referenced from `config.hooks`) and `languages/<code>.yaml` (CLI/TUI language packs picked via `config.languages.{cli,tui}`). They appear on the in-memory `Bundle` as `Notifications` and `Languages`, are validated alongside the YAML, and ship under `defaults/notifications/` and `defaults/languages/`.
+Notification cards are loaded from `notifications/<slug>.yaml` in the workflow
+package and referenced from `config.hooks`. Omakiten supplies its translations
+from the binary and reads user-wide language preferences from `preferences.yaml`.
+
 
 ### Splitting sections into files — `from:` imports
 
@@ -115,25 +118,26 @@ kit:
 
 Theme files are validated separately (`ValidateTheme`): `version: 1`, non-empty `key`, `name`, and `colors`. See [themes.md](themes.md) for the canonical color tokens and authoring recipe.
 
-## `config.languages`
+## Application languages
 
-Stores the language selected per surface. CLI and TUI values must resolve to loaded `languages/<code>.yaml` packs (bundled or `languages/custom/`), while `agent_output` is free-form text appended to agent playbook composition as an output-language directive.
+Omakiten stores language preferences in its user configuration root's
+`preferences.yaml`. They apply to all projects and workflows:
 
 ```yaml
-config:
-  languages:
-    cli: en
-    tui: pt-br
-    agent_output: "Português (Brasil)"
+languages:
+  cli: en
+  tui: pt-br
+  agent_output: "Português (Brasil)"
 ```
 
-| Field | Type | Validation | Effect |
-|---|---|---|---|
-| `cli` | language code | loaded pack, defaults to `en` when empty | CLI labels / help / CLI-owned errors. |
-| `tui` | language code | loaded pack, defaults to `en` when empty | Terminal UI labels and notifications. |
-| `agent_output` | string | free-form | Natural-language directive sent to the agent in composed agent playbooks. Empty means no directive. |
+| Field | Validation | Effect |
+| --- | --- | --- |
+| `cli` | Bundled code; empty defaults to `en` | CLI labels, help and errors |
+| `tui` | Bundled code; empty defaults to `en` | TUI labels and notifications |
+| `agent_output` | Free-form text | Language directive in agent playbooks; empty omits it |
 
-See [languages.md](languages.md) for the bundled pack catalog, parity rule, and recipe for adding a new pack.
+Use `okt config language show`, `set`, or `reset`. Setup language choices use the
+same preferences file. See [languages.md](languages.md) for loading and authoring.
 
 ## `config.agent`
 

@@ -166,8 +166,8 @@ keys:
   cli.config.why.short: "Напечатать корень установки, владеющий слоем config выбранного scope"
   cli.config.language.short: "Управление активным языком для help CLI, label TUI и директивы вывода агента"
   cli.config.language.show.short: "Напечатать активные настройки языка и обнаруженные language packs"
-  cli.config.language.set.short: "Задать одну или несколько настроек языка в активном omakiten.yaml"
-  cli.config.language.reset.short: "Удалить блок languages из активного omakiten.yaml (применяются значения по умолчанию)"
+  cli.config.language.set.short: "Настроить языки приложения"
+  cli.config.language.reset.short: "Восстановить языки по умолчанию"
   cli.law.short: "Управление laws агентов (файлы под laws/)"
   cli.law.list.short: "Список активных laws (фильтруется по scope/project/persona)"
   cli.law.show.short: "Показать law (frontmatter + тело)"
@@ -193,37 +193,7 @@ keys:
   cli.workflow.show.short: "Показать активный workflow"
   cli.workflow.orphan.short: "Предпросмотр или повторная привязка tasks, чей bucket был деактивирован сменой workflow"
   notice.subtask_kit.enabled.commands_resolve_at_root: "Sub-task kit включён: agent commands, personas, laws, templates и skills по-прежнему resolve из root kit project."
-  cli.config.init.long: |-
-    Создаёт автономную установку config с корнем в выбранном scope.
-
-      --scope global  →  paths.ConfigRoot() (или родительская папка --config).
-                         Существующая user-установка; повторный запуск идемпотентен.
-
-      --scope local   →  <cwd>/.omakiten (буквальный CWD, без walk-up).
-                         Полная установка — config/<preset>.yaml плюс каждая
-                         папка сущностей — чтобы runtime могла загрузить её
-                         без merge с user-global слоем. Резолвер walk-up
-                         автоматически подхватывает её при последующих
-                         вызовах okt из репозитория.
-
-    Матрица поведения:
-      - Файл отсутствует          → атомарная запись.
-      - Тот же preset, те же файлы → no_op:true (тихий успех).
-      - Другой preset             → переключает .active на новый preset.
-      - Изменённые shipped-файлы  → сохраняются если нет --force.
-      - --force                   → пере-копирует каждый встроенный shipped-файл
-                                    (skills, laws, personas, templates, themes,
-                                    notifications, каждый preset yaml).
-                                    Поддеревья custom/ никогда не трогаются.
-
-    Выбор языка:
-      --cli-lang, --tui-lang, --agent-lang пропускают интерактивные
-      prompts каждого surface и записывают значение напрямую в блок
-      languages созданного omakiten.yaml. --cli-lang и --tui-lang
-      должны совпадать с bundled кодом языка (en, pt-br, es, fr, de,
-      ru, ...); --agent-lang свободный. Без флага init спрашивает на
-      TTY (или оставляет surface на значении по умолчанию когда stdin
-      не интерактивен).
+  cli.config.init.long: "Установить рабочий процесс по имени каталога, URL Git или из локального каталога в выбранной области.\n\nНастройки языка действуют для всех проектов и хранятся в preferences.yaml Omakiten. CLI и TUI используют встроенные языки; agent_output — свободный текст."
   cli.config.path.long: |-
     Обходит активную config (или выбранный слой) по точечному YAML-ключу
     и сообщает {key, value, path, source}. Без --layer резолвер выбирает
@@ -246,32 +216,8 @@ keys:
     Записи вывода несут op = added | removed | changed плюс
     соответствующие значения. Maps идут рекурсивно вниз; списки /
     скаляры сравниваются по глубокому равенству.
-  cli.config.language.long: |-
-    Читает и записывает config.languages.{cli,tui,agent_output} в
-    активном omakiten.yaml. languages.cli и languages.tui валидируются
-    против language packs, обнаруженных под languages/;
-    languages.agent_output свободный и передаётся дословно в композитор
-    prompt CLI.
-
-    Цель по умолчанию — разрешённый omakiten.yaml (repo-local
-    .omakiten/ если он есть, иначе user-global ConfigRoot). Использовать
-    --global на set/reset, чтобы зафиксировать запись на user-global
-    файле независимо от наличия repo-local.
-
-    Записи запускают BundleCache.Reload, чтобы последующие вызовы okt и
-    долгоживущие tools (TUI, сервер CLI) видели новый выбор. Текущий
-    CLI-процесс и любой уже запущенный CLI-вызов не обновляются
-    ретроактивно; только последующие вызовы подхватывают изменение.
-  cli.config.language.set.long: |-
-    Примеры:
-      okt config language set --cli ru
-      okt config language set --tui en --agent "Русский"
-      okt config language set --agent "" --global
-
-    Должна быть указана как минимум одна из --cli, --tui или --agent.
-    --cli и --tui валидируются против кодов языков, обнаруженных под
-    languages/. --agent принимает любую непустую строку (или "" для
-    очистки). --global фиксирует запись на user-global omakiten.yaml.
+  cli.config.language.long: "Настройки языка действуют для всех проектов и хранятся в preferences.yaml Omakiten. CLI и TUI используют встроенные языки; agent_output — свободный текст."
+  cli.config.language.set.long: "Настройки языка действуют для всех проектов и хранятся в preferences.yaml Omakiten. CLI и TUI используют встроенные языки; agent_output — свободный текст.\n\nokt config language set --cli pt-br\nokt config language set --tui en --agent \"Português (Brasil)\"\nokt config language set --agent \"\""
   cli.workflow.orphan.long: |-
     Tasks, которые указывали на bucket workflow, больше не существующий
     после смены preset или редактирования omakiten.yaml, являются
@@ -330,8 +276,6 @@ keys:
   cli.config.language.set.flag.cli: "код языка для help и usage CLI"
   cli.config.language.set.flag.tui: "код языка для label и экранов TUI"
   cli.config.language.set.flag.agent: "свободная директива языка вывода агента (используйте \"\" для очистки)"
-  cli.config.language.set.flag.global: "закрепить запись на user-global omakiten.yaml независимо от наличия repo-local"
-  cli.config.language.reset.flag.global: "закрепить reset на user-global omakiten.yaml независимо от наличия repo-local"
   cli.law.list.flag.scope: "фильтр по scope: global, project или persona"
   cli.law.list.flag.project: "фильтр по slug проекта"
   cli.law.list.flag.persona: "фильтр по slug persona"
@@ -1085,7 +1029,6 @@ keys:
   tui.settings.effective.section.tag_synonyms: "синонимы тегов"
   tui.settings.effective.section.priorities: "приоритеты"
   tui.settings.effective.section.severities: "уровни серьёзности"
-  tui.settings.effective.section.languages: "языки"
   tui.settings.guards_tab: "охранники"
   tui.settings.guards_hint: "только чтение · редактируйте через `$EDITOR omakiten.yaml`"
   tui.settings.guards.header_to: "в"

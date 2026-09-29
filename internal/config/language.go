@@ -2,42 +2,12 @@ package config
 
 import (
 	"fmt"
-	"path/filepath"
-	"strings"
-
+	"maps"
 	"omakiten/defaults"
+	"strings"
+	"sync"
 )
 
-// LoadBundledLanguage reads defaults/languages/<code>.yaml from the
-// embed FS. Used by the early-boot CLI bootstrap path that needs a
-// usable Catalog before the on-disk install is materialized; the
-// returned Language carries SourcePath="" because the bytes never
-// touch the filesystem. Strict YAML decoding still applies, so an
-// embed corruption surfaces during init rather than at first call.
-func LoadBundledLanguage(code string) (Language, error) {
-	raw, err := defaults.FS.ReadFile(filepath.ToSlash(filepath.Join("languages", code+".yaml")))
-	if err != nil {
-		return Language{}, fmt.Errorf("read bundled languages/%s.yaml: %w", code, err)
-	}
-	var lf languageFile
-	if err := decodeLanguageStrict(raw, &lf); err != nil {
-		return Language{}, parseError(filepath.Join("languages", code+".yaml"), err)
-	}
-	keys := lf.Keys
-	if keys == nil {
-		keys = map[string]string{}
-	}
-	return Language{
-		Code:   strings.TrimSpace(lf.Code),
-		Name:   strings.TrimSpace(lf.Name),
-		Native: strings.TrimSpace(lf.Native),
-		Keys:   keys,
-	}, nil
-}
-
-// languageFile mirrors the on-disk YAML shape of a Language entity. Kept
-// separate from Language so loader concerns (yaml tags, strict decode)
-// stay isolated from the Snapshot-facing type defined in catalog.go.
 type languageFile struct {
 	Code   string            `yaml:"code"`
 	Name   string            `yaml:"name"`
@@ -45,66 +15,65 @@ type languageFile struct {
 	Keys   map[string]string `yaml:"keys,omitempty"`
 }
 
-func loadLanguagesReader(dir string, reader bundleSourceReader) ([]Language, []SourceWarning, error) {
-	opts := LoadOptions[Language]{
-		Suffixes:     []string{".yaml", ".yml"},
-		MaxFileBytes: MaxLanguagePackBytes,
-		Decode:       decodeLanguagePack,
-		SlugOf:       func(l Language) string { return l.Code },
-		Collision:    CollideOverwrite,
+var bundledLanguageOnce sync.Once
+var bundledLanguages []Language
+var bundledLanguageError error
+
+func readBundledLanguages() {
+	entries, err := defaults.FS.ReadDir("languages")
+	if err != nil {
+		bundledLanguageError = err
+		return
 	}
-	if reader == nil {
-		return LoadFromDir(dir, opts)
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".yaml") {
+			continue
+		}
+		path := "languages/" + entry.Name()
+		raw, err := defaults.FS.ReadFile(path)
+		if err != nil {
+			bundledLanguageError = err
+			return
+		}
+		var file languageFile
+		if err := decodeYAMLStrict(raw, &file); err != nil {
+			bundledLanguageError = parseError(path, err)
+			return
+		}
+		code := strings.TrimSuffix(entry.Name(), ".yaml")
+		if file.Code != code || strings.ToLower(code) != code || strings.TrimSpace(file.Name) == "" || strings.TrimSpace(file.Native) == "" {
+			bundledLanguageError = fmt.Errorf("invalid bundled language metadata: %s", path)
+			return
+		}
+		bundledLanguages = append(bundledLanguages, Language{Code: code, Name: file.Name, Native: file.Native, Keys: file.Keys})
 	}
-	return loadFromDirReader(dir, opts, reader)
 }
 
-// decodeLanguagePack parses a single language YAML file into a Language,
-// returning a filename↔code mismatch as a non-fatal warning so the
-// loader can keep loading the pack. Validation rules: code required,
-// lowercase; name required; native required. Any of these missing or
-// malformed fails the load.
-func decodeLanguagePack(path string, raw []byte, isCustom bool) (Language, *SourceWarning, error) {
-	var lf languageFile
-	if err := decodeLanguageStrict(raw, &lf); err != nil {
-		return Language{}, nil, parseError(path, err)
+// LoadBundledLanguages returns independent copies of the application's locales.
+func LoadBundledLanguages() ([]Language, error) {
+	bundledLanguageOnce.Do(readBundledLanguages)
+	if bundledLanguageError != nil {
+		return nil, bundledLanguageError
 	}
-	code := strings.TrimSpace(lf.Code)
-	if code == "" {
-		return Language{}, nil, parseError(path, fmt.Errorf("language code is required"))
+	result := make([]Language, len(bundledLanguages))
+	for i, language := range bundledLanguages {
+		result[i] = language
+		result[i].Keys = maps.Clone(language.Keys)
 	}
-	if code != strings.ToLower(code) {
-		return Language{}, nil, parseError(path, fmt.Errorf("language code %q must be lowercase", code))
+	return result, nil
+}
+
+// LoadBundledLanguage returns an independent copy of a bundled locale.
+func LoadBundledLanguage(code string) (Language, error) {
+	bundledLanguageOnce.Do(readBundledLanguages)
+	if bundledLanguageError != nil {
+		return Language{}, bundledLanguageError
 	}
-	if strings.TrimSpace(lf.Name) == "" {
-		return Language{}, nil, parseError(path, fmt.Errorf("language name is required"))
-	}
-	if strings.TrimSpace(lf.Native) == "" {
-		return Language{}, nil, parseError(path, fmt.Errorf("language native label is required"))
-	}
-	var warning *SourceWarning
-	filenameCode := slugFromFilename(path)
-	if filenameCode != code {
-		warning = &SourceWarning{
-			Slug:    code,
-			Path:    path,
-			Message: fmt.Sprintf("filename code %q does not match code field %q", filenameCode, code),
+	for _, language := range bundledLanguages {
+		if language.Code == code {
+			language.Keys = maps.Clone(language.Keys)
+			return language, nil
 		}
 	}
-	keys := lf.Keys
-	if keys == nil {
-		keys = map[string]string{}
-	}
-	return Language{
-		Code:       code,
-		Name:       strings.TrimSpace(lf.Name),
-		Native:     strings.TrimSpace(lf.Native),
-		Keys:       keys,
-		SourcePath: path,
-		IsCustom:   isCustom,
-	}, warning, nil
-}
-
-func decodeLanguageStrict(raw []byte, target *languageFile) error {
-	return decodeYAMLStrict(raw, target)
+	return Language{}, fmt.Errorf("unknown application language %q; run `okt config language show`", code)
 }

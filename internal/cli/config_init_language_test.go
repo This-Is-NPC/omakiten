@@ -8,6 +8,7 @@ import (
 )
 
 func TestCLIConfigInitUsesDefaultsWithDevNullInput(t *testing.T) {
+	t.Setenv("OMAKITEN_HOME", t.TempDir())
 	root := t.TempDir()
 	t.Chdir(root)
 	input, err := os.Open(os.DevNull)
@@ -35,6 +36,7 @@ func TestCLIConfigInitUsesDefaultsWithDevNullInput(t *testing.T) {
 }
 
 func TestCLIConfigInitFlagsSetLanguages(t *testing.T) {
+	t.Setenv("OMAKITEN_HOME", t.TempDir())
 	tmp := t.TempDir()
 	dbPath := filepath.Join(tmp, "omakiten.db")
 	globalConfig := filepath.Join(tmp, "global", "config.yaml")
@@ -69,6 +71,7 @@ func TestCLIConfigInitFlagsSetLanguages(t *testing.T) {
 }
 
 func TestCLIConfigInitRejectsUnknownCLILang(t *testing.T) {
+	t.Setenv("OMAKITEN_HOME", t.TempDir())
 	tmp := t.TempDir()
 	dbPath := filepath.Join(tmp, "omakiten.db")
 	globalConfig := filepath.Join(tmp, "global", "config.yaml")
@@ -86,6 +89,7 @@ func TestCLIConfigInitRejectsUnknownCLILang(t *testing.T) {
 }
 
 func TestCLIConfigInitWithoutLangFlagsOmitsBlock(t *testing.T) {
+	t.Setenv("OMAKITEN_HOME", t.TempDir())
 	tmp := t.TempDir()
 	dbPath := filepath.Join(tmp, "omakiten.db")
 	globalConfig := filepath.Join(tmp, "global", "config.yaml")

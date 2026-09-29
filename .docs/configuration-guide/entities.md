@@ -30,7 +30,7 @@ For each entity folder (`skills/`, `laws/`, `personas/`, `templates/`):
 - when an allowlist is present, only listed slugs activate;
 - custom-scope decode errors degrade to warnings where the loader allows it; default-scope drift is fatal.
 
-Themes, notifications, and language packs follow the same “loaded assets plus optional custom override” mental model, but their schemas live in their own guides.
+Themes and notifications follow the same “loaded assets plus optional custom override” mental model, but their schemas live in their own guides. Omakiten embeds language packs in its binary and stores language preferences in its application configuration.
 
 ## `skills`
 

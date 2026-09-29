@@ -110,17 +110,8 @@ func TestReloadBundleIfChangedAppliesMtimeReload(t *testing.T) {
 		t.Fatalf("initial AgentOutput = %q, want empty", model.languages.AgentOutput)
 	}
 
-	bundle, err := config.LoadBundle(configPath)
-	if err != nil {
-		t.Fatalf("LoadBundle: %v", err)
-	}
-	bundle.Config.Languages.AgentOutput = "Português (Brasil)"
-	if err := config.SaveBundle(configPath, bundle); err != nil {
-		t.Fatalf("SaveBundle: %v", err)
-	}
-	future := time.Now().Add(2 * time.Second)
-	if err := os.Chtimes(configPath, future, future); err != nil {
-		t.Fatalf("Chtimes: %v", err)
+	if err := config.SavePreferences(config.Preferences{Languages: config.LanguageSettings{AgentOutput: "Português (Brasil)"}}); err != nil {
+		t.Fatal(err)
 	}
 
 	changed, err := model.reloadBundleIfChanged()
@@ -128,7 +119,7 @@ func TestReloadBundleIfChangedAppliesMtimeReload(t *testing.T) {
 		t.Fatalf("reloadBundleIfChanged: %v", err)
 	}
 	if !changed {
-		t.Fatal("reloadBundleIfChanged reported no change after config mtime advanced")
+		t.Fatal("reloadBundleIfChanged reported no change after application preferences changed")
 	}
 	if cache.Get(project.ID) == firstEntry {
 		t.Fatal("cache pointer did not rotate after mtime reload")
@@ -165,6 +156,7 @@ func newReloadBundleFixture(t *testing.T) reloadBundleFixture {
 	t.Helper()
 	ctx := context.Background()
 	tmp := t.TempDir()
+	t.Setenv("OMAKITEN_HOME", tmp)
 	configPath := filepath.Join(tmp, "config", "omakase.yaml")
 	if err := config.SaveFullBundle(configPath, tuiTestBundle(t)); err != nil {
 		t.Fatalf("SaveFullBundle: %v", err)

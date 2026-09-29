@@ -86,11 +86,6 @@ func presetBundleAssets(bundle Bundle) map[string]string {
 	for _, entity := range bundle.Templates {
 		assets["templates/"+entity.Slug+".md"] = entity.SourcePath
 	}
-	for _, language := range bundle.Languages {
-		if language.SourcePath != "" {
-			assets["languages/"+filepath.Base(language.SourcePath)] = language.SourcePath
-		}
-	}
 	for _, notification := range bundle.Notifications {
 		if notification.SourcePath != "" {
 			assets["notifications/"+filepath.Base(notification.SourcePath)] = notification.SourcePath

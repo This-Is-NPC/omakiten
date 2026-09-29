@@ -37,7 +37,7 @@ func TestNewLanguagePackScript(t *testing.T) {
 	}
 
 	var lf languageFile
-	if err := decodeLanguageStrict(raw, &lf); err != nil {
+	if err := decodeYAMLStrict(raw, &lf); err != nil {
 		t.Fatalf("scaffolded pack failed strict decode: %v\n%s", err, raw[:min(len(raw), 600)])
 	}
 	if lf.Code != code || lf.Name != name || lf.Native != native {

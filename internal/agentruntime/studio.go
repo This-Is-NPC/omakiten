@@ -14,7 +14,7 @@ func ResolveCommandPreview(bundle config.Bundle, name string) (string, error) {
 		studioAgentSkills(bundle.Skills),
 		studioAgentLaws(bundle.Laws),
 		studioAgentTemplates(bundle.Templates),
-		bundle.Config.EffectiveLanguages().AgentOutput,
+		bundle.LanguageSettings.Effective().AgentOutput,
 	)
 	if err != nil {
 		return "", err

@@ -167,8 +167,8 @@ keys:
   cli.config.why.short: "Tulosta asennuksen juuri, joka omistaa valitun scopen config-kerroksen"
   cli.config.language.short: "Hallinnoi aktiivista kieltä CLI-ohjeille, TUI-tarroille ja agentin output-direktiiville"
   cli.config.language.show.short: "Tulosta aktiiviset kieliasetukset ja löydetyt kielipaketit"
-  cli.config.language.set.short: "Aseta yksi tai useampi kieliasetus aktiivisessa omakiten.yamlissa"
-  cli.config.language.reset.short: "Poista languages-lohko aktiivisesta omakiten.yamlista (oletukset astuvat voimaan)"
+  cli.config.language.set.short: "Aseta sovelluksen kielet"
+  cli.config.language.reset.short: "Palauta oletuskielet"
   cli.law.short: "Hallinnoi agent-lawteja (tiedostopohjaiset hakemistossa laws/)"
   cli.law.list.short: "Listaa aktiiviset lawt (suodatettavissa scope/project/persona-perusteisesti)"
   cli.law.show.short: "Näytä law (frontmatter + sisältö)"
@@ -194,36 +194,7 @@ keys:
   cli.workflow.show.short: "Näytä aktiivinen workflow"
   cli.workflow.orphan.short: "Esikatsele tai uudelleensido taskit, joiden bucket deaktivoitui workflow-vaihdon takia"
   notice.subtask_kit.enabled.commands_resolve_at_root: "Sub-task kit käytössä: CLI-komennot, personas, laws, templates ja skills ratkaistaan edelleen projektin root-kitistä."
-  cli.config.init.long: |-
-    Siemennä itsenäinen config-asennus valittuun scopeen juurtuneena.
-
-      --scope global  →  paths.ConfigRoot() (tai --configin vanhempi).
-                         Olemassa oleva käyttäjän asennus; uudelleenajo on idempotentti.
-
-      --scope local   →  <cwd>/.omakiten (kirjaimellinen CWD, ei walk-upia).
-                         Täydellinen asennus — config/<preset>.yaml sekä jokainen
-                         entiteettikansio — jotta runtime voi ladata sen ilman
-                         yhdistämistä käyttäjäglobaaliin kerrokseen. Walk-up-resolveri
-                         poimii tämän automaattisesti myöhemmissä okt-kutsuissa
-                         repon sisältä.
-
-    Toimintamatriisi:
-      - Tiedosto puuttuu        → atominen kirjoitus.
-      - Sama preset, samat tied → no_op:true (hiljainen onnistuminen).
-      - Eri preset              → vaihtaa .active-arvon uuteen presetiin.
-      - Muokatut shipped-tiedos → säilytetään ellei --force.
-      - --force                 → kopioi uudelleen jokaisen sulautetun shipped-
-                                  tiedoston (skills, laws, personas, templates,
-                                  themes, notifications, jokainen preset yaml).
-                                  custom/-alipuita ei koskaan kosketa.
-
-    Kielen valinta:
-      --cli-lang, --tui-lang, --agent-lang ohittavat interaktiiviset kehotteet
-      kullekin pinnalle ja kirjoittavat arvon suoraan siemennetyn omakiten.yamlin
-      languages-lohkoon. --cli-lang ja --tui-lang täytyy vastata mukana tulevaa
-      kielikoodia (en, pt-br, ...); --agent-lang on vapaamuotoinen. Kun lippua
-      ei anneta, init kysyy TTY:llä (tai jättää pinnan oletukseen kun stdin
-      ei ole interaktiivinen).
+  cli.config.init.long: "Asenna työnkulku luettelon nimellä, Git-osoitteella tai paikallisesta hakemistosta valittuun alueeseen.\n\nKieliasetukset koskevat kaikkia projekteja ja tallennetaan Omakitenin preferences.yaml-tiedostoon. CLI ja TUI käyttävät sisäänrakennettuja kieliä; agent_output on vapaata tekstiä."
   cli.config.path.long: |-
     Käy aktiivinen config (tai valittu kerros) läpi pisteellä erotetulla
     YAML-avaimella ja raportoi {key, value, path, source}. Ilman --layer-lippua
@@ -246,31 +217,8 @@ keys:
     Output-merkinnät kantavat op = added | removed | changed sekä asiaankuuluvat
     sivuarvot. Mapit laskeutuvat rekursiivisesti; listat / skalaarit verrataan
     syvällä yhtäläisyydellä.
-  cli.config.language.long: |-
-    Lue ja kirjoita config.languages.{cli,tui,agent_output} aktiivisessa
-    omakiten.yamlissa. languages.cli ja languages.tui validoidaan kielipaketteja
-    vasten, jotka on löydetty hakemistosta languages/; languages.agent_output
-    on vapaamuotoinen ja välitetään sanatarkasti CLI-prompt-koostajalle.
-
-    Oletuskohde on ratkaistu omakiten.yaml (repo-paikallinen .omakiten/ kun
-    olemassa, muuten käyttäjäglobaali ConfigRoot). Käytä --global set/reset-
-    komennoissa kiinnittääksesi kirjoituksen käyttäjäglobaaliin tiedostoon
-    repo-paikallisuudesta riippumatta.
-
-    Kirjoitukset laukaisevat BundleCache.Reloadin, joten myöhemmät okt-kutsut
-    ja pitkään ajossa olevat työkalut (TUI, CLI-palvelin) havaitsevat uuden
-    valinnan. Nykyistä CLI-prosessia ja jo käynnissä olevaa CLI-kutsua ei
-    päivitetä takautuvasti; vain myöhemmät kutsut poimivat muutoksen.
-  cli.config.language.set.long: |-
-    Esimerkit:
-      okt config language set --cli pt-br
-      okt config language set --tui en --agent "Português (Brasil)"
-      okt config language set --agent "" --global
-
-    Vähintään yksi --cli, --tui tai --agent on annettava. --cli ja --tui
-    validoidaan kielikoodeja vasten, jotka on löydetty hakemistosta languages/.
-    --agent hyväksyy minkä tahansa ei-tyhjän merkkijonon (tai "" tyhjentääkseen).
-    --global kiinnittää kirjoituksen käyttäjäglobaaliin omakiten.yamliin.
+  cli.config.language.long: "Kieliasetukset koskevat kaikkia projekteja ja tallennetaan Omakitenin preferences.yaml-tiedostoon. CLI ja TUI käyttävät sisäänrakennettuja kieliä; agent_output on vapaata tekstiä."
+  cli.config.language.set.long: "Kieliasetukset koskevat kaikkia projekteja ja tallennetaan Omakitenin preferences.yaml-tiedostoon. CLI ja TUI käyttävät sisäänrakennettuja kieliä; agent_output on vapaata tekstiä.\n\nokt config language set --cli pt-br\nokt config language set --tui en --agent \"Português (Brasil)\"\nokt config language set --agent \"\""
   cli.workflow.orphan.long: |-
     Taskit, jotka osoittivat workflow-bucketiin jota ei enää ole olemassa preset-
     vaihdon tai omakiten.yamlin muokkauksen jälkeen, ovat orpoja. Oletuksena tämä
@@ -329,8 +277,6 @@ keys:
   cli.config.language.set.flag.cli: "kielikoodi CLI-ohjeille ja käyttömerkkijonoille"
   cli.config.language.set.flag.tui: "kielikoodi TUI-tarroille ja näytöille"
   cli.config.language.set.flag.agent: "vapaamuotoinen agent output -kielidirektiivi (käytä \"\" tyhjentääksesi)"
-  cli.config.language.set.flag.global: "kiinnitä kirjoitus käyttäjäglobaaliin omakiten.yamliin repo-paikallisuudesta riippumatta"
-  cli.config.language.reset.flag.global: "kiinnitä reset käyttäjäglobaaliin omakiten.yamliin repo-paikallisuudesta riippumatta"
   cli.law.list.flag.scope: "suodata scopen mukaan: global, project tai persona"
   cli.law.list.flag.project: "suodata projektin slugin mukaan"
   cli.law.list.flag.persona: "suodata personan slugin mukaan"
@@ -1084,7 +1030,6 @@ keys:
   tui.settings.effective.section.tag_synonyms: "tunniste-synonyymit"
   tui.settings.effective.section.priorities: "prioriteetit"
   tui.settings.effective.section.severities: "vakavuusasteet"
-  tui.settings.effective.section.languages: "kielet"
   tui.settings.guards_tab: "vartijat"
   tui.settings.guards_hint: "vain luku · muokkaa: `$EDITOR omakiten.yaml`"
   tui.settings.guards.header_to: "kohde"

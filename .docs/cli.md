@@ -65,7 +65,7 @@ The TUI sets `agent_model="human"` internally so its activity is filtered out of
 
 ## `okt setup` — post-install picker
 
-`internal/cli/setup.go`. The bubbletea picker the curl-bash installer hands off to. Walks language → agent output language → workflow preset → skill destinations in one program, then writes the `okt()` shell-rc wrapper. CLI and TUI share the install-time language picker; the per-surface split lives in the profile yaml and can be changed later with `okt config language`. Re-run with `--update` to revisit choices; existing rc-wrapper and `omakiten.yaml` settings are preserved.
+`internal/cli/setup.go`. The bubbletea picker the curl-bash installer hands off to. Walks language → agent output language → workflow preset → skill destinations in one program, then writes the `okt()` shell-rc wrapper. CLI and TUI share the install-time language picker; the per-surface split lives in the application preferences and can be changed later with `okt config language`. Re-run with `--update` to revisit choices; existing wrappers and modified preset snapshots are preserved.
 
 The language pickers enumerate `defaults/languages/` at boot via `defaults.FS.ReadDir("languages")` — every bundled YAML auto-appears, with no allowlist to update. Adding a new pack ships as a doc-only PR on top of `defaults/languages/<code>.yaml`; see the [Languages Guide](./configuration-guide/languages.md) for the filename convention, header fields, parity rule, and the `scripts/new-language-pack.sh` scaffold.
 
@@ -597,7 +597,7 @@ Both scopes use the repository installer. A first installation captures the chos
 catalog repository; later calls can reuse its installed snapshot offline. `--force`
 fetches a current pristine revision. An active modified preset is retained.
 
-Optional language flags mirror `okt setup`: `--cli-lang`, `--tui-lang`, and `--agent-lang`. Missing language flags prompt on an interactive TTY after the preset is seeded; in headless mode the seeded kit defaults remain. CLI/TUI codes are validated against the loaded language packs, while agent-output language is free-form. Pasted responses are consumed in prompt order.
+Optional language flags mirror `okt setup`: `--cli-lang`, `--tui-lang`, and `--agent-lang`. Missing language flags prompt on an interactive TTY after the preset is installed; in headless mode existing application preferences remain. CLI/TUI codes are validated against bundled language packs, while agent-output language is free-form. Pasted responses are consumed in prompt order.
 
 Rerun matrix:
 - Same active preset → `no_op:true`.
@@ -630,11 +630,17 @@ Output entries carry `op = added | removed | changed` plus the relevant side val
 
 ### `okt config language` — inspect or update the language triple
 
-`internal/cli/config_language.go`. Three subcommands manage the CLI / TUI / agent-output language triple captured at install time. The selected project controls discovery; an explicit `--config` selects that profile. All writes go through the bundle editor (atomic temp-file + rename).
+`internal/cli/config_language.go`. The commands read and atomically write
+`<Omakiten config root>/preferences.yaml`. These settings apply to all projects;
+`--project` and `--config` select workflow state independently. Language commands
+require neither a working workflow nor a database.
 
-- `okt config language show` — reports the resolved triple, the kit default, and each slot's source (default vs. user override).
-- `okt config language set [--cli CODE] [--tui CODE] [--agent FREEFORM] [--global]` — updates one or more slots. CLI / TUI codes are validated against the loaded language packs (`internal/config/language.go::LoadLanguages`); unknown codes return `validation_error` with the list of available packs. The agent string is free-form (e.g. `"Português (Brasil)"`) because it is sent verbatim to the LLM. `--global` bypasses repo-local discovery and writes the user-global profile.
-- `okt config language reset [--global]` — clears all three overrides so kit defaults apply again. No per-slot reset flag.
+- `okt config language show` — report effective preferences, their file path and bundled locales.
+- `okt config language set [--cli CODE] [--tui CODE] [--agent FREEFORM]` — change selected application preferences. Unknown CLI/TUI codes return `validation_error`; agent output is free-form.
+- `okt config language reset` — restore English CLI/TUI defaults and an empty agent directive. This command can repair invalid preferences.
+
+Setup and `config init` language flags use the same preferences file. Language
+changes preserve preset identities, files and modification status.
 
 ---
 
@@ -920,7 +926,7 @@ Project discovery selects `.omakiten/config.yaml`; no user-global merge is requi
 The installer reuses an active package offline and fetches its source with `--force`.
 Active modified presets keep their independent configuration.
 
-Language selection: `--cli-lang`, `--tui-lang`, and `--agent-lang` skip the interactive prompts for each surface and write the value directly into the seeded `omakiten.yaml` languages block. `--cli-lang` and `--tui-lang` must match a bundled language code (`en`, `pt-br`, ...); `--agent-lang` is free-form. When no flag is supplied, init prompts on the TTY or leaves the surface at its default when stdin is non-interactive.
+Language selection: `--cli-lang`, `--tui-lang`, and `--agent-lang` skip the interactive prompts for each surface and write the value into application `preferences.yaml`. `--cli-lang` and `--tui-lang` must match a bundled language code (`en`, `pt-br`, ...); `--agent-lang` is free-form. When no flag is supplied, init prompts on the TTY or leaves the surface at its default when stdin is non-interactive.
 `okt config init [flags]`
 
 | Flag | Short | Type | Description |
@@ -934,23 +940,21 @@ Language selection: `--cli-lang`, `--tui-lang`, and `--agent-lang` skip the inte
 
 ### `okt config language reset`
 
-Remove the languages block from the active omakiten.yaml (defaults apply)
+Restore default application languages
 `okt config language reset [flags]`
 
 | Flag | Short | Type | Description |
 |---|---|---|---|
-| `--global` |  |  | pin the reset to the user-global omakiten.yaml regardless of repo-local presence |
 
 ### `okt config language set`
 
-Examples: okt config language set --cli pt-br okt config language set --tui en --agent "Português (Brasil)" okt config language set --agent "" --global At least one of --cli, --tui, or --agent must be provided. --cli and --tui validate against the language codes discovered under languages/. --agent accepts any non-empty string (or "" to clear). --global pins the write to the user-global omakiten.yaml.
+Set application language preferences in `preferences.yaml`. Examples: `okt config language set --cli pt-br`, `okt config language set --tui en --agent "Português (Brasil)"`, `okt config language set --agent ""`. CLI/TUI codes come from bundled locales; the agent directive is free-form.
 `okt config language set [flags]`
 
 | Flag | Short | Type | Description |
 |---|---|---|---|
 | `--agent` |  | string | free-form agent output language directive (use "" to clear) |
 | `--cli` |  | string | language code for CLI help and usage strings |
-| `--global` |  |  | pin the write to the user-global omakiten.yaml regardless of repo-local presence |
 | `--tui` |  | string | language code for TUI labels and screens |
 
 ### `okt config language show`

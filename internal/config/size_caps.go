@@ -21,7 +21,6 @@ const (
 	MaxEntityFileBytes       int64 = 10 * 1024 * 1024
 	MaxWiringFileBytes       int64 = 1 * 1024 * 1024
 	MaxNotificationFileBytes int64 = 100 * 1024
-	MaxLanguagePackBytes     int64 = 1 * 1024 * 1024
 )
 
 // readBounded drains r up to max+1 bytes. Returns the first max bytes

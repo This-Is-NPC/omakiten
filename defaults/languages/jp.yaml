@@ -164,8 +164,8 @@ keys:
   cli.config.why.short: "選択した scope の config レイヤーを保持するインストールルートを出力"
   cli.config.language.short: "CLI ヘルプ、TUI ラベル、agent 出力指示のアクティブ言語を管理"
   cli.config.language.show.short: "アクティブな言語設定と検出された language pack を出力"
-  cli.config.language.set.short: "アクティブな omakiten.yaml に 1 つ以上の言語設定を書き込む"
-  cli.config.language.reset.short: "アクティブな omakiten.yaml から languages ブロックを削除 (デフォルトが適用される)"
+  cli.config.language.set.short: "アプリケーションの言語を設定"
+  cli.config.language.reset.short: "既定の言語に戻す"
   cli.law.short: "agent law を管理 (laws/ 配下のファイル)"
   cli.law.list.short: "アクティブな law を一覧表示 (scope/project/persona でフィルタ可能)"
   cli.law.show.short: "law を表示 (frontmatter + 本文)"
@@ -191,36 +191,7 @@ keys:
   cli.workflow.show.short: "アクティブな workflow を表示"
   cli.workflow.orphan.short: "workflow 切り替えで bucket が無効化された task をプレビューまたは再バインド"
   notice.subtask_kit.enabled.commands_resolve_at_root: "Sub-task kit 有効: agent commands, personas, laws, templates, skills は引き続き project root kit から解決されます。"
-  cli.config.init.long: |-
-    選択した scope を起点にスタンドアロンな config install を作成する。
-
-      --scope global  →  paths.ConfigRoot() (または --config の親ディレクトリ)。
-                         既存のユーザインストール。再実行は冪等。
-
-      --scope local   →  <cwd>/.omakiten (リテラル CWD、walk-up なし)。
-                         完全なインストール — config/<preset>.yaml と全
-                         エンティティフォルダ — を作成し、runtime が
-                         user-global レイヤーとマージせずにロードできる。
-                         以降の okt 呼び出しでは walk-up リゾルバが repo
-                         内からこれを自動で拾う。
-
-    挙動マトリクス:
-      - ファイル無し            → アトミック書き込み。
-      - 同じ preset、同じファイル → no_op:true (サイレント成功)。
-      - 別の preset            → .active を新しい preset に切り替え。
-      - shipped ファイル改変済み → --force が無い限り保持。
-      - --force                → 全ての shipped 埋め込みファイルを再コピー
-                                  (skills, laws, personas, templates, themes,
-                                  notifications, 全 preset yaml)。custom/
-                                  サブツリーは決して触らない。
-
-    言語選択:
-      --cli-lang、--tui-lang、--agent-lang は各 surface のインタラクティブ
-      プロンプトをスキップし、値を seed された omakiten.yaml の languages
-      ブロックに直接書き込む。--cli-lang と --tui-lang は bundled された
-      言語コード (en, pt-br, es, ja, ...) と一致する必要がある。--agent-lang
-      は自由記述。フラグが無い場合、init は TTY でプロンプトを出す (stdin
-      が非対話的なら surface はデフォルト値のまま)。
+  cli.config.init.long: "選択したスコープに、カタログ名、Git URL、またはローカルディレクトリからワークフローをインストールします。\n\n言語設定はすべてのプロジェクトに適用され、Omakiten の preferences.yaml に保存されます。CLI と TUI は内蔵の言語を使用し、agent_output は自由なテキストです。"
   cli.config.path.long: |-
     アクティブ config (または選択したレイヤー) をドット区切り YAML キーで
     走査し、{key, value, path, source} を報告する。--layer 無しの場合、
@@ -242,32 +213,8 @@ keys:
 
     出力エントリは op = added | removed | changed と関連する値を持つ。
     マップは再帰的に下降。リスト/スカラーは深い等価比較。
-  cli.config.language.long: |-
-    アクティブな omakiten.yaml の config.languages.{cli,tui,agent_output} を
-    読み書きする。languages.cli と languages.tui は languages/ 配下で検出
-    された language pack に対して検証され、languages.agent_output は自由
-    記述で agent playbook コンポーザにそのまま転送される。
-
-    デフォルトのターゲットは解決された omakiten.yaml (.omakiten/ repo-local
-    が存在すればそれ、無ければ user-global の ConfigRoot)。set/reset に
-    --global を使うと repo-local の有無に関わらず user-global ファイルに
-    書き込みが固定される。
-
-    書き込みは BundleCache.Reload を発火するため、以降の okt 呼び出しと
-    長期実行ツール (TUI、CLI サーバ) は新しい選択を観測する。現在の CLI
-    プロセスや既に実行中の CLI 呼び出しは遡及的には更新されない。以降の
-    呼び出しのみが変更を拾う。
-  cli.config.language.set.long: |-
-    例:
-      okt config language set --cli ja
-      okt config language set --tui en --agent "日本語"
-      okt config language set --agent "" --global
-
-    --cli、--tui、--agent のうち少なくとも 1 つは指定する必要がある。
-    --cli と --tui は languages/ 配下で検出された言語コードに対して検証
-    される。--agent は任意の非空文字列 (またはクリアするなら "") を
-    受け取る。--global は user-global の omakiten.yaml に書き込みを固定
-    する。
+  cli.config.language.long: "言語設定はすべてのプロジェクトに適用され、Omakiten の preferences.yaml に保存されます。CLI と TUI は内蔵の言語を使用し、agent_output は自由なテキストです。"
+  cli.config.language.set.long: "言語設定はすべてのプロジェクトに適用され、Omakiten の preferences.yaml に保存されます。CLI と TUI は内蔵の言語を使用し、agent_output は自由なテキストです。\n\nokt config language set --cli pt-br\nokt config language set --tui en --agent \"Português (Brasil)\"\nokt config language set --agent \"\""
   cli.workflow.orphan.long: |-
     preset 切り替えや omakiten.yaml 編集後にもはや存在しない workflow
     bucket を指していた task は孤児となる。デフォルトでこのコマンドは
@@ -325,8 +272,6 @@ keys:
   cli.config.language.set.flag.cli: "CLI ヘルプと usage の言語コード"
   cli.config.language.set.flag.tui: "TUI ラベルと画面の言語コード"
   cli.config.language.set.flag.agent: "agent 出力言語の自由記述指示 (\"\" でクリア)"
-  cli.config.language.set.flag.global: "repo-local の有無に関わらず user-global の omakiten.yaml に書き込みを固定"
-  cli.config.language.reset.flag.global: "repo-local の有無に関わらず user-global の omakiten.yaml にリセットを固定"
   cli.law.list.flag.scope: "scope でフィルタ: global、project、または persona"
   cli.law.list.flag.project: "プロジェクト slug でフィルタ"
   cli.law.list.flag.persona: "persona slug でフィルタ"
@@ -1080,7 +1025,6 @@ keys:
   tui.settings.effective.section.tag_synonyms: "タグ同義語"
   tui.settings.effective.section.priorities: "優先度"
   tui.settings.effective.section.severities: "重大度"
-  tui.settings.effective.section.languages: "言語"
   tui.settings.guards_tab: "ガード"
   tui.settings.guards_hint: "読み取り専用 · `$EDITOR omakiten.yaml` で編集"
   tui.settings.guards.header_to: "宛先"

@@ -95,7 +95,7 @@ type ResolveCommandResponse struct {
 	InvocationArgs []InvocationArg `json:"invocation_args,omitempty"`
 	Markdown       string          `json:"markdown"`
 	// AgentOutputLanguage carries the raw configured agent-output
-	// language string (config.languages.agent_output). When non-empty,
+	// language string (application preferences.languages.agent_output). When non-empty,
 	// renderCommandMarkdown appends a trailing "**Output language:** X"
 	// line so the agent honors it for commits, docs, code comments,
 	// and PR bodies. Empty means no directive is appended.

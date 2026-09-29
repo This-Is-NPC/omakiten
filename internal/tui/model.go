@@ -688,7 +688,7 @@ func (m *Model) refreshHeavyAfterViewChangeCmd() tea.Cmd {
 	cfgSnap := m.repos.activeSnapshot()
 	langs := m.languages
 	if cfgSnap != nil {
-		langs = cfgSnap.Settings().EffectiveLanguages()
+		langs = cfgSnap.LanguageSettings()
 	}
 	ctx := m.ctx
 	project := m.project
@@ -1085,7 +1085,7 @@ func (m *Model) realtimeBundleReloadCmd(version int64, valid bool) tea.Cmd {
 	views := m.activeViewSettings()
 	langs := m.languages
 	if snapshot := m.repos.activeSnapshot(); snapshot != nil {
-		langs = snapshot.Settings().EffectiveLanguages()
+		langs = snapshot.LanguageSettings()
 	}
 	sort := domain.TaskSort{Field: views.Board.Sort.Field, Order: views.Board.Sort.Order}
 	archived := m.includeArchived
@@ -1852,7 +1852,7 @@ func (m *Model) refresh() error {
 	m.taskTagsMap = snap.TaskTagsByID
 	m.metrics = m.computeMetrics(0)
 	if bundleSnap := m.repos.activeSnapshot(); bundleSnap != nil {
-		m.languages = bundleSnap.Settings().EffectiveLanguages()
+		m.languages = bundleSnap.LanguageSettings()
 	}
 	if rollups, plansErr := m.loadPlanRollups(m.ctx, m.project); m.repos.operationService() != nil {
 		m.plansScreen = m.boundPlansScreen().Apply(rollups, plansErr)

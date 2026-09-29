@@ -7,8 +7,8 @@ import (
 
 func bundleWithLanguages(langs []Language, settings LanguageSettings) Bundle {
 	return Bundle{
-		Languages: langs,
-		Config:    Settings{Languages: settings},
+		Languages:        langs,
+		LanguageSettings: settings,
 	}
 }
 
@@ -138,15 +138,6 @@ func TestValidateLanguageSettings_emptyDefaultsToEn(t *testing.T) {
 	loaded := []Language{{Code: "en", Name: "English", Native: "English"}}
 	if err := validateLanguageSettings(LanguageSettings{}, loaded); err != nil {
 		t.Fatalf("empty settings with en loaded should pass, got %v", err)
-	}
-}
-
-func TestValidateLanguageSettings_emptyLoadedSkipsValidation(t *testing.T) {
-	// Legacy / test bundles with no languages folder bypass validation
-	// entirely. Catalog still degrades gracefully (missing keys return
-	// the key literal), so skipping here preserves existing behavior.
-	if err := validateLanguageSettings(LanguageSettings{CLI: "xx", TUI: "yy"}, nil); err != nil {
-		t.Fatalf("empty loaded should skip validation, got %v", err)
 	}
 }
 

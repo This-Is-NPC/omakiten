@@ -110,7 +110,7 @@ func TestCLISetupHeadless_FullEnvVars(t *testing.T) {
 
 	// The selected snapshot persists the chosen languages.
 	bundle, err := config.LoadBundle(filepath.Join(configHome, "config.yaml"))
-	if err != nil || bundle.Config.Languages.AgentOutput != "Português (Brasil)" {
+	if err != nil || bundle.LanguageSettings.AgentOutput != "Português (Brasil)" {
 		t.Fatalf("agent language: %v", err)
 	}
 }

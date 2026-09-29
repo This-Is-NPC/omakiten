@@ -3,11 +3,9 @@ package tui
 import (
 	"context"
 	"errors"
-	"os"
 	"path/filepath"
 	"sync/atomic"
 	"testing"
-	"time"
 
 	"omakiten/internal/agentruntime"
 	"omakiten/internal/config"
@@ -48,6 +46,7 @@ func (r *failingOnceTaskRepo) ListTasks(ctx context.Context, projectID int64, fi
 func TestRealtimeTickConfigReloadIndependentOfWatermark(t *testing.T) {
 	ctx := context.Background()
 	tmp := t.TempDir()
+	t.Setenv("OMAKITEN_HOME", tmp)
 	configPath := filepath.Join(tmp, "config", "omakase.yaml")
 	dbPath := filepath.Join(tmp, "omakiten.db")
 
@@ -100,25 +99,16 @@ func TestRealtimeTickConfigReloadIndependentOfWatermark(t *testing.T) {
 		t.Fatalf("initial AgentOutput = %q, want empty", model.languages.AgentOutput)
 	}
 
-	// Edit the config on disk WITHOUT any DB write. The watermark stays at 99.
-	bundle, err := config.LoadBundle(configPath)
-	if err != nil {
-		t.Fatalf("LoadBundle: %v", err)
-	}
-	bundle.Config.Languages.AgentOutput = "Português (Brasil)"
-	if err := config.SaveBundle(configPath, bundle); err != nil {
-		t.Fatalf("SaveBundle: %v", err)
-	}
-	futureT := time.Now().Add(2 * time.Second)
-	if err := os.Chtimes(configPath, futureT, futureT); err != nil {
-		t.Fatalf("Chtimes: %v", err)
+	// Application preferences change without a DB write; the watermark stays at 99.
+	if err := config.SavePreferences(config.Preferences{Languages: config.LanguageSettings{AgentOutput: "Português (Brasil)"}}); err != nil {
+		t.Fatal(err)
 	}
 
-	// Next tick: watermark unchanged (idle DB), but the config-mtime gate must
+	// Next tick: the watermark is unchanged, but the source-mtime gate must
 	// still run and apply the edit.
 	model, _ = updateRealtimeTick(t, model)
 	if model.languages.AgentOutput != "Português (Brasil)" {
-		t.Fatalf("config-only edit not picked up on tick: AgentOutput = %q, want Português (Brasil) (F1: config reload still gated on watermark)", model.languages.AgentOutput)
+		t.Fatalf("application preference change not picked up on tick: AgentOutput = %q, want Português (Brasil) (F1: config reload still gated on watermark)", model.languages.AgentOutput)
 	}
 }
 

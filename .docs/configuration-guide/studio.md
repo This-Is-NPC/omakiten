@@ -193,7 +193,7 @@ Prompt-preview requirements:
 Implemented shape:
 
 - `agent.ResolveCommandFromCatalog` is the pure resolver shared by runtime `ResolveCommand` and Studio candidate prompt preview.
-- `resolveStudioCandidateCommand` projects candidate bundle entities into agent catalogs and passes candidate `commands` plus `config.languages.agent_output` to that shared resolver.
+- `resolveStudioCandidateCommand` projects candidate bundle entities into agent catalogs and passes candidate `commands` plus the application agent-output preference to that shared resolver.
 - `TestStudioPreviewRendersCandidatePrompt` covers persona, skills, inherited/template laws, `laws_disabled` subtraction, templates, and output language rendering from candidate state on Commands; agent resolver tests cover entity-sourced playbook composition.
 
 ## Risks and Mitigations

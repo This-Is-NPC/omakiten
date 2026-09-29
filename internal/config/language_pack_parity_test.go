@@ -31,6 +31,20 @@ func loadBundledLanguage(t *testing.T, code string) Language {
 func TestBundledLanguagePacksHaveIdenticalKeySets(t *testing.T) {
 	en := loadBundledLanguage(t, "en")
 	enKeys := keySet(en)
+	locales, err := LoadBundledLanguages()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, locale := range locales {
+		if locale.Code == "en" {
+			locale.Keys["cli.config.language.short"] = "changed by caller"
+		}
+	}
+	fresh := loadBundledLanguage(t, "en")
+	if fresh.Keys["cli.config.language.short"] != en.Keys["cli.config.language.short"] {
+		t.Fatal("locale cache leaked mutable translations between consumers")
+	}
+
 	assertEnglishPlaceholderCounts(t, en)
 
 	entries, err := defaults.FS.ReadDir("languages")

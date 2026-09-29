@@ -41,10 +41,6 @@ func TestEffectiveTuples_OrderAndCoercion(t *testing.T) {
 			{ID: 1, Value: "low"},
 			{ID: 2, Value: "normal", Default: true},
 		},
-		Languages: LanguageSettings{
-			CLI: "en",
-			TUI: "pt-br",
-		},
 	}
 
 	snap := BuildSnapshot(bundle)
@@ -78,7 +74,6 @@ func assertEffectiveTupleOrder(t *testing.T, tuples []EffectiveTuple) {
 		"agent",
 		"tag_synonyms",
 		"priorities",
-		"languages",
 	}
 	if diff := cmp.Diff(wantPrefix, sectionOrder); diff != "" {
 		t.Fatalf("section order mismatch (-want +got):\n%s", diff)
@@ -118,8 +113,6 @@ func assertEffectiveTupleCoercion(t *testing.T, tuples []EffectiveTuple) {
 		"tag_synonyms.feat":                  "feature",
 		"template_defaults[0]":               "feature",
 		"template_defaults[1]":               "bug",
-		"languages.cli":                      "en",
-		"languages.tui":                      "pt-br",
 	}
 	got := map[string]string{}
 	for _, tup := range tuples {

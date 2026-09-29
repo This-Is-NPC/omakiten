@@ -49,7 +49,7 @@ const HomeEnv = "OMAKITEN_HOME"
 
 // ConfigRoot returns the base directory that holds both the yaml profile
 // folder (config/) and every file-backed asset folder (personas/, laws/,
-// skills/, templates/, themes/, notifications/, languages/) as siblings.
+// skills/, templates/, themes/, notifications/) as siblings.
 // Layout:
 //
 //	<root>/config/<profile>.yaml
@@ -108,7 +108,7 @@ func ConfigFile() (string, error) {
 //
 // User-authored profiles live under <config-dir>/custom/ (mirroring the
 // custom/ convention used by personas, laws, skills, templates, themes,
-// notifications, and languages); when
+// notifications); when
 // the active name is explicitly set via .active, the resolver tries that
 // subtree first and only falls back to the config-dir root when nothing
 // matches there. If the named profile is missing from both locations the
@@ -347,7 +347,7 @@ func validActiveConfigName(name string) bool {
 
 // EntityDir resolves to <root>/<folder> — the directory holding the default
 // file-backed assets (personas/, laws/, skills/, templates/, themes/,
-// notifications/, languages/).
+// notifications/).
 func EntityDir(folder string) (string, error) {
 	root, err := ConfigRoot()
 	if err != nil {

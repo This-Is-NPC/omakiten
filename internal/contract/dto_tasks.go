@@ -73,7 +73,7 @@ type ContinueTaskResponse struct {
 	Dependencies   []DependencySummary `json:"dependencies,omitempty"`
 	Comments       []CommentSummary    `json:"comments,omitempty"`
 	NextStepPrompt string              `json:"next_step_prompt"`
-	// AgentOutputLanguage carries config.languages.agent_output verbatim
+	// AgentOutputLanguage carries application preferences.languages.agent_output verbatim
 	// so the agent can introspect the directive without re-reading the
 	// composed playbook. Empty when unset — consumers treat empty as
 	// "no directive in effect".

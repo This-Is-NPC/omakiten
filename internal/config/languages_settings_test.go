@@ -7,8 +7,8 @@ import (
 )
 
 func TestLanguageSettings_EffectiveAppliesDefaults(t *testing.T) {
-	s := Settings{}
-	eff := s.EffectiveLanguages()
+	s := LanguageSettings{}
+	eff := s.Effective()
 	if eff.CLI != "en" {
 		t.Fatalf("default CLI: got %q, want %q", eff.CLI, "en")
 	}
@@ -21,16 +21,16 @@ func TestLanguageSettings_EffectiveAppliesDefaults(t *testing.T) {
 }
 
 func TestLanguageSettings_EffectiveKeepsConfiguredValues(t *testing.T) {
-	s := Settings{Languages: LanguageSettings{CLI: "pt-br", TUI: "en", AgentOutput: "English"}}
-	eff := s.EffectiveLanguages()
+	s := LanguageSettings{CLI: "pt-br", TUI: "en", AgentOutput: "English"}
+	eff := s.Effective()
 	if eff.CLI != "pt-br" || eff.TUI != "en" || eff.AgentOutput != "English" {
-		t.Fatalf("EffectiveLanguages mutated configured values: %+v", eff)
+		t.Fatalf("Effective mutated configured values: %+v", eff)
 	}
 }
 
 func TestLanguageSettings_PartialOverrideFillsRest(t *testing.T) {
-	s := Settings{Languages: LanguageSettings{CLI: "pt-br"}}
-	eff := s.EffectiveLanguages()
+	s := LanguageSettings{CLI: "pt-br"}
+	eff := s.Effective()
 	if eff.CLI != "pt-br" {
 		t.Fatalf("CLI override lost: %q", eff.CLI)
 	}
@@ -64,21 +64,5 @@ agent_output: English
 	}
 	if redecoded != got {
 		t.Fatalf("round trip lost data: got %+v, want %+v", redecoded, got)
-	}
-}
-
-func TestLanguageSettings_OmittedBlockYieldsZeroValue(t *testing.T) {
-	// When omakiten.yaml has no `languages` block, Settings.Languages stays
-	// at its zero value and EffectiveLanguages applies all three defaults.
-	var s Settings
-	if err := yaml.Unmarshal([]byte(`output: {}`), &s); err != nil {
-		t.Fatalf("unmarshal: %v", err)
-	}
-	if s.Languages != (LanguageSettings{}) {
-		t.Fatalf("missing block should leave zero value, got %+v", s.Languages)
-	}
-	eff := s.EffectiveLanguages()
-	if eff.CLI != "en" || eff.TUI != "en" || eff.AgentOutput != "" {
-		t.Fatalf("defaults not applied: %+v", eff)
 	}
 }

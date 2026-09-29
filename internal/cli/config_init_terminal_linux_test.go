@@ -94,6 +94,7 @@ func replyToTerminal(master *os.File, replies []terminalReply) (string, int) {
 }
 
 func TestCLIInteractiveConfigInitValidatesAndPersistsLanguages(t *testing.T) {
+	t.Setenv("OMAKITEN_HOME", t.TempDir())
 	root := t.TempDir()
 	t.Chdir(root)
 	cfg := filepath.Join(root, "config.yaml")
@@ -115,7 +116,7 @@ func TestCLIInteractiveConfigInitValidatesAndPersistsLanguages(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := config.LanguageSettings{CLI: "en", TUI: "pt-br", AgentOutput: "Português"}
-	if bundle.Config.Languages != want {
-		t.Fatalf("interactive selection lost: %+v", bundle.Config.Languages)
+	if bundle.LanguageSettings != want {
+		t.Fatalf("interactive selection lost: %+v", bundle.LanguageSettings)
 	}
 }

@@ -164,8 +164,8 @@ keys:
   cli.config.why.short: "طباعة جذر التثبيت الذي يملك طبقة إعدادات scope المختار"
   cli.config.language.short: "إدارة اللغة النشطة لمساعدة CLI وتسميات TUI وتوجيه إخراج agent"
   cli.config.language.show.short: "طباعة إعدادات اللغة النشطة وقوائم حِزم اللغات المكتشفة"
-  cli.config.language.set.short: "ضبط واحد أو أكثر من إعدادات اللغة في omakiten.yaml النشط"
-  cli.config.language.reset.short: "إزالة كتلة languages من omakiten.yaml النشط (تُطبَّق القيم الافتراضية)"
+  cli.config.language.set.short: "تعيين لغات التطبيق"
+  cli.config.language.reset.short: "استعادة لغات التطبيق الافتراضية"
   cli.law.short: "إدارة laws الخاصة بـ agents (ملفّات تحت laws/)"
   cli.law.list.short: "عرض laws النشطة (قابلة للتصفية حسب scope/المشروع/persona)"
   cli.law.show.short: "عرض law (frontmatter + المتن)"
@@ -191,36 +191,7 @@ keys:
   cli.workflow.show.short: "عرض workflow النشط"
   cli.workflow.orphan.short: "معاينة أو إعادة ربط tasks التي تعطّل bucket الخاص بها بسبب تبديل workflow"
   notice.subtask_kit.enabled.commands_resolve_at_root: "Sub-task kit مفعّل: أوامر CLI وpersonas وlaws وtemplates وskills ما زالت تُحلّ من kit جذر المشروع."
-  cli.config.init.long: |-
-    إنشاء تثبيت إعدادات مستقل متجذّر في scope المختار.
-
-      --scope global  →  paths.ConfigRoot() (أو المجلد الأب لـ --config).
-                         تثبيت مستخدم قائم؛ إعادة التشغيل لا تترك أثرًا جانبيًا.
-
-      --scope local   →  <cwd>/.omakiten (CWD حرفيًا، بدون تتبّع للأعلى).
-                         تثبيت كامل — config/<preset>.yaml بالإضافة إلى كل
-                         مجلد كيان — حتى يستطيع وقت التشغيل تحميله دون أي
-                         دمج مع طبقة user-global. يلتقطه محلّل تتبّع المسار
-                         تلقائيًا في الاستدعاءات اللاحقة لـ okt من داخل
-                         المستودع.
-
-    مصفوفة السلوك:
-      - الملف غير موجود        → كتابة ذرّية.
-      - نفس preset، نفس الملفّات → no_op:true (نجاح صامت).
-      - preset مختلف           → يُحوِّل .active إلى الـ preset الجديد.
-      - ملفّات شحن مُعدَّلة     → تُحفظ ما لم يُمرَّر --force.
-      - --force                → يُعيد نسخ كل ملفّ شحن مُضمَّن
-                                  (skills، laws، personas، templates، themes،
-                                  notifications، وكل preset yaml).
-                                  مجلّدات custom/ لا تُمَسّ أبدًا.
-
-    اختيار اللغة:
-      --cli-lang و --tui-lang و --agent-lang تتخطّى المطالبات التفاعلية
-      لكل سطح وتكتب القيمة مباشرة في كتلة languages داخل omakiten.yaml
-      المُهيّأ. يجب أن يطابق --cli-lang و --tui-lang رمز لغة مُضمَّن
-      (en، pt-br، …)؛ بينما --agent-lang حقل حر. عندما لا يُمرَّر علم،
-      تطلب init الإدخال عبر TTY (أو تترك السطح على قيمته الافتراضية حين
-      يكون stdin غير تفاعلي).
+  cli.config.init.long: "تثبيت سير عمل باسم من الكتالوج أو عنوان Git أو مجلد محلي ضمن النطاق المحدد.\n\nتسري تفضيلات اللغة على جميع المشاريع وتُحفظ في preferences.yaml الخاص بـ Omakiten. تستخدم CLI وTUI اللغات المدمجة؛ agent_output نص حر."
   cli.config.path.long: |-
     تتبّع الإعدادات النشطة (أو طبقة محدّدة) عبر مفتاح YAML منقّط
     وأعد {key, value, path, source}. بدون --layer يختار المحلّل
@@ -243,31 +214,8 @@ keys:
     تحمل المدخلات op = added | removed | changed إلى جانب قيم
     الجانب المعني. تنزل الخرائط تكراريًا؛ والقوائم/الموازين تُقارَن
     بالمساواة العميقة.
-  cli.config.language.long: |-
-    قراءة وكتابة config.languages.{cli,tui,agent_output} في omakiten.yaml
-    النشط. languages.cli و languages.tui يُتحقَّق منهما مقابل حِزم
-    اللغات المكتشفة تحت languages/؛ بينما languages.agent_output حقل
-    حر يُمرَّر حرفيًّا إلى مُركِّب موجّهات CLI.
-
-    الهدف الافتراضي هو omakiten.yaml المُحلَّل (.omakiten/ المحلي للمستودع
-    إن وُجد، وإلّا ConfigRoot الخاص بـ user-global). استخدم --global على
-    set/reset لتثبيت الكتابة على ملف user-global بصرف النظر عن وجود
-    repo-local.
-
-    تُحفّز عمليات الكتابة BundleCache.Reload بحيث ترصد الاستدعاءات
-    اللاحقة لـ okt والأدوات طويلة العمر (TUI، خادم CLI) الاختيار
-    الجديد. عملية CLI الحالية وأي استدعاء CLI يعمل بالفعل لا
-    يُحدَّثان بأثر رجعي؛ فقط الاستدعاءات اللاحقة تلتقط التغيير.
-  cli.config.language.set.long: |-
-    أمثلة:
-      okt config language set --cli pt-br
-      okt config language set --tui en --agent "Português (Brasil)"
-      okt config language set --agent "" --global
-
-    يجب توفير واحد على الأقل من --cli أو --tui أو --agent. يُتحقَّق
-    من --cli و --tui مقابل رموز اللغات المكتشفة تحت languages/.
-    --agent يقبل أي نص غير فارغ (أو "" لإفراغه). --global يثبّت
-    الكتابة على omakiten.yaml الخاص بـ user-global.
+  cli.config.language.long: "تسري تفضيلات اللغة على جميع المشاريع وتُحفظ في preferences.yaml الخاص بـ Omakiten. تستخدم CLI وTUI اللغات المدمجة؛ agent_output نص حر."
+  cli.config.language.set.long: "تسري تفضيلات اللغة على جميع المشاريع وتُحفظ في preferences.yaml الخاص بـ Omakiten. تستخدم CLI وTUI اللغات المدمجة؛ agent_output نص حر.\n\nokt config language set --cli pt-br\nokt config language set --tui en --agent \"Português (Brasil)\"\nokt config language set --agent \"\""
   cli.workflow.orphan.long: |-
     tasks التي كانت تشير إلى bucket في workflow لم يعد موجودًا بعد
     تبديل preset أو تعديل omakiten.yaml تُعدّ أيتامًا. افتراضيًّا
@@ -325,8 +273,6 @@ keys:
   cli.config.language.set.flag.cli: "رمز اللغة لمساعدة CLI ونصوص الاستخدام"
   cli.config.language.set.flag.tui: "رمز اللغة لتسميات وشاشات TUI"
   cli.config.language.set.flag.agent: "توجيه لغة إخراج agent (نص حر، استخدم \"\" لإفراغها)"
-  cli.config.language.set.flag.global: "تثبيت الكتابة على omakiten.yaml الخاص بـ user-global بصرف النظر عن وجود repo-local"
-  cli.config.language.reset.flag.global: "تثبيت إعادة الضبط على omakiten.yaml الخاص بـ user-global بصرف النظر عن وجود repo-local"
   cli.law.list.flag.scope: "تصفية حسب scope: global أو project أو persona"
   cli.law.list.flag.project: "تصفية حسب slug المشروع"
   cli.law.list.flag.persona: "تصفية حسب slug persona"
@@ -1080,7 +1026,6 @@ keys:
   tui.settings.effective.section.tag_synonyms: "مرادفات الوسوم"
   tui.settings.effective.section.priorities: "الأولويات"
   tui.settings.effective.section.severities: "مستويات الخطورة"
-  tui.settings.effective.section.languages: "اللغات"
   tui.settings.guards_tab: "حراس"
   tui.settings.guards_hint: "للقراءة فقط · حرّر عبر `$EDITOR omakiten.yaml`"
   tui.settings.guards.header_to: "إلى"

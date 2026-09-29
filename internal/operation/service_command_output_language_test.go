@@ -16,7 +16,7 @@ func snapshotWithAgentOutputLanguage(t *testing.T, value string) *config.Snapsho
 	t.Helper()
 	bundle := agentTestBundle(t)
 	bundle.Languages = []config.Language{{Code: "en", Name: "English", Native: "English"}}
-	bundle.Config.Languages = config.LanguageSettings{AgentOutput: value}
+	bundle.LanguageSettings = config.LanguageSettings{AgentOutput: value}
 	return config.BuildSnapshot(bundle)
 }
 

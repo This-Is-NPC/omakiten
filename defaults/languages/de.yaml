@@ -166,8 +166,8 @@ keys:
   cli.config.why.short: "Gibt die Install-Wurzel aus, der die Config-Ebene des gewählten scope gehört"
   cli.config.language.short: "Verwaltet die aktive Sprache für CLI-Hilfe, TUI-Labels und Agent-Ausgabedirektive"
   cli.config.language.show.short: "Gibt die aktiven Spracheinstellungen und die erkannten language packs aus"
-  cli.config.language.set.short: "Setzt eine oder mehrere Spracheinstellungen in der aktiven omakiten.yaml"
-  cli.config.language.reset.short: "Entfernt den languages-Block aus der aktiven omakiten.yaml (Standardwerte gelten)"
+  cli.config.language.set.short: "Anwendungssprachen festlegen"
+  cli.config.language.reset.short: "Standardsprachen wiederherstellen"
   cli.law.short: "Verwaltet Agent-laws (dateibasiert unter laws/)"
   cli.law.list.short: "Listet aktive laws (filterbar nach scope/Projekt/persona)"
   cli.law.show.short: "Zeigt eine law (frontmatter + Inhalt)"
@@ -193,37 +193,7 @@ keys:
   cli.workflow.show.short: "Zeigt den aktiven workflow"
   cli.workflow.orphan.short: "Vorschau oder Re-Bind von tasks, deren bucket durch einen workflow-Swap deaktiviert wurde"
   notice.subtask_kit.enabled.commands_resolve_at_root: "Sub-task kit aktiviert: CLI-Befehle, personas, laws, templates und skills werden weiter aus dem Projekt-root-kit aufgelöst."
-  cli.config.init.long: |-
-    Erstellt eine standalone Config-Installation verwurzelt im gewählten scope.
-
-      --scope global  →  paths.ConfigRoot() (oder Elternverzeichnis von --config).
-                         Bestehende User-Installation; Erneutes Ausführen ist idempotent.
-
-      --scope local   →  <cwd>/.omakiten (wörtliches CWD, kein walk-up).
-                         Komplette Installation — config/<preset>.yaml plus
-                         jeder Entitätsordner — damit das Runtime sie ohne
-                         Merge mit der user-globalen Ebene laden kann. Der
-                         walk-up-Resolver erkennt dies automatisch bei
-                         nachfolgenden okt-Aufrufen aus dem Repo heraus.
-
-    Verhaltensmatrix:
-      - Datei fehlt              → atomarer Write.
-      - Gleiches preset, gleiche Dateien → no_op:true (stiller Erfolg).
-      - Anderes preset           → schaltet .active auf neues preset um.
-      - Manipulierte shipped-Dateien → bleiben erhalten außer mit --force.
-      - --force                  → kopiert jede eingebettete shipped-Datei neu
-                                    (skills, laws, personas, templates, themes,
-                                    notifications, jedes preset-yaml).
-                                    custom/-Unterbäume werden nie berührt.
-
-    Sprachauswahl:
-      --cli-lang, --tui-lang, --agent-lang überspringen die interaktiven
-      Prompts für jede Surface und schreiben den Wert direkt in den
-      languages-Block der geseedten omakiten.yaml. --cli-lang und
-      --tui-lang müssen einem bundled Sprachcode entsprechen
-      (en, pt-br, es, fr, de, ...); --agent-lang ist freitext. Ohne Flag
-      fragt init auf dem TTY (oder lässt die Surface auf Standardwert,
-      wenn stdin nicht-interaktiv ist).
+  cli.config.init.long: "Einen Workflow über einen Katalognamen, eine Git-URL oder ein lokales Verzeichnis im ausgewählten Bereich installieren.\n\nSpracheinstellungen gelten für alle Projekte und werden in Omakitens preferences.yaml gespeichert. CLI und TUI nutzen integrierte Sprachen; agent_output ist Freitext."
   cli.config.path.long: |-
     Durchläuft die aktive Config (oder eine gewählte Ebene) anhand eines
     dotted YAML-Schlüssels und berichtet {key, value, path, source}.
@@ -248,34 +218,8 @@ keys:
     Ausgabe-Einträge tragen op = added | removed | changed plus die
     relevanten Werte. Maps steigen rekursiv ab; Listen / Skalare
     vergleichen per tiefer Gleichheit.
-  cli.config.language.long: |-
-    Liest und schreibt config.languages.{cli,tui,agent_output} in der
-    aktiven omakiten.yaml. languages.cli und languages.tui werden gegen
-    die unter languages/ erkannten language packs validiert;
-    languages.agent_output ist freitext und wird wörtlich an den
-    CLI-prompt-Composer weitergegeben.
-
-    Standardziel ist die aufgelöste omakiten.yaml (repo-lokales
-    .omakiten/ wenn vorhanden, sonst der user-globale ConfigRoot). Bei
-    set/reset --global verwenden, um den Write auf die user-globale
-    Datei zu fixieren, unabhängig von der repo-lokalen Präsenz.
-
-    Writes lösen BundleCache.Reload aus, damit nachfolgende
-    okt-Aufrufe und langlaufende Tools (TUI, CLI-Server) die neue
-    Auswahl beobachten. Der aktuelle CLI-Prozess und jeder bereits
-    laufende CLI-Aufruf werden nicht rückwirkend aktualisiert; nur
-    nachfolgende Aufrufe übernehmen die Änderung.
-  cli.config.language.set.long: |-
-    Beispiele:
-      okt config language set --cli de
-      okt config language set --tui en --agent "Deutsch"
-      okt config language set --agent "" --global
-
-    Mindestens eine von --cli, --tui oder --agent muss angegeben sein.
-    --cli und --tui validieren gegen die unter languages/ erkannten
-    Sprachcodes. --agent akzeptiert jeden nicht-leeren String (oder ""
-    zum Leeren). --global fixiert den Write auf die user-globale
-    omakiten.yaml.
+  cli.config.language.long: "Spracheinstellungen gelten für alle Projekte und werden in Omakitens preferences.yaml gespeichert. CLI und TUI nutzen integrierte Sprachen; agent_output ist Freitext."
+  cli.config.language.set.long: "Spracheinstellungen gelten für alle Projekte und werden in Omakitens preferences.yaml gespeichert. CLI und TUI nutzen integrierte Sprachen; agent_output ist Freitext.\n\nokt config language set --cli pt-br\nokt config language set --tui en --agent \"Português (Brasil)\"\nokt config language set --agent \"\""
   cli.workflow.orphan.long: |-
     Tasks, die auf einen workflow-bucket zeigten, der nach einem
     preset-Wechsel oder einer omakiten.yaml-Bearbeitung nicht mehr
@@ -334,8 +278,6 @@ keys:
   cli.config.language.set.flag.cli: "Sprachcode für CLI-Hilfe und Usage"
   cli.config.language.set.flag.tui: "Sprachcode für TUI-Labels und -Screens"
   cli.config.language.set.flag.agent: "freie Agent-Ausgabesprachen-Direktive (\"\" zum Leeren)"
-  cli.config.language.set.flag.global: "fixiert den Write auf die user-globale omakiten.yaml, unabhängig von repo-lokaler Präsenz"
-  cli.config.language.reset.flag.global: "fixiert den Reset auf die user-globale omakiten.yaml, unabhängig von repo-lokaler Präsenz"
   cli.law.list.flag.scope: "Filter nach scope: global, project oder persona"
   cli.law.list.flag.project: "Filter nach Projekt-slug"
   cli.law.list.flag.persona: "Filter nach persona-slug"
@@ -1089,7 +1031,6 @@ keys:
   tui.settings.effective.section.tag_synonyms: "tag-synonyme"
   tui.settings.effective.section.priorities: "prioritäten"
   tui.settings.effective.section.severities: "schweregrade"
-  tui.settings.effective.section.languages: "sprachen"
   tui.settings.guards_tab: "schutzregeln"
   tui.settings.guards_hint: "schreibgeschützt · bearbeiten via `$EDITOR omakiten.yaml`"
   tui.settings.guards.header_to: "nach"

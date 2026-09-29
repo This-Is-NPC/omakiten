@@ -14,7 +14,7 @@ import (
 
 // entityFolders lists the per-kind folders the layout expects as siblings of
 // the config/ yaml dir.
-var entityFolders = []string{"skills", "laws", "personas", "templates", "themes", "notifications", "languages"}
+var entityFolders = []string{"skills", "laws", "personas", "templates", "themes", "notifications"}
 
 // hardenDir creates dir (and any missing parents) owner-only (0o700), but only
 // tightens the mode of a directory it actually created. A pre-existing dir
