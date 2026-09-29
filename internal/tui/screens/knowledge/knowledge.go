@@ -7,6 +7,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"omakiten/internal/domain"
+	"omakiten/internal/graph"
 	"omakiten/internal/tui/components/framed"
 	"omakiten/internal/tui/components/markdown"
 	"omakiten/internal/tui/components/panel"
@@ -21,9 +22,11 @@ const sectionBody = screenlayout.ID("project-knowledge-body")
 // Screen presents resources and follows their file-backed relations.
 type Screen struct {
 	snapshot domain.KnowledgeSnapshot
+	lines    []graph.KnowledgeLine
 	grid     screengrid.State
 	selected int
 	detail   bool
+	graph    bool
 	md       *markdown.Renderer
 	cache    *detailCache
 }
@@ -41,10 +44,12 @@ func (s Screen) ID() screenhost.ID { return screenhost.ProjectKnowledge }
 
 func (s Screen) Snapshot() domain.KnowledgeSnapshot { return s.snapshot }
 
-func (s Screen) Apply(snapshot domain.KnowledgeSnapshot) Screen {
+func (s Screen) Apply(snapshot domain.KnowledgeSnapshot, lines []graph.KnowledgeLine) Screen {
 	s.snapshot = snapshot
+	s.lines = lines
 	s.grid = screengrid.NewState()
 	s.detail = false
+	s.graph = true
 	s.cache = &detailCache{}
 	return s
 }
@@ -65,14 +70,20 @@ func (s Screen) Update(frame screenhost.Frame, msg tea.Msg) screenhost.Outcome {
 		}
 		return screenhost.Back(s, nil)
 	case "enter":
-		if !s.detail && len(s.snapshot.Resources) > 0 {
-			cursor := s.grid.Layout().Cursor(sectionBody)
-			if cursor >= 0 && cursor < len(s.snapshot.Resources) {
-				s.selected, s.detail = cursor, true
+		if !s.detail {
+			if selected, ok := s.selectedResource(); ok {
+				s.selected, s.detail = selected, true
 				s.grid = screengrid.NewState()
 				s.cache = &detailCache{}
 				s = s.resync(frame)
 			}
+		}
+		return screenhost.Stay(s, nil)
+	case "g", "l":
+		if !s.detail {
+			s.graph = key.String() == "g"
+			s.grid = screengrid.NewState()
+			s = s.resync(frame)
 		}
 		return screenhost.Stay(s, nil)
 	case "r":
@@ -108,7 +119,7 @@ func (s Screen) OwnsKey(key tea.KeyMsg) bool {
 		}
 	}
 	switch key.String() {
-	case "enter", "esc", "r":
+	case "enter", "esc", "r", "g", "l":
 		return true
 	}
 	return false
@@ -117,12 +128,14 @@ func (s Screen) OwnsKey(key tea.KeyMsg) bool {
 func (s Screen) OwnsFooter() bool { return true }
 
 func (s Screen) Footer(frame screenhost.Frame) []screenhost.FooterBinding {
-	return []screenhost.FooterBinding{frame.FooterOpen(true), frame.FooterMoveVim(false), frame.FooterScrollPage(false), frame.FooterRefresh(false), frame.FooterBack(false), frame.FooterHelp(false)}
+	return []screenhost.FooterBinding{frame.FooterOpen(true), {Key: "g", Label: "graph"}, {Key: "l", Label: "list"}, frame.FooterMoveVim(false), frame.FooterScrollPage(false), frame.FooterRefresh(false), frame.FooterBack(false), frame.FooterHelp(false)}
 }
 
 func (s Screen) Help(frame screenhost.Frame) []screenhost.HelpGroup {
 	return []screenhost.HelpGroup{{ID: "project_knowledge", Title: frame.Text("tui.knowledge.title"), Bindings: []screenhost.HelpBinding{
 		{Key: "enter", Description: frame.Text("tui.knowledge.open")},
+		{Key: "g", Description: "show nodes and relations"},
+		{Key: "l", Description: "show resource list"},
 		{Key: "j k · pgup · pgdn · g G", Description: frame.Text("tui.footer.scroll")},
 		{Key: "r", Description: frame.Text("tui.footer.refresh")},
 		{Key: "esc", Description: frame.Text("tui.footer.back")},
@@ -159,12 +172,14 @@ func (s Screen) body(kit screenkit.Kit, canvas screenlayout.Canvas) screenlayout
 		block.Cursor = screenlayout.NoSelection()
 		return block
 	}
-	items := make([]string, 0, len(s.snapshot.Resources)+len(s.snapshot.Diagnostics))
-	for _, item := range s.snapshot.Resources {
-		line := screenkit.Truncate(screenkit.Sanitize(item.Project+":"+item.ID+"  "+item.Title), inner)
-		items = append(items, line)
+	var items []string
+	var selectable []int
+	if s.graph {
+		items, selectable = s.graphRows(inner)
+	} else {
+		items, selectable = s.listRows(inner)
 	}
-	if cursor := canvas.Cursor(); cursor >= 0 && cursor < len(s.snapshot.Resources) {
+	if cursor := canvas.Cursor(); cursor >= 0 && cursor < len(items) {
 		items[cursor] = kit.Styles.HintAccent.Render(items[cursor])
 	}
 	for _, diagnostic := range s.snapshot.Diagnostics {
@@ -174,12 +189,46 @@ func (s Screen) body(kit screenkit.Kit, canvas screenlayout.Canvas) screenlayout
 		items = []string{kit.T("tui.knowledge.empty")}
 	}
 	block := framed.List(kit.Styles.Border, width, kit.Styles.FocusKickerCount(kit.T("tui.knowledge.title"), len(s.snapshot.Resources)), nil, items)
-	selectable := make([]int, len(s.snapshot.Resources))
-	for i := range selectable {
-		selectable[i] = i
-	}
 	block.Selectable = selectable
 	return block
+}
+
+func (s Screen) listRows(width int) ([]string, []int) {
+	items := make([]string, 0, len(s.snapshot.Resources))
+	selectable := make([]int, len(s.snapshot.Resources))
+	for i, item := range s.snapshot.Resources {
+		items = append(items, screenkit.Truncate(screenkit.Sanitize(item.Project+":"+item.ID+"  "+item.Title), width))
+		selectable[i] = i
+	}
+	return items, selectable
+}
+
+func (s Screen) graphRows(width int) ([]string, []int) {
+	items := make([]string, 0, len(s.lines))
+	selectable := make([]int, 0, len(s.lines))
+	for i, line := range s.lines {
+		items = append(items, screenkit.Truncate(screenkit.Sanitize(line.Text), width))
+		if line.ResourceID != "" {
+			selectable = append(selectable, i)
+		}
+	}
+	return items, selectable
+}
+
+func (s Screen) selectedResource() (int, bool) {
+	cursor := s.grid.Layout().Cursor(sectionBody)
+	if !s.graph {
+		return cursor, cursor >= 0 && cursor < len(s.snapshot.Resources)
+	}
+	if cursor < 0 || cursor >= len(s.lines) || s.lines[cursor].ResourceID == "" {
+		return 0, false
+	}
+	for i, item := range s.snapshot.Resources {
+		if item.Project+":"+item.ID == s.lines[cursor].ResourceID {
+			return i, true
+		}
+	}
+	return 0, false
 }
 
 func (s Screen) prepareDetail(kit screenkit.Kit, width int) {

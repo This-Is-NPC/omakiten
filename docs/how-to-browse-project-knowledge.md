@@ -4,9 +4,12 @@
 registered project in Omakiten, and optionally follow links to another project?
 
 Open the project in the TUI with `Ctrl+P`, then press `Shift+K` (uppercase K).
-Lowercase `k` scrolls upward on the project screen. The catalog reads
-files from the registered project root. Select a resource with `j`/`k` and
-`enter`; `esc` returns to the list. Press `r` to read the files again.
+Lowercase `k` scrolls upward on the project screen. The knowledge screen opens
+as a directed graph: `●` rows are resources, and `├─`/`└─` rows are outgoing
+relations. Use `j`/`k` and `enter` to open a node or the target of an edge.
+Press `l` for a compact resource list, `g` to return to the graph, `esc` to
+return from a document, and `r` to read the files again. The view reads
+files from the registered project root.
 The catalog does not write resources or relations to SQLite.
 
 ## Start with Markdown

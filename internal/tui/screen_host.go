@@ -9,6 +9,7 @@ import (
 
 	"omakiten/internal/contract"
 	"omakiten/internal/domain"
+	knowledgegraph "omakiten/internal/graph"
 	"omakiten/internal/keynav"
 	"omakiten/internal/taskprojection"
 	"omakiten/internal/tui/screenhost"
@@ -478,7 +479,8 @@ func (m *Model) editHomeProject(projectID int64) {
 }
 
 func (m *Model) openProjectKnowledge() {
-	m.projectKnowledgeScreen = m.projectKnowledgeScreen.Apply(m.projectScreen.Payload().Knowledge)
+	snapshot := m.projectScreen.Payload().Knowledge
+	m.projectKnowledgeScreen = m.projectKnowledgeScreen.Apply(snapshot, knowledgegraph.KnowledgeLines(snapshot))
 	m.pushScreen(screenhost.ProjectKnowledge)
 }
 
@@ -692,7 +694,8 @@ func (m *Model) reloadScreenOutcome(outcome screenhost.Outcome) tea.Cmd {
 	}
 	if _, ok := outcome.Screen.(knowledge.Screen); ok {
 		if m.repos.Knowledge != nil {
-			m.projectKnowledgeScreen = m.projectKnowledgeScreen.Apply(m.repos.Knowledge(m.ctx, m.project))
+			snapshot := m.repos.Knowledge(m.ctx, m.project)
+			m.projectKnowledgeScreen = m.projectKnowledgeScreen.Apply(snapshot, knowledgegraph.KnowledgeLines(snapshot))
 		}
 		return outcome.Command
 	}

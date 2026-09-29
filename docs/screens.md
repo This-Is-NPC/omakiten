@@ -75,8 +75,9 @@ a separate plan-network presentation. A wave is an ordering rule, not another
 task bucket.
 
 Project Knowledge reads Markdown, OpenAPI, and declared CLI documentation from
-the registered root. In the catalog, use `j`/`k` and `enter` to open a resource,
-`esc` to return, and `r` to reread source files. See [the knowledge guide](how-to-browse-project-knowledge.md)
+the registered root. Its default graph shows resources and directed relations;
+`enter` opens a node or an edge's target. Use `l` for the resource list, `g` for
+the graph, and `r` to reread source files. See [the knowledge guide](how-to-browse-project-knowledge.md)
 for source and cross-project rules.
 
 ## 4. Read Task Detail
