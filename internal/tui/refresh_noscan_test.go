@@ -153,3 +153,7 @@ func BenchmarkModelRefreshHotPath(b *testing.B) {
 		}
 	}
 }
+
+func (s *loadCountingBundleStore) EditBundle(path string, edit func(string) error) error {
+	return s.inner.EditBundle(path, edit)
+}

@@ -54,8 +54,7 @@ func (e *BundleEditor) SetPath(path string) { e.path = path }
 
 func (e *BundleEditor) ConfigDir() string { return filepath.Dir(e.path) }
 
-// RootDir is the layout root that holds the config directory and entity
-// folders. New entity files land under the relevant custom directory.
+// RootDir returns the active config and entity layout root.
 func (e *BundleEditor) RootDir() string {
 	return e.bundle.ConfigRootFromYAMLPath(e.path)
 }
@@ -134,13 +133,20 @@ func (e *BundleEditor) ApplyWithFiles(_ context.Context, bundle config.Bundle, s
 func (e *BundleEditor) publishWithLock(bundle config.Bundle, sourceHashes map[string]string, fileOps []FileOp) ([]string, error) {
 	bundleEditMu.Lock()
 	defer bundleEditMu.Unlock()
-	return e.publish(bundle, sourceHashes, fileOps)
+	var published []string
+	err := e.bundle.EditBundle(e.path, func(path string) error {
+		writer := NewBundleEditor(e.bundle, path)
+		var err error
+		if checkPath, checkErr := e.requireCurrentSources(sourceHashes); checkErr != nil {
+			return editorError(checkPath, checkErr)
+		}
+		published, err = writer.publish(bundle, fileOps)
+		return err
+	})
+	return published, err
 }
 
-func (e *BundleEditor) publish(bundle config.Bundle, sourceHashes map[string]string, fileOps []FileOp) ([]string, error) {
-	if path, err := e.requireCurrentSources(sourceHashes); err != nil {
-		return nil, editorError(path, err)
-	}
+func (e *BundleEditor) publish(bundle config.Bundle, fileOps []FileOp) ([]string, error) {
 	if err := e.bundle.SaveBundle(e.path, bundle); err != nil {
 		if config.IsAmbiguousPublication(err) {
 			return nil, editorError(e.path, ambiguousFailure([]string{e.path}, e.path, err))

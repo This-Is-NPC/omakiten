@@ -26,6 +26,8 @@ const DefaultConfigFilename = "omakiten.yaml"
 
 const AppName = "omakiten"
 
+const PresetSelectionFilename = "config.yaml"
+
 // HomeEnv is the env var that pins the entire Omakiten runtime (config + data)
 // under a single directory. When set, it takes precedence over XDG and the
 // per-user defaults. The expected layout is:
@@ -133,6 +135,12 @@ func ActiveConfigFile() (string, error) {
 // install behaves identically to the global ConfigRoot: same .active rules,
 // same custom/ shadow, same fall-through to discovery on a vanished kit.
 func ActiveConfigFileInDir(dir string) (string, error) {
+	selection := filepath.Join(filepath.Dir(dir), PresetSelectionFilename)
+	if _, err := os.Stat(selection); err == nil {
+		return selection, ValidateNoSymlinkComponents(selection)
+	} else if !os.IsNotExist(err) {
+		return "", err
+	}
 	if err := ValidateNoSymlinkComponents(dir); err != nil {
 		return "", err
 	}

@@ -380,6 +380,7 @@ type BundleStore interface {
 	LoadBundle(path string) (config.Bundle, error)
 	LoadBundlePlan(path string) (config.Bundle, map[string]string, error)
 	SaveBundle(path string, bundle config.Bundle) error
+	EditBundle(path string, edit func(string) error) error
 	HashFile(path string) (string, error)
 	WriteAtomic(path string, data []byte) error
 	RemoveFile(path string) error

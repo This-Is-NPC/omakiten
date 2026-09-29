@@ -17,6 +17,25 @@ component from the discovery start directory are checked with `Lstat`. A
 symlinked root or intermediate component is an error, not a miss, so a
 malicious local tree cannot silently fall through to global configuration.
 
+## Package selection
+
+When `<root>/config.yaml` exists, active-file discovery returns that selection
+before inspecting `config/.active`. A selection contains one `preset` key:
+
+```yaml
+preset: presets/<content-id>/config/preset.yaml
+```
+
+The bundle loader resolves this relative path before loading config and
+entities. The physical package root owns the sibling asset directories.
+Source-version planning includes the selection and the resolved source files,
+so changing the selected package invalidates a pending editor plan. Package
+roots and roots with a package selection are complete installations; runtime
+startup does not materialize bundled defaults into them.
+
+See [repository packages](../presets.md#repository-packages) for installation,
+activation, portable exports, and validated editing.
+
 ## `<root>` layout
 
 ```text

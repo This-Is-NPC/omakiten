@@ -46,10 +46,11 @@ type Bundle struct {
 	// commands that never render the TUI continue to load while TUI boot
 	// and hot reload can surface ErrConfigInvalid through
 	// Snapshot.ThemeError().
-	ActiveTheme    Theme           `yaml:"-" json:"active_theme"`
-	ActiveThemeErr error           `yaml:"-" json:"-"`
-	Warnings       []SourceWarning `yaml:"-" json:"warnings,omitempty"`
-	SourcePaths    []string        `yaml:"-" json:"-"`
+	ActiveTheme     Theme           `yaml:"-" json:"active_theme"`
+	ActiveThemePath string          `yaml:"-" json:"-"`
+	ActiveThemeErr  error           `yaml:"-" json:"-"`
+	Warnings        []SourceWarning `yaml:"-" json:"warnings,omitempty"`
+	SourcePaths     []string        `yaml:"-" json:"-"`
 	// Sources records per-leaf-path origin for the merged Config
 	// settings. Keys are dot-paths matching the EffectiveTuples accessor
 	// (`section.key`, `section[N].field`, `section`); values are one of

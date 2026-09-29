@@ -4,8 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"omakiten/internal/config"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 
 	"omakiten/internal/domain"
@@ -19,7 +21,14 @@ func openEditorAndReimport(ctx context.Context, rt *runtime, path string) error 
 	if path == "" {
 		return nil
 	}
-	if err := runEditorCommand(ctx, path); err != nil {
+	root := config.ConfigRootFromYAMLPath(rt.configPath)
+	rel, err := filepath.Rel(root, path)
+	if err != nil {
+		return err
+	}
+	if err := config.EditBundle(rt.configPath, func(working string) error {
+		return runEditorCommand(ctx, filepath.Join(config.ConfigRootFromYAMLPath(working), rel))
+	}); err != nil {
 		return domain.NewError(domain.ErrEditorFailed, err.Error(), map[string]any{"path": path})
 	}
 	return rt.operationService().ReimportBundle(ctx)

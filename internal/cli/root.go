@@ -157,6 +157,7 @@ func addRootCommands(cmd *cobra.Command, opts *runtimeOptions, version string, i
 	cmd.AddCommand(newCommentCommand(opts))
 	cmd.AddCommand(newDependCommand(opts))
 	cmd.AddCommand(newPlanCommand(opts))
+	cmd.AddCommand(newPresetCommand(opts))
 	cmd.AddCommand(newLogsCommand(opts))
 	cmd.AddCommand(newWorkflowCommand(opts))
 	cmd.AddCommand(newConfigCommand(opts))

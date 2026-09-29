@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"omakiten/internal/config"
+	"omakiten/internal/testutil"
 	"omakiten/internal/tui/screens/studio"
 )
 
@@ -79,6 +80,7 @@ func studioDraftBundle() config.Bundle {
 }
 
 type studioDraftStore struct {
+	testutil.DirectBundleEdits
 	bundle config.Bundle
 	saves  int
 }

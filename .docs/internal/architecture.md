@@ -34,6 +34,20 @@
 | `github.com/dustin/go-humanize` | v1.0.1 | Human-readable formatting in TUI |
 | `golang.org/x/term` | v0.43.0 | Terminal raw-mode + size detection (used by `internal/cli/setup_picker.go` during installer) |
 
+## Preset package publication
+
+`internal/config` owns package manifests, strict Markdown transport, source
+capture, content identities, and selection resolution. `internal/configstore`
+implements the `BundleStore.EditBundle` port. `BundleEditor` publishes config
+and entity edits through that port; the adapter stages and validates a complete
+package before updating its scope's selection file. CLI and Studio use the
+same application editor without importing each other's implementation.
+
+Package snapshots are filesystem configuration. Their names, versions,
+origins, and modification status are read from package files. SQLite stores
+operational entities; no preset registry tables are required. Configuration
+source-version checks include the selection pointer and actual package assets.
+
 ## Dependency boundaries
 
 The executable composes independent delivery adapters around application ports.

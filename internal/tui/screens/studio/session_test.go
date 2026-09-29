@@ -341,3 +341,7 @@ func TestStudioDraftHoldsTheBundleItOpened(t *testing.T) {
 		t.Fatalf("applying onto a moved file reported %q, want the baseline refusal", msg)
 	}
 }
+
+func (s *countingBundleStore) EditBundle(path string, edit func(string) error) error {
+	return s.inner.EditBundle(path, edit)
+}
