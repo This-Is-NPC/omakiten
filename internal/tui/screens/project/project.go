@@ -277,7 +277,7 @@ func (s Screen) OwnsKey(key tea.KeyMsg) bool {
 func (s Screen) OwnsFooter() bool { return true }
 
 func (s Screen) Footer(frame screenhost.Frame) []screenhost.FooterBinding {
-	bindings := []screenhost.FooterBinding{{Key: keynav.Default.Zones.Primary(), Label: frame.Text("tui.footer.zone"), Primary: true}, {Key: "f", Label: frame.Text("tui.footer.focus_description"), Primary: true}, {Key: "R", Label: frame.Text("tui.footer.project_resume"), Primary: true}, {Key: "K", Label: frame.Text("tui.knowledge.label"), Primary: true}}
+	bindings := []screenhost.FooterBinding{{Key: keynav.Default.Zones.Primary(), Label: frame.Text("tui.footer.zone"), Primary: true}, {Key: "f", Label: frame.Text("tui.footer.focus_description"), Primary: true}, {Key: "R", Label: frame.Text("tui.footer.project_resume"), Primary: true}, {Key: "Shift+K", Label: frame.Text("tui.knowledge.label"), Primary: true}}
 	// The motion vocabulary is advertised in every zone because it now WORKS
 	// in every zone: j/k nudge the document (or walk the feed cursor when the
 	// feed holds focus), pgup/pgdn page it, g/G jump to either end. Advertising
@@ -303,7 +303,7 @@ func (s Screen) Help(frame screenhost.Frame) []screenhost.HelpGroup {
 		{Key: keynav.Default.Zones.Primary(), Description: frame.Text("tui.footer.zone")},
 		{Key: "f", Description: frame.Text("tui.footer.focus_description")},
 		{Key: "R", Description: frame.Text("tui.footer.project_resume")},
-		{Key: "K", Description: frame.Text("tui.knowledge.open_catalog")},
+		{Key: "Shift+K", Description: frame.Text("tui.knowledge.open_catalog")},
 		{Key: "j k · ↑ ↓", Description: frame.Text("tui.footer.scroll")},
 		{Key: "pgup · pgdn", Description: frame.Text("tui.footer.page")},
 		{Key: "g · G", Description: frame.Text("tui.footer.top_bottom")},

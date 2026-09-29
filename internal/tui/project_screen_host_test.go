@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -90,10 +91,21 @@ func TestProjectKnowledgeOpensFromCtrlPAndReloads(t *testing.T) {
 	if got := model.projectScreen.Payload().Knowledge.Resources; len(got) != 1 || got[0].Title != title {
 		t.Fatalf("ctrl+p knowledge = %+v", got)
 	}
+	if !footerHasFragment(model.footerTokens(), "Shift+K") {
+		t.Fatalf("project footer does not explain the shifted knowledge key: %+v", model.footerTokens())
+	}
+	next, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'k'}})
+	model = next.(Model)
+	if got := model.screenStack[len(model.screenStack)-1]; got != screenhost.Project {
+		t.Fatalf("lowercase k opened %s", got)
+	}
 	next, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'K'}})
 	model = next.(Model)
 	if got := model.screenStack[len(model.screenStack)-1]; got != screenhost.ProjectKnowledge {
 		t.Fatalf("K opened %s", got)
+	}
+	if view := model.View(); !strings.Contains(view, "openapi:createOrder") {
+		t.Fatalf("knowledge route rendered without its resource: %q", view)
 	}
 	title = "Updated endpoint"
 	next, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'r'}})

@@ -3,7 +3,8 @@
 **The question:** how can I see documentation and API operations from a
 registered project in Omakiten, and optionally follow links to another project?
 
-Open the project in the TUI with `Ctrl+P`, then press `K`. The catalog reads
+Open the project in the TUI with `Ctrl+P`, then press `Shift+K` (uppercase K).
+Lowercase `k` scrolls upward on the project screen. The catalog reads
 files from the registered project root. Select a resource with `j`/`k` and
 `enter`; `esc` returns to the list. Press `r` to read the files again.
 The catalog does not write resources or relations to SQLite.

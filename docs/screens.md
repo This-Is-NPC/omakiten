@@ -50,7 +50,7 @@ framing.
 | `j` / `k`, page keys | Move within the focused section. |
 | `enter` | Open the focused comment or referenced task. |
 | `f` | Open the full-width Project Form reader. |
-| `K` | Open the file-backed project knowledge catalog. |
+| `Shift+K` | Open the file-backed project knowledge catalog. |
 | `r` | Refresh the projection. |
 | `esc` | Return to the prior screen. |
 
