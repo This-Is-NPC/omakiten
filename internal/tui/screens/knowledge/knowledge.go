@@ -2,7 +2,6 @@
 package knowledge
 
 import (
-	"fmt"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -224,19 +223,8 @@ func (s Screen) prepareDetail(kit screenkit.Kit, width int) {
 
 func (s Screen) detailLines(kit screenkit.Kit, width int) []string {
 	item := s.snapshot.Resources[s.selected]
-	var b strings.Builder
-	fmt.Fprintf(&b, "# %s\n\n`%s:%s` · `%s`\n\n", item.Title, item.Project, item.ID, item.Path)
-	if item.Description != "" {
-		b.WriteString(item.Description + "\n\n")
-	}
-	b.WriteString(item.Body)
-	for _, relation := range s.snapshot.Relations {
-		if relation.From == item.Project+":"+item.ID {
-			fmt.Fprintf(&b, "\n- %s → `%s`", relation.Kind, relation.To)
-		}
-	}
 	s.md.Reload(kit.Markdown)
-	return screenkit.CapRows(strings.Split(markdown.Body(s.md, b.String(), width, true), "\n"), width)
+	return screenkit.CapRows(strings.Split(markdown.Body(s.md, graph.KnowledgeDocument(s.snapshot, item), width, true), "\n"), width)
 }
 
 var _ screenhost.Screen = Screen{}

@@ -77,8 +77,9 @@ task bucket.
 Project Knowledge reads Markdown, OpenAPI, and declared CLI inventories from
 the registered root. Its single scrollable graph shows CLI commands, API
 operations, linked guides, and unlinked documentation together. Move with
-`j`/`k`, page keys, or `g`/`G`; `enter` opens full details, `esc` returns to
-the same graph node, and `r` rereads source files.
+`j`/`k`, page keys, or `g`/`G`; `enter` on a command or operation shows its
+attached guides and reference, `esc` returns to the same graph node, and `r`
+rereads source files.
 See [the knowledge guide](how-to-browse-project-knowledge.md)
 for source and cross-project rules.
 

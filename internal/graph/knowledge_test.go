@@ -52,3 +52,20 @@ func TestProjectKnowledgeKeepsCycleVisibleWithoutLooping(t *testing.T) {
 		t.Fatalf("cycle projection = %+v", lines)
 	}
 }
+
+func TestKnowledgeDocumentIncludesAttachedGuideBeforeReference(t *testing.T) {
+	command := domain.KnowledgeResource{Project: "okt", ID: "cli:task.create", Title: "okt task create", Body: "# CLI help\n\n--title"}
+	snapshot := domain.KnowledgeSnapshot{
+		Resources: []domain.KnowledgeResource{
+			command,
+			{Project: "okt", ID: "markdown:docs/tasks", Title: "Task guide", Body: "Create a task with a title.", Path: "docs/tasks.md"},
+		},
+		Relations: []domain.KnowledgeRelation{{From: "okt:cli:task.create", To: "okt:markdown:docs/tasks", Kind: "documented_by"}},
+	}
+	document := KnowledgeDocument(snapshot, command)
+	guide := strings.Index(document, "Create a task with a title.")
+	reference := strings.Index(document, "# CLI help")
+	if guide < 0 || reference <= guide {
+		t.Fatalf("guide must appear before CLI reference: %q", document)
+	}
+}

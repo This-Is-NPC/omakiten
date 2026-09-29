@@ -33,9 +33,15 @@ func TestKnowledgeScreenNavigatesCompleteGraph(t *testing.T) {
 			t.Fatalf("complete graph missing %q: %s", want, view)
 		}
 	}
-	for range 3 {
+	for range 2 {
 		screen = screen.Update(frame, screentest.Key("j")).Screen.(Screen)
 	}
+	screen = screen.Update(frame, screentest.Key("enter")).Screen.(Screen)
+	if view := screentest.StripANSI(screen.View(frame)); !strings.Contains(view, "Create one.") || !strings.Contains(view, "Documentation: Work on a task") {
+		t.Fatalf("command did not open its documentation: %s", view)
+	}
+	screen = screen.Update(frame, screentest.Key("esc")).Screen.(Screen)
+	screen = screen.Update(frame, screentest.Key("j")).Screen.(Screen)
 	if index, ok := screen.selectedResource(); !ok || snapshot.Resources[index].Title != "Work on a task" {
 		t.Fatalf("cursor did not reach linked guide: index=%d ok=%t", index, ok)
 	}

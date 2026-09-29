@@ -12,8 +12,10 @@ Lowercase `k` scrolls upward on the project screen. The knowledge screen shows
 the whole graph immediately: `CLI → okt → okt task → okt task create → guide`
 appears as an indented tree, with OpenAPI operations and their linked guides
 under `API`. Use `j`/`k` or page keys to move through nodes, `g`/`G` to jump
-to the top or bottom, and `enter` to read the selected item's full details.
-`esc` returns to the graph at the same node. Press `r` to reread project files.
+to the top or bottom. Press `enter` on a command or operation to read its
+attached documentation followed by its generated reference, or select a guide
+node to read that guide alone. `esc` returns to the graph at the same node.
+Press `r` to reread project files.
 Unlinked pages remain visible under `Documentation`; other resources without
 a path from an interface appear under `Other resources`. When a project has no
 CLI or API inventory, the graph starts at its Markdown documentation. The
