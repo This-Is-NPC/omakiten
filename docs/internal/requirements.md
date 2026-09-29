@@ -20,6 +20,7 @@ behavior and the owner of each rule, rather than a historical feature ledger.
 | Requirement | Owner |
 | --- | --- |
 | A preset captures all package files and runs independently of its source checkout. | Package installer and configuration loader |
+| Agent commands are discovered from the selected workflow's command skills and bindings; resolving one includes only its declared immediate context. | `internal/config`, `internal/operation` |
 | Package paths, regular files, manifest, configuration, and references are validated on installation. | `internal/config`, `internal/installer` |
 | Package installation does not inspect or execute hook scripts. | Installer boundary |
 | Successful edits publish one validated package snapshot; failures leave selection intact. | Bundle editor and `internal/configstore` |

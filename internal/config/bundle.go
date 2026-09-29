@@ -638,13 +638,32 @@ type Skill struct {
 	// SchemaVersion marks a schema-v2 skill (carries role_affinity).
 	SchemaVersion int `json:"schema_version,omitempty"`
 	// RoleAffinity (schema v2) lists the roles this skill is suited for.
-	RoleAffinity []string `json:"role_affinity,omitempty"`
-	SourcePath   string   `json:"source_path,omitempty"`
-	IsCustom     bool     `json:"is_custom,omitempty"`
+	RoleAffinity []string      `json:"role_affinity,omitempty"`
+	Command      *SkillCommand `json:"command,omitempty"`
+	SourcePath   string        `json:"source_path,omitempty"`
+	IsCustom     bool          `json:"is_custom,omitempty"`
 	// Active is set only on Bundle.AllSkills / Snapshot.AllSkills entries
 	// that are wired into the active bundle. The picked Skills slice is
 	// active by definition, so the field is left zero there.
 	Active bool `json:"-"`
+}
+
+type SkillCommand struct {
+	Name       string             `yaml:"name" json:"name"`
+	Next       []CommandReference `yaml:"next,omitempty" json:"next,omitempty"`
+	Parameters []CommandParameter `yaml:"parameters,omitempty" json:"parameters,omitempty"`
+}
+
+type CommandReference struct {
+	Name    string `yaml:"name" json:"name"`
+	Context string `yaml:"context" json:"context"`
+	When    string `yaml:"when,omitempty" json:"when,omitempty"`
+}
+
+type CommandParameter struct {
+	Name     string `yaml:"name" json:"name"`
+	Type     string `yaml:"type" json:"type"`
+	Required bool   `yaml:"required,omitempty" json:"required,omitempty"`
 }
 
 type Persona struct {

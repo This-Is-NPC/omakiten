@@ -94,7 +94,11 @@ func newStudioApplyModel(t *testing.T) (Model, contract.BundleEditor, *snapstore
 	ctx := context.Background()
 	tmp := t.TempDir()
 	configPath := filepath.Join(tmp, "config", "omakase.yaml")
-	if err := config.SaveFullBundle(configPath, tuiTestBundle(t)); err != nil {
+	bundle := tuiTestBundle(t)
+	bundle.Skills = append(bundle.Skills, config.Skill{Slug: "okt-start", Name: "Start", Body: "Start work.", Command: &config.SkillCommand{Name: "okt-start"}})
+	bundle.Personas[0].SkillRepertoire = append(bundle.Personas[0].SkillRepertoire, "okt-start")
+	bundle.Commands = map[string]config.CommandSpec{"okt-start": {Persona: "agent", Skills: []string{"okt-start"}}}
+	if err := config.SaveFullBundle(configPath, bundle); err != nil {
 		t.Fatalf("SaveFullBundle: %v", err)
 	}
 	writeThemeFile(t, filepath.Join(tmp, "themes", "catppuccin.yaml"), "catppuccin", "Catppuccin")

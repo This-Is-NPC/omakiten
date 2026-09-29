@@ -1,78 +1,52 @@
 ---
 name: omakiten
-description: Use the okt CLI to recover development context and maintain Omakiten tasks, plans, decisions, errors, solutions, and handoffs.
+description: Use the okt CLI to recover and maintain local development context, tasks, plans, decisions, solutions, and handoffs.
 metadata:
   owner: omakiten
 ---
 
 # Omakiten
 
-Omakiten is a local checkpoint store for development work. Use `okt` to read
-and write its board; the database is managed by the CLI. Project workflow,
-permissions and guards come from the active preset.
+Omakiten is a local checkpoint for development work. It stores projects,
+tasks, plans, comments, decisions, errors, solutions, and handoffs. Use the
+fixed `okt` CLI to inspect and update that state. The selected project's
+workflow defines its agent commands, instructions, permissions, and guards.
 
-## Recover context
+## Find the project and recover context
 
-Run `okt --help` to discover commands and `okt <command> --help` for arguments.
-If `okt` is unavailable, report the missing installation. Select the intended
-project explicitly with `--project <slug>`; use `okt projects list` to discover
-registered projects. Register an authorized new project with
-`okt init --name <name> --slug <slug> --root <path>`.
+Use `okt --help` and `okt <command> --help` for the installed CLI syntax.
+Use `okt projects list` to find a project, then pass `--project <slug>` to
+project-scoped calls. `okt project resume` summarizes a project's checkpoint;
+`okt task continue <id>` restores a task and its comments. `okt search` finds
+prior decisions and solutions. Register a new project with `okt init` when
+the user asks to track it.
 
-Start with `okt --project <slug> project resume`. Read the task being continued
-with `okt --project <slug> task continue <id>` and its comments. The continuation
-includes workflow context, relevant history and similar work. Use `okt search`
-for decisions and previous solutions instead of repeating investigations.
+## Discover the active workflow
 
-## Follow the configured workflow
+Agent command names and behavior belong to the project's active workflow.
+Call `okt --project <slug> command list` to discover what is available. Call
+`okt --project <slug> command resolve <name>` to read the selected command's
+instructions, related context, and declared parameters. The response is
+instructions for the agent; resolving a command does not execute its work.
+Read `data.markdown` and use the structured fields when presenting choices.
+Do not infer a workflow command's name, sequence, or behavior without reading
+the active workflow.
 
-Use `okt --project <slug> command list` to discover available playbooks and
-`okt --project <slug> command resolve <name>` to obtain the configured persona,
-skills, laws and templates for the current action. Read `data.markdown` from
-the response when a playbook is relevant. These instructions supplement the
-user's request and repository rules.
+## Maintain the checkpoint
 
-Create authorized work with `okt task create`; inspect similarity hints
-before confirming a possible duplicate. Use `okt plan` to organize tasks into
-waves and `okt plan claim` to acquire work through the atomic claim operation.
-For claims, set `OMAKITEN_AGENT_MODEL` to the actual agent model identifier.
-`OMAKITEN_AGENT_SESSION_ID` can carry a stable session identifier; both values
-also attach provenance to CLI activity. Do not invent another agent's identity.
-Use `okt move` for transitions. Respect guard failures and return actionable
-blocking information rather than bypassing the workflow.
+Use `okt task` to create and inspect work, `okt plan` to organize tasks into
+waves, `okt comment add` to record decisions and evidence, and `okt move` to
+advance work. Respect guard failures; they describe the required evidence or
+state. Use `okt error`, `okt solution`, and `okt progress` for failures, reusable
+fixes, and progress. Record a handoff before leaving active work.
 
-## Use work documents
+Tasks and plans can be imported or exported as OKF Markdown with `okt task`
+and `okt plan`; inspect each command's help for file, preview, and overwrite
+options. Omakiten manages the database through the CLI.
 
-Create a task from Markdown with `okt task create --file resume.md`. Import a
-complete OKF plan with `okt plan create --file plan.md` or
-`okt plan import --file plan.md`; one file includes waves, tasks and references.
-Use `okt task import --file task.md` for a structured task and its descendants.
-Preview structured imports with `--dry-run`; review similarity hints before
-using `--confirm` for task imports.
+## Read results
 
-Export with `okt plan export <slug> --output plan.md` or
-`okt task export <id> --output task.md`. Exports without `--output` return raw
-Markdown on stdout. An existing output file requires `--force`. Documents use
-OKF frontmatter with `type: Omakiten Plan` or `type: Omakiten Task` and
-`omakiten.version: 1`; priority labels and bucket keys must exist in the active
-preset. Exported parents and outgoing dependencies must remain within the file.
-
-## Record and hand off
-
-Use `okt comment add` for decisions, evidence and handoffs; select task, project
-or universal scope deliberately. Mark agent comments with `--author agent`.
-Record failures through `okt error`, reusable fixes through `okt solution`,
-and progress through `okt progress`. Consult each command's help for its
-required arguments and confirmation behavior.
-
-Before leaving, record the current state, validation results, blockers and
-next action in a handoff comment on the work being performed. Keep factual
-notes concise and avoid storing credentials or unrelated private data.
-
-## Interpret results
-
-Data commands return JSON: `ok: true` carries `data`; `ok: false` carries a coded
-error and the process exits unsuccessfully. Inspect both the exit status and
-the response before acting. Help and interactive setup/TUI have their own
-terminal output. Use noninteractive flags where an editor or confirmation
-prompt would block automation. Do not infer success from an empty response.
+Data commands return JSON. Check the process status and the `ok` field;
+successful results carry `data`, while failures carry a coded error. Help and
+the TUI use terminal output. Choose noninteractive options when an editor or
+confirmation prompt would block automation.

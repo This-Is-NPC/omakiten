@@ -10,10 +10,29 @@ type PersonaInfo struct {
 }
 
 type SkillInfo struct {
-	Slug        string `json:"slug"`
-	Name        string `json:"name"`
-	Description string `json:"description,omitempty"`
-	Body        string `json:"body,omitempty"`
+	Slug        string             `json:"slug"`
+	Name        string             `json:"name"`
+	Description string             `json:"description,omitempty"`
+	Body        string             `json:"body,omitempty"`
+	Command     *CommandDefinition `json:"command,omitempty"`
+}
+
+type CommandDefinition struct {
+	Name       string             `json:"name"`
+	Next       []CommandReference `json:"next,omitempty"`
+	Parameters []CommandParameter `json:"parameters,omitempty"`
+}
+
+type CommandReference struct {
+	Name    string `json:"name"`
+	Context string `json:"context"`
+	When    string `json:"when,omitempty"`
+}
+
+type CommandParameter struct {
+	Name     string `json:"name"`
+	Type     string `json:"type"`
+	Required bool   `json:"required,omitempty"`
 }
 
 type LawInfo struct {
@@ -71,7 +90,7 @@ type ResolveCommandInput struct {
 	Arguments map[string]any `json:"arguments,omitempty"`
 }
 
-// CommandListEntry identifies a playbook and its entity-sourced description.
+// CommandListEntry identifies a workflow command and its skill description.
 type CommandListEntry struct {
 	Name        string `json:"name"`
 	Description string `json:"description,omitempty"`
@@ -83,15 +102,16 @@ type ListCommandsResponse struct {
 	Commands []CommandListEntry `json:"commands"`
 }
 
-// ResolveCommandResponse carries composed playbook context and its Markdown rendering.
+// ResolveCommandResponse carries composed command context and its Markdown rendering.
 type ResolveCommandResponse struct {
-	Name        string         `json:"name"`
-	Description string         `json:"description,omitempty"`
-	Persona     *PersonaInfo   `json:"persona,omitempty"`
-	Skills      []SkillInfo    `json:"skills,omitempty"`
-	Laws        []LawInfo      `json:"laws,omitempty"`
-	Templates   []TemplateInfo `json:"templates,omitempty"`
-	// InvocationArgs carries the concrete values supplied when resolving a playbook.
+	Name        string           `json:"name"`
+	Description string           `json:"description,omitempty"`
+	Persona     *PersonaInfo     `json:"persona,omitempty"`
+	Skills      []SkillInfo      `json:"skills,omitempty"`
+	Laws        []LawInfo        `json:"laws,omitempty"`
+	Templates   []TemplateInfo   `json:"templates,omitempty"`
+	Related     []RelatedCommand `json:"related,omitempty"`
+	// InvocationArgs carries the concrete values supplied when resolving a command.
 	InvocationArgs []InvocationArg `json:"invocation_args,omitempty"`
 	Markdown       string          `json:"markdown"`
 	// AgentOutputLanguage carries the raw configured agent-output
@@ -100,6 +120,14 @@ type ResolveCommandResponse struct {
 	// line so the agent honors it for commits, docs, code comments,
 	// and PR bodies. Empty means no directive is appended.
 	AgentOutputLanguage string `json:"agent_output_language,omitempty"`
+}
+
+type RelatedCommand struct {
+	Name        string `json:"name"`
+	Description string `json:"description,omitempty"`
+	Context     string `json:"context"`
+	When        string `json:"when,omitempty"`
+	Markdown    string `json:"markdown,omitempty"`
 }
 
 type InvocationArg struct {

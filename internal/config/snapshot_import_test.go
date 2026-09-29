@@ -83,8 +83,12 @@ func TestSnapshotImportedWorkflowsMatchInline(t *testing.T) {
 // sequence) — imports successfully and surfaces through Snapshot.Commands()
 // identically to the inline profile.
 func TestSnapshotImportedCommandsMatchInline(t *testing.T) {
-	inline := snapshotFromImportFixture(t, nil) // default profile: commands inline
+	addCommands := func(t *testing.T, profile string) {
+		appendTopLevelYAML(t, profile, "commands:\n  global:\n    laws: []\n")
+	}
+	inline := snapshotFromImportFixture(t, addCommands)
 	imported := snapshotFromImportFixture(t, func(t *testing.T, profile string) {
+		addCommands(t, profile)
 		externalizeTopLevel(t, profile, "commands", "commands.yml")
 	})
 

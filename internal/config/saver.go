@@ -239,6 +239,7 @@ func SkillFileBytes(skill Skill) ([]byte, error) {
 		Description:   skill.Description,
 		SchemaVersion: currentSchemaVersion(skill.SchemaVersion),
 		RoleAffinity:  skill.RoleAffinity,
+		Command:       skill.Command,
 	})
 	if err != nil {
 		return nil, err

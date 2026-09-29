@@ -214,8 +214,9 @@ func studioPump(tb testing.TB, screen Screen, frame screenhost.Frame, cmd tea.Cm
 func commandsScreen(tb testing.TB, width, height int, state State) (Screen, screenhost.Frame) {
 	tb.Helper()
 	frame := screentest.FrameAt(tb, width, height)
+	bundle := commandTestBundle()
 	screen := New().
-		Bind(screenhost.StudioCommands, Deps{Ctx: context.Background()}).
+		Bind(screenhost.StudioCommands, Deps{Ctx: context.Background(), Snapshot: config.BuildSnapshot(bundle)}).
 		WithState(state)
 	return screen.withFrame(frame), frame
 }
@@ -223,14 +224,26 @@ func commandsScreen(tb testing.TB, width, height int, state State) (Screen, scre
 func commandsPreviewScreen(tb testing.TB, width, height int, preview string) (Screen, screenhost.Frame) {
 	tb.Helper()
 	frame := screentest.FrameAt(tb, width, height)
+	bundle := commandTestBundle()
 	screen := New().
 		Bind(screenhost.StudioCommands, Deps{
-			Ctx: context.Background(),
+			Ctx:      context.Background(),
+			Snapshot: config.BuildSnapshot(bundle),
 			ResolveCommand: func(_ config.Bundle, _ string) (string, error) {
 				return preview, nil
 			},
 		})
 	return screen.withFrame(frame), frame
+}
+
+func commandTestBundle() config.Bundle {
+	bundle := config.Bundle{Commands: make(map[string]config.CommandSpec)}
+	for i := 0; i < 39; i++ {
+		name := fmt.Sprintf("okt-sample-%02d", i)
+		bundle.Commands[name] = config.CommandSpec{}
+		bundle.Skills = append(bundle.Skills, config.Skill{Slug: name, Name: name, Command: &config.SkillCommand{Name: name}})
+	}
+	return bundle
 }
 
 func longStudioPromptPreview() string {
@@ -266,7 +279,7 @@ func assertNoCommandFieldCursor(t *testing.T, view string) {
 func TestStudioCommandsKeepsTheSelectedCommandVisible(t *testing.T) {
 	t.Parallel()
 
-	rows := studioCommandRows(nil, nil)
+	rows := studioCommandRows(commandTestBundle().Commands, nil)
 	if len(rows) < 20 {
 		t.Fatalf("the command table holds %d rows; the fixture no longer overflows a viewport", len(rows))
 	}
@@ -414,7 +427,8 @@ func TestStudioCommandsPreviewResolvesOffThePaintPath(t *testing.T) {
 	var n int
 	frame := screentest.FrameAt(t, 120, 40)
 	screen := New().Bind(screenhost.StudioCommands, Deps{
-		Ctx: context.Background(),
+		Ctx:      context.Background(),
+		Snapshot: config.BuildSnapshot(commandTestBundle()),
 		ResolveCommand: func(_ config.Bundle, _ string) (string, error) {
 			n++
 			return longStudioPromptPreview(), nil
@@ -503,7 +517,7 @@ func TestStudioCommandsAnchorIsTheItemItMarked(t *testing.T) {
 	idx := screen.studioCommandIndex
 	screen = studioDrive(t, screen, frame, "tab")
 	screen = studioDrive(t, screen, frame, "down")
-	rows := studioCommandRows(nil, nil)
+	rows := studioCommandRows(commandTestBundle().Commands, nil)
 	commandMarker := fmt.Sprintf("› %02d // %s", idx+1, rows[idx].Key)
 	view := screentest.StripANSI(screen.View(frame))
 	if !strings.Contains(view, commandMarker) {

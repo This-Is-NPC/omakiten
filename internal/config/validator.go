@@ -93,6 +93,9 @@ func ValidateBundle(bundle Bundle, loadedSkills []Skill, loadedLaws []Law, loade
 	if err := validateCommands(bundle, personaSet, lawSet, templateSet); err != nil {
 		return err
 	}
+	if err := validateCommandSkills(bundle); err != nil {
+		return err
+	}
 	if err := validateCommandSkillSubsets(bundle); err != nil {
 		return err
 	}
@@ -100,6 +103,96 @@ func ValidateBundle(bundle Bundle, loadedSkills []Skill, loadedLaws []Law, loade
 		return err
 	}
 	return validateWorkflows(bundle.Workflows, bundle.Config.Workflow.Active)
+}
+
+func validateCommandSkills(bundle Bundle) error {
+	byName := make(map[string]Skill)
+	for _, skill := range bundle.Skills {
+		if skill.Command == nil {
+			continue
+		}
+		if err := validateCommandSkill(skill, bundle.Commands, byName); err != nil {
+			return err
+		}
+		byName[skill.Command.Name] = skill
+	}
+	return validateCommandReferences(byName, bundle.Commands)
+}
+
+func validateCommandSkill(skill Skill, commands map[string]CommandSpec, known map[string]Skill) error {
+	name := strings.TrimSpace(skill.Command.Name)
+	if name == "" || name == CommandsGlobalKey || skill.Slug != name {
+		return fmt.Errorf("skills.%s.command.name: must match skill slug and not be global", skill.Slug)
+	}
+	if _, exists := known[name]; exists {
+		return fmt.Errorf("skills.%s.command.name: duplicate command %q", skill.Slug, name)
+	}
+	spec, bound := commands[name]
+	if !bound {
+		return fmt.Errorf("skills.%s.command.name: command has no binding", skill.Slug)
+	}
+	if !contains(spec.Skills, name) {
+		return fmt.Errorf("commands.%s.skills: command skill must be bound", name)
+	}
+	if err := validateCommandParameters(skill); err != nil {
+		return err
+	}
+	return validateCommandNext(skill)
+}
+
+func validateCommandParameters(skill Skill) error {
+	seen := map[string]struct{}{}
+	for _, parameter := range skill.Command.Parameters {
+		if strings.TrimSpace(parameter.Name) == "" {
+			return fmt.Errorf("skills.%s.command.parameters: empty name", skill.Slug)
+		}
+		if _, duplicate := seen[parameter.Name]; duplicate {
+			return fmt.Errorf("skills.%s.command.parameters: duplicate %q", skill.Slug, parameter.Name)
+		}
+		seen[parameter.Name] = struct{}{}
+		switch parameter.Type {
+		case "string", "integer", "number", "boolean":
+		default:
+			return fmt.Errorf("skills.%s.command.parameters.%s: unsupported type %q", skill.Slug, parameter.Name, parameter.Type)
+		}
+	}
+	return nil
+}
+
+func validateCommandNext(skill Skill) error {
+	seen := map[string]struct{}{}
+	for _, ref := range skill.Command.Next {
+		if strings.TrimSpace(ref.Name) == "" {
+			return fmt.Errorf("skills.%s.command.next: empty name", skill.Slug)
+		}
+		if _, duplicate := seen[ref.Name]; duplicate {
+			return fmt.Errorf("skills.%s.command.next: duplicate %q", skill.Slug, ref.Name)
+		}
+		seen[ref.Name] = struct{}{}
+		if ref.Context != "full" && ref.Context != "bare" {
+			return fmt.Errorf("skills.%s.command.next.%s: context must be full or bare", skill.Slug, ref.Name)
+		}
+	}
+	return nil
+}
+
+func validateCommandReferences(byName map[string]Skill, commands map[string]CommandSpec) error {
+	for name, skill := range byName {
+		for _, ref := range skill.Command.Next {
+			if _, exists := byName[ref.Name]; !exists {
+				return fmt.Errorf("skills.%s.command.next.%s: unknown command", name, ref.Name)
+			}
+		}
+	}
+	for name := range commands {
+		if name == CommandsGlobalKey {
+			continue
+		}
+		if _, exists := byName[name]; !exists {
+			return fmt.Errorf("commands.%s: no matching command skill", name)
+		}
+	}
+	return nil
 }
 
 func validateBundleHeader(bundle Bundle) error {

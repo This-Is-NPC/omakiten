@@ -6,7 +6,6 @@ import (
 
 	"gopkg.in/yaml.v3"
 
-	"omakiten/internal/commandcatalog"
 	"omakiten/internal/config"
 	"omakiten/internal/domain"
 )
@@ -93,7 +92,7 @@ func studioBenchBody(kind, slug string) string {
 }
 
 // studioBenchBundle mirrors the shape of a shipped Omakiten bundle: every known
-// playbook bound, plus the persona/skill/law/template catalogs those
+// command skill bound, plus the persona/skill/law/template catalogs those
 // bindings resolve against.
 func studioBenchBundle() config.Bundle {
 	const (
@@ -143,22 +142,7 @@ func studioBenchBundle() config.Bundle {
 		templates = append(templates, template)
 	}
 
-	commands := map[string]config.CommandSpec{
-		config.CommandsGlobalKey: {Laws: append([]string(nil), lawSlugs[:3]...)}}
-	for i, name := range commandcatalog.CommandNames() {
-		persona := personas[i%len(personas)]
-		// A command may only bind skills the persona actually carries in its
-		// repertoire; the bundle validator rejects anything else.
-		skills := persona.SkillRepertoire
-		if len(skills) > 3 {
-			skills = skills[:3]
-		}
-		commands[name] = config.CommandSpec{
-			Persona:   persona.Slug,
-			Skills:    append([]string(nil), skills...),
-			Laws:      append([]string(nil), lawSlugs[i%len(lawSlugs):min(i%len(lawSlugs)+4, len(lawSlugs))]...),
-			Templates: append([]string(nil), templateSlugs[i%len(templateSlugs):min(i%len(templateSlugs)+2, len(templateSlugs))]...)}
-	}
+	commands := studioBenchCommands(&skills, personas, lawSlugs, templateSlugs)
 
 	tru := true
 	return config.Bundle{
@@ -218,4 +202,27 @@ func studioBenchBundle() config.Bundle {
 		Commands:     commands,
 		Surfaces:     config.CanonicalSurfaceTable(),
 	}
+}
+
+func studioBenchCommands(skills *[]config.Skill, personas []config.Persona, lawSlugs, templateSlugs []string) map[string]config.CommandSpec {
+	commands := map[string]config.CommandSpec{
+		config.CommandsGlobalKey: {Laws: append([]string(nil), lawSlugs[:3]...)}}
+	for i := 0; i < 39; i++ {
+		name := fmt.Sprintf("bench-command-%02d", i)
+		*skills = append(*skills, config.Skill{Slug: name, Name: name, Body: studioBenchBody("command", name), Command: &config.SkillCommand{Name: name}})
+		personaIndex := i % len(personas)
+		personas[personaIndex].SkillRepertoire = append(personas[personaIndex].SkillRepertoire, name)
+		persona := personas[personaIndex]
+		selected := persona.SkillRepertoire
+		if len(selected) > 3 {
+			selected = selected[:3]
+		}
+		selected = append(append([]string(nil), selected...), name)
+		commands[name] = config.CommandSpec{
+			Persona:   persona.Slug,
+			Skills:    selected,
+			Laws:      append([]string(nil), lawSlugs[i%len(lawSlugs):min(i%len(lawSlugs)+4, len(lawSlugs))]...),
+			Templates: append([]string(nil), templateSlugs[i%len(templateSlugs):min(i%len(templateSlugs)+2, len(templateSlugs))]...)}
+	}
+	return commands
 }

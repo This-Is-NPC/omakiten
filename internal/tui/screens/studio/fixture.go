@@ -318,7 +318,6 @@ type narutoKitFile struct {
 		SchemaVersion   int      `yaml:"schema_version"`
 		SkillRepertoire []string `yaml:"skill_repertoire"`
 	} `yaml:"personas"`
-	Commands map[string]config.CommandSpec `yaml:"commands"`
 }
 
 type shippedEntityFM struct {
@@ -355,8 +354,8 @@ func loadNarutoKitFile() (narutoKitFile, error) {
 	if err := yaml.Unmarshal(raw, &kit); err != nil {
 		return narutoKitFile{}, fmt.Errorf("naruto.yaml: %w", err)
 	}
-	if len(kit.Personas) == 0 || len(kit.Commands) == 0 {
-		return narutoKitFile{}, fmt.Errorf("naruto.yaml: missing personas or commands")
+	if len(kit.Personas) == 0 {
+		return narutoKitFile{}, fmt.Errorf("naruto.yaml: missing personas")
 	}
 	return kit, nil
 }
@@ -429,25 +428,17 @@ func loadNarutoStudioEntities(skillSet, lawSet map[string]struct{}) ([]config.Sk
 	return skills, laws, nil
 }
 
-func loadNarutoStudioKit() (personas []config.Persona, skills []config.Skill, laws []config.Law, commands map[string]config.CommandSpec, err error) {
+func loadNarutoStudioKit() (personas []config.Persona, skills []config.Skill, laws []config.Law, err error) {
 	kit, err := loadNarutoKitFile()
 	if err != nil {
-		return nil, nil, nil, nil, err
+		return nil, nil, nil, err
 	}
 	personas, skillSet, lawSet, err := loadNarutoStudioPersonas(kit.Personas)
 	if err != nil {
-		return nil, nil, nil, nil, err
-	}
-	for _, spec := range kit.Commands {
-		for _, slug := range spec.Laws {
-			lawSet[slug] = struct{}{}
-		}
-		for _, slug := range spec.LawsDisabled {
-			lawSet[slug] = struct{}{}
-		}
+		return nil, nil, nil, err
 	}
 	skills, laws, err = loadNarutoStudioEntities(skillSet, lawSet)
-	return personas, skills, laws, kit.Commands, err
+	return personas, skills, laws, err
 }
 
 func mergeEntitiesBySlug[T any](base []T, extra []T, slug func(T) string) []T {
@@ -469,17 +460,16 @@ func mergeEntitiesBySlug[T any](base []T, extra []T, slug func(T) string) []T {
 }
 
 // studioPersonasGoldenBundle overlays the shipped naruto roster on the shared
-// golden bundle so Personas goldens show kakashi/shikamaru reverse-index data
-// without rewriting Commands / Workflow fixtures.
+// golden bundle so Personas goldens show the shipped roster and skills.
 func studioPersonasGoldenBundle() config.Bundle {
 	bundle := studioGoldenBundle()
-	personas, skills, laws, commands, err := loadNarutoStudioKit()
+	personas, skills, laws, err := loadNarutoStudioKit()
 	if err != nil {
 		panic("studio personas golden: " + err.Error())
 	}
 	bundle.Personas = personas
 	bundle.AllPersonas = personas
-	bundle.Commands = commands
+	bundle.Commands = nil
 	bundle.Skills = mergeEntitiesBySlug(nil, skills, func(s config.Skill) string { return s.Slug })
 	bundle.AllSkills = bundle.Skills
 	bundle.Laws = mergeEntitiesBySlug(bundle.Laws, laws, func(l config.Law) string { return l.Slug })

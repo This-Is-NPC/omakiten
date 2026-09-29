@@ -63,7 +63,7 @@ working directory. Configuration discovery is described in
 | `config language show`, `set`, `reset` | Application language preferences. |
 | `config refresh-defaults`, `config surfaces` | Managed refresh and operation-surface inspection. |
 | `skill`, `law`, `persona`, `template` | File-backed instruction assets. |
-| `command list`, `command resolve` | Discover and compose configured agent playbooks. |
+| `command list`, `command resolve` | Discover workflow commands and compose one command with its immediate related context. |
 | `db backup`, `check`, `reindex` | Recovery snapshots and search-index maintenance. |
 | `completion` | Shell completion from the command tree. |
 | `tui` | Open the interactive terminal. |

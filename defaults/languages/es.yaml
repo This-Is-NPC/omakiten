@@ -808,7 +808,7 @@ keys:
   tui.studio.commands.warn.missing_persona: "commands.%s.persona: missing persona %q"
   tui.studio.commands.warn.missing_skill: "commands.%s.skills: missing skill %q"
   tui.studio.commands.warn.missing_template: "commands.%s.templates: missing template %q"
-  tui.studio.commands.warn.unknown_command: "commands.%s: unknown agent playbook"
+  tui.studio.commands.warn.unknown_command: "commands.%s: unknown agent command"
   tui.studio.commands.warnings_header: "Command warnings:"
   tui.studio.diff.bucket_added: "Bucket added: %s"
   tui.studio.diff.bucket_key_changed: "Bucket key changed: %s -> %s"
@@ -1580,10 +1580,10 @@ keys:
   operations.denied.wiring: "Internal composition injector/getter; not available on CLI or TUI."
   operations.denied.agent_delete: "Agents cannot delete this resource."
 
-  cli.command.short: "Discover and resolve configured agent playbooks"
-  cli.command.list.short: "List available playbooks"
+  cli.command.short: "Discover and resolve configured agent commands"
+  cli.command.list.short: "List available agent commands"
   cli.command.resolve.short: "Resolve persona, skills, laws and templates"
-  cli.command.resolve.flag.arguments: "Playbook arguments as a JSON object"
+  cli.command.resolve.flag.arguments: "Command arguments as a JSON object"
   cli.init.flag.skill: "Install the Omakiten skill in this project"
   cli.init.flag.claude-code: "Also install the skill for Claude Code (requires --skill)"
 

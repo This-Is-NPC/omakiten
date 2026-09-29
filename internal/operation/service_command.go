@@ -7,7 +7,6 @@ import (
 	"sort"
 	"strings"
 
-	"omakiten/internal/commandcatalog"
 	"omakiten/internal/contract"
 	"omakiten/internal/domain"
 )
@@ -31,20 +30,30 @@ func (s *Service) ResolveCommand(_ context.Context, input contract.ResolveComman
 	return resolveCommandFromCatalog(name, invocationArgs(input.Arguments), commands, personas, skills, laws, templates, outputLanguage)
 }
 
-// ListCommands returns registered playbooks with their entity-sourced descriptions.
+// ListCommands returns workflow commands with their skill descriptions.
 func (s *Service) ListCommands(_ context.Context) (contract.ListCommandsResponse, error) {
 	if err := s.allow("command.list"); err != nil {
 		return contract.ListCommandsResponse{}, err
 	}
-	names := commandcatalog.CommandNames()
+	commands := s.loadCommandCatalog()
+	skills := commandSkills(s.loadSkillCatalog())
+	names := make([]string, 0, len(commands))
+	for name := range commands {
+		if name != CommandsGlobalKey {
+			if _, ok := skills[name]; ok {
+				names = append(names, name)
+			}
+		}
+	}
+	sort.Strings(names)
 	out := make([]contract.CommandListEntry, 0, len(names))
 	for _, name := range names {
-		out = append(out, contract.CommandListEntry{Name: name, Description: s.CommandDescription(name)})
+		out = append(out, contract.CommandListEntry{Name: name, Description: skills[name].Description})
 	}
 	return contract.ListCommandsResponse{Commands: out}, nil
 }
 
-// ResolveCommandFromCatalog previews a playbook against an unsaved catalog.
+// ResolveCommandFromCatalog previews a command against an unsaved catalog.
 func ResolveCommandFromCatalog(name string, commands map[string]contract.CommandBinding, personas map[string]contract.PersonaInfo, skills map[string]contract.SkillInfo, laws map[string]contract.LawInfo, templates map[string]contract.TemplateInfo, outputLanguage string) (contract.ResolveCommandResponse, error) {
 	return resolveCommandFromCatalog(strings.TrimSpace(name), nil, commands, personas, skills, laws, templates, outputLanguage)
 }
@@ -53,18 +62,51 @@ func resolveCommandFromCatalog(name string, args []contract.InvocationArg, comma
 	if name == "" {
 		return contract.ResolveCommandResponse{}, domain.NewError(domain.ErrValidation, "command name is required", nil)
 	}
-	if !commandcatalog.IsRegisteredCommand(name) {
+	commandSkills := commandSkills(skills)
+	root, exists := commandSkills[name]
+	if !exists {
 		return contract.ResolveCommandResponse{}, domain.NewError(domain.ErrValidation, "unknown agent command", map[string]any{"name": name})
 	}
-
-	resp := contract.ResolveCommandResponse{Name: name, InvocationArgs: args}
-
-	// The command list one-liner is entity-sourced: it is the frontmatter
-	// `description` of the bound okt-<slug>-playbook skill, not Go prose. An
-	// unwired runtime (no skill catalog) degrades to an empty description.
-	if pb, ok := skills[commandcatalog.PlaybookSlug(name)]; ok {
-		resp.Description = pb.Description
+	if _, bound := commands[name]; !bound {
+		return contract.ResolveCommandResponse{}, domain.NewError(domain.ErrValidation, "unbound agent command", map[string]any{"name": name})
 	}
+	if err := validateInvocation(root.Command.Parameters, args); err != nil {
+		return contract.ResolveCommandResponse{}, err
+	}
+	resp := composeCommand(name, args, commands, personas, skills, laws, templates, outputLanguage, root)
+	for _, ref := range root.Command.Next {
+		child := commandSkills[ref.Name]
+		if child.Command == nil {
+			return contract.ResolveCommandResponse{}, domain.NewError(domain.ErrValidation, "unknown related command", map[string]any{"name": ref.Name})
+		}
+		if _, bound := commands[ref.Name]; !bound {
+			return contract.ResolveCommandResponse{}, domain.NewError(domain.ErrValidation, "unbound related command", map[string]any{"name": ref.Name})
+		}
+		if ref.Context != "full" && ref.Context != "bare" {
+			return contract.ResolveCommandResponse{}, domain.NewError(domain.ErrValidation, "invalid related command context", map[string]any{"name": ref.Name, "context": ref.Context})
+		}
+		related := contract.RelatedCommand{Name: ref.Name, Description: child.Description, Context: ref.Context, When: ref.When}
+		if ref.Context == "full" {
+			related.Markdown = composeCommand(ref.Name, nil, commands, personas, skills, laws, templates, outputLanguage, child).Markdown
+		}
+		resp.Related = append(resp.Related, related)
+	}
+	resp.Markdown = renderCommandMarkdown(resp)
+	return resp, nil
+}
+
+func commandSkills(skills map[string]contract.SkillInfo) map[string]contract.SkillInfo {
+	out := make(map[string]contract.SkillInfo)
+	for _, skill := range skills {
+		if skill.Command != nil {
+			out[skill.Command.Name] = skill
+		}
+	}
+	return out
+}
+
+func composeCommand(name string, args []contract.InvocationArg, commands map[string]contract.CommandBinding, personas map[string]contract.PersonaInfo, skills map[string]contract.SkillInfo, laws map[string]contract.LawInfo, templates map[string]contract.TemplateInfo, outputLanguage string, root contract.SkillInfo) contract.ResolveCommandResponse {
+	resp := contract.ResolveCommandResponse{Name: name, Description: root.Description, InvocationArgs: args}
 
 	spec := commands[name]
 	globalSpec := commands[CommandsGlobalKey]
@@ -94,20 +136,76 @@ func resolveCommandFromCatalog(name string, args []contract.InvocationArg, comma
 	resp.Laws = effectiveLaws(globalSpec, spec, resp.Persona, resp.Templates, laws)
 	resp.AgentOutputLanguage = outputLanguage
 	resp.Markdown = renderCommandMarkdown(resp)
-	return resp, nil
+	return resp
 }
 
-// CommandDescription returns the entity-sourced command list one-liner for a
-// command: the frontmatter `description` of its bound okt-<slug>-playbook skill.
-// It returns the empty string for an unknown command or an unwired runtime (no
-// skill catalog / no matching playbook skill) — callers treat empty as "no
-// description available" rather than an error.
-func (s *Service) CommandDescription(name string) string {
-	if !commandcatalog.IsRegisteredCommand(name) {
-		return ""
+func validateInvocation(parameters []contract.CommandParameter, args []contract.InvocationArg) error {
+	provided := make(map[string]string, len(args))
+	for _, arg := range args {
+		provided[arg.Name] = arg.Value
 	}
-	if pb, ok := s.loadSkillCatalog()[commandcatalog.PlaybookSlug(name)]; ok {
-		return pb.Description
+	for _, parameter := range parameters {
+		value, ok := provided[parameter.Name]
+		if !ok {
+			if parameter.Required {
+				return domain.NewError(domain.ErrValidation, "missing command parameter", map[string]any{"name": parameter.Name})
+			}
+			continue
+		}
+		if err := validateParameterValue(parameter, value); err != nil {
+			return err
+		}
+		delete(provided, parameter.Name)
+	}
+	if len(parameters) > 0 && len(provided) > 0 {
+		return domain.NewError(domain.ErrValidation, "unknown command parameter", map[string]any{"name": sortedKeys(provided)[0]})
+	}
+	return nil
+}
+
+func validateParameterValue(parameter contract.CommandParameter, value string) error {
+	var decoded any
+	if err := json.Unmarshal([]byte(value), &decoded); err != nil {
+		return domain.NewError(domain.ErrValidation, "invalid command parameter", map[string]any{"name": parameter.Name})
+	}
+	if commandParameterTypeMatches(parameter.Type, decoded) {
+		return nil
+	}
+	return domain.NewError(domain.ErrValidation, "command parameter has wrong type", map[string]any{"name": parameter.Name, "type": parameter.Type})
+}
+
+func commandParameterTypeMatches(kind string, value any) bool {
+	switch kind {
+	case "string":
+		_, ok := value.(string)
+		return ok
+	case "boolean":
+		_, ok := value.(bool)
+		return ok
+	case "integer":
+		number, ok := value.(float64)
+		return ok && number == float64(int64(number))
+	case "number":
+		_, ok := value.(float64)
+		return ok
+	default:
+		return false
+	}
+}
+
+func sortedKeys(values map[string]string) []string {
+	keys := make([]string, 0, len(values))
+	for key := range values {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
+// CommandDescription returns the description of a command skill.
+func (s *Service) CommandDescription(name string) string {
+	if skill, ok := commandSkills(s.loadSkillCatalog())[name]; ok {
+		return skill.Description
 	}
 	return ""
 }
@@ -272,8 +370,28 @@ func renderCommandMarkdown(resp contract.ResolveCommandResponse) string {
 	r.writeSkills(resp.Skills)
 	r.writeLaws(resp.Laws)
 	r.writeTemplates(resp.Templates)
+	r.writeRelated(resp.Related)
 	r.writeOutputLanguage(resp.AgentOutputLanguage)
 	return r.b.String()
+}
+
+func (r *markdownRenderer) writeRelated(related []contract.RelatedCommand) {
+	if len(related) == 0 {
+		return
+	}
+	r.openSection("## Related commands")
+	for _, command := range related {
+		fmt.Fprintf(&r.b, "### %s\n", command.Name)
+		if command.Description != "" {
+			fmt.Fprintf(&r.b, "%s\n", command.Description)
+		}
+		if command.When != "" {
+			fmt.Fprintf(&r.b, "Condition: %s\n", command.When)
+		}
+		if command.Context == "full" {
+			fmt.Fprintf(&r.b, "\n%s\n", strings.TrimSpace(command.Markdown))
+		}
+	}
 }
 
 type markdownRenderer struct {

@@ -82,6 +82,13 @@ content identity, and atomically updates the scope's selection. Application
 preferences are watched independently of preset edit hashes. Translation
 catalogs are embedded and cached; consumers receive independent values.
 
+Agent commands belong to the selected workflow package. Each command is a
+skill whose frontmatter declares its name, parameters, and immediate `next`
+references. Command bindings select its persona, supporting skills, laws, and
+templates. `internal/config` validates both sides, and `internal/operation`
+composes the requested command plus one level of related context. The CLI and
+Studio consume that composition through shared contracts.
+
 ## 4. Work documents and transactions
 
 CLI passes decoded document values through operation contracts to

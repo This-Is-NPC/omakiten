@@ -24,7 +24,7 @@ func TestResolveCommandAppendsOutputLanguageWhenConfigured(t *testing.T) {
 	fixture := newAgentFixture(t)
 	fixture.service.SetSnapshot(snapshotWithAgentOutputLanguage(t, "English"))
 
-	resp, err := fixture.service.ResolveCommand(fixture.ctx, contract.ResolveCommandInput{Name: "okt"})
+	resp, err := fixture.service.ResolveCommand(fixture.ctx, contract.ResolveCommandInput{Name: "okt-start"})
 	if err != nil {
 		t.Fatalf("ResolveCommand: %v", err)
 	}
@@ -40,7 +40,7 @@ func TestResolveCommandOmitsOutputLanguageWhenEmpty(t *testing.T) {
 	fixture := newAgentFixture(t)
 	fixture.service.SetSnapshot(snapshotWithAgentOutputLanguage(t, ""))
 
-	resp, err := fixture.service.ResolveCommand(fixture.ctx, contract.ResolveCommandInput{Name: "okt"})
+	resp, err := fixture.service.ResolveCommand(fixture.ctx, contract.ResolveCommandInput{Name: "okt-start"})
 	if err != nil {
 		t.Fatalf("ResolveCommand: %v", err)
 	}
@@ -56,7 +56,7 @@ func TestResolveCommandOutputLanguageWhitespaceOnlyIsTreatedAsEmpty(t *testing.T
 	fixture := newAgentFixture(t)
 	fixture.service.SetSnapshot(snapshotWithAgentOutputLanguage(t, "   "))
 
-	resp, err := fixture.service.ResolveCommand(fixture.ctx, contract.ResolveCommandInput{Name: "okt"})
+	resp, err := fixture.service.ResolveCommand(fixture.ctx, contract.ResolveCommandInput{Name: "okt-start"})
 	if err != nil {
 		t.Fatalf("ResolveCommand: %v", err)
 	}
@@ -69,7 +69,7 @@ func TestResolveCommandOutputLanguageAcceptsFreeFormValue(t *testing.T) {
 	fixture := newAgentFixture(t)
 	fixture.service.SetSnapshot(snapshotWithAgentOutputLanguage(t, "Português (Brasil)"))
 
-	resp, err := fixture.service.ResolveCommand(fixture.ctx, contract.ResolveCommandInput{Name: "okt"})
+	resp, err := fixture.service.ResolveCommand(fixture.ctx, contract.ResolveCommandInput{Name: "okt-start"})
 	if err != nil {
 		t.Fatalf("ResolveCommand: %v", err)
 	}
@@ -78,18 +78,10 @@ func TestResolveCommandOutputLanguageAcceptsFreeFormValue(t *testing.T) {
 	}
 }
 
-func TestResolveCommandOutputLanguageBeforeWithoutCatalogStaysEmpty(t *testing.T) {
-	// Without a snapshot installed (degraded path), the renderer must not
-	// emit a directive and the response field stays empty.
+func TestResolveCommandWithoutCatalogRejectsBeforeRenderingLanguage(t *testing.T) {
 	fixture := newAgentFixture(t)
-	resp, err := fixture.service.ResolveCommand(fixture.ctx, contract.ResolveCommandInput{Name: "okt"})
-	if err != nil {
-		t.Fatalf("ResolveCommand: %v", err)
-	}
-	if resp.AgentOutputLanguage != "" {
-		t.Fatalf("unwired snapshot should leave directive empty, got %q", resp.AgentOutputLanguage)
-	}
-	if strings.Contains(resp.Markdown, "**Output language:**") {
-		t.Fatalf("unwired snapshot should not emit directive, got:\n%s", resp.Markdown)
+	fixture.service.SetSnapshot(config.BuildSnapshot(config.Bundle{}))
+	if _, err := fixture.service.ResolveCommand(fixture.ctx, contract.ResolveCommandInput{Name: "okt-start"}); err == nil {
+		t.Fatal("unconfigured command resolved without a skill")
 	}
 }

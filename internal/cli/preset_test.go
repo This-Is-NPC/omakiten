@@ -25,8 +25,8 @@ func TestPresetRepositoryOfflineEditingAndTransport(t *testing.T) {
 	}
 	runCLI(t, db, selection, "init", "--name", "Package", "--slug", "package", "--root", root)
 	runCLI(t, db, "", "config", "validate")
-	if resolved := runCLI(t, db, selection, "command", "resolve", "okt-shape"); !strings.Contains(resolved, "third-hokage") {
-		t.Fatal("persona bindings were lost")
+	if persona := runCLI(t, db, selection, "persona", "show", "third-hokage"); !strings.Contains(persona, "third-hokage") {
+		t.Fatal("persona was lost")
 	}
 	runCLI(t, db, selection, "task", "create", "--title", "Offline", "--confirm")
 	setPresetCommentLimit(t, selection, 321)

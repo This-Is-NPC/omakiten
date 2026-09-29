@@ -291,7 +291,7 @@ func TestUntouchedStudioSaysTheCandidateIsClean(t *testing.T) {
 
 			// No editor: no draft can be opened, and the "nothing here to save"
 			// sentence is the accurate one.
-			bare := New().Bind(tc.id, Deps{Ctx: context.Background(), Workflow: studioBenchWorkflow()})
+			bare := New().Bind(tc.id, Deps{Ctx: context.Background(), Snapshot: config.BuildSnapshot(commandTestBundle()), Workflow: studioBenchWorkflow()})
 			bare = bare.Lifecycle(frame, screenhost.LifecycleEnter).Screen.(Screen)
 			bare = studioDrive(t, bare, frame, tc.key)
 			if got := tc.read(bare.State()); !strings.HasPrefix(got, "no Studio ") {

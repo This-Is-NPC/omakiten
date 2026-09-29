@@ -33,7 +33,7 @@ func TestBuildProjectsCatalogRelationshipsAndHookHistoryWithoutQueries(t *testin
 	bundle := config.Bundle{
 		Personas:    []config.Persona{persona},
 		AllPersonas: []config.Persona{persona},
-		Skills:      []config.Skill{{Slug: "testing"}}, AllSkills: []config.Skill{{Slug: "testing"}},
+		Skills:      []config.Skill{{Slug: "testing"}, {Slug: "okt-task-continue", Command: &config.SkillCommand{Name: "okt-task-continue"}}}, AllSkills: []config.Skill{{Slug: "testing"}},
 		Laws: []config.Law{{Slug: "safe", Severity: "warning"}}, AllLaws: []config.Law{{Slug: "safe", Severity: "warning"}},
 		Commands: map[string]config.CommandSpec{
 			"okt-task-continue": {Persona: persona.Slug, Skills: []string{"testing"}},

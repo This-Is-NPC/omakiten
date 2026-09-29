@@ -165,11 +165,11 @@ func TestStudioCommandsRendersGlobalAndWarnings(t *testing.T) {
 
 func TestStudioCommandsPersonaChangeSurfacesInvalidSkills(t *testing.T) {
 	bundle := studioDraftBundle()
-	bundle.Personas = []config.Persona{{Slug: "builder", SkillRepertoire: []string{"code"}}, {Slug: "reviewer", SkillRepertoire: []string{"review"}}}
+	bundle.Personas = []config.Persona{{Slug: "builder", SkillRepertoire: []string{"code", "okt-task-continue"}}, {Slug: "reviewer", SkillRepertoire: []string{"review"}}}
 	bundle.AllPersonas = append([]config.Persona(nil), bundle.Personas...)
-	bundle.Skills = []config.Skill{{Slug: "code"}, {Slug: "review"}}
+	bundle.Skills = []config.Skill{{Slug: "code"}, {Slug: "review"}, {Slug: "okt-task-continue", Command: &config.SkillCommand{Name: "okt-task-continue"}}}
 	bundle.AllSkills = append([]config.Skill(nil), bundle.Skills...)
-	bundle.Commands = map[string]config.CommandSpec{"okt-task-continue": {Persona: "builder", Skills: []string{"code"}}}
+	bundle.Commands = map[string]config.CommandSpec{"okt-task-continue": {Persona: "builder", Skills: []string{"code", "okt-task-continue"}}}
 	draft, err := bundledraft.New(bundleeditor.New(&studioDraftStore{bundle: bundle}, "omakiten.yaml"))
 	if err != nil {
 		t.Fatal(err)
@@ -219,6 +219,7 @@ func TestStudioPreviewRendersCandidatePrompt(t *testing.T) {
 		config.CommandsGlobalKey: {Laws: []string{"global-law", "disabled-law"}},
 		"okt-task-continue":      {Persona: "builder", Skills: []string{"code"}, Templates: []string{"task-template"}, LawsDisabled: []string{"disabled-law"}},
 	}
+	bundle.Skills = append(bundle.Skills, config.Skill{Slug: "okt-task-continue", Name: "Continue", Body: "Continue the task.", Command: &config.SkillCommand{Name: "okt-task-continue"}})
 	draft, err := bundledraft.New(bundleeditor.New(&studioDraftStore{bundle: bundle}, "omakiten.yaml"))
 	if err != nil {
 		t.Fatal(err)
@@ -302,6 +303,7 @@ func TestStudioPromptPreviewSanitizesControlsAndPreservesMarkdownLines(t *testin
 	bundle.Personas = []config.Persona{{Slug: "builder", Name: "Builder", Body: "first\nsecond\x00\x1b]0;owned\a\u009b31m"}}
 	bundle.AllPersonas = append([]config.Persona(nil), bundle.Personas...)
 	bundle.Commands = map[string]config.CommandSpec{"okt-task-continue": {Persona: "builder"}}
+	bundle.Skills = append(bundle.Skills, config.Skill{Slug: "okt-task-continue", Name: "Continue", Body: "Continue the task.", Command: &config.SkillCommand{Name: "okt-task-continue"}})
 	draft, err := bundledraft.New(bundleeditor.New(&studioDraftStore{bundle: bundle}, "omakiten.yaml"))
 	if err != nil {
 		t.Fatal(err)
@@ -381,6 +383,7 @@ func TestRootForwardsAScreensOwnAsyncMessage(t *testing.T) {
 	bundle := studioDraftBundle()
 	bundle.Personas = []config.Persona{{Slug: "builder", Name: "Builder", Body: "Ship working code."}}
 	bundle.Commands = map[string]config.CommandSpec{"okt-task-continue": {Persona: "builder"}}
+	bundle.Skills = append(bundle.Skills, config.Skill{Slug: "okt-task-continue", Name: "Continue", Body: "Continue the task.", Command: &config.SkillCommand{Name: "okt-task-continue"}})
 	draft, err := bundledraft.New(bundleeditor.New(&studioDraftStore{bundle: bundle}, "omakiten.yaml"))
 	if err != nil {
 		t.Fatal(err)

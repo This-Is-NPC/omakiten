@@ -61,15 +61,25 @@ func snapshotSkillCatalog(snap *config.Snapshot) contract.SkillCatalog {
 		skills := snap.Skills()
 		out := make([]contract.SkillInfo, 0, len(skills))
 		for _, s := range skills {
-			out = append(out, contract.SkillInfo{
-				Slug:        s.Slug,
-				Name:        s.Name,
-				Description: s.Description,
-				Body:        s.Body,
-			})
+			out = append(out, SkillInfoFromConfig(s))
 		}
 		return out
 	}
+}
+
+func SkillInfoFromConfig(s config.Skill) contract.SkillInfo {
+	out := contract.SkillInfo{Slug: s.Slug, Name: s.Name, Description: s.Description, Body: s.Body}
+	if s.Command != nil {
+		command := &contract.CommandDefinition{Name: s.Command.Name}
+		for _, ref := range s.Command.Next {
+			command.Next = append(command.Next, contract.CommandReference{Name: ref.Name, Context: ref.Context, When: ref.When})
+		}
+		for _, param := range s.Command.Parameters {
+			command.Parameters = append(command.Parameters, contract.CommandParameter{Name: param.Name, Type: param.Type, Required: param.Required})
+		}
+		out.Command = command
+	}
+	return out
 }
 
 func snapshotLawCatalog(snap *config.Snapshot) contract.LawCatalog {

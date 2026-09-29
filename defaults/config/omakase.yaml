@@ -250,6 +250,3 @@ workflows:
 
 personas:
   from: ./themes/naruto.yaml#personas
-
-commands:
-  from: ./themes/naruto.yaml#commands

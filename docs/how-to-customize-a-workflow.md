@@ -96,9 +96,45 @@ work; inspect `okt workflow orphans --help` before applying a migration.
 
 ## 4. Bind instructions to a command
 
+Each agent command is one skill in `skills/<command-name>.md`. Its frontmatter
+declares its identity, optional parameters, and related commands. Its body
+contains the instructions. The `commands` binding in `config/bindings.yaml`
+uses the same name to select a persona, supporting skills, laws, and templates.
+For example, `skills/example-shape.md` can declare:
+
+```yaml
+---
+name: Example Shape
+description: Structure work before execution
+schema_version: 2
+command:
+  name: example-shape
+  parameters:
+    - name: topic
+      type: string
+      required: true
+  next:
+    - name: example-run
+      context: full
+      when: The plan is ready
+    - name: example-pause
+      context: bare
+      when: Work must stop
+---
+```
+
+`next` belongs to the command being resolved. `full` includes the referenced
+command's composed context; `bare` includes its name, description, and `when`
+condition. Expansion stops there: resolving `example-shape` never follows the
+children of `example-run`. `when` guides the agent and does not replace
+workflow guards. Every target must exist in the selected workflow. Parameters
+accept `string`, `integer`, `number`, and `boolean`; required values and types
+are checked during resolution.
+
 ```bash
 okt --project example command list
-okt --project example command resolve okt-task-review
+okt --project example command resolve example-shape \
+  --arguments '{"topic":"release planning"}'
 ```
 
 The binding composes persona instructions, skills, laws, and templates.
