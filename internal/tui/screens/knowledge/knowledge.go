@@ -22,7 +22,8 @@ const sectionBody = screenlayout.ID("project-knowledge-body")
 // Screen presents resources and follows their file-backed relations.
 type Screen struct {
 	snapshot domain.KnowledgeSnapshot
-	lines    []graph.KnowledgeLine
+	network  graph.KnowledgeMap
+	focus    string
 	grid     screengrid.State
 	selected int
 	detail   bool
@@ -44,9 +45,10 @@ func (s Screen) ID() screenhost.ID { return screenhost.ProjectKnowledge }
 
 func (s Screen) Snapshot() domain.KnowledgeSnapshot { return s.snapshot }
 
-func (s Screen) Apply(snapshot domain.KnowledgeSnapshot, lines []graph.KnowledgeLine) Screen {
+func (s Screen) Apply(snapshot domain.KnowledgeSnapshot, network graph.KnowledgeMap) Screen {
 	s.snapshot = snapshot
-	s.lines = lines
+	s.network = network
+	s.focus = graph.KnowledgeRoot
 	s.grid = screengrid.NewState()
 	s.detail = false
 	s.graph = true
@@ -61,37 +63,65 @@ func (s Screen) Update(frame screenhost.Frame, msg tea.Msg) screenhost.Outcome {
 	}
 	switch key.String() {
 	case "esc":
-		if s.detail {
-			s.detail = false
-			s.cache = &detailCache{}
-			s.grid = screengrid.NewState()
-			s = s.resync(frame)
-			return screenhost.Stay(s, nil)
-		}
-		return screenhost.Back(s, nil)
+		return s.back(frame)
 	case "enter":
-		if !s.detail {
-			if selected, ok := s.selectedResource(); ok {
-				s.selected, s.detail = selected, true
-				s.grid = screengrid.NewState()
-				s.cache = &detailCache{}
-				s = s.resync(frame)
-			}
-		}
-		return screenhost.Stay(s, nil)
+		return screenhost.Stay(s.openSelected(frame), nil)
 	case "g", "l":
-		if !s.detail {
-			s.graph = key.String() == "g"
-			s.grid = screengrid.NewState()
-			s = s.resync(frame)
-		}
-		return screenhost.Stay(s, nil)
+		return screenhost.Stay(s.switchView(frame, key.String() == "g"), nil)
 	case "r":
 		return screenhost.Reload(s, nil)
 	}
 	kit := frame.Kit()
 	s.grid, _ = s.grid.HandleKey(kit, s.panelBox(kit), key.String(), s.root(kit))
 	return screenhost.Stay(s, nil)
+}
+
+func (s Screen) back(frame screenhost.Frame) screenhost.Outcome {
+	if s.detail {
+		s.detail = false
+		s.cache = &detailCache{}
+		s.grid = screengrid.NewState()
+		return screenhost.Stay(s.resync(frame), nil)
+	}
+	if s.graph {
+		if parent := s.network.Views[s.focus].Parent; parent != "" {
+			s.focus = parent
+			s.grid = screengrid.NewState()
+			return screenhost.Stay(s.resync(frame), nil)
+		}
+	}
+	return screenhost.Back(s, nil)
+}
+
+func (s Screen) openSelected(frame screenhost.Frame) Screen {
+	if s.detail {
+		return s
+	}
+	if s.graph {
+		cursor := s.grid.Layout().Cursor(sectionBody)
+		lines := s.network.Views[s.focus].Lines
+		if cursor >= 0 && cursor < len(lines) && lines[cursor].FocusID != "" {
+			s.focus = lines[cursor].FocusID
+			s.grid = screengrid.NewState()
+			return s.resync(frame)
+		}
+	}
+	if selected, ok := s.selectedResource(); ok {
+		s.selected, s.detail = selected, true
+		s.grid = screengrid.NewState()
+		s.cache = &detailCache{}
+		return s.resync(frame)
+	}
+	return s
+}
+
+func (s Screen) switchView(frame screenhost.Frame, graphView bool) Screen {
+	if s.detail {
+		return s
+	}
+	s.graph = graphView
+	s.grid = screengrid.NewState()
+	return s.resync(frame)
 }
 
 func (s Screen) Lifecycle(frame screenhost.Frame, event screenhost.LifecycleEvent) screenhost.Outcome {
@@ -188,7 +218,11 @@ func (s Screen) body(kit screenkit.Kit, canvas screenlayout.Canvas) screenlayout
 	if len(items) == 0 {
 		items = []string{kit.T("tui.knowledge.empty")}
 	}
-	block := framed.List(kit.Styles.Border, width, kit.Styles.FocusKickerCount(kit.T("tui.knowledge.title"), len(s.snapshot.Resources)), nil, items)
+	title := kit.T("tui.knowledge.title")
+	if s.graph {
+		title = s.network.Views[s.focus].Title
+	}
+	block := framed.List(kit.Styles.Border, width, kit.Styles.FocusKicker(title), nil, items)
 	block.Selectable = selectable
 	return block
 }
@@ -204,11 +238,12 @@ func (s Screen) listRows(width int) ([]string, []int) {
 }
 
 func (s Screen) graphRows(width int) ([]string, []int) {
-	items := make([]string, 0, len(s.lines))
-	selectable := make([]int, 0, len(s.lines))
-	for i, line := range s.lines {
+	lines := s.network.Views[s.focus].Lines
+	items := make([]string, 0, len(lines))
+	selectable := make([]int, 0, len(lines))
+	for i, line := range lines {
 		items = append(items, screenkit.Truncate(screenkit.Sanitize(line.Text), width))
-		if line.ResourceID != "" {
+		if line.ResourceID != "" || line.FocusID != "" {
 			selectable = append(selectable, i)
 		}
 	}
@@ -220,11 +255,12 @@ func (s Screen) selectedResource() (int, bool) {
 	if !s.graph {
 		return cursor, cursor >= 0 && cursor < len(s.snapshot.Resources)
 	}
-	if cursor < 0 || cursor >= len(s.lines) || s.lines[cursor].ResourceID == "" {
+	lines := s.network.Views[s.focus].Lines
+	if cursor < 0 || cursor >= len(lines) || lines[cursor].ResourceID == "" {
 		return 0, false
 	}
 	for i, item := range s.snapshot.Resources {
-		if item.Project+":"+item.ID == s.lines[cursor].ResourceID {
+		if item.Project+":"+item.ID == lines[cursor].ResourceID {
 			return i, true
 		}
 	}

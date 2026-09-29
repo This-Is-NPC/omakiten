@@ -29,6 +29,11 @@ run = "scripts/test.sh"
 description = "Build okt into .tmp/build/ with the current git version"
 run = "scripts/build.sh"
 
+[tasks."knowledge:inventory"]
+description = "Export the live okt command tree for project knowledge"
+depends = ["build"]
+run = "scripts/export-cli-inventory.sh"
+
 [tasks."release:dry-run"]
 description = "Build and verify the complete release metadata fixture without publishing"
 run = "scripts/release-dry-run.sh"
@@ -66,12 +71,14 @@ run = "scripts/purge-local.sh"
 [tasks.tui]
 description = "Start the Omakiten TUI with local dev state under dev_env/"
 env = { OMAKITEN_HOME = "dev_env" }
+depends = ["knowledge:inventory"]
 raw = true
 run = "scripts/tui.sh"
 
 [tasks."tui:bare"]
 description = "Open the TUI while preserving the existing development preset and data"
 env = { OMAKITEN_HOME = "dev_env" }
+depends = ["knowledge:inventory"]
 raw = true
 run = "scripts/tui.sh --bare"
 

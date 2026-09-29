@@ -18,8 +18,9 @@ const maxFileBytes = 1 << 20
 const maxResources = 2000
 
 type source struct {
-	Format string `yaml:"format"`
-	Path   string `yaml:"path"`
+	Format   string `yaml:"format"`
+	Path     string `yaml:"path"`
+	Optional bool   `yaml:"optional"`
 }
 
 type manifest struct {
@@ -85,6 +86,11 @@ func loadProject(ctx context.Context, project domain.ProjectContext, result *dom
 		if err != nil {
 			result.Diagnostics = append(result.Diagnostics, err.Error())
 			continue
+		}
+		if item.Optional {
+			if _, err := os.Stat(path); os.IsNotExist(err) {
+				continue
+			}
 		}
 		switch item.Format {
 		case "markdown", "okf":
@@ -180,14 +186,22 @@ func hasResourceCapacity(result *domain.KnowledgeSnapshot, count int) bool {
 
 func validateRelations(result *domain.KnowledgeSnapshot, includeRelated bool) {
 	known := make(map[string]bool, len(result.Resources))
+	interfaces := make(map[string]bool)
 	for _, item := range result.Resources {
 		id := item.Project + ":" + item.ID
 		if known[id] {
 			result.Diagnostics = append(result.Diagnostics, "duplicate knowledge resource: "+id)
 		}
 		known[id] = true
+		if strings.HasPrefix(item.ID, "cli:") || strings.HasPrefix(item.ID, "openapi:") {
+			interfaces[item.Project] = true
+		}
 	}
 	for _, edge := range result.Relations {
+		if missingRelationSource(edge, known, interfaces) {
+			result.Diagnostics = append(result.Diagnostics, "unresolved knowledge source: "+edge.From)
+			continue
+		}
 		if !includeRelated && !strings.HasPrefix(edge.To, strings.SplitN(edge.From, ":", 2)[0]+":") {
 			continue
 		}
@@ -195,6 +209,16 @@ func validateRelations(result *domain.KnowledgeSnapshot, includeRelated bool) {
 			result.Diagnostics = append(result.Diagnostics, "unresolved knowledge reference: "+edge.From+" -> "+edge.To)
 		}
 	}
+}
+
+func missingRelationSource(edge domain.KnowledgeRelation, known, interfaces map[string]bool) bool {
+	if known[edge.From] {
+		return false
+	}
+	if edge.Kind == "contains" {
+		return true
+	}
+	return edge.Kind == "documented_by" && interfaces[strings.SplitN(edge.From, ":", 2)[0]]
 }
 
 func qualifiedKnowledgeLink(project, link string) (string, bool) {

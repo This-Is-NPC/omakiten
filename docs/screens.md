@@ -74,10 +74,12 @@ The graph shows task dependencies. Plans group tasks by ordered waves, with
 a separate plan-network presentation. A wave is an ordering rule, not another
 task bucket.
 
-Project Knowledge reads Markdown, OpenAPI, and declared CLI documentation from
-the registered root. Its default graph shows resources and directed relations;
-`enter` opens a node or an edge's target. Use `l` for the resource list, `g` for
-the graph, and `r` to reread source files. See [the knowledge guide](how-to-browse-project-knowledge.md)
+Project Knowledge reads Markdown, OpenAPI, and declared CLI inventories from
+the registered root. Its default view starts with CLI, API, and documentation;
+select an interface to see its immediate commands, schemas, and linked guides.
+Use `enter` to follow a relation, `esc` to return to its parent, `l` for the
+flat resource list, `g` for the focused graph, and `r` to reread source files.
+See [the knowledge guide](how-to-browse-project-knowledge.md)
 for source and cross-project rules.
 
 ## 4. Read Task Detail

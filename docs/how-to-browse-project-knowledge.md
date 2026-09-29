@@ -1,16 +1,22 @@
+---
+relates_to: [cli:knowledge]
+---
+
 # How to browse project knowledge
 
 **The question:** how can I see documentation and API operations from a
 registered project in Omakiten, and optionally follow links to another project?
 
 Open the project in the TUI with `Ctrl+P`, then press `Shift+K` (uppercase K).
-Lowercase `k` scrolls upward on the project screen. The knowledge screen opens
-as a directed graph: `●` rows are resources, and `├─`/`└─` rows are outgoing
-relations. Use `j`/`k` and `enter` to open a node or the target of an edge.
-Press `l` for a compact resource list, `g` to return to the graph, `esc` to
-return from a document, and `r` to read the files again. The view reads
-files from the registered project root.
-The catalog does not write resources or relations to SQLite.
+Lowercase `k` scrolls upward on the project screen. The knowledge screen starts
+with interfaces: enter `CLI`, then `okt`, `okt task`, and `okt task create` to
+see that command's options and linked guides. `API` groups OpenAPI operations;
+the flat list keeps unlinked pages discoverable. Use `j`/`k` to select,
+`enter` to follow a relation, and `esc` to go to its parent. Press `l` for a
+flat resource list, `g` to return to the focused graph, and `r` to reread the
+project files.
+When a project has no CLI or API inventory, the graph starts at its Markdown
+documentation. The catalog does not write resources or relations to SQLite.
 
 ## Start with Markdown
 
@@ -52,21 +58,45 @@ to require a `type` on every page. OpenAPI 3 operations become resources named
 `openapi:<operationId>`; operations without `operationId` use `openapi:<METHOD>
 <path>`. Referenced component schemas become `openapi:schema:<name>`.
 
-The optional CLI source is a versioned YAML file for command documentation:
+The optional CLI source is a versioned YAML or JSON inventory. Generate it from
+the command tree where the CLI framework supports introspection. Omakiten uses
+`okt knowledge export-cli`; `mise run knowledge:inventory` writes its current
+tree to `.tmp/knowledge/cli.json`, and both TUI tasks run that mise task first.
+Its manifest declares this generated file as an optional source, so a checkout
+without `.tmp/` still opens its Markdown pages.
+
+A small external CLI can also provide the same contract directly:
 
 ```yaml
 version: 1
 commands:
-  - id: orders-create
+  - {id: shop, name: shop}
+  - id: orders
+    parent: shop
+    name: shop orders
+  - id: orders.create
+    parent: orders
     name: shop orders create
     summary: Create an order from the terminal
     description: Pass --customer and --item to submit an order.
     links: [openapi:createOrder]
 ```
 
-Its resource ID is `cli:orders-create`. This format documents the commands a
-project chooses to expose; it does not run the CLI or infer behavior from help
-text. Files remain authoritative and should be updated alongside the command.
+The leaf's resource ID is `cli:orders.create`; `parent` links commands in the
+tree. Omakiten reads the inventory as data and does not execute a project's CLI.
+The project owns the export step that keeps this file current.
+
+Attach documentation to an interface with Markdown frontmatter:
+
+```yaml
+---
+type: Guide
+relates_to: [cli:orders.create, openapi:createOrder]
+---
+```
+
+This creates relations from each named command or operation to the guide.
+Relative Markdown links still connect documents to one another.
 
 ## Read from the CLI
 

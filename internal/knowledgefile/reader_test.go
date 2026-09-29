@@ -88,6 +88,20 @@ func TestLoadCLIDocumentLinksToOpenAPI(t *testing.T) {
 	}
 }
 
+func TestLoadGeneratedCLIInventoryAndDocumentRelations(t *testing.T) {
+	root := t.TempDir()
+	writeKnowledgeTestFile(t, filepath.Join(root, "docs", "knowledge.yaml"), "version: 1\nsources:\n  - {format: markdown, path: docs}\n  - {format: cli, path: .tmp/knowledge/cli.json}\n")
+	writeKnowledgeTestFile(t, filepath.Join(root, ".tmp", "knowledge", "cli.json"), `{"version":1,"commands":[{"id":"okt","name":"okt"},{"id":"task","parent":"okt","name":"okt task"},{"id":"task.create","parent":"task","name":"okt task create","flags":[{"name":"title","description":"Task title"}]}]}`)
+	writeKnowledgeTestFile(t, filepath.Join(root, "docs", "task.md"), "---\nrelates_to: [cli:task.create]\n---\n# Create a task\n")
+	snapshot := Load(context.Background(), domain.ProjectContext{Slug: "okt", RootPath: root}, false, nil)
+	if len(snapshot.Diagnostics) != 0 || len(snapshot.Resources) != 4 || len(snapshot.Relations) != 3 {
+		t.Fatalf("generated inventory = %+v", snapshot)
+	}
+	if snapshot.Relations[0].Kind != "contains" && snapshot.Relations[1].Kind != "contains" {
+		t.Fatalf("command hierarchy missing: %+v", snapshot.Relations)
+	}
+}
+
 func writeKnowledgeTestFile(t *testing.T, path, content string) {
 	t.Helper()
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {

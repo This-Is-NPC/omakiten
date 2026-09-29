@@ -1,3 +1,7 @@
+---
+relates_to: [cli:init, cli:projects]
+---
+
 # How to put a project on the board
 
 **The question:** how does Omakiten know which repository I am working on,

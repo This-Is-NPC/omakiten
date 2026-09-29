@@ -16,9 +16,10 @@ import (
 var markdownLink = regexp.MustCompile(`\[[^]]+\]\(([^)]+)\)`)
 
 type markdownMeta struct {
-	Type        string `yaml:"type"`
-	Title       string `yaml:"title"`
-	Description string `yaml:"description"`
+	Type        string   `yaml:"type"`
+	Title       string   `yaml:"title"`
+	Description string   `yaml:"description"`
+	RelatesTo   []string `yaml:"relates_to"`
 }
 
 func readMarkdownSource(ctx context.Context, project domain.ProjectContext, format, path string, result *domain.KnowledgeSnapshot) {
@@ -91,6 +92,14 @@ func readMarkdown(ctx context.Context, project domain.ProjectContext, format, pa
 		ID: id, Project: project.Slug, Kind: meta.Type, Title: meta.Title,
 		Description: meta.Description, Body: body, Path: rel,
 	})
+	for _, link := range meta.RelatesTo {
+		from, ok := qualifiedKnowledgeLink(project.Slug, link)
+		if !ok {
+			result.Diagnostics = append(result.Diagnostics, rel+": invalid related item "+link)
+			continue
+		}
+		result.Relations = append(result.Relations, domain.KnowledgeRelation{From: from, To: project.Slug + ":" + id, Kind: "documented_by"})
+	}
 	appendMarkdownLinks(project, id, body, path, sourceRoot, result)
 }
 

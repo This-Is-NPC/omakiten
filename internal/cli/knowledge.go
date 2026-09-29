@@ -23,6 +23,7 @@ func newKnowledgeCommand(opts *runtimeOptions) *cobra.Command {
 	cmd.AddCommand(newKnowledgeListCommand(options))
 	cmd.AddCommand(newKnowledgeShowCommand(options))
 	cmd.AddCommand(newKnowledgeSearchCommand(options))
+	cmd.AddCommand(newKnowledgeExportCLICommand())
 	return cmd
 }
 

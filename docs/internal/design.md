@@ -99,7 +99,11 @@ both. The [data model](data-model.md) describes the relationships.
 
 Project knowledge is separate from operational work documents. Its readers
 build an in-memory projection from registered project files on each explicit
-read or TUI refresh. No knowledge node or relation is written to SQLite.
+read or TUI refresh. CLI command inventories are exported from executable
+command trees into generated files under `.tmp/`; Markdown frontmatter attaches
+guides to commands or OpenAPI operations by stable ID. The TUI prepares focused
+interface neighborhoods from those relations. No knowledge node or relation is
+written to SQLite.
 
 ## 5. Events and hooks
 

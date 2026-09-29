@@ -104,8 +104,8 @@ func TestProjectKnowledgeOpensFromCtrlPAndReloads(t *testing.T) {
 	if got := model.screenStack[len(model.screenStack)-1]; got != screenhost.ProjectKnowledge {
 		t.Fatalf("K opened %s", got)
 	}
-	if view := model.View(); !strings.Contains(view, "openapi:createOrder") {
-		t.Fatalf("knowledge route rendered without its resource: %q", view)
+	if view := model.View(); !strings.Contains(view, "API → 1 endpoints") {
+		t.Fatalf("knowledge route rendered without its API entry: %q", view)
 	}
 	title = "Updated endpoint"
 	next, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'r'}})

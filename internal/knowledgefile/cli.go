@@ -3,23 +3,12 @@ package knowledgefile
 import (
 	"fmt"
 	"path/filepath"
+	"strings"
 
 	"gopkg.in/yaml.v3"
+	"omakiten/internal/contract"
 	"omakiten/internal/domain"
 )
-
-type cliDocument struct {
-	Version  int          `yaml:"version"`
-	Commands []cliCommand `yaml:"commands"`
-}
-
-type cliCommand struct {
-	ID          string   `yaml:"id"`
-	Name        string   `yaml:"name"`
-	Summary     string   `yaml:"summary"`
-	Description string   `yaml:"description"`
-	Links       []string `yaml:"links"`
-}
 
 func readCLI(project domain.ProjectContext, path string, result *domain.KnowledgeSnapshot) {
 	data, err := readFile(path)
@@ -27,7 +16,7 @@ func readCLI(project domain.ProjectContext, path string, result *domain.Knowledg
 		result.Diagnostics = append(result.Diagnostics, fmt.Sprintf("CLI source %s: %v", path, err))
 		return
 	}
-	var doc cliDocument
+	var doc contract.CLIInventory
 	if err := yaml.Unmarshal(data, &doc); err != nil || doc.Version != 1 {
 		result.Diagnostics = append(result.Diagnostics, fmt.Sprintf("CLI source %s: expected version 1", path))
 		return
@@ -46,7 +35,7 @@ func readCLI(project domain.ProjectContext, path string, result *domain.Knowledg
 	}
 }
 
-func appendCLICommand(project, path string, command cliCommand, result *domain.KnowledgeSnapshot) {
+func appendCLICommand(project, path string, command contract.CLICommand, result *domain.KnowledgeSnapshot) {
 	if command.ID == "" || command.Name == "" {
 		result.Diagnostics = append(result.Diagnostics, path+": CLI commands require id and name")
 		return
@@ -54,8 +43,11 @@ func appendCLICommand(project, path string, command cliCommand, result *domain.K
 	id := "cli:" + command.ID
 	result.Resources = append(result.Resources, domain.KnowledgeResource{
 		ID: id, Project: project, Kind: "CLI Command", Title: command.Name,
-		Description: command.Summary, Body: command.Description, Path: path,
+		Description: command.Summary, Body: cliCommandBody(command), Path: path,
 	})
+	if command.Parent != "" {
+		result.Relations = append(result.Relations, domain.KnowledgeRelation{From: project + ":cli:" + command.Parent, To: project + ":" + id, Kind: "contains"})
+	}
 	for _, link := range command.Links {
 		target, ok := qualifiedKnowledgeLink(project, link)
 		if !ok {
@@ -64,4 +56,24 @@ func appendCLICommand(project, path string, command cliCommand, result *domain.K
 		}
 		result.Relations = append(result.Relations, domain.KnowledgeRelation{From: project + ":" + id, To: target, Kind: "references"})
 	}
+}
+
+func cliCommandBody(command contract.CLICommand) string {
+	var body strings.Builder
+	description := command.Description
+	if description == "" {
+		description = command.Summary
+	}
+	fmt.Fprintf(&body, "# %s\n\n%s\n\n", command.Name, description)
+	if len(command.Flags) > 0 {
+		body.WriteString("## Options\n\n")
+		for _, flag := range command.Flags {
+			fmt.Fprintf(&body, "- `--%s`", flag.Name)
+			if flag.Shorthand != "" {
+				fmt.Fprintf(&body, " (`-%s`)", flag.Shorthand)
+			}
+			fmt.Fprintf(&body, ": %s\n", flag.Description)
+		}
+	}
+	return body.String()
 }

@@ -1,11 +1,35 @@
 package cli
 
 import (
+	"bytes"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"omakiten/internal/contract"
 )
+
+func TestCLIInventoryExportsLiveCommandTree(t *testing.T) {
+	cmd := NewRootCommand("test")
+	var output bytes.Buffer
+	cmd.SetOut(&output)
+	cmd.SetArgs([]string{"knowledge", "export-cli"})
+	if code := Execute(cmd); code != 0 {
+		t.Fatalf("export-cli exit = %d: %s", code, &output)
+	}
+	var inventory contract.CLIInventory
+	if err := json.Unmarshal(output.Bytes(), &inventory); err != nil {
+		t.Fatal(err)
+	}
+	for _, item := range inventory.Commands {
+		if item.ID == "task.create" && item.Parent == "task" && len(item.Flags) > 0 {
+			return
+		}
+	}
+	t.Fatalf("task.create missing from live CLI inventory: %+v", inventory)
+}
 
 func TestCLIKnowledgeReadsFilesWithoutIndex(t *testing.T) {
 	root := t.TempDir()

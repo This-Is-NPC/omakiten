@@ -1,3 +1,7 @@
+---
+relates_to: [cli:db]
+---
+
 # How to keep and recover the board
 
 **The question:** where is the work stored, how do I save it, and what should
