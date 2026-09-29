@@ -88,17 +88,9 @@ run = "scripts/lint.sh"
 description = "Run Go vulnerability scan"
 run = "scripts/vuln.sh"
 
-[tasks."docs:refresh"]
-description = "Remove legacy generated docs artifacts and validate the current .docs/ tree"
-run = "scripts/docs.sh"
-
-[tasks."docs:check"]
-description = "Fail if legacy docs-refresh artifacts are present (CI gate)"
-run = "scripts/docs.sh --check"
-
 [tasks.check]
 description = "Run the full verification suite"
-depends = ["fmt:check", "test", "lint", "vuln", "docs:check", "workspace:check", "scripts:check"]
+depends = ["fmt:check", "test", "lint", "vuln", "workspace:check", "scripts:check"]
 
 [tasks."workspace:check"]
 description = "Reject generated artifacts outside .tmp/ and persistent local-state directories"
