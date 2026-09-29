@@ -28,6 +28,55 @@
 * **config:** unified `config.events.retention` policy for every row in the `events` table — category defaults, per-type overrides, generic SQLite prune on insert and at `ApplyConfig`, and a TUI Logs footer that contrasts storage retention with `views.logs.window_days`.
 * **cli:** rewrite `okt logs` as the unified event inspector with `--category`, `--since`, and `--limit` flags. Default scope is the last `views.logs.window_days` for the active project; `--category` is repeatable and comma-separated and accepts the same chips as the TUI (`task`, `comment`, `plan`, `tag-dep`, `guard`, `audit`, `hook`, `tool_call`, `trick`, `domain`, plus the `all` shortcut).
 
+## [0.31.0](https://github.com/This-Is-NPC/omakiten/compare/v0.30.0...v0.31.0) (2026-09-29)
+
+
+### ⚠ BREAKING CHANGES
+
+* **i18n:** language preferences use application preferences.yaml.
+* **preset:** installs select repository snapshots through config.yaml.
+* **cli:** Law scope targets and filters use --scope-project. Catalog lookup failures use law_not_found, skill_not_found and persona_not_found. Data-command input failures emit JSON on stdout.
+* **work:** Task creation uses okt task create.
+* **agent:** Agents use the okt CLI. Configuration uses commands bindings and config.agent; skill destinations are agents and claude-code.
+* **architecture:** notification actions require operation and arguments. The command array field is no longer supported.
+* **okt:** consolidate current baseline and TUI refactoring
+
+### Features
+
+* **preset:** install workflow packages ([c07e022](https://github.com/This-Is-NPC/omakiten/commit/c07e0228abb0a39bc09946f0aec8c8719ad6202b))
+* **preset:** install workflow repositories ([6df21ea](https://github.com/This-Is-NPC/omakiten/commit/6df21ea0bc308d474a95b1926f6c8d8102cbf418))
+* **work:** import and export OKF documents ([904529f](https://github.com/This-Is-NPC/omakiten/commit/904529f0977205ea0b02073a249c161c0bf6746c))
+
+
+### Bug Fixes
+
+* **cli:** enforce consistent command contracts ([daaedec](https://github.com/This-Is-NPC/omakiten/commit/daaedec450105eb433a3c7dc93f39cd29084276f))
+* **cli:** preserve interactive prompt input ([2bcbe39](https://github.com/This-Is-NPC/omakiten/commit/2bcbe399e26d149acc3ad9aa72dc199841618ba2))
+* **cli:** report actionable config diagnostics ([7ab69d3](https://github.com/This-Is-NPC/omakiten/commit/7ab69d347bd89a9889ec3c42b70c8475630c1398))
+* **config:** correct native filesystem access ([112d453](https://github.com/This-Is-NPC/omakiten/commit/112d453d1cb32f937b0404e29a2c75477f2196ac))
+* **config:** quote language scaffold metadata ([9a1224e](https://github.com/This-Is-NPC/omakiten/commit/9a1224eb183f3c87dc173e886ab87b30928817b1))
+* **config:** reject managed defaults symlinks ([ed3745c](https://github.com/This-Is-NPC/omakiten/commit/ed3745c370594a8e132ca8ab39cb2fb4d708e29b))
+* **coverage:** include integration execution ([29e5e74](https://github.com/This-Is-NPC/omakiten/commit/29e5e74b60beb10952777a689d14976dd744bb95))
+* **hooks:** restore detached status publisher ([727e337](https://github.com/This-Is-NPC/omakiten/commit/727e337032f028960126b0654bc476fc56e8808d))
+* **i18n:** own application languages ([b5eabfa](https://github.com/This-Is-NPC/omakiten/commit/b5eabfa135923f7c549c9ed4bf30c41f3ede40ca))
+* **installer:** preserve wrapper profile bytes ([b1dcd06](https://github.com/This-Is-NPC/omakiten/commit/b1dcd06484ef1cf97264340eaa5f5ddcc146475b))
+* **install:** keep setup and init in one scope ([f085218](https://github.com/This-Is-NPC/omakiten/commit/f085218dd93869cc91043c16fb9b1e466c48742f))
+* **preset:** preserve readable config modules ([da3ea44](https://github.com/This-Is-NPC/omakiten/commit/da3ea448abe52c480c016f286f360ddfd7a78257))
+* **preset:** retain cleared config modules ([ec76d0a](https://github.com/This-Is-NPC/omakiten/commit/ec76d0a318fccc128e06ad2b4cba7b86e9d4ed46))
+* **release:** keep fixture signing offline ([6ac6a3b](https://github.com/This-Is-NPC/omakiten/commit/6ac6a3beb2269ff5c6284c8486ff8eab7e5ed60d))
+* **scripts:** validate before posting status ([5dab62a](https://github.com/This-Is-NPC/omakiten/commit/5dab62aa4638a8d93cc80d044c13efc2816aa8f0))
+* **sqlite:** repair Windows snapshot validation ([8fd1faa](https://github.com/This-Is-NPC/omakiten/commit/8fd1faad9463fcb1c8c84c192c166c4504f0d228))
+* **test:** enforce race detection in the gate ([14a19d9](https://github.com/This-Is-NPC/omakiten/commit/14a19d9696521b6faaba140ca69263acde5000f8))
+* **tui:** correct home and project layout ([64cec28](https://github.com/This-Is-NPC/omakiten/commit/64cec28ddeebd85cd783454aa0f0f430c668cd7e))
+* **tui:** frame project overview sections ([99910fc](https://github.com/This-Is-NPC/omakiten/commit/99910fcd34e70473f4933b52fa9465f1e3065885))
+
+
+### Code Refactoring
+
+* **agent:** replace MCP with CLI skill ([ffd1600](https://github.com/This-Is-NPC/omakiten/commit/ffd1600d4d15bdf29c6bdb0027ec596a139f5073))
+* **architecture:** isolate delivery ports ([6b121af](https://github.com/This-Is-NPC/omakiten/commit/6b121af4ab52fb46f41a99b63e09d7c000ac2f91))
+* **okt:** consolidate current baseline and TUI refactoring ([27763f2](https://github.com/This-Is-NPC/omakiten/commit/27763f2fead3f6d38da1ff5a373af29564945eac))
+
 ## [0.30.0](https://github.com/This-Is-NPC/omakiten/compare/v0.29.0...v0.30.0) (2026-07-14)
 
 
