@@ -94,6 +94,14 @@ func (p Painter) Render(spec Spec) string {
 	return p.box(spec).Render(strings.Join(p.lines(spec), "\n"))
 }
 
+// Fit sizes the card, including its border and padding, inside width.
+func (p Painter) Fit(spec Spec, width int) Spec {
+	box := p.box(spec)
+	spec.InnerWidth = max(1, width-box.GetHorizontalFrameSize())
+	spec.BoxWidth = max(1, width-box.GetHorizontalBorderSize())
+	return spec
+}
+
 // Height is the rendered row count, borders included.
 //
 // It runs the same line builder Render does rather than predicting it. That

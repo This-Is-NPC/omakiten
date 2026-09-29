@@ -40,7 +40,7 @@ const Rows = panel.Borders + 2
 // wrapped through, so hint rows the arranger injects for a scrolling
 // section land inside the same box.
 func Box(border lipgloss.Style, width int, kicker string, items []string) screenlayout.Block {
-	inner := width - panel.Borders
+	inner := ContentWidth(width)
 	header, footer, wrap := panel.Frame(border, inner, kicker)
 	wrapped := make([]string, len(items))
 	for i, item := range items {
@@ -48,6 +48,9 @@ func Box(border lipgloss.Style, width int, kicker string, items []string) screen
 	}
 	return screenlayout.Block{Header: header, Items: wrapped, Footer: footer, Chrome: wrap}
 }
+
+// ContentWidth is the space inside a framed section's side borders.
+func ContentWidth(width int) int { return max(1, width-panel.Borders) }
 
 // List is [Box] for a scrollable section whose header carries one or more
 // pinned lines below the kicker's joining rule — a column heading, a hint

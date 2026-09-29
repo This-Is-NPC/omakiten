@@ -25,6 +25,9 @@ package screenkit
 // against goldens, in one edit — which is the point of having the name.
 
 const (
+	// ReadingViewportRows is the usable share of a scrolling text section.
+	ReadingViewportRows = 8
+
 	// ComfortableReadingWidth is the columns a feed stays comfortable at. A
 	// section that wants that cap declares it as MaxWidth; surplus it refuses
 	// goes to the columns that can still take it.
