@@ -166,8 +166,8 @@ keys:
   cli.config.why.short: "चुने गए scope की config लेयर के स्वामी इंस्टॉल रूट को प्रिंट करें"
   cli.config.language.short: "CLI सहायता, TUI लेबल, और agent आउटपुट निर्देश के लिए सक्रिय भाषा प्रबंधित करें"
   cli.config.language.show.short: "सक्रिय भाषा सेटिंग्स और खोजे गए भाषा पैक प्रिंट करें"
-  cli.config.language.set.short: "सक्रिय omakiten.yaml में एक या अधिक भाषा सेटिंग्स सेट करें"
-  cli.config.language.reset.short: "सक्रिय omakiten.yaml से भाषा ब्लॉक हटाएँ (डिफ़ॉल्ट लागू होते हैं)"
+  cli.config.language.set.short: "ऐप की भाषाएँ सेट करें"
+  cli.config.language.reset.short: "डिफ़ॉल्ट भाषाएँ बहाल करें"
   cli.law.short: "agent law प्रबंधित करें (laws/ के तहत फ़ाइल-समर्थित)"
   cli.law.list.short: "सक्रिय law सूचीबद्ध करें (scope/project/persona द्वारा फ़िल्टर करने योग्य)"
   cli.law.show.short: "law दिखाएँ (frontmatter + सामग्री)"
@@ -193,37 +193,7 @@ keys:
   cli.workflow.show.short: "सक्रिय workflow दिखाएँ"
   cli.workflow.orphan.short: "ऐसे task का पूर्वावलोकन या रीबाइंड करें जिनका bucket workflow स्वैप से निष्क्रिय हो गया हो"
   notice.subtask_kit.enabled.commands_resolve_at_root: "Sub-task kit enabled: agent commands, personas, laws, templates और skills अभी भी project root kit से resolve होते हैं।"
-  cli.config.init.long: |-
-    चुने गए scope में रूट किया गया एक स्टैंडअलोन config इंस्टॉल सीड करें।
-
-      --scope global  →  paths.ConfigRoot() (या --config का पैरेंट)।
-                         मौजूदा user इंस्टॉल; पुनः-रन idempotent है।
-
-      --scope local   →  <cwd>/.omakiten (शाब्दिक CWD, कोई वॉक-अप नहीं)।
-                         एक पूर्ण इंस्टॉल — config/<preset>.yaml साथ ही हर
-                         इकाई फ़ोल्डर — ताकि रनटाइम इसे user-global लेयर के साथ
-                         किसी भी मर्ज के बिना लोड कर सके। वॉक-अप रिज़ॉल्वर
-                         इसे रिपो के अंदर से बाद के okt कॉल पर स्वचालित रूप से
-                         उठा लेता है।
-
-    व्यवहार मैट्रिक्स:
-      - फ़ाइल अनुपस्थित           → परमाणु लेखन।
-      - समान preset, समान फ़ाइलें → no_op:true (मौन सफलता)।
-      - भिन्न preset            → .active को नए preset पर बदलता है।
-      - छेड़छाड़ की गई शिप्ड फ़ाइलें → --force के बिना संरक्षित।
-      - --force                 → प्रत्येक एम्बेडेड शिप्ड फ़ाइल को
-                                  पुनः-कॉपी करता है (skills, laws, personas,
-                                  templates, themes, notifications, हर
-                                  preset yaml)। custom/ सबट्री कभी नहीं छुए जाते।
-
-    भाषा चयन:
-      --cli-lang, --tui-lang, --agent-lang प्रत्येक surface के लिए
-      इंटरैक्टिव प्रॉम्प्ट छोड़ देते हैं और मान को सीड किए गए
-      omakiten.yaml के languages ब्लॉक में सीधे लिख देते हैं। --cli-lang
-      और --tui-lang एक बंडल की गई भाषा कोड (en, pt-br, ...) से मेल खाने
-      चाहिए; --agent-lang मुक्त-रूप है। जब कोई flag नहीं दिया जाता, init
-      TTY पर पूछता है (या stdin गैर-इंटरैक्टिव होने पर surface को उसके
-      डिफ़ॉल्ट पर छोड़ देता है)।
+  cli.config.init.long: "चुने गए दायरे में कैटलॉग नाम, Git URL या स्थानीय निर्देशिका से वर्कफ़्लो इंस्टॉल करें।\n\nभाषा प्राथमिकताएँ सभी परियोजनाओं पर लागू होती हैं और Omakiten के preferences.yaml में सहेजी जाती हैं। CLI और TUI अंतर्निहित भाषाएँ इस्तेमाल करते हैं; agent_output मुक्त पाठ है।"
   cli.config.path.long: |-
     सक्रिय config (या चुनी गई लेयर) को डॉटेड YAML key द्वारा वॉक करें
     और {key, value, path, source} रिपोर्ट करें। --layer के बिना रिज़ॉल्वर
@@ -246,32 +216,8 @@ keys:
     आउटपुट प्रविष्टियाँ op = added | removed | changed साथ ही प्रासंगिक
     side मान ले जाती हैं। मैप पुनरावर्ती रूप से उतरते हैं; सूची / स्केलर
     गहरी समानता द्वारा तुलना करते हैं।
-  cli.config.language.long: |-
-    सक्रिय omakiten.yaml में config.languages.{cli,tui,agent_output}
-    पढ़ें और लिखें। languages.cli और languages.tui को languages/ के तहत
-    खोजे गए भाषा पैक के विरुद्ध मान्य किया जाता है; languages.agent_output
-    मुक्त-रूप है और agent playbook कंपोज़र को शब्दशः अग्रेषित किया जाता है।
-
-    डिफ़ॉल्ट लक्ष्य रिज़ॉल्व किया गया omakiten.yaml है (मौजूद होने पर
-    repo-local .omakiten/, अन्यथा user-global ConfigRoot)। set/reset पर
-    --global का उपयोग करें ताकि repo-local उपस्थिति की परवाह किए बिना
-    लेखन को user-global फ़ाइल पर पिन किया जा सके।
-
-    लेखन एक BundleCache.Reload ट्रिगर करते हैं ताकि बाद के okt आह्वान और
-    लंबे समय तक चलने वाले उपकरण (TUI, CLI सर्वर) नया चयन देखें। वर्तमान
-    CLI प्रक्रिया और कोई भी पहले से चल रहा CLI आह्वान पूर्वव्यापी रूप से
-    अपडेट नहीं होता है; केवल बाद के आह्वान परिवर्तन उठाते हैं।
-  cli.config.language.set.long: |-
-    उदाहरण:
-      okt config language set --cli pt-br
-      okt config language set --tui en --agent "Português (Brasil)"
-      okt config language set --agent "" --global
-
-    --cli, --tui, या --agent में से कम से कम एक प्रदान किया जाना चाहिए।
-    --cli और --tui languages/ के तहत खोजे गए भाषा कोड के विरुद्ध मान्य
-    होते हैं। --agent कोई भी गैर-रिक्त स्ट्रिंग स्वीकार करता है (या साफ़
-    करने के लिए "")। --global लेखन को user-global omakiten.yaml पर पिन
-    करता है।
+  cli.config.language.long: "भाषा प्राथमिकताएँ सभी परियोजनाओं पर लागू होती हैं और Omakiten के preferences.yaml में सहेजी जाती हैं। CLI और TUI अंतर्निहित भाषाएँ इस्तेमाल करते हैं; agent_output मुक्त पाठ है।"
+  cli.config.language.set.long: "भाषा प्राथमिकताएँ सभी परियोजनाओं पर लागू होती हैं और Omakiten के preferences.yaml में सहेजी जाती हैं। CLI और TUI अंतर्निहित भाषाएँ इस्तेमाल करते हैं; agent_output मुक्त पाठ है।\n\nokt config language set --cli pt-br\nokt config language set --tui en --agent \"Português (Brasil)\"\nokt config language set --agent \"\""
   cli.workflow.orphan.long: |-
     ऐसे task जो preset स्विच या omakiten.yaml संपादन के बाद अब मौजूद नहीं
     रहने वाले workflow bucket की ओर इशारा करते थे, अनाथ हैं। डिफ़ॉल्ट रूप
@@ -329,8 +275,6 @@ keys:
   cli.config.language.set.flag.cli: "CLI सहायता और उपयोग स्ट्रिंग के लिए भाषा कोड"
   cli.config.language.set.flag.tui: "TUI लेबल और स्क्रीन के लिए भाषा कोड"
   cli.config.language.set.flag.agent: "मुक्त-रूप agent आउटपुट भाषा निर्देश (साफ़ करने के लिए \"\" का उपयोग करें)"
-  cli.config.language.set.flag.global: "repo-local उपस्थिति की परवाह किए बिना लेखन को user-global omakiten.yaml पर पिन करें"
-  cli.config.language.reset.flag.global: "repo-local उपस्थिति की परवाह किए बिना रीसेट को user-global omakiten.yaml पर पिन करें"
   cli.law.list.flag.scope: "scope द्वारा फ़िल्टर करें: global, project, या persona"
   cli.law.list.flag.project: "project slug द्वारा फ़िल्टर करें"
   cli.law.list.flag.persona: "persona slug द्वारा फ़िल्टर करें"
@@ -1084,7 +1028,6 @@ keys:
   tui.settings.effective.section.tag_synonyms: "टैग पर्यायवाची"
   tui.settings.effective.section.priorities: "प्राथमिकताएँ"
   tui.settings.effective.section.severities: "गंभीरता स्तर"
-  tui.settings.effective.section.languages: "भाषाएँ"
   tui.settings.guards_tab: "गार्ड्स"
   tui.settings.guards_hint: "केवल पढ़ने योग्य · `$EDITOR omakiten.yaml` से संपादित करें"
   tui.settings.guards.header_to: "तक"

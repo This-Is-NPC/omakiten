@@ -30,6 +30,13 @@ Installed snapshots are complete packages and run without the source checkout.
 | `presets/<id>/themes/<slug>.yaml` | Color palettes. |
 | `presets/<id>/notifications/<slug>.yaml` | Notification cards. |
 
+## Application languages
+
+User-wide preferences live in the Omakiten configuration root's `preferences.yaml`.
+CLI and TUI translations are bundled with Omakiten. Use `okt config language show`,
+`set --cli <code> --tui <code> --agent <text>`, or `reset`. These choices apply to all
+projects. Workflow snapshots and exports contain workflow settings and entities.
+
 ## Workflow presets
 
 The official catalog lists repository packages:

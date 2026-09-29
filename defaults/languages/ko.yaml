@@ -164,8 +164,8 @@ keys:
   cli.config.why.short: "선택된 scope 의 config 레이어를 소유하는 설치 루트 출력"
   cli.config.language.short: "CLI 도움말, TUI 라벨, agent 출력 지시문의 활성 언어 관리"
   cli.config.language.show.short: "활성 언어 설정과 발견된 language packs 출력"
-  cli.config.language.set.short: "활성 omakiten.yaml 에 하나 이상의 언어 설정"
-  cli.config.language.reset.short: "활성 omakiten.yaml 에서 languages 블록 제거(기본값 적용)"
+  cli.config.language.set.short: "애플리케이션 언어 설정"
+  cli.config.language.reset.short: "기본 언어 복원"
   cli.law.short: "agent laws 관리(laws/ 아래의 파일)"
   cli.law.list.short: "활성 laws 목록(scope/project/persona 로 필터링 가능)"
   cli.law.show.short: "law 표시(frontmatter + 본문)"
@@ -191,35 +191,7 @@ keys:
   cli.workflow.show.short: "활성 workflow 표시"
   cli.workflow.orphan.short: "workflow 교체로 bucket 이 비활성화된 tasks 미리보기 또는 재바인딩"
   notice.subtask_kit.enabled.commands_resolve_at_root: "Sub-task kit 활성: agent commands, personas, laws, templates, skills 는 여전히 project root kit 에서 resolve."
-  cli.config.init.long: |-
-    선택된 scope 에 뿌리를 둔 standalone config 설치를 생성합니다.
-
-      --scope global  →  paths.ConfigRoot() (또는 --config 의 부모).
-                         기존 사용자 설치; 재실행은 멱등.
-
-      --scope local   →  <cwd>/.omakiten (문자 그대로의 CWD, walk-up 없음).
-                         완전한 설치 — config/<preset>.yaml 과 모든 엔티티
-                         폴더 — 그래서 runtime 이 user-global 레이어와의
-                         merge 없이 로드할 수 있습니다. walk-up 리졸버는
-                         이후 okt 호출에서 자동으로 이를 인식합니다.
-
-    동작 매트릭스:
-      - 파일 없음                → 원자적 쓰기.
-      - 동일 preset, 동일 파일    → no_op:true (조용한 성공).
-      - 다른 preset              → .active 를 새 preset 으로 전환.
-      - 변경된 shipped 파일      → --force 가 아니면 보존.
-      - --force                  → 모든 임베디드 shipped 파일 재복사
-                                    (skills, laws, personas, templates, themes,
-                                    notifications, 모든 preset yaml).
-                                    custom/ 서브트리는 절대 건드리지 않음.
-
-    언어 선택:
-      --cli-lang, --tui-lang, --agent-lang 은 각 surface 의 대화형
-      프롬프트를 건너뛰고 값을 시드된 omakiten.yaml 의 languages 블록에
-      직접 씁니다. --cli-lang 과 --tui-lang 은 bundled 언어 코드와
-      일치해야 합니다 (en, pt-br, es, fr, de, ru, zh-cn, ko, ...);
-      --agent-lang 은 자유 형식. 플래그가 없으면 init 가 TTY 에서
-      프롬프트(또는 stdin 이 비대화형이면 surface 를 기본값으로 둠).
+  cli.config.init.long: "선택한 범위에 카탈로그 이름, Git URL 또는 로컬 디렉터리에서 워크플로를 설치합니다.\n\n언어 설정은 모든 프로젝트에 적용되며 Omakiten의 preferences.yaml에 저장됩니다. CLI와 TUI는 내장 언어를 사용하고 agent_output은 자유 텍스트입니다."
   cli.config.path.long: |-
     점으로 구분된 YAML 키로 활성 config(또는 선택된 레이어)를 순회하고
     {key, value, path, source} 를 보고합니다. --layer 없이는 리졸버가
@@ -241,31 +213,8 @@ keys:
 
     출력 항목은 op = added | removed | changed 와 관련 값을 가집니다.
     Maps 는 재귀적으로 하강; 리스트 / 스칼라는 깊은 동등성으로 비교.
-  cli.config.language.long: |-
-    활성 omakiten.yaml 의 config.languages.{cli,tui,agent_output} 를 읽고
-    씁니다. languages.cli 와 languages.tui 는 languages/ 아래에서 발견된
-    language packs 에 대해 검증; languages.agent_output 은 자유 형식이며
-    agent playbook 합성기에 그대로 전달됩니다.
-
-    기본 대상은 해석된 omakiten.yaml (존재하면 repo-local .omakiten/,
-    그렇지 않으면 user-global ConfigRoot). set/reset 에서 --global 을
-    사용하면 repo-local 존재 여부와 관계없이 쓰기를 user-global 파일에
-    고정합니다.
-
-    쓰기는 BundleCache.Reload 를 트리거하여 후속 okt 호출과 장기 실행
-    도구(TUI, CLI 서버)가 새 선택을 관찰하도록 합니다. 현재 CLI 프로세스와
-    이미 실행 중인 CLI 호출은 소급 업데이트되지 않습니다; 후속 호출만
-    변경을 받아들입니다.
-  cli.config.language.set.long: |-
-    예시:
-      okt config language set --cli ko
-      okt config language set --tui en --agent "한국어"
-      okt config language set --agent "" --global
-
-    --cli, --tui, --agent 중 적어도 하나는 제공되어야 합니다. --cli 와
-    --tui 는 languages/ 아래에서 발견된 언어 코드에 대해 검증됩니다.
-    --agent 는 비어 있지 않은 모든 문자열을 허용합니다(또는 비우려면 "").
-    --global 은 쓰기를 user-global omakiten.yaml 에 고정합니다.
+  cli.config.language.long: "언어 설정은 모든 프로젝트에 적용되며 Omakiten의 preferences.yaml에 저장됩니다. CLI와 TUI는 내장 언어를 사용하고 agent_output은 자유 텍스트입니다."
+  cli.config.language.set.long: "언어 설정은 모든 프로젝트에 적용되며 Omakiten의 preferences.yaml에 저장됩니다. CLI와 TUI는 내장 언어를 사용하고 agent_output은 자유 텍스트입니다.\n\nokt config language set --cli pt-br\nokt config language set --tui en --agent \"Português (Brasil)\"\nokt config language set --agent \"\""
   cli.workflow.orphan.long: |-
     preset 전환 또는 omakiten.yaml 편집 후 더 이상 존재하지 않는 workflow
     bucket 을 가리키던 tasks 는 고아입니다. 기본적으로 이 명령은 마이그레이션
@@ -323,8 +272,6 @@ keys:
   cli.config.language.set.flag.cli: "CLI 도움말 및 usage 의 언어 코드"
   cli.config.language.set.flag.tui: "TUI 라벨 및 화면의 언어 코드"
   cli.config.language.set.flag.agent: "agent 출력 언어의 자유 형식 지시문(\"\" 로 지움)"
-  cli.config.language.set.flag.global: "repo-local 존재 여부와 관계없이 쓰기를 user-global omakiten.yaml 에 고정"
-  cli.config.language.reset.flag.global: "repo-local 존재 여부와 관계없이 reset 을 user-global omakiten.yaml 에 고정"
   cli.law.list.flag.scope: "scope 로 필터: global, project 또는 persona"
   cli.law.list.flag.project: "프로젝트 slug 로 필터"
   cli.law.list.flag.persona: "persona slug 로 필터"
@@ -1078,7 +1025,6 @@ keys:
   tui.settings.effective.section.tag_synonyms: "태그 동의어"
   tui.settings.effective.section.priorities: "우선순위"
   tui.settings.effective.section.severities: "심각도"
-  tui.settings.effective.section.languages: "언어"
   tui.settings.guards_tab: "가드"
   tui.settings.guards_hint: "읽기 전용 · `$EDITOR omakiten.yaml` 로 편집"
   tui.settings.guards.header_to: "대상"

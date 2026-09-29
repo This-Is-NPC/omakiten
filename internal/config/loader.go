@@ -33,7 +33,6 @@ type bundleEntities struct {
 	personaWarn      []SourceWarning
 	templateWarn     []SourceWarning
 	notificationWarn []SourceWarning
-	languageWarn     []SourceWarning
 }
 
 // LoadBundle reads the active yaml profile plus the per-entity folders
@@ -169,18 +168,23 @@ func finishBundleLoad(path, rootDir string, wired wiring, importSources []string
 
 	theme, themePath, themeErr := resolveActiveThemeReader(rootDir, wired.Config.Theme.Active, reader)
 
+	preferences, err := LoadPreferences()
+	if err != nil {
+		return Bundle{}, err
+	}
 	bundle := Bundle{
-		Version:         wired.Version,
-		Kit:             wired.Kit,
-		SubtaskKit:      strings.TrimSpace(wired.SubtaskKit),
-		Config:          wired.Config,
-		Workflows:       wired.Workflows,
-		Surfaces:        wired.Surfaces,
-		Notifications:   entities.notifications,
-		Languages:       entities.languages,
-		ActiveTheme:     theme,
-		ActiveThemePath: themePath,
-		ActiveThemeErr:  themeErr,
+		Version:          wired.Version,
+		Kit:              wired.Kit,
+		SubtaskKit:       strings.TrimSpace(wired.SubtaskKit),
+		Config:           wired.Config,
+		Workflows:        wired.Workflows,
+		Surfaces:         wired.Surfaces,
+		Notifications:    entities.notifications,
+		Languages:        entities.languages,
+		LanguageSettings: preferences.Languages,
+		ActiveTheme:      theme,
+		ActiveThemePath:  themePath,
+		ActiveThemeErr:   themeErr,
 		// Root profile first, then every file it pulled in via a `from:`
 		// import directive (stable first-encounter order from the resolver).
 		// Hot reload watches all of these — editing an imported file triggers
@@ -277,7 +281,7 @@ func loadBundleEntities(rootDir string, reader bundleSourceReader) (bundleEntiti
 	if err != nil {
 		return bundleEntities{}, err
 	}
-	entities.languages, entities.languageWarn, err = loadLanguagesReader(filepath.Join(rootDir, "languages"), reader)
+	entities.languages, err = LoadBundledLanguages()
 	if err != nil {
 		return bundleEntities{}, err
 	}
@@ -290,7 +294,6 @@ func appendBundleEntityWarnings(bundle *Bundle, entities bundleEntities) {
 	bundle.Warnings = append(bundle.Warnings, entities.personaWarn...)
 	bundle.Warnings = append(bundle.Warnings, entities.templateWarn...)
 	bundle.Warnings = append(bundle.Warnings, entities.notificationWarn...)
-	bundle.Warnings = append(bundle.Warnings, entities.languageWarn...)
 }
 
 func populateBundleCatalogs(bundle *Bundle, entities bundleEntities) {

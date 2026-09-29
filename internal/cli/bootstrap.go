@@ -4,7 +4,6 @@ import (
 	"sync"
 
 	"omakiten/internal/config"
-	"omakiten/internal/paths"
 )
 
 // pkgCatalog is the CLI-surface catalog shared with every helper that
@@ -29,7 +28,7 @@ var (
 // stays available for production.
 func ensurePkgCatalog() {
 	pkgCatalogOnce.Do(func() {
-		pkgCatalog = bootstrapCatalog(config.SurfaceCLI)
+		pkgCatalog = bootstrapCatalog()
 	})
 }
 
@@ -44,90 +43,28 @@ func t(key string) string {
 	return pkgCatalog.Get(key)
 }
 
-// bootstrapCatalog loads the Catalog used for cobra-tree construction
-// (Short, Long, flag usage, CLI-owned error strings). The cobra tree is
-// assigned at process start — well before any per-call runtime opens
-// SQLite — so the resolver must be cheap and side-effect-free.
-//
-// The baseline always comes from the embed FS (defaults/languages/
-// <code>.yaml shipped with the binary). On top of that the user's
-// configured `languages.cli` selection overrides the active pack so
-// help text follows the language selection without forcing a restart
-// of every CLI invocation. The active pack is sourced from the user's
-// installed languages/ tree when present, falling back to embed when
-// the installed pack lacks the configured code.
-//
-// Strict use of embed for the baseline insulates fresh installs and
-// stale materialized trees from missing-key fallbacks: a newly-added
-// catalog key is always resolvable through the bundled `en` baseline
-// even when the user's installed `en.yaml` has not been refreshed by
-// `okt config init --force` since the build.
-func bootstrapCatalog(surface config.Surface) *config.Catalog {
+// bootstrapCatalog uses application preferences without loading a workflow.
+func bootstrapCatalog() *config.Catalog {
 	baseline, err := config.LoadBundledLanguage("en")
 	if err != nil {
 		return nil
 	}
-	active := bootstrapActiveLanguage(surface, &baseline)
-	return config.NewCatalog(active, &baseline)
+	return config.NewCatalog(bootstrapActiveLanguage(&baseline), &baseline)
 }
 
-// bootstrapActiveLanguage selects the active language pack for the
-// requested surface. Resolution: read the user-global omakiten.yaml to
-// pick up `languages.cli` / `languages.tui`; load that code from the
-// embed FS (always present for shipped codes) or fall back to the
-// baseline when the user picked a custom code we cannot resolve from
-// embed alone. Catalog.Get falls back to baseline → key literal when
-// active is nil or missing a key, so any failure here is non-fatal.
-func bootstrapActiveLanguage(surface config.Surface, baseline *config.Language) *config.Language {
-	path, err := paths.ConfigFile()
+func bootstrapActiveLanguage(baseline *config.Language) *config.Language {
+	preferences, err := config.LoadPreferences()
 	if err != nil {
 		return baseline
 	}
-	if lang := probeActiveLanguage(path, surface, baseline); lang != nil {
-		return lang
+	settings := preferences.Languages.Effective()
+	code := settings.CLI
+	if code == baseline.Code {
+		return baseline
 	}
-	bundle, err := config.LoadBundle(path)
+	language, err := config.LoadBundledLanguage(code)
 	if err != nil {
 		return baseline
 	}
-	code := languageCodeForSurface(bundle.Config.EffectiveLanguages(), surface)
-	if code == "" || code == baseline.Code {
-		return baseline
-	}
-	for _, lang := range bundle.Languages {
-		if lang.Code == code {
-			return &lang
-		}
-	}
-	if embed, err := config.LoadBundledLanguage(code); err == nil {
-		return &embed
-	}
-	return baseline
-}
-
-func probeActiveLanguage(path string, surface config.Surface, baseline *config.Language) *config.Language {
-	// Probe first (#370): read languages.{cli,tui} without running
-	// ValidateBundle so a broken bundle — the exact moment the repair
-	// hint matters most — still renders errors in the user's locale.
-	// Same `path` the LoadBundle branch consumes below, so the two can
-	// never read different files. The probe wins only when it yields a
-	// non-empty surface code that resolves through the embed FS; an empty
-	// or unresolvable code falls through to the LoadBundle path below,
-	// preserving custom-pack support on healthy bundles.
-	if probe, ok := config.ProbeLanguageSetting(path); ok {
-		code := languageCodeForSurface(probe, surface)
-		if code != "" && code != baseline.Code {
-			if embed, err := config.LoadBundledLanguage(code); err == nil {
-				return &embed
-			}
-		}
-	}
-	return nil
-}
-
-func languageCodeForSurface(settings config.LanguageSettings, surface config.Surface) string {
-	if surface == config.SurfaceTUI {
-		return settings.TUI
-	}
-	return settings.CLI
+	return &language
 }

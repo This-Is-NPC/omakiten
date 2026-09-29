@@ -31,7 +31,31 @@ defaults/languages/
   uk.yaml           # Ukrainian
 ```
 
-The CLI/TUI surface picks the active pack via `config.languages.{cli,tui}` in the active `omakiten.yaml`. Whatever language codes the installer sees under `defaults/languages/` at build time appear automatically in the `okt setup` picker and pass `okt config language set --cli <code>` validation — there is no allowlist to update.
+Language preferences belong to Omakiten and apply across all projects. They live
+in `<Omakiten config root>/preferences.yaml`, resolved by `OMAKITEN_HOME`, XDG,
+or `~/.config/omakiten`. Workflow selection and `--config` do not redirect them.
+The application reads all translations from its embedded `defaults/languages/`.
+
+```yaml
+languages:
+  cli: en
+  tui: pt-br
+  agent_output: "Português (Brasil)"
+```
+
+```sh
+okt config language show
+okt config language set --cli pt-br --tui en --agent "Português (Brasil)"
+okt config language reset
+```
+
+The commands work independently of workflow validity and require no database.
+CLI and TUI codes must exist in the bundled catalog; `agent_output` is free-form.
+Empty CLI/TUI preferences use English; an empty agent preference emits no
+language directive. Setup and `config init` language flags write this same file.
+Language changes leave preset snapshots and their content identities intact.
+The runtime watches the preferences file alongside its workflow sources.
+
 
 Every bundled pack ships fully translated for the CLI surface; longer TUI strings and notification voice may still lean on the English fallback in a few keys, which is acceptable per the parity rule (parity is structural, not content). A follow-up PR replacing those fallbacks is always welcome — the [smoke recipe](#end-to-end-smoke-recipe) below shows how to verify locally.
 
@@ -135,12 +159,6 @@ Recipe to fix:
 
 The reverse (`N extra keys`) usually means a key was renamed in `en.yaml` and the pack still carries the old one — delete the stale key.
 
-## Custom packs (user-level, not bundled)
-
-End users can drop their own packs under `~/.config/omakiten/languages/custom/<code>.yaml` and `okt config language set --cli <code>` will pick them up. Custom-wins dedup applies: a custom pack with `code: pt-br` shadows the bundled `pt-br.yaml`. YAML decode failures on a custom pack are logged to stderr and the file is skipped — boot does not abort.
-
-This guide is for **bundled** packs (shipped inside the binary). Custom packs are the right answer for one-off forks, in-house corporate translations, or experiments before opening a PR.
-
 ## Scaffolding helper
 
 `mise run language:new <code> <native> <name>` copies `defaults/languages/en.yaml` to `defaults/languages/<code>.yaml` with:
@@ -201,9 +219,9 @@ A first PR that translates only the CLI surface is fine. The remaining keys stil
 - `defaults/languages/en.yaml` — baseline key set; the source of truth for the parity test.
 - `internal/config/language_pack_parity_test.go` — parity rule plus the test that catches drift.
 - `internal/config/language_pack_scaffold_test.go` — exercises `scripts/new-language-pack.sh`.
-- `internal/cli/setup_picker.go::loadBundledLanguageOptions` — combines embedded packs (via sibling `loadEmbedLanguageOptions`, which auto-discovers via `defaults.FS.ReadDir("languages")`) with user customs.
-- `internal/cli/setup_picker.go::loadCustomLanguageOptions` — merges `~/.config/omakiten/languages/custom/` on top.
-- `okt setup --update` — refreshes bundled packs in the user-global install during `mise run install`.
+- `internal/cli/setup_picker.go::loadBundledLanguageOptions` — discovers the binary's bundled locales for the setup picker.
+- `internal/config/preferences.go` — application preference validation and atomic persistence.
+- `okt setup --update` — updates application preferences during `mise run install`.
 
 That is the entire mechanism. No Go code changes are required to add a new bundled language — just the YAML file and (optionally) a refresh of any cross-referencing doc.
 
@@ -215,4 +233,4 @@ That is the entire mechanism. No Go code changes are required to add a new bundl
 
 ## See also
 
-- [system.md § config.languages](system.md#configlanguages) — top-level wiring of CLI / TUI / agent-output language selection.
+- [system.md § Application languages](system.md#application-languages) — user-wide CLI / TUI / agent-output language selection.

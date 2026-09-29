@@ -31,6 +31,17 @@ func TestPresetPublicationRejectsInvalidCandidates(t *testing.T) {
 		t.Fatal(err)
 	}
 	for name, mutate := range map[string]func(*config.PresetPackage){
+		"application translations": func(p *config.PresetPackage) {
+			p.Files["languages/en.yaml"] = config.PresetFile{Content: "code: en", Mode: 0o644}
+		},
+		"application preferences": func(p *config.PresetPackage) {
+			p.Files["preferences.yaml"] = config.PresetFile{Content: "languages: {}", Mode: 0o644}
+		},
+		"language setting in workflow": func(p *config.PresetPackage) {
+			file := p.Files["config/settings.yaml"]
+			file.Content += "\nlanguages: {cli: en}\n"
+			p.Files["config/settings.yaml"] = file
+		},
 		"unknown schema": func(p *config.PresetPackage) { p.Manifest.SchemaVersion++ },
 		"missing config": func(p *config.PresetPackage) { delete(p.Files, p.Manifest.Config) },
 		"outside path":   func(p *config.PresetPackage) { p.Files["../outside"] = config.PresetFile{} },
@@ -83,7 +94,7 @@ func TestPresetSharedEditorProtectsSnapshotsAndStalePlans(t *testing.T) {
 		t.Fatalf("direct snapshot write: %v", err)
 	}
 	if _, err := editor.Apply(context.Background(), bundle, hashes, func(candidate *config.Bundle) error {
-		candidate.Config.Languages.AgentOutput = "Portuguese"
+		candidate.Config.Agent.MaxCommentChars = 321
 		candidate.Config.Hooks = nil
 		return nil
 	}); err != nil {
@@ -93,7 +104,7 @@ func TestPresetSharedEditorProtectsSnapshotsAndStalePlans(t *testing.T) {
 		t.Fatal("stale plan overwrote the active package")
 	}
 	resolved, err := editor.Load()
-	if err != nil || resolved.Config.Languages.AgentOutput != "Portuguese" || len(resolved.Config.Hooks) != 0 {
+	if err != nil || resolved.Config.Agent.MaxCommentChars != 321 || len(resolved.Config.Hooks) != 0 {
 		t.Fatalf("published settings were lost: %v", err)
 	}
 	assertPresetModuleEdit(t, selection, p)
@@ -101,7 +112,7 @@ func TestPresetSharedEditorProtectsSnapshotsAndStalePlans(t *testing.T) {
 		t.Fatal(err)
 	}
 	base, err := editor.Load()
-	if err != nil || base.Config.Languages.AgentOutput == "Portuguese" {
+	if err != nil || base.Config.Agent.MaxCommentChars == 321 {
 		t.Fatalf("original snapshot changed: %v", err)
 	}
 }

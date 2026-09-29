@@ -7,6 +7,7 @@ import (
 )
 
 func TestCLIConfigLanguageShowReturnsDefaults(t *testing.T) {
+	t.Setenv("OMAKITEN_HOME", t.TempDir())
 	tmp := t.TempDir()
 	dbPath := filepath.Join(tmp, "omakiten.db")
 	globalConfig := filepath.Join(tmp, "global", "config.yaml")
@@ -46,6 +47,7 @@ func TestCLIConfigLanguageShowReturnsDefaults(t *testing.T) {
 }
 
 func TestCLIConfigLanguageSetAgentFreeForm(t *testing.T) {
+	t.Setenv("OMAKITEN_HOME", t.TempDir())
 	tmp := t.TempDir()
 	dbPath := filepath.Join(tmp, "omakiten.db")
 	globalConfig := filepath.Join(tmp, "global", "config.yaml")
@@ -53,7 +55,7 @@ func TestCLIConfigLanguageSetAgentFreeForm(t *testing.T) {
 
 	runCLI(t, dbPath, globalConfig, "config", "init", "--scope", "global", "--preset", "omakase")
 
-	out := runCLI(t, dbPath, globalConfig, "config", "language", "set", "--agent", "Português (Brasil)", "--global")
+	out := runCLI(t, dbPath, globalConfig, "config", "language", "set", "--agent", "Português (Brasil)")
 	envelope := decodeEnvelope(t, out)
 	data := envelope["data"].(map[string]any)
 	languages := data["languages"].(map[string]any)
@@ -72,6 +74,7 @@ func TestCLIConfigLanguageSetAgentFreeForm(t *testing.T) {
 }
 
 func TestCLIConfigLanguageSetRequiresAtLeastOneFlag(t *testing.T) {
+	t.Setenv("OMAKITEN_HOME", t.TempDir())
 	tmp := t.TempDir()
 	dbPath := filepath.Join(tmp, "omakiten.db")
 	globalConfig := filepath.Join(tmp, "global", "config.yaml")
@@ -85,28 +88,30 @@ func TestCLIConfigLanguageSetRequiresAtLeastOneFlag(t *testing.T) {
 }
 
 func TestCLIConfigLanguageSetRejectsUnknownCLICode(t *testing.T) {
+	t.Setenv("OMAKITEN_HOME", t.TempDir())
 	tmp := t.TempDir()
 	dbPath := filepath.Join(tmp, "omakiten.db")
 	globalConfig := filepath.Join(tmp, "global", "config.yaml")
 	t.Chdir(t.TempDir())
 
 	runCLI(t, dbPath, globalConfig, "config", "init", "--scope", "global", "--preset", "omakase")
-	envelope := runCLIExpectError(t, dbPath, globalConfig, "validation_error", "config", "language", "set", "--cli", "xx", "--global")
+	envelope := runCLIExpectError(t, dbPath, globalConfig, "validation_error", "config", "language", "set", "--cli", "xx")
 	if msg, _ := envelope["msg"].(string); !strings.Contains(msg, "xx") || !strings.Contains(msg, "cli") {
 		t.Fatalf("expected unknown-code error for --cli xx, got %v", envelope)
 	}
 }
 
 func TestCLIConfigLanguageResetRemovesCustomValues(t *testing.T) {
+	t.Setenv("OMAKITEN_HOME", t.TempDir())
 	tmp := t.TempDir()
 	dbPath := filepath.Join(tmp, "omakiten.db")
 	globalConfig := filepath.Join(tmp, "global", "config.yaml")
 	t.Chdir(t.TempDir())
 
 	runCLI(t, dbPath, globalConfig, "config", "init", "--scope", "global", "--preset", "omakase")
-	runCLI(t, dbPath, globalConfig, "config", "language", "set", "--agent", "English", "--global")
+	runCLI(t, dbPath, globalConfig, "config", "language", "set", "--agent", "English")
 
-	out := runCLI(t, dbPath, globalConfig, "config", "language", "reset", "--global")
+	out := runCLI(t, dbPath, globalConfig, "config", "language", "reset")
 	envelope := decodeEnvelope(t, out)
 	data := envelope["data"].(map[string]any)
 	languages := data["languages"].(map[string]any)

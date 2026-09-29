@@ -166,9 +166,6 @@ func validateBundleSettings(bundle Bundle) error {
 	if err := validateSeverities(bundle.Config.Severities); err != nil {
 		return err
 	}
-	if err := validateLanguageSettings(bundle.Config.Languages, bundle.Languages); err != nil {
-		return err
-	}
 	if len(bundle.Config.TemplateDefaults) == 0 {
 		return fmt.Errorf("config.template_defaults: required (declare the kinds the TUI picker offers; see defaults/omakiten.yaml)")
 	}
@@ -1309,25 +1306,8 @@ func containsString(haystack []string, needle string) bool {
 	return false
 }
 
-// validateLanguageSettings rejects unknown codes for config.languages.cli
-// and config.languages.tui. agent_output stays free-form per task #82
-// §9 — it is a directive consumed by the agent, not a catalog lookup,
-// so any non-empty string is accepted.
-//
-// Empty cli/tui values pass through: EffectiveLanguages defaults them
-// to "en" which itself is validated against the loaded catalog. So a
-// missing bundled en pack is the failure surface when nothing else is
-// configured — the validator points at the missing code, not at the
-// empty config.
+// validateLanguageSettings requires CLI and TUI codes from the bundled catalog.
 func validateLanguageSettings(ls LanguageSettings, loaded []Language) error {
-	// When no languages are loaded at all (test bundles, legacy installs
-	// pre-i18n materialization), skip validation entirely. The Catalog
-	// degrades gracefully: missing keys return the key literal. Fresh
-	// installs materialize defaults/languages/en.yaml so this branch is
-	// the exception, not the norm.
-	if len(loaded) == 0 {
-		return nil
-	}
 	available := make(map[string]struct{}, len(loaded))
 	codes := make([]string, 0, len(loaded))
 	for _, lang := range loaded {
@@ -1349,11 +1329,11 @@ func validateLanguageSettings(ls LanguageSettings, loaded []Language) error {
 		// Defaulted values come from an unset config field — surface that
 		// in the error so the user does not chase a literal they never
 		// typed. The bare-field-name form mirrors the explicit case so
-		// downstream parsers still see config.languages.<field>.
+		// downstream parsers still see languages.<field>.
 		if defaulted {
-			return fmt.Errorf("config.languages.%s: field unset and default language %q is not loaded; available: %s", field, resolved, strings.Join(codes, ", "))
+			return fmt.Errorf("languages.%s: field unset and default language %q is not loaded; available: %s", field, resolved, strings.Join(codes, ", "))
 		}
-		return fmt.Errorf("config.languages.%s: %q is not a loaded language code; available: %s", field, resolved, strings.Join(codes, ", "))
+		return fmt.Errorf("languages.%s: %q is not a loaded language code; available: %s", field, resolved, strings.Join(codes, ", "))
 	}
 	if err := check("cli", ls.CLI); err != nil {
 		return err

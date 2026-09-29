@@ -20,18 +20,12 @@ const (
 	SurfaceTUI
 )
 
-// Language describes one localized string pack discovered by the bundle
-// loader (bundled in defaults/languages or user-authored under
-// <root>/languages/custom). The Code is the lookup key used by the
-// languages.{cli,tui} config fields; Name and Native are display labels
-// for CLI/TUI surfaces that render language pickers.
+// Language contains a bundled application's locale metadata and translations.
 type Language struct {
-	Code       string
-	Name       string
-	Native     string
-	Keys       map[string]string
-	SourcePath string
-	IsCustom   bool
+	Code   string
+	Name   string
+	Native string
+	Keys   map[string]string
 }
 
 // Catalog resolves catalog keys against an active language with a

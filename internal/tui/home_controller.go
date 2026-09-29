@@ -197,7 +197,7 @@ func (m *Model) bindProjectRuntime(pr *contract.RuntimeView, path string) error 
 	m.severities = snap.Severities()
 	m.registry = pr.EnumRegistry
 	m.notifications = snap.Notifications()
-	m.languages = settings.EffectiveLanguages()
+	m.languages = snap.LanguageSettings()
 	m.tokenBadgeYellow, m.tokenBadgeRed = settings.TUI.TokenBadge.Effective()
 	return nil
 }

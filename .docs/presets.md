@@ -69,8 +69,9 @@ Package edits update the files that own changed values, preserving imports
 and comments. Unchanged modules retain their exact bytes and permissions.
 
 The config references sibling `skills/`, `laws/`, `personas/`, `templates/`,
-`themes/`, `notifications/`, and `languages/` directories. Additional assets,
-including hook scripts, belong in the same repository. Entity files live
+`themes/`, and `notifications/` directories. Additional assets,
+including hook scripts, belong in the same repository. Application languages and
+preferences are owned by Omakiten; see [languages.md](configuration-guide/languages.md). Entity files live
 directly in their folders. Package paths are canonical relative paths; files
 must be regular files. Installation validates the manifest, config schema,
 references, and file integrity. It does not analyze script code or execute

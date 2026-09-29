@@ -166,8 +166,8 @@ keys:
   cli.config.why.short: "打印拥有所选 scope 的 config 层的安装根目录"
   cli.config.language.short: "管理 CLI 帮助、TUI 标签和 agent 输出指令的活动语言"
   cli.config.language.show.short: "打印活动的语言设置和发现的 language packs"
-  cli.config.language.set.short: "在活动的 omakiten.yaml 中设置一个或多个语言设置"
-  cli.config.language.reset.short: "从活动的 omakiten.yaml 中移除 languages 块(应用默认值)"
+  cli.config.language.set.short: "设置应用程序语言"
+  cli.config.language.reset.short: "恢复默认应用程序语言"
   cli.law.short: "管理 agent laws(基于 laws/ 下的文件)"
   cli.law.list.short: "列出活动的 laws(可按 scope/项目/persona 过滤)"
   cli.law.show.short: "显示一个 law (frontmatter + 正文)"
@@ -193,35 +193,7 @@ keys:
   cli.workflow.show.short: "显示活动的 workflow"
   cli.workflow.orphan.short: "预览或重新绑定那些 bucket 被 workflow 切换停用的 tasks"
   notice.subtask_kit.enabled.commands_resolve_at_root: "Sub-task kit 已启用：agent commands、personas、laws、templates 和 skills 仍从 project root kit 解析。"
-  cli.config.init.long: |-
-    在所选 scope 中创建一个独立的 config 安装。
-
-      --scope global  →  paths.ConfigRoot()(或 --config 的父目录)。
-                         现有用户安装;重复运行是幂等的。
-
-      --scope local   →  <cwd>/.omakiten(字面 CWD,不向上遍历)。
-                         完整安装 — config/<preset>.yaml 加上每个实体
-                         文件夹 — 让 runtime 可以在不与 user-global
-                         层合并的情况下加载它。向上遍历的解析器在仓库
-                         内的后续 okt 调用中自动识别此安装。
-
-    行为矩阵:
-      - 文件缺失           → 原子写入。
-      - 相同 preset、相同文件 → no_op:true(静默成功)。
-      - 不同 preset       → 将 .active 翻转到新 preset。
-      - 已篡改的 shipped 文件 → 除非使用 --force 否则保留。
-      - --force          → 重新复制每个嵌入的 shipped 文件
-                            (skills、laws、personas、templates、themes、
-                            notifications、每个 preset yaml)。
-                            custom/ 子树永远不会被触及。
-
-    语言选择:
-      --cli-lang、--tui-lang、--agent-lang 跳过每个 surface 的交互式
-      提示,并将值直接写入种子化 omakiten.yaml 的 languages 块。
-      --cli-lang 和 --tui-lang 必须匹配 bundled 语言代码
-      (en、pt-br、es、fr、de、ru、zh-cn、...);--agent-lang 是自由
-      形式。如果未提供标志,init 在 TTY 上提示(或当 stdin 非交互时
-      让 surface 保持默认值)。
+  cli.config.init.long: "在选定范围内，通过目录名称、Git URL 或本地目录安装工作流。\n\n语言偏好适用于所有项目，并保存在 Omakiten 的 preferences.yaml 中。CLI 和 TUI 使用内置语言；agent_output 为自由文本。"
   cli.config.path.long: |-
     用点分的 YAML 键遍历活动 config(或所选层)并报告
     {key, value, path, source}。如果没有 --layer,解析器选择 runtime
@@ -241,29 +213,8 @@ keys:
 
     输出条目带有 op = added | removed | changed 加上相关侧值。
     Maps 递归下降;列表 / 标量按深度相等比较。
-  cli.config.language.long: |-
-    读取和写入活动 omakiten.yaml 中的 config.languages.{cli,tui,agent_output}。
-    languages.cli 和 languages.tui 会针对 languages/ 下发现的 language
-    packs 进行验证;languages.agent_output 是自由形式,逐字转发到
-    agent playbook 合成器。
-
-    默认目标是解析后的 omakiten.yaml(存在时为 repo-local .omakiten/,
-    否则为 user-global ConfigRoot)。在 set/reset 上使用 --global 将
-    写入固定到 user-global 文件,无论是否存在 repo-local。
-
-    写入触发 BundleCache.Reload,以便后续的 okt 调用和长时间运行的
-    工具(TUI、CLI 服务器)观察到新的选择。当前 CLI 进程和任何已在
-    运行的 CLI 调用不会被追溯更新;只有后续调用会获取更改。
-  cli.config.language.set.long: |-
-    示例:
-      okt config language set --cli zh-cn
-      okt config language set --tui en --agent "简体中文"
-      okt config language set --agent "" --global
-
-    必须提供 --cli、--tui 或 --agent 中的至少一个。--cli 和 --tui
-    针对 languages/ 下发现的语言代码进行验证。--agent 接受任何非空
-    字符串(或 "" 以清除)。--global 将写入固定到 user-global 的
-    omakiten.yaml。
+  cli.config.language.long: "语言偏好适用于所有项目，并保存在 Omakiten 的 preferences.yaml 中。CLI 和 TUI 使用内置语言；agent_output 为自由文本。"
+  cli.config.language.set.long: "语言偏好适用于所有项目，并保存在 Omakiten 的 preferences.yaml 中。CLI 和 TUI 使用内置语言；agent_output 为自由文本。\n\nokt config language set --cli pt-br\nokt config language set --tui en --agent \"Português (Brasil)\"\nokt config language set --agent \"\""
   cli.workflow.orphan.long: |-
     在 preset 切换或 omakiten.yaml 编辑后,指向不再存在的 workflow
     bucket 的 tasks 是孤儿。默认情况下,此命令打印迁移计划(哪些
@@ -321,8 +272,6 @@ keys:
   cli.config.language.set.flag.cli: "CLI 帮助和用法的语言代码"
   cli.config.language.set.flag.tui: "TUI 标签和屏幕的语言代码"
   cli.config.language.set.flag.agent: "agent 输出语言的自由形式指令(使用 \"\" 清除)"
-  cli.config.language.set.flag.global: "将写入固定到 user-global omakiten.yaml,无论是否存在 repo-local"
-  cli.config.language.reset.flag.global: "将 reset 固定到 user-global omakiten.yaml,无论是否存在 repo-local"
   cli.law.list.flag.scope: "按 scope 过滤:global、project 或 persona"
   cli.law.list.flag.project: "按项目 slug 过滤"
   cli.law.list.flag.persona: "按 persona slug 过滤"
@@ -1076,7 +1025,6 @@ keys:
   tui.settings.effective.section.tag_synonyms: "标签同义词"
   tui.settings.effective.section.priorities: "优先级"
   tui.settings.effective.section.severities: "严重程度"
-  tui.settings.effective.section.languages: "语言"
   tui.settings.guards_tab: "守卫"
   tui.settings.guards_hint: "只读 · 通过 `$EDITOR omakiten.yaml` 编辑"
   tui.settings.guards.header_to: "至"

@@ -58,7 +58,7 @@ func assertModifiedPresetSurvivesUpdate(t *testing.T, ctx context.Context, scope
 	if err != nil {
 		t.Fatal(err)
 	}
-	bundle.Config.Languages.AgentOutput = "Portuguese"
+	bundle.Config.Agent.MaxCommentChars = 321
 	if err := config.SaveBundle(selection, bundle); err != nil {
 		t.Fatal(err)
 	}
@@ -67,7 +67,7 @@ func assertModifiedPresetSurvivesUpdate(t *testing.T, ctx context.Context, scope
 		t.Fatalf("modified preset was replaced: %+v, %v", modified, err)
 	}
 	loaded, err := config.LoadBundle(selection)
-	if err != nil || loaded.Config.Languages.AgentOutput != "Portuguese" {
+	if err != nil || loaded.Config.Agent.MaxCommentChars != 321 {
 		t.Fatalf("custom setting lost: %v", err)
 	}
 }

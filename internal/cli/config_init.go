@@ -77,7 +77,7 @@ func runConfigInit(cmd *cobra.Command, opts *runtimeOptions, inputs configInitIn
 		if err != nil {
 			return nil, presetCLIError(opts, err)
 		}
-		langSummary, err := applyLanguageSelections(cmd, res.Path, languagePromptInputs{
+		langSummary, err := applyLanguageSelections(cmd, languagePromptInputs{
 			CLILangSet:   inputs.cliLangSet,
 			CLILang:      inputs.cliLang,
 			TUILangSet:   inputs.tuiLangSet,
@@ -128,44 +128,34 @@ type languagePromptInputs struct {
 	AgentLang    string
 }
 
-// applyLanguageSelections loads the freshly-seeded omakiten.yaml,
-// resolves the desired per-surface language values from the supplied
-// flags (or, when missing on an interactive TTY, prompts the user),
-// validates CLI/TUI codes against the discovered language packs, and
-// rewrites the file with the new languages block. Returns a summary
-// map for the JSON payload so callers can confirm which values
-// actually landed. Returns nil when no change is needed.
-func applyLanguageSelections(cmd *cobra.Command, configPath string, inputs languagePromptInputs) (map[string]any, error) {
-	bundle, err := config.LoadBundle(configPath)
+// applyLanguageSelections persists application-wide language choices.
+func applyLanguageSelections(cmd *cobra.Command, inputs languagePromptInputs) (map[string]any, error) {
+	preferences, err := loadApplicationPreferences()
 	if err != nil {
-		return nil, domain.NewError(domain.ErrConfigInvalid, t("cli.err.init_seeded_config_invalid"), map[string]any{"path": configPath, "error": fmt.Sprint(err)})
+		return nil, err
 	}
-	available := availableLanguageCodes(bundle.Languages)
-	defaults := bundle.Config.Languages
+	languages, err := config.LoadBundledLanguages()
+	if err != nil {
+		return nil, err
+	}
+	available := availableLanguageCodes(languages)
+	defaults := preferences.Languages
 	next, err := resolveInitLanguages(cmd, inputs, available, defaults)
 	if err != nil {
 		return nil, err
 	}
-
 	if next == defaults {
 		return nil, nil
 	}
-	bundle.Config.Languages = next
-
-	if err := validateInitLanguageChoice("cli-lang", next.CLI, available); err != nil {
+	for _, choice := range []struct{ flag, value string }{{"cli-lang", next.CLI}, {"tui-lang", next.TUI}} {
+		if err := validateInitLanguageChoice(choice.flag, choice.value, available); err != nil {
+			return nil, err
+		}
+	}
+	if err := config.SavePreferences(config.Preferences{Languages: next}); err != nil {
 		return nil, err
 	}
-	if err := validateInitLanguageChoice("tui-lang", next.TUI, available); err != nil {
-		return nil, err
-	}
-	if err := config.SaveBundle(configPath, bundle); err != nil {
-		return nil, fmt.Errorf("save %s: %w", configPath, err)
-	}
-	return map[string]any{
-		"cli":          next.CLI,
-		"tui":          next.TUI,
-		"agent_output": next.AgentOutput,
-	}, nil
+	return settingsToMap(next), nil
 }
 
 func resolveInitLanguages(cmd *cobra.Command, inputs languagePromptInputs, available []string, defaults config.LanguageSettings) (config.LanguageSettings, error) {

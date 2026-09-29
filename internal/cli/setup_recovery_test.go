@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -54,30 +53,4 @@ func TestCLIConfigInitIsIdempotentAndRefreshesOnForce(t *testing.T) {
 	runCLIExpectError(t, db, cfg, "validation_error", "config", "init", "--scope", "global", "--preset", "missing")
 	runCLIExpectError(t, db, cfg, "validation_error", "config", "init", "--scope", "global", "--preset", "omakase", "--tui-lang", "missing")
 	readBackEquals(t, cfg, before)
-}
-
-func TestCLISetupPickerSkipsBrokenCustomLanguageFiles(t *testing.T) {
-	root := t.TempDir()
-	t.Setenv("OMAKITEN_HOME", root)
-	dir := filepath.Join(root, "languages", "custom")
-	writeFile(t, filepath.Join(dir, "broken.yaml"), "code: [\n")
-	writeFile(t, filepath.Join(dir, "uppercase.yml"), "code: Uppercase\n")
-	writeFile(t, filepath.Join(dir, "missing-code.yaml"), "name: No code\n")
-	writeFile(t, filepath.Join(dir, "notes.txt"), "user notes\n")
-	writeFile(t, filepath.Join(dir, "short-name.yaml"), "code: xy\nname: Custom language\n")
-	writeFile(t, filepath.Join(dir, "code-only.yaml"), "code: zz\n")
-	if err := os.Mkdir(filepath.Join(dir, "directory.yaml"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	options, err := loadBundledLanguageOptions()
-	if err != nil {
-		t.Fatal(err)
-	}
-	names := map[string]string{}
-	for _, option := range options {
-		names[option.Code] = option.Native
-	}
-	if names["en"] == "" || names["xy"] != "Custom language" || names["zz"] != "zz" || names["Uppercase"] != "" || names[""] != "" {
-		t.Fatalf("invalid custom language affected choices: %v", names)
-	}
 }

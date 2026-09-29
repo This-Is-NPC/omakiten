@@ -256,14 +256,14 @@ func prepareSetupConfig(ctx context.Context, opts *runtimeOptions, inputs setupI
 	if err != nil {
 		return "", config.PresetResult{}, "", domain.NewError(domain.ErrConfigInvalid, t("cli.err.init_seeded_config_invalid"), map[string]any{"path": seedRes.Path, "error": fmt.Sprint(err)})
 	}
-	bundle.Config.Languages = config.LanguageSettings{CLI: inputs.CLILang, TUI: inputs.TUILang, AgentOutput: inputs.AgentLang}
+	languages := config.LanguageSettings{CLI: inputs.CLILang, TUI: inputs.TUILang, AgentOutput: inputs.AgentLang}
 	for _, choice := range []struct{ flag, value string }{{"cli-lang", inputs.CLILang}, {"tui-lang", inputs.TUILang}} {
 		if err := validateInitLanguageChoice(choice.flag, choice.value, availableLanguageCodes(bundle.Languages)); err != nil {
 			return "", config.PresetResult{}, "", err
 		}
 	}
-	if err := config.SaveBundle(seedRes.Path, bundle); err != nil {
-		return "", config.PresetResult{}, "", fmt.Errorf("save %s: %w", seedRes.Path, err)
+	if err := config.SavePreferences(config.Preferences{Languages: languages}); err != nil {
+		return "", config.PresetResult{}, "", fmt.Errorf("save application preferences: %w", err)
 	}
 	return rootDir, seedRes, rootDir, nil
 }

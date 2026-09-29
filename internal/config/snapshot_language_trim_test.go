@@ -17,9 +17,9 @@ func TestBuildSnapshotTrimsLanguageKeysForInactiveCodes(t *testing.T) {
 			Buckets: []Bucket{{ID: 1, Key: "backlog", Name: "Backlog", Position: 1}},
 		}},
 		Config: Settings{
-			Workflow:  WorkflowSettings{Active: "demo"},
-			Languages: LanguageSettings{CLI: "pt-br", TUI: "en", AgentOutput: ""},
+			Workflow: WorkflowSettings{Active: "demo"},
 		},
+		LanguageSettings: LanguageSettings{CLI: "pt-br", TUI: "en", AgentOutput: ""},
 		Languages: []Language{
 			{Code: "en", Name: "English", Native: "English", Keys: map[string]string{"k": "english"}},
 			{Code: "pt-br", Name: "Portuguese (Brazil)", Native: "Português (Brasil)", Keys: map[string]string{"k": "portuguese"}},
@@ -88,9 +88,9 @@ func TestBuildSnapshotKeepsAgentOutputCodeKeys(t *testing.T) {
 			Buckets: []Bucket{{ID: 1, Key: "backlog", Name: "Backlog", Position: 1}},
 		}},
 		Config: Settings{
-			Workflow:  WorkflowSettings{Active: "demo"},
-			Languages: LanguageSettings{CLI: "en", TUI: "en", AgentOutput: "de"},
+			Workflow: WorkflowSettings{Active: "demo"},
 		},
+		LanguageSettings: LanguageSettings{CLI: "en", TUI: "en", AgentOutput: "de"},
 		Languages: []Language{
 			{Code: "en", Name: "English", Native: "English", Keys: map[string]string{"k": "english"}},
 			{Code: "de", Name: "German", Native: "Deutsch", Keys: map[string]string{"k": "german"}},

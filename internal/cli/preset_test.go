@@ -29,7 +29,7 @@ func TestPresetRepositoryOfflineEditingAndTransport(t *testing.T) {
 		t.Fatal("persona bindings were lost")
 	}
 	runCLI(t, db, selection, "task", "create", "--title", "Offline", "--confirm")
-	runCLI(t, db, selection, "config", "language", "set", "--agent", "pt-BR")
+	setPresetCommentLimit(t, selection, 321)
 	if bytes.Equal(before, mustPresetFile(t, selection)) {
 		t.Fatal("edit did not select an independent package")
 	}
@@ -55,8 +55,8 @@ func TestPresetRepositoryOfflineEditingAndTransport(t *testing.T) {
 	runCLI(t, db, target, "preset", "use", doc.Manifest.Name, "--scope", "global")
 	runCLI(t, db, target, "config", "validate")
 	bundle, err := config.LoadBundle(target)
-	if err != nil || bundle.Config.Languages.AgentOutput != "pt-BR" {
-		t.Fatalf("round trip: language=%q error=%v", bundle.Config.Languages.AgentOutput, err)
+	if err != nil || bundle.Config.Agent.MaxCommentChars != 321 {
+		t.Fatalf("round trip: comment limit=%d error=%v", bundle.Config.Agent.MaxCommentChars, err)
 	}
 	assertPresetOriginalUnchanged(t, root, p)
 }
@@ -69,7 +69,7 @@ func assertPresetModularEdits(t *testing.T, before, after config.PresetPackage) 
 		}
 	}
 	if after.Files["config/settings.yaml"] == before.Files["config/settings.yaml"] {
-		t.Fatal("language edit did not update its owning settings module")
+		t.Fatal("settings edit did not update its owning settings module")
 	}
 }
 
@@ -125,4 +125,16 @@ func createPresetRepository(t *testing.T, root string) (config.PresetResult, con
 		t.Fatal(err)
 	}
 	return seed, p, repo
+}
+
+func setPresetCommentLimit(t *testing.T, path string, limit int) {
+	t.Helper()
+	bundle, err := config.LoadBundle(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	bundle.Config.Agent.MaxCommentChars = limit
+	if err := config.SaveBundle(path, bundle); err != nil {
+		t.Fatal(err)
+	}
 }

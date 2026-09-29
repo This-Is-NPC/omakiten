@@ -88,17 +88,11 @@ func TestCLIProjectFlagPicksProjectRepoLocal(t *testing.T) {
 func assertProjectConfigCommands(t *testing.T, dbPath, projectRoot string) {
 	t.Helper()
 	path := filepath.Join(projectRoot, ".omakiten", "config.yaml")
-	for _, args := range [][]string{
-		{"config", "validate"},
-		{"config", "language", "show"},
-		{"config", "language", "set", "--agent", "Japanese"},
-		{"config", "language", "reset"},
-	} {
-		out := runCLI(t, dbPath, "", append([]string{"--project", "repo-b"}, args...)...)
-		if !strings.Contains(out, path) {
-			t.Fatalf("selected project lost for %v: %s", args, out)
-		}
+	out := runCLI(t, dbPath, "", "--project", "repo-b", "config", "validate")
+	if !strings.Contains(out, path) {
+		t.Fatalf("selected project lost: %s", out)
 	}
+
 }
 
 // TestCLIPerProjectListIsolatesTasks is the Phase 3c acceptance check

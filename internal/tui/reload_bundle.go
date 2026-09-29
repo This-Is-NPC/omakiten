@@ -114,7 +114,7 @@ func (m *Model) applyProjectRuntime(pr *contract.RuntimeView, path string) error
 	m.registry = registry
 	m.repos.Catalog = snap.Catalog(config.SurfaceTUI)
 	m.notifications = snap.Notifications()
-	m.languages = settings.EffectiveLanguages()
+	m.languages = snap.LanguageSettings()
 	m.tokenBadgeYellow, m.tokenBadgeRed = settings.TUI.TokenBadge.Effective()
 
 	if err := m.refresh(); err != nil {

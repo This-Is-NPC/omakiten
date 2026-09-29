@@ -210,7 +210,7 @@ func TestStudioCommandsGlobalLawMutation(t *testing.T) {
 
 func TestStudioPreviewRendersCandidatePrompt(t *testing.T) {
 	bundle := studioDraftBundle()
-	bundle.Config.Languages.AgentOutput = "English"
+	bundle.LanguageSettings.AgentOutput = "English"
 	bundle.Personas = []config.Persona{{Slug: "builder", Name: "Builder", Description: "Builds safely", Body: "Ship working code.", SkillRepertoire: []string{"code"}, Laws: []string{"persona-law"}}}
 	bundle.Skills = []config.Skill{{Slug: "code", Name: "Code", Body: "Implement the change."}}
 	bundle.Laws = []config.Law{{Slug: "global-law", Name: "Global", Severity: "warning", Body: "Global rule."}, {Slug: "persona-law", Name: "Persona", Severity: "error", Body: "Persona rule."}, {Slug: "template-law", Name: "Template", Severity: "info", Body: "Template rule."}, {Slug: "disabled-law", Name: "Disabled", Severity: "info", Body: "Disabled rule."}}

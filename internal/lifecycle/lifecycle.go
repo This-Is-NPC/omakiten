@@ -175,7 +175,7 @@ func PurgeDataDir() (path string, removed bool, err error) {
 // Returns the path scrubbed and whether anything existed.
 //
 // Irreversible: deletes the active yaml profile, every entity folder
-// (personas/, laws/, skills/, templates/, themes/, languages/), and
+// (personas/, laws/, skills/, templates/, themes/), and
 // the user's `custom/` overrides.
 func PurgeConfigRoot() (path string, removed bool, err error) {
 	dir, err := paths.ConfigRoot()

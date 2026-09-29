@@ -16,16 +16,16 @@ func TestCLIConfigWhyResolverPicksLocalOverGlobal(t *testing.T) {
 	}
 	t.Chdir(repo)
 	runCLI(t, dbPath, globalConfig, "config", "init", "--scope", "local", "--preset", "omakase")
-	runCLI(t, dbPath, filepath.Join(repo, ".omakiten", "config.yaml"), "config", "language", "set", "--agent", "Portuguese")
+	setPresetCommentLimit(t, filepath.Join(repo, ".omakiten", "config.yaml"), 321)
 
-	out := runCLI(t, dbPath, "", "config", "why", "config.languages.agent_output")
+	out := runCLI(t, dbPath, "", "config", "why", "config.agent.max_comment_chars")
 	envelope := decodeEnvelope(t, out)
 	data := envelope["data"].(map[string]any)
 	if data["source"] != "local" {
 		t.Fatalf("source = %v, want local (standalone discovery should win)", data["source"])
 	}
-	if data["value"] != "Portuguese" {
-		t.Fatalf("value = %v, want Portuguese", data["value"])
+	if data["value"] != float64(321) {
+		t.Fatalf("value = %v, want 321", data["value"])
 	}
 }
 
@@ -39,18 +39,18 @@ func TestCLIConfigWhyLayerFlagFiltersToGlobal(t *testing.T) {
 	}
 	t.Chdir(repo)
 	runCLI(t, dbPath, globalConfig, "config", "init", "--scope", "global", "--preset", "omakase")
-	runCLI(t, dbPath, globalConfig, "config", "language", "set", "--agent", "English")
+	setPresetCommentLimit(t, globalConfig, 123)
 	runCLI(t, dbPath, globalConfig, "config", "init", "--scope", "local", "--preset", "omakase")
-	runCLI(t, dbPath, filepath.Join(repo, ".omakiten", "config.yaml"), "config", "language", "set", "--agent", "Portuguese")
+	setPresetCommentLimit(t, filepath.Join(repo, ".omakiten", "config.yaml"), 321)
 
-	out := runCLI(t, dbPath, globalConfig, "config", "why", "config.languages.agent_output", "--layer", "global")
+	out := runCLI(t, dbPath, globalConfig, "config", "why", "config.agent.max_comment_chars", "--layer", "global")
 	envelope := decodeEnvelope(t, out)
 	data := envelope["data"].(map[string]any)
-	if data["source"] != "global" || data["value"] != "English" {
-		t.Fatalf("--layer global = %+v, want source=global value=English", data)
+	if data["source"] != "global" || data["value"] != float64(123) {
+		t.Fatalf("--layer global = %+v, want source=global value=123", data)
 	}
-	data = decodeEnvelope(t, runCLI(t, dbPath, globalConfig, "config", "why", "config.languages.agent_output"))["data"].(map[string]any)
-	if data["source"] != "explicit" || data["value"] != "English" {
+	data = decodeEnvelope(t, runCLI(t, dbPath, globalConfig, "config", "why", "config.agent.max_comment_chars"))["data"].(map[string]any)
+	if data["source"] != "explicit" || data["value"] != float64(123) {
 		t.Fatalf("explicit config = %+v", data)
 	}
 }
@@ -95,7 +95,7 @@ func TestCLIConfigWhyLayerLocalWithoutInstallIsNotSet(t *testing.T) {
 	globalConfig := filepath.Join(tmp, "global", "config.yaml")
 	t.Chdir(t.TempDir())
 
-	out := runCLI(t, dbPath, globalConfig, "config", "why", "config.languages.agent_output", "--layer", "local")
+	out := runCLI(t, dbPath, globalConfig, "config", "why", "config.agent.max_comment_chars", "--layer", "local")
 	envelope := decodeEnvelope(t, out)
 	data := envelope["data"].(map[string]any)
 	if data["source"] != "not_set" {
@@ -122,14 +122,14 @@ func TestCLIConfigDiffReportsChanges(t *testing.T) {
 	t.Chdir(repo)
 	runCLI(t, dbPath, globalConfig, "config", "init", "--scope", "global", "--preset", "omakase")
 	runCLI(t, dbPath, globalConfig, "config", "init", "--scope", "local", "--preset", "omakase")
-	runCLI(t, dbPath, filepath.Join(repo, ".omakiten", "config.yaml"), "config", "language", "set", "--agent", "Portuguese")
+	setPresetCommentLimit(t, filepath.Join(repo, ".omakiten", "config.yaml"), 321)
 
 	out := runCLI(t, dbPath, globalConfig, "config", "diff", "local", "global")
 	envelope := decodeEnvelope(t, out)
 	data := envelope["data"].(map[string]any)
 	entries := data["diff"].([]any)
 	if len(entries) == 0 {
-		t.Fatalf("expected non-empty diff for distinct language settings")
+		t.Fatalf("expected non-empty diff for distinct comment limits")
 	}
 }
 
@@ -161,7 +161,7 @@ func TestCLIConfigDiffLocalPathSpec(t *testing.T) {
 	}
 	t.Chdir(repoA)
 	runCLI(t, dbPath, globalConfig, "config", "init", "--scope", "local", "--preset", "omakase")
-	runCLI(t, dbPath, filepath.Join(repoA, ".omakiten", "config.yaml"), "config", "language", "set", "--agent", "Portuguese")
+	setPresetCommentLimit(t, filepath.Join(repoA, ".omakiten", "config.yaml"), 321)
 	t.Chdir(repoB)
 	runCLI(t, dbPath, globalConfig, "config", "init", "--scope", "local", "--preset", "omakase")
 	t.Chdir(tmp)
@@ -170,6 +170,6 @@ func TestCLIConfigDiffLocalPathSpec(t *testing.T) {
 	envelope := decodeEnvelope(t, out)
 	data := envelope["data"].(map[string]any)
 	if len(data["diff"].([]any)) == 0 {
-		t.Fatalf("expected diff between distinct project language settings")
+		t.Fatalf("expected diff between distinct project comment limits")
 	}
 }

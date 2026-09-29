@@ -92,6 +92,9 @@ func (p PresetPackage) validate() error {
 	}
 	total := 0
 	for path, file := range p.Files {
+		if path == "preferences.yaml" || strings.HasPrefix(path, "languages/") {
+			return fmt.Errorf("application preferences and translations belong to Omakiten, not a preset: %s", path)
+		}
 		if err := validatePresetAsset(path, file); err != nil {
 			return err
 		}

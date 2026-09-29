@@ -109,7 +109,7 @@ func assertDefaultLayout(t *testing.T, tmp string) {
 		}
 	}
 
-	for _, dir := range []string{"skills", "laws", "personas", "templates", "themes", "languages"} {
+	for _, dir := range []string{"skills", "laws", "personas", "templates", "themes"} {
 		if _, err := os.Stat(filepath.Join(tmp, dir)); err != nil {
 			t.Fatalf("%s dir missing: %v", dir, err)
 		}
@@ -121,9 +121,6 @@ func assertDefaultLayout(t *testing.T, tmp string) {
 
 	// The bundled English language pack must materialize so the catalog has
 	// a baseline to fall back to even when the user has not chosen a language.
-	if _, err := os.Stat(filepath.Join(tmp, "languages", "en.yaml")); err != nil {
-		t.Fatalf("default language en.yaml missing: %v", err)
-	}
 
 	// The default kit must ship the task and PR templates; otherwise the embed.FS
 	// pattern silently dropped the templates/ subtree.

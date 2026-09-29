@@ -698,9 +698,9 @@ func buildProjectRuntime(ctx context.Context, store *sqlite.Store, cs *configsto
 		SolutionsTopLimitMax:     bundle.Config.Solutions.MaxTopLimit,
 	})
 
-	sourcePaths := bundle.SourcePaths
-	if len(sourcePaths) == 0 {
-		sourcePaths = []string{configPath}
+	sourcePaths, err := runtimeSourcePaths(bundle.SourcePaths, configPath)
+	if err != nil {
+		return nil, err
 	}
 	sourceMtimes, mtime := statSourceMtimes(sourcePaths, configPath)
 
@@ -721,4 +721,15 @@ func buildProjectRuntime(ctx context.Context, store *sqlite.Store, cs *configsto
 		// PreviousSnapshot is populated by the cache on rotation —
 		// buildProjectRuntime has no access to the prior entry.
 	}, nil
+}
+
+func runtimeSourcePaths(sources []string, primary string) ([]string, error) {
+	if len(sources) == 0 {
+		sources = []string{primary}
+	}
+	preferences, err := config.PreferencesPath()
+	if err != nil {
+		return nil, err
+	}
+	return append(append([]string(nil), sources...), preferences), nil
 }

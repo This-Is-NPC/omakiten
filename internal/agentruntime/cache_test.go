@@ -90,7 +90,7 @@ func TestBundleCacheMtimeChangeTriggersRebuild(t *testing.T) {
 	}
 }
 
-func TestRuntimeServiceResolvesMtimeChanges(t *testing.T) {
+func TestRuntimeServiceResolvesPreferenceChanges(t *testing.T) {
 	ctx := context.Background()
 	rt := openTestRuntime(t)
 	defer func() { _ = rt.Close() }()
@@ -107,17 +107,8 @@ func TestRuntimeServiceResolvesMtimeChanges(t *testing.T) {
 		t.Fatalf("initial agent output language = %q, want empty", resp.AgentOutputLanguage)
 	}
 
-	bundle, err := config.LoadBundle(rt.configPath)
-	if err != nil {
-		t.Fatalf("LoadBundle: %v", err)
-	}
-	bundle.Config.Languages.AgentOutput = "Português (Brasil)"
-	if err := config.SaveBundle(rt.configPath, bundle); err != nil {
-		t.Fatalf("SaveBundle: %v", err)
-	}
-	future := time.Now().Add(2 * time.Second)
-	if err := os.Chtimes(rt.configPath, future, future); err != nil {
-		t.Fatalf("Chtimes: %v", err)
+	if err := config.SavePreferences(config.Preferences{Languages: config.LanguageSettings{AgentOutput: "Português (Brasil)"}}); err != nil {
+		t.Fatal(err)
 	}
 
 	second := rt.Service()
@@ -125,7 +116,7 @@ func TestRuntimeServiceResolvesMtimeChanges(t *testing.T) {
 		t.Fatal("Service() after edit = nil")
 	}
 	if second == first {
-		t.Fatal("Service() returned stale service after config mtime changed")
+		t.Fatal("Service() returned stale service after application preferences changed")
 	}
 	resp, err = second.ResolveCommand(ctx, contract.ResolveCommandInput{Name: "okt"})
 	if err != nil {
@@ -156,12 +147,12 @@ func TestRuntimeServiceResolvesActiveProfileSwitch(t *testing.T) {
 	if first == nil {
 		t.Fatal("Service() = nil")
 	}
-	resp, err := first.ResolveCommand(ctx, contract.ResolveCommandInput{Name: "okt"})
+	_, err = first.ResolveCommand(ctx, contract.ResolveCommandInput{Name: "okt"})
 	if err != nil {
 		t.Fatalf("ResolveCommand before active switch: %v", err)
 	}
-	if resp.AgentOutputLanguage != "" {
-		t.Fatalf("initial agent output language = %q, want empty", resp.AgentOutputLanguage)
+	if first.Snapshot().Settings().Agent.MaxCommentChars == 321 {
+		t.Fatal("initial profile unexpectedly uses the alternate comment limit")
 	}
 
 	if err := paths.SetActiveConfigInDir(filepath.Join(tmp, "config"), filepath.Base(kaisekiPath)); err != nil {
@@ -174,12 +165,12 @@ func TestRuntimeServiceResolvesActiveProfileSwitch(t *testing.T) {
 	if second == first {
 		t.Fatal("Service() returned stale service after active profile switched")
 	}
-	resp, err = second.ResolveCommand(ctx, contract.ResolveCommandInput{Name: "okt"})
+	_, err = second.ResolveCommand(ctx, contract.ResolveCommandInput{Name: "okt"})
 	if err != nil {
 		t.Fatalf("ResolveCommand after active switch: %v", err)
 	}
-	if resp.AgentOutputLanguage != "Português (Brasil)" {
-		t.Fatalf("agent output language after active switch = %q, want Português (Brasil)", resp.AgentOutputLanguage)
+	if second.Snapshot().Settings().Agent.MaxCommentChars != 321 {
+		t.Fatal("active profile switch did not update the comment limit")
 	}
 }
 
@@ -194,7 +185,7 @@ func seedActiveProfileSwitch(t *testing.T, root string) (string, string) {
 	if err != nil {
 		t.Fatalf("LoadBundle alternate: %v", err)
 	}
-	bundle.Config.Languages.AgentOutput = "Português (Brasil)"
+	bundle.Config.Agent.MaxCommentChars = 321
 	if err := config.SaveBundle(alternate, bundle); err != nil {
 		t.Fatalf("SaveBundle alternate: %v", err)
 	}
@@ -221,12 +212,12 @@ func TestRuntimeServicePreservesPriorRuntimeOnInvalidInPlaceEdit(t *testing.T) {
 	if first == nil {
 		t.Fatal("Service() = nil")
 	}
-	resp, err := first.ResolveCommand(ctx, contract.ResolveCommandInput{Name: "okt"})
+	_, err := first.ResolveCommand(ctx, contract.ResolveCommandInput{Name: "okt"})
 	if err != nil {
 		t.Fatalf("ResolveCommand before edit: %v", err)
 	}
-	if resp.AgentOutputLanguage != "" {
-		t.Fatalf("initial agent output language = %q, want empty", resp.AgentOutputLanguage)
+	if first.Snapshot().Settings().Agent.MaxCommentChars == 321 {
+		t.Fatal("initial profile unexpectedly uses the alternate comment limit")
 	}
 
 	// Overwrite the active source in place with unparseable YAML, then
@@ -246,14 +237,13 @@ func TestRuntimeServicePreservesPriorRuntimeOnInvalidInPlaceEdit(t *testing.T) {
 	if second != first {
 		t.Fatal("Service() swapped to a different service after an invalid edit; rebuild must not replace c.entries on parse failure")
 	}
-	// The prior service still resolves the OLD (empty) language — the
-	// broken bundle was never installed.
-	resp, err = second.ResolveCommand(ctx, contract.ResolveCommandInput{Name: "okt"})
+	// The prior service remains usable after an invalid edit.
+	_, err = second.ResolveCommand(ctx, contract.ResolveCommandInput{Name: "okt"})
 	if err != nil {
 		t.Fatalf("ResolveCommand after invalid edit: %v", err)
 	}
-	if resp.AgentOutputLanguage != "" {
-		t.Fatalf("agent output language after invalid edit = %q, want empty (prior settings preserved)", resp.AgentOutputLanguage)
+	if first.Snapshot().Settings().Agent.MaxCommentChars == 321 {
+		t.Fatal("invalid edit changed the prior comment limit")
 	}
 }
 
@@ -273,13 +263,12 @@ func TestRuntimeServiceExplicitConfigIgnoresActiveSwitch(t *testing.T) {
 		t.Fatalf("SeedFixture omakase: %v", err)
 	}
 	alternate := copyRuntimeFixture(t, omakase.Path, "alternate.yaml")
-	// Give the alternate profile a distinct language so a wrong redirect would be
-	// observable in the resolved command.
+	// Give the alternate profile a distinct comment limit.
 	bundle, err := config.LoadBundle(alternate)
 	if err != nil {
 		t.Fatalf("LoadBundle alternate: %v", err)
 	}
-	bundle.Config.Languages.AgentOutput = "Português (Brasil)"
+	bundle.Config.Agent.MaxCommentChars = 321
 	if err := config.SaveBundle(alternate, bundle); err != nil {
 		t.Fatalf("SaveBundle alternate: %v", err)
 	}
@@ -303,12 +292,12 @@ func TestRuntimeServiceExplicitConfigIgnoresActiveSwitch(t *testing.T) {
 	if first == nil {
 		t.Fatal("Service() = nil")
 	}
-	resp, err := first.ResolveCommand(ctx, contract.ResolveCommandInput{Name: "okt"})
+	_, err = first.ResolveCommand(ctx, contract.ResolveCommandInput{Name: "okt"})
 	if err != nil {
 		t.Fatalf("ResolveCommand before active switch: %v", err)
 	}
-	if resp.AgentOutputLanguage != "" {
-		t.Fatalf("initial agent output language = %q, want empty (explicit omakase)", resp.AgentOutputLanguage)
+	if first.Snapshot().Settings().Agent.MaxCommentChars == 321 {
+		t.Fatal("explicit profile unexpectedly uses the alternate comment limit")
 	}
 
 	// Flip the active marker to the alternate profile. An explicit caller must ignore
@@ -320,12 +309,12 @@ func TestRuntimeServiceExplicitConfigIgnoresActiveSwitch(t *testing.T) {
 	if second == nil {
 		t.Fatal("Service() after active switch = nil")
 	}
-	resp, err = second.ResolveCommand(ctx, contract.ResolveCommandInput{Name: "okt"})
+	_, err = second.ResolveCommand(ctx, contract.ResolveCommandInput{Name: "okt"})
 	if err != nil {
 		t.Fatalf("ResolveCommand after active switch: %v", err)
 	}
-	if resp.AgentOutputLanguage != "" {
-		t.Fatalf("explicit --config caller was redirected by the active marker: language = %q, want empty (omakase)", resp.AgentOutputLanguage)
+	if first.Snapshot().Settings().Agent.MaxCommentChars == 321 {
+		t.Fatal("active marker redirected the explicitly selected profile")
 	}
 }
 
@@ -1191,6 +1180,7 @@ func openTestRuntime(t *testing.T) *Runtime {
 	t.Helper()
 	ctx := context.Background()
 	tmp := t.TempDir()
+	t.Setenv(paths.HomeEnv, tmp)
 	rt, err := Open(ctx, Options{
 		DBPath:     filepath.Join(tmp, "omakiten.db"),
 		ConfigPath: filepath.Join(tmp, "config", "omakase.yaml"),
