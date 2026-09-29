@@ -203,7 +203,7 @@ type taskCardSetKey struct {
 // taskDetailBlockKey identifies a memoised block. EVERY input the block's build
 // closure reads has to be in here, and `rows` is never one of them — a block
 // whose height depends on the row budget is not memoisable at all (P2 in
-// .docs/internal/tui-screen-assembly.md). Only the details block is keyed by
+// docs/tui-screen-assembly.md). Only the details block is keyed by
 // this type; see subtasksBlock in render.go for why the board is not.
 type taskDetailBlockKey struct {
 	width                 int

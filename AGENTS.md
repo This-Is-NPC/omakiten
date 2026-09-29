@@ -151,8 +151,7 @@ before leaving. Go module `omakiten`, binary `okt`, shipping a CLI and a TUI.
 
 `CONTRIBUTING.md` is the canonical project checklist and wins over the
 project-specific guidance below wherever the two overlap. In this tree,
-the mise configuration is `.mise.toml` and the documentation root is
-`.docs/`; use those paths for the tooling and documentation rules above.
+the mise configuration is `.mise.toml`; use that path for the tooling rules above.
 
 ### Toolchain and commands
 
@@ -160,13 +159,13 @@ the mise configuration is `.mise.toml` and the documentation root is
 assuming a version or inventing a command.
 
 - Run `mise run check` before opening a PR. It covers tests, lint, vulnerability scan and
-  doc checks, and the pre-push hook runs the same gate.
+  workspace and shell checks, and the pre-push hook runs the same gate.
 - Run `go test ./internal/arch/...` after any structural change.
 - Refresh golden fixtures one package at a time with `go test ./path/to/pkg -update`.
   A full-tree run never rewrites fixtures, and `-update` is the single supported switch.
 
 Generated output belongs under `.tmp/`; see the generated-file layout in
-`.docs/internal/dev-guide.md`. Profiling commands must set both `-o` and
+`docs/development.md`. Profiling commands must set both `-o` and
 `-outputdir` so Go does not leave a test binary in the working directory.
 
 ### Architecture boundaries
@@ -194,14 +193,14 @@ other number a screen might want is received rather than computed:
 - Style is declared per box; a screen constructs none of its own.
 
 The logic that used to live in screens was removed deliberately and does not return. Read
-`.docs/internal/tui-screen-assembly.md` — it is normative — before adding or refactoring a screen.
+`docs/tui-screen-assembly.md` — it is normative — before adding or refactoring a screen.
 
 ### Where the knowledge lives
 
 - `CONTRIBUTING.md` — the rules every PR follows.
-- `.docs/README.md` — index and authoring rules for all documentation.
-- `.docs/internal/dev-guide.md` — prerequisites, local workflow, release mechanics.
-- `.docs/internal/architecture.md` and `.docs/internal/requirements.md` — the verified
+- `docs/README.md` — index and authoring rules for all documentation.
+- `docs/development.md` — prerequisites, local workflow, release mechanics.
+- `docs/design.md` and `docs/requirements.md` — the verified
   project knowledge base. Align planning and implementation with what they document.
 
 Update the guide that covers a behavior in the same PR that changes it.

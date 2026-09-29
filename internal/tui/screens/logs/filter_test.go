@@ -15,7 +15,7 @@ import (
 // walks the cycle helper once per step and asserts the sequence
 // returned matches the documented order — failure means a chip drift
 // has landed in filter.go and the help-row description in
-// en.yaml + .docs/tui.md is out of sync with the runtime.
+// en.yaml + docs/screens.md is out of sync with the runtime.
 func TestLogsFilterCycleForwardOrder(t *testing.T) {
 	t.Parallel()
 	want := []domain.LogsFilterMode{

@@ -237,7 +237,7 @@ func (s Screen) subtasksSpec() screenlayout.Spec {
 // the paint, and it is the whole of the task_detail view golden's drift.
 //
 // Keying `rows` into the memo is not the fix either — see P2 in
-// .docs/internal/tui-screen-assembly.md. What is memoisable here is the
+// docs/tui-screen-assembly.md. What is memoisable here is the
 // row-INDEPENDENT half, the lane cards, and that is already cached by
 // s.body.cards through renderSubtaskColumn. The row-dependent assembly is paid
 // per render, exactly as commentdetail's and plans' fitted detail bodies pay it.
