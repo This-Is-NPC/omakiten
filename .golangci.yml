@@ -300,15 +300,6 @@ linters:
         # measure rendered output and configure deterministic render probes;
         # they do not ship screen code or paint production UI. The production
         # screen rule above is mirrored by internal/arch's non-test scanner.
-      # staticcheck QF1012 is a quickfix suggestion (`fmt.Fprintf(&b, ...)`
-      # over `b.WriteString(fmt.Sprintf(...))`). The two forms are
-      # equivalent; the WriteString shape reads cleaner in the
-      # docs-refresh generator where most builder writes are plain
-      # strings.
-      - path: cmd/okt-docs-refresh/
-        text: "QF1012"
-        linters:
-          - staticcheck
 
 # Three golangci-lint defaults hide findings, and all three bite hardest exactly
 # when a new linter is being adopted — when the count is the thing you are
