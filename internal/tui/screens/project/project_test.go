@@ -316,12 +316,27 @@ func assertProjectBodyZone(t *testing.T, payload Payload, width, height int, nam
 }
 
 func TestScreenNavigationAndPresentationEdges(t *testing.T) {
-	frame := screentest.FrameAt(t, 46, 14)
+	for name, size := range map[string][2]int{"tiny": {46, 14}, "compact": {80, 24}} {
+		t.Run(name, func(t *testing.T) {
+			frame := screentest.FrameAt(t, size[0], size[1])
+			assertProjectCompactPresentation(t, frame)
+		})
+	}
+}
+
+func assertProjectCompactPresentation(t *testing.T, frame screenhost.Frame) {
+	t.Helper()
 	screen := New().Apply(Result{Payload: testPayload()})
 	assertProjectCapabilities(t, frame, screen)
+	if frame.Height() >= 24 && !strings.Contains(screentest.StripANSI(screen.View(frame)), "/tmp/demo") {
+		t.Fatal("compact project view shows chrome without metadata")
+	}
 	screen = assertProjectNarrowNavigation(t, frame, screen)
-	if screen.Focus() != FocusForm {
-		t.Fatalf("cycling off the activity zone landed on %v", screen.Focus())
+	for _, focus := range []Focus{FocusDashboard, FocusActivity, FocusForm} {
+		screen = screen.Update(frame, screentest.Key("tab")).Screen.(Screen)
+		if screen.Focus() != focus {
+			t.Fatalf("compact zone cycle = %v, want %v", screen.Focus(), focus)
+		}
 	}
 	if !projectZoneReaches(t, frame, screen, "pgup", "ProjectDescriptionMarker") && !projectZoneReaches(t, frame, screen, "pgdown", "ProjectDescriptionMarker") {
 		t.Fatal("narrow view never reveals the description through the screen's own paging keys")
@@ -352,26 +367,23 @@ func assertProjectCapabilities(t *testing.T, frame screenhost.Frame, screen Scre
 func assertProjectNarrowNavigation(t *testing.T, frame screenhost.Frame, screen Screen) Screen {
 	t.Helper()
 	screen = screen.Update(frame, screentest.Key("shift+tab")).Screen.(Screen)
-	// Frame is 46×14: HostBox=4 rows, zone floors 3+3+3=9, so dashboard and
-	// activity drop under the hard MinRows floor. shift+tab is tops, not a
-	// zone key, so the screen leaves it; activity is unreachable — FocusForm, cursor -1.
+	// shift+tab belongs to top-level navigation and leaves the zone unchanged.
 	if screen.Focus() != FocusForm || screen.ActivityCursor() != -1 {
-		t.Fatalf("unowned shift+tab focus = %v cursor=%d, want FocusForm/-1 (activity dropped at this geometry)", screen.Focus(), screen.ActivityCursor())
+		t.Fatalf("unowned shift+tab focus = %v cursor=%d, want FocusForm/-1", screen.Focus(), screen.ActivityCursor())
 	}
 	for _, key := range []string{"end", "up", "down", "pgdown", "pgup", "home", "G", "g"} {
 		screen = screen.Update(frame, screentest.Key(key)).Screen.(Screen)
 	}
-	// Activity is still dropped: scroll keys cannot select a card that has no
-	// zone. Cursor stays -1; BodyScroll is the surviving meta zone's offset.
+	// Scrolling the metadata does not select an activity card.
 	if screen.ActivityCursor() != -1 || screen.BodyScroll() < 0 {
-		t.Fatalf("navigation ended at cursor=%d scroll=%d, want -1 / non-negative (activity dropped)", screen.ActivityCursor(), screen.BodyScroll())
+		t.Fatalf("navigation ended at cursor=%d scroll=%d, want -1 / non-negative", screen.ActivityCursor(), screen.BodyScroll())
 	}
 	for _, key := range []string{"n", "e", "c", "m", "A"} {
 		if out := screen.Update(frame, screentest.Key(key)); out.Action.Kind != screenhost.ActionNone {
 			t.Fatalf("read-only key %q action = %v", key, out.Action.Kind)
 		}
 	}
-	return screen.Update(frame, screentest.Key("tab")).Screen.(Screen)
+	return screen
 }
 
 func TestScreenEmptyLoadingErrorAndProjectionClamp(t *testing.T) {

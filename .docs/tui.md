@@ -36,6 +36,10 @@ Home emits typed select/create/edit/delete intents. The root host resolves repos
 
 ### Home keybindings
 
+Project cards fit inside the column's frame, including their own borders and
+padding. The layout arranger budgets the column chrome and its scrolling items
+within the available screen body.
+
 | Key | Action |
 |---|---|
 | `↑ ↓` · `j k` | move project selection (auto-scrolls) |
@@ -68,11 +72,15 @@ The TUI consumes the same application services as the CLI and operation layers �
 
 ## Project view
 
+On compact terminals, the layout gives the focused area the available height
+when metadata, dashboard and activity cannot each receive a readable share.
+Use `tab` to reach every area. Wider terminals keep the side-by-side layout.
+
 Press `ctrl+p`, or `e` on a project in Home, to push the registered Project route (`internal/tui/screens/project`). The screen keeps project identity intact while owning its metadata/dashboard/activity projection, three-zone focus, activity cursor/scroll, loading/error generation, resize behavior, footer, and help. `esc` pops the route and restores the prior screen without rewriting its legacy zone/sub selection.
 
 | Key | Action |
 |---|---|
-| `tab` · `shift+tab` | cycle metadata / dashboard / activity focus |
+| `tab` | cycle metadata / dashboard / activity focus |
 | `enter` | open the focused comment, or open a task referenced by a system event |
 | `f` | push the registered full-width Project Form reader |
 | `r` | refresh the project projection |

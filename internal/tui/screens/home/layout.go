@@ -1,8 +1,6 @@
 package home
 
 import (
-	"strings"
-
 	"omakiten/internal/tui/components/framed"
 	"omakiten/internal/tui/components/screengrid"
 	"omakiten/internal/tui/components/screenkit"
@@ -46,37 +44,23 @@ func (s Screen) cardsBlock(frame screenhost.Frame, canvas screenlayout.Canvas) s
 			Cursor: screenlayout.NoSelection(),
 		}
 	}
-	cardWidth, contentWidth := s.cardSizes(width)
+	contentWidth := framed.ContentWidth(width)
 	cards := make([]string, len(s.projects))
 	cursor := canvas.Cursor()
 	for i, project := range s.projects {
-		cards[i] = s.renderCard(kit, project, i == cursor, cardWidth, contentWidth)
+		cards[i] = s.renderCard(kit, project, i == cursor, contentWidth)
 	}
 	block := framed.List(kit.Styles.Border, width, s.kicker(kit), nil, cards)
-	heights := make([]int, len(block.Items))
-	for i, item := range block.Items {
-		heights[i] = strings.Count(item, "\n") + 1
-	}
-	block.Heights = heights
 	return block
 }
 
 // columnBox is the geometry ArrangeIn / HandleKeyIn / ResyncIn share: the
-// Column content width and the Column+header viewport (no leading blank —
-// View owns the Indent + Column wrap outside the arranged body).
-//
-// When the terminal is still unmeasured (Height<=0), Kit.ViewportRows returns
-// the historical "0 means unlimited" sentinel. ArrangeIn treats 0 as ZERO rows,
-// so HostBox supplies the unmeasured-height assumption instead.
+// column width and host viewport, with frame chrome charged by the arranger.
 func (s Screen) columnBox(frame screenhost.Frame) screenlayout.Box {
 	kit := frame.Kit()
 	host := screenlayout.HostBox(kit)
 	width := s.columnInner(host.Width)
-	rows := s.viewportRows(frame, width)
-	if kit.Height <= 0 {
-		rows = host.Rows
-	}
-	return screenlayout.Box{Width: width, Rows: rows}
+	return screenlayout.Box{Width: width, Rows: host.Rows}
 }
 
 func (s Screen) root(frame screenhost.Frame) screengrid.Node {

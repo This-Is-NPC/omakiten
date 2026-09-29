@@ -150,13 +150,17 @@ func TestContractDeclarationsAndOverlayConfirm(t *testing.T) {
 }
 
 func TestRenderingBoundsAndHelpers(t *testing.T) {
-	frame := testFrame(30, 10)
 	s := New().Apply(Result{Payload: Payload{
 		Projects: []domain.Project{{ID: 1, Name: "", Slug: "an-extremely-long-slug", RootPath: "/deep/path/to/a/very-long-leaf-name"}},
 		Tags:     map[int64][]domain.Tag{1: {{Name: "an-extremely-long-unbroken-tag"}}}, Pending: map[int64]int{1: 1},
 	}})
-	if got := ansi.StringWidth(widestLine(ansi.Strip(s.View(frame)))); got > frame.Width() {
-		t.Fatalf("narrow home width = %d, terminal = %d", got, frame.Width())
+	for _, size := range [][2]int{{30, 10}, {80, 24}, {120, 40}} {
+		frame := testFrame(size[0], size[1])
+		view := ansi.Strip(s.View(frame))
+		if got := ansi.StringWidth(widestLine(view)); got > frame.Width() {
+			t.Fatalf("home width = %d, terminal = %d", got, frame.Width())
+		}
+		assertHomeCardBorders(t, view)
 	}
 	for _, tc := range []struct {
 		value string
@@ -176,6 +180,15 @@ func TestRenderingBoundsAndHelpers(t *testing.T) {
 	}
 	if got := wrapWords("", 0); len(got) != 1 {
 		t.Fatalf("wrapWords empty = %v", got)
+	}
+}
+
+func assertHomeCardBorders(t *testing.T, view string) {
+	t.Helper()
+	for _, line := range strings.Split(view, "\n") {
+		if strings.HasPrefix(strings.TrimSpace(line), "│┌") && !strings.HasSuffix(line, "┐│") {
+			t.Fatalf("project card border is clipped: %q", line)
+		}
 	}
 }
 
@@ -218,8 +231,8 @@ func testFrame(width, height int) screenhost.Frame {
 		BadgeNormal:  lipgloss.NewStyle(),
 		BadgeBlocker: lipgloss.NewStyle(),
 		BadgeInfo:    lipgloss.NewStyle(),
-		Card:         lipgloss.NewStyle().Padding(0, 1),
-		CardSelected: lipgloss.NewStyle().Padding(0, 1),
+		Card:         lipgloss.NewStyle().Border(lipgloss.NormalBorder()).Padding(0, 1),
+		CardSelected: lipgloss.NewStyle().Border(lipgloss.NormalBorder()).Padding(0, 1),
 	}
 	text := func(k string) string {
 		values := map[string]string{

@@ -201,7 +201,7 @@ func (s Screen) Update(frame screenhost.Frame, msg tea.Msg) screenhost.Outcome {
 	if out, handled := s.handleProjectAction(key); handled {
 		return out
 	}
-	if next, handled := s.projectGridKey(kit, frame, key); handled {
+	if next, handled := s.grid.HandleKey(kit, s.gridBox(frame), key.String(), s.root(frame)); handled {
 		s.grid = next
 		return screenhost.Stay(s, nil)
 	}
@@ -234,24 +234,6 @@ func (s Screen) handleProjectAction(key tea.KeyMsg) (screenhost.Outcome, bool) {
 		return screenhost.Back(s, nil), true
 	}
 	return screenhost.Outcome{}, false
-}
-
-func (s Screen) projectGridKey(kit screenkit.Kit, frame screenhost.Frame, key tea.KeyMsg) (screengrid.State, bool) {
-	next, handled := s.grid.HandleKey(kit, s.gridBox(frame), key.String(), s.root(frame))
-	if !handled {
-		return s.grid, false
-	}
-	if s.gridBox(frame).Rows >= zoneMinRows*3 {
-		return next, true
-	}
-	if next.Focus() != sectionMeta {
-		return s.grid, true
-	}
-	placement, exists := screengrid.Render(kit, next, s.gridBox(frame), s.root(frame)).Placement(next.Focus())
-	if !exists || placement.Dropped {
-		return s.grid, true
-	}
-	return next, true
 }
 
 func (s Screen) Lifecycle(frame screenhost.Frame, event screenhost.LifecycleEvent) screenhost.Outcome {
@@ -340,8 +322,10 @@ func (s Screen) stateSection(frame screenhost.Frame) screenlayout.Func {
 }
 
 func (s Screen) metaSection(kit screenkit.Kit, focus Focus) screenlayout.Func {
+	spec := screenlayout.BesideFeed(sectionMeta, groupMeta, screenkit.PanelFloor, zoneMinRows, screenlayout.ScrollItems)
+	spec.ExpectedRows = screenkit.ReadingViewportRows
 	return screenlayout.Func{
-		Def: screenlayout.BesideFeed(sectionMeta, groupMeta, screenkit.PanelFloor, zoneMinRows, screenlayout.ScrollItems),
+		Def: spec,
 		Body: func(canvas screenlayout.Canvas) screenlayout.Block {
 			return screenlayout.Block{Items: strings.Split(s.metaPanel(kit, canvas.Width(), focus == FocusForm), "\n"), Cursor: screenlayout.NoSelection()}
 		},
@@ -349,8 +333,10 @@ func (s Screen) metaSection(kit screenkit.Kit, focus Focus) screenlayout.Func {
 }
 
 func (s Screen) dashboardSection(kit screenkit.Kit, focus Focus) screenlayout.Func {
+	spec := screenlayout.BesideFeed(sectionDashboard, groupMeta, screenkit.PanelFloor, zoneMinRows, screenlayout.ScrollItems)
+	spec.ExpectedRows = screenkit.ReadingViewportRows
 	return screenlayout.Func{
-		Def: screenlayout.BesideFeed(sectionDashboard, groupMeta, screenkit.PanelFloor, zoneMinRows, screenlayout.ScrollItems),
+		Def: spec,
 		Body: func(canvas screenlayout.Canvas) screenlayout.Block {
 			header, rows := s.dashboardPanel(kit, focus == FocusDashboard, canvas.Width())
 			return screenlayout.Block{Header: header, Items: rows, Cursor: screenlayout.NoSelection()}
@@ -361,6 +347,7 @@ func (s Screen) dashboardSection(kit screenkit.Kit, focus Focus) screenlayout.Fu
 func (s Screen) activitySection(kit screenkit.Kit, focus Focus) screenlayout.Func {
 	spec := screenlayout.Feed(sectionActivity, zoneMinRows)
 	spec.SelectFirst = true
+	spec.ExpectedRows = screenkit.ReadingViewportRows
 	return screenlayout.Func{
 		Def: spec,
 		Body: func(canvas screenlayout.Canvas) screenlayout.Block {

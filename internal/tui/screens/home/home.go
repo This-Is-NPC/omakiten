@@ -9,7 +9,6 @@ import (
 
 	"omakiten/internal/domain"
 	"omakiten/internal/tui/components/card"
-	"omakiten/internal/tui/components/framed"
 	"omakiten/internal/tui/components/list"
 	"omakiten/internal/tui/components/screengrid"
 	"omakiten/internal/tui/components/screenkit"
@@ -262,12 +261,6 @@ func (s Screen) kicker(kit screenkit.Kit) string {
 	return kit.Styles.HintAccent.Render(text)
 }
 
-func (s Screen) viewportRows(frame screenhost.Frame, width int) int {
-	kit := frame.Kit()
-	box := framed.Box(kit.Styles.Border, width, s.kicker(kit), nil)
-	return kit.Chrome().Lines(append(box.Header, box.Footer...)...).ViewportRows()
-}
-
 func (s Screen) columnInner(available int) int {
 	inner := available - 2
 	if inner > columnInnerMax {
@@ -285,29 +278,18 @@ func (s Screen) columnInner(available int) int {
 	return inner
 }
 
-func (s Screen) cardSizes(width int) (int, int) {
-	width -= 2
-	content := width - 2
-	if content < 16 {
-		content = 16
-	}
-	return width, content
-}
-
 // renderCard is the project card: no id prefix and no cursor chevron — the home
 // grid marks the selection with the border alone.
-func (s Screen) renderCard(kit screenkit.Kit, project domain.Project, selected bool, cardWidth, contentWidth int) string {
+func (s Screen) renderCard(kit screenkit.Kit, project domain.Project, selected bool, width int) string {
 	title := project.Name
 	if title == "" {
 		title = project.Slug
 	}
-	return card.Painter{Styles: kit.Styles}.Render(card.Spec{
-		Title:    title,
-		Meta:     []string{s.metaLine(project, contentWidth)},
-		Badges:   s.projectBadges(kit, project, contentWidth),
-		Selected: selected,
-		BoxWidth: cardWidth, InnerWidth: contentWidth,
-	})
+	painter := card.Painter{Styles: kit.Styles}
+	spec := painter.Fit(card.Spec{Title: title, Selected: selected}, width)
+	spec.Meta = []string{s.metaLine(project, spec.InnerWidth)}
+	spec.Badges = s.projectBadges(kit, project, spec.InnerWidth)
+	return painter.Render(spec)
 }
 
 // metaLine is `slug · path`, shortened path-first so the slug — the thing the
