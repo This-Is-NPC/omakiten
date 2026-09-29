@@ -131,6 +131,15 @@ Commits. Edit generated changelog text only in its release PR. GoReleaser,
 release metadata, signing, and installer assurance are wired by
 `.github/workflows/release.yml` and the release scripts.
 
+The release workflow prepares a draft and creates its tag at the draft's
+exact source commit before building. It publishes only after signing and
+verifying all archives through the production installers. A pending draft
+is completed before another release PR is prepared. Release runs are serialized.
+To resume a pending draft with the current release tooling, dispatch the
+`Release` workflow on `master` from GitHub Actions. `mise run release:prepare`
+prepares the pending draft's tag and rejects a tag that points at another
+commit; it requires authenticated GitHub access with repository write access.
+
 The dry-run uses a local ephemeral key and no external signing services.
 Production signing uses the configured keyless identity and transparency-log
 policy. A successful dry-run is local matrix evidence, rather than a published

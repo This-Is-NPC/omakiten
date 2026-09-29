@@ -33,6 +33,10 @@ run = "scripts/build.sh"
 description = "Build and verify the complete release metadata fixture without publishing"
 run = "scripts/release-dry-run.sh"
 
+[tasks."release:prepare"]
+description = "Prepare and verify the tag for the pending draft release"
+run = "scripts/prepare-release.sh"
+
 [tasks.install]
 description = "Build and install okt locally, then run `okt setup` for production-like user state"
 depends = ["build"]
