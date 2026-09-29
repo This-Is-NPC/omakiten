@@ -41,7 +41,7 @@ flow, rather than as a prerequisite for every code change.
 | --- | --- |
 | `fmt`, `fmt:check` | Format sources or check formatting. |
 | `build` | Build `.tmp/build/okt` with the current Git version. |
-| `test` | Run the all-package coverage pass, enforce the configured floor, then concurrency/race checks. |
+| `test` | Run all packages with real Cosign and PowerShell installer assurance, enforce coverage, then run concurrency/race checks. |
 | `lint` | Run the pinned Go linter. |
 | `vuln` | Scan Go dependencies for known vulnerabilities. |
 | `scripts:check` | Bash syntax and ShellCheck for shell entrypoints and libraries. |
@@ -70,8 +70,14 @@ confirming the visible behavior.
 
 The pre-push hook runs `scripts/local-check.sh`, which requires the checked
 commit to be clean HEAD, runs `mise run check`, and posts a `local-check` status
-for that commit. The gate consists of formatting, tests, lint, vulnerability,
+for that commit. The gate consists of formatting, all-package tests with real
+Cosign and PowerShell installer assurance, cross-builds, lint, vulnerability,
 workspace, and shell checks. The same scripts back manual tasks and hooks.
+
+Installer tests execute on the host operating system. Cross-builds compile
+filesystem safety tests for Linux, macOS, Windows, and Plan 9 under `.tmp/tests/`;
+they do not execute tests for another operating system. A Linux push verifies
+Linux behavior and compilation for every supported target.
 
 Authenticate the pinned GitHub CLI when needed:
 
