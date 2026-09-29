@@ -1,15 +1,6 @@
-// Package testfixtures wires test packages to the YAML config files that
-// live next to them under testdata/. Each fixture is a partial scenario;
-// the helper merges the embedded kit YAML (`defaults/omakiten.yaml`) on
-// tui, template_defaults) inherit from the shipped kit. This mirrors
-// the production install pipeline where the kit YAML is materialised
-// into the user's config root on first run.
-//
-// Why this matters: production has NO in-code canonical defaults. The
-// validator rejects bundles that omit required fields. Without the
-// merge step here, every fixture would have to repeat ~50 lines of
-// canonical boilerplate; with it, fixtures stay focused on the
-// scenario they exercise.
+// Package testfixtures loads focused scenarios with settings from the Omakase
+// fixture. It also provides a local Git repository for preset installation tests
+// so the suite needs neither network access nor published workflow repositories.
 package testfixtures
 
 import (

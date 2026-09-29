@@ -3,26 +3,19 @@ package cli
 import (
 	"context"
 	"fmt"
-	"path/filepath"
 
 	"github.com/spf13/cobra"
 	"omakiten/internal/config"
 	"omakiten/internal/domain"
+	"omakiten/internal/installer"
 )
 
 func newPresetCommand(opts *runtimeOptions) *cobra.Command {
 	cmd := &cobra.Command{Use: "preset", Short: opts.t("cli.preset.short")}
-	cmd.AddCommand(newPresetScopeCommand(opts, "add DIRECTORY", "add", func(_ *cobra.Command, root string, args []string) (any, error) {
-		path, err := filepath.Abs(args[0])
+	cmd.AddCommand(newPresetScopeCommand(opts, "add SOURCE", "add", func(cmd *cobra.Command, root string, args []string) (any, error) {
+		p, err := installer.ReadPreset(cmd.Context(), args[0])
 		if err != nil {
 			return nil, err
-		}
-		p, err := config.ReadPresetDirectory(path)
-		if err != nil {
-			return nil, err
-		}
-		if p.Manifest.Origin.Source == "" {
-			p.Manifest.Origin.Source = path
 		}
 		return config.InstallPreset(root, p)
 	}))
@@ -33,6 +26,11 @@ func newPresetCommand(opts *runtimeOptions) *cobra.Command {
 		return config.InstalledPresets(root)
 	}))
 	cmd.AddCommand(newPresetImportCommand(opts), newPresetExportCommand(opts))
+	cmd.AddCommand(&cobra.Command{Use: "catalog", Short: opts.t("cli.preset.catalog.short"), Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error {
+		return runJSON(cmd, func(context.Context) (any, error) {
+			return map[string]any{"presets": resolvedPresets(opts)}, nil
+		})
+	}})
 	return cmd
 }
 

@@ -83,9 +83,8 @@ func TestVersionedPresetSurfacesMatchCensus(t *testing.T) {
 	})
 
 	kits := shippedKitYAML(t, root)
-	if len(kits) < len(config.ListPresets()) {
-		t.Fatalf("found %d kit yaml files under defaults/config/, want at least %d official presets — the walker is looking at the wrong tree",
-			len(kits), len(config.ListPresets()))
+	if len(kits) != 1 {
+		t.Fatalf("found %d kit YAML files under defaults/config/, want the single Omakase fixture", len(kits))
 	}
 	for _, kit := range kits {
 		name := filepath.Base(kit)

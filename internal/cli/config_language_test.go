@@ -9,7 +9,7 @@ import (
 func TestCLIConfigLanguageShowReturnsDefaults(t *testing.T) {
 	tmp := t.TempDir()
 	dbPath := filepath.Join(tmp, "omakiten.db")
-	globalConfig := filepath.Join(tmp, "global", "config", "omakase.yaml")
+	globalConfig := filepath.Join(tmp, "global", "config.yaml")
 	t.Chdir(t.TempDir())
 
 	runCLI(t, dbPath, globalConfig, "config", "init", "--scope", "global", "--preset", "omakase")
@@ -48,7 +48,7 @@ func TestCLIConfigLanguageShowReturnsDefaults(t *testing.T) {
 func TestCLIConfigLanguageSetAgentFreeForm(t *testing.T) {
 	tmp := t.TempDir()
 	dbPath := filepath.Join(tmp, "omakiten.db")
-	globalConfig := filepath.Join(tmp, "global", "config", "omakase.yaml")
+	globalConfig := filepath.Join(tmp, "global", "config.yaml")
 	t.Chdir(t.TempDir())
 
 	runCLI(t, dbPath, globalConfig, "config", "init", "--scope", "global", "--preset", "omakase")
@@ -74,7 +74,7 @@ func TestCLIConfigLanguageSetAgentFreeForm(t *testing.T) {
 func TestCLIConfigLanguageSetRequiresAtLeastOneFlag(t *testing.T) {
 	tmp := t.TempDir()
 	dbPath := filepath.Join(tmp, "omakiten.db")
-	globalConfig := filepath.Join(tmp, "global", "config", "omakase.yaml")
+	globalConfig := filepath.Join(tmp, "global", "config.yaml")
 	t.Chdir(t.TempDir())
 
 	runCLI(t, dbPath, globalConfig, "config", "init", "--scope", "global", "--preset", "omakase")
@@ -87,7 +87,7 @@ func TestCLIConfigLanguageSetRequiresAtLeastOneFlag(t *testing.T) {
 func TestCLIConfigLanguageSetRejectsUnknownCLICode(t *testing.T) {
 	tmp := t.TempDir()
 	dbPath := filepath.Join(tmp, "omakiten.db")
-	globalConfig := filepath.Join(tmp, "global", "config", "omakase.yaml")
+	globalConfig := filepath.Join(tmp, "global", "config.yaml")
 	t.Chdir(t.TempDir())
 
 	runCLI(t, dbPath, globalConfig, "config", "init", "--scope", "global", "--preset", "omakase")
@@ -100,7 +100,7 @@ func TestCLIConfigLanguageSetRejectsUnknownCLICode(t *testing.T) {
 func TestCLIConfigLanguageResetRemovesCustomValues(t *testing.T) {
 	tmp := t.TempDir()
 	dbPath := filepath.Join(tmp, "omakiten.db")
-	globalConfig := filepath.Join(tmp, "global", "config", "omakase.yaml")
+	globalConfig := filepath.Join(tmp, "global", "config.yaml")
 	t.Chdir(t.TempDir())
 
 	runCLI(t, dbPath, globalConfig, "config", "init", "--scope", "global", "--preset", "omakase")

@@ -9,39 +9,6 @@ import (
 	"github.com/google/go-cmp/cmp"
 )
 
-// TestWriteActivePreset_HonoursOmakitenHome pins the resolver to a
-// tmpdir via OMAKITEN_HOME (the env knob paths.ConfigRoot consults
-// first) and asserts the .active file lands at the same place
-// install.sh's write_active_preset wrote to.
-func TestWriteActivePreset_HonoursOmakitenHome(t *testing.T) {
-	tmp := t.TempDir()
-	t.Setenv("OMAKITEN_HOME", tmp)
-	t.Setenv("XDG_CONFIG_HOME", "")
-
-	dir, err := WriteActivePreset("kaiseki")
-	if err != nil {
-		t.Fatalf("WriteActivePreset: %v", err)
-	}
-	wantDir := filepath.Join(tmp, "config")
-	if dir != wantDir {
-		t.Fatalf("config dir: got %q want %q", dir, wantDir)
-	}
-	got, err := os.ReadFile(filepath.Join(dir, ".active"))
-	if err != nil {
-		t.Fatalf("read .active: %v", err)
-	}
-	if string(got) != "kaiseki.yaml\n" {
-		t.Fatalf(".active contents: got %q want %q", got, "kaiseki.yaml\n")
-	}
-}
-
-func TestWriteActivePreset_RejectsEmpty(t *testing.T) {
-	t.Setenv("OMAKITEN_HOME", t.TempDir())
-	if _, err := WriteActivePreset(""); err == nil {
-		t.Fatalf("expected error on empty preset")
-	}
-}
-
 // TestWriteWrappers_SkipsMissingRC mirrors install.sh's behaviour: only
 // touch rc files that already exist; an absent shell rc is fine.
 func TestWriteWrappers_SkipsMissingRC(t *testing.T) {

@@ -101,9 +101,9 @@ func mustPresetFile(t *testing.T, path string) []byte {
 	return raw
 }
 
-func createPresetRepository(t *testing.T, root string) (config.SeedResult, config.PresetPackage, string) {
+func createPresetRepository(t *testing.T, root string) (config.PresetResult, config.PresetPackage, string) {
 	t.Helper()
-	seed, err := config.SeedInstall(filepath.Join(root, "seed"), "omakase", false)
+	seed, err := config.SeedFixture(filepath.Join(root, "seed"), false)
 	if err != nil {
 		t.Fatal(err)
 	}

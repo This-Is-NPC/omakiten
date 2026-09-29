@@ -15,10 +15,10 @@ func TestCLIConfigLanguageTargetsLocalGlobalAndExplicitProfiles(t *testing.T) {
 	globalRoot := filepath.Join(root, "global")
 	t.Setenv("OMAKITEN_HOME", globalRoot)
 	db := filepath.Join(root, "state.db")
-	global := filepath.Join(globalRoot, "config", "omakase.yaml")
-	local := filepath.Join(root, ".omakiten", "config", "kaiseki.yaml")
+	global := filepath.Join(globalRoot, "config.yaml")
+	local := filepath.Join(root, ".omakiten", "config.yaml")
 	runCLI(t, db, global, "config", "init", "--scope", "global", "--preset", "omakase")
-	runCLI(t, db, global, "config", "init", "--scope", "local", "--preset", "kaiseki")
+	runCLI(t, db, global, "config", "init", "--scope", "local", "--preset", "omakase")
 	for name, args := range map[string][]string{
 		"local":    {"config", "language", "set", "--tui", "pt-br", "--agent", "Português"},
 		"global":   {"config", "language", "set", "--tui", "pt-br", "--global"},
@@ -53,7 +53,7 @@ func TestCLIConfigLanguageTargetsLocalGlobalAndExplicitProfiles(t *testing.T) {
 func TestCLIConfigInspectionReportsInvalidSources(t *testing.T) {
 	root := t.TempDir()
 	t.Chdir(root)
-	db, cfg := filepath.Join(root, "state.db"), filepath.Join(root, "config", "omakase.yaml")
+	db, cfg := filepath.Join(root, "state.db"), filepath.Join(root, "config.yaml")
 	runCLI(t, db, cfg, "config", "init", "--scope", "global", "--preset", "omakase")
 	broken, scalar, empty := filepath.Join(root, "broken.yaml"), filepath.Join(root, "scalar.yaml"), filepath.Join(root, "empty.yaml")
 	writeFile(t, broken, "broken: [\n")
@@ -106,9 +106,10 @@ func TestCLIConfigInspectionReportsInvalidSources(t *testing.T) {
 func TestCLIConfigProjectSelectorControlsDiscovery(t *testing.T) {
 	root := t.TempDir()
 	t.Chdir(root)
-	db, cfg := filepath.Join(root, "state.db"), filepath.Join(root, "config", "omakase.yaml")
+	db, cfg := filepath.Join(root, "state.db"), filepath.Join(root, "config.yaml")
+	runCLI(t, db, cfg, "config", "init", "--scope", "global", "--preset", "omakase")
 	runCLI(t, db, cfg, "init", "--name", "Example", "--slug", "example")
-	runCLI(t, db, cfg, "config", "init", "--scope", "local", "--preset", "kaiseki")
+	runCLI(t, db, cfg, "config", "init", "--scope", "local", "--preset", "omakase")
 	t.Chdir(t.TempDir())
 	for _, command := range []string{"path", "show"} {
 		out := runCLI(t, db, cfg, "--project", "example", "config", command, "--scope", "local")

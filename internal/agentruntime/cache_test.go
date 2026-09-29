@@ -6,10 +6,14 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
+
 	"time"
+
+	"gopkg.in/yaml.v3"
 
 	"omakiten/internal/config"
 	"omakiten/internal/contract"
@@ -161,7 +165,7 @@ func TestRuntimeServiceResolvesActiveProfileSwitch(t *testing.T) {
 	}
 
 	if err := paths.SetActiveConfigInDir(filepath.Join(tmp, "config"), filepath.Base(kaisekiPath)); err != nil {
-		t.Fatalf("SetActiveConfig kaiseki: %v", err)
+		t.Fatalf("SetActiveConfig alternate: %v", err)
 	}
 	second := rt.Service()
 	if second == nil {
@@ -181,23 +185,23 @@ func TestRuntimeServiceResolvesActiveProfileSwitch(t *testing.T) {
 
 func seedActiveProfileSwitch(t *testing.T, root string) (string, string) {
 	t.Helper()
-	omakase, err := config.SeedInstall(root, "omakase", true)
+	omakase, err := config.SeedFixture(root, true)
 	if err != nil {
-		t.Fatalf("SeedInstall omakase: %v", err)
+		t.Fatalf("SeedFixture omakase: %v", err)
 	}
-	kaiseki, err := config.SeedInstall(root, "kaiseki", false)
+	alternate := copyRuntimeFixture(t, omakase.Path, "alternate.yaml")
+	bundle, err := config.LoadBundle(alternate)
 	if err != nil {
-		t.Fatalf("SeedInstall kaiseki: %v", err)
-	}
-	bundle, err := config.LoadBundle(kaiseki.Path)
-	if err != nil {
-		t.Fatalf("LoadBundle kaiseki: %v", err)
+		t.Fatalf("LoadBundle alternate: %v", err)
 	}
 	bundle.Config.Languages.AgentOutput = "Português (Brasil)"
-	if err := config.SaveBundle(kaiseki.Path, bundle); err != nil {
-		t.Fatalf("SaveBundle kaiseki: %v", err)
+	if err := config.SaveBundle(alternate, bundle); err != nil {
+		t.Fatalf("SaveBundle alternate: %v", err)
 	}
-	return omakase.Path, kaiseki.Path
+	if err := paths.SetActiveConfigInDir(filepath.Dir(alternate), filepath.Base(alternate)); err != nil {
+		t.Fatal(err)
+	}
+	return omakase.Path, alternate
 }
 
 // TestRuntimeServicePreservesPriorRuntimeOnInvalidInPlaceEdit pins the
@@ -264,23 +268,20 @@ func TestRuntimeServiceExplicitConfigIgnoresActiveSwitch(t *testing.T) {
 	tmp := t.TempDir()
 	t.Setenv(paths.HomeEnv, tmp)
 
-	omakase, err := config.SeedInstall(tmp, "omakase", true)
+	omakase, err := config.SeedFixture(tmp, true)
 	if err != nil {
-		t.Fatalf("SeedInstall omakase: %v", err)
+		t.Fatalf("SeedFixture omakase: %v", err)
 	}
-	kaiseki, err := config.SeedInstall(tmp, "kaiseki", false)
-	if err != nil {
-		t.Fatalf("SeedInstall kaiseki: %v", err)
-	}
-	// Give kaiseki a distinct language so a wrong redirect would be
+	alternate := copyRuntimeFixture(t, omakase.Path, "alternate.yaml")
+	// Give the alternate profile a distinct language so a wrong redirect would be
 	// observable in the resolved command.
-	bundle, err := config.LoadBundle(kaiseki.Path)
+	bundle, err := config.LoadBundle(alternate)
 	if err != nil {
-		t.Fatalf("LoadBundle kaiseki: %v", err)
+		t.Fatalf("LoadBundle alternate: %v", err)
 	}
 	bundle.Config.Languages.AgentOutput = "Português (Brasil)"
-	if err := config.SaveBundle(kaiseki.Path, bundle); err != nil {
-		t.Fatalf("SaveBundle kaiseki: %v", err)
+	if err := config.SaveBundle(alternate, bundle); err != nil {
+		t.Fatalf("SaveBundle alternate: %v", err)
 	}
 	if err := paths.SetActiveConfigInDir(filepath.Join(tmp, "config"), filepath.Base(omakase.Path)); err != nil {
 		t.Fatalf("SetActiveConfig omakase: %v", err)
@@ -310,10 +311,10 @@ func TestRuntimeServiceExplicitConfigIgnoresActiveSwitch(t *testing.T) {
 		t.Fatalf("initial agent output language = %q, want empty (explicit omakase)", resp.AgentOutputLanguage)
 	}
 
-	// Flip the active marker to kaiseki. An explicit caller must ignore
+	// Flip the active marker to the alternate profile. An explicit caller must ignore
 	// this — Service() keeps resolving the omakase path it was opened with.
-	if err := paths.SetActiveConfigInDir(filepath.Join(tmp, "config"), filepath.Base(kaiseki.Path)); err != nil {
-		t.Fatalf("SetActiveConfig kaiseki: %v", err)
+	if err := paths.SetActiveConfigInDir(filepath.Join(tmp, "config"), filepath.Base(alternate)); err != nil {
+		t.Fatalf("SetActiveConfig alternate: %v", err)
 	}
 	second := rt.Service()
 	if second == nil {
@@ -1199,4 +1200,28 @@ func openTestRuntime(t *testing.T) *Runtime {
 		t.Fatalf("Open: %v", err)
 	}
 	return rt
+}
+
+func copyRuntimeFixture(t *testing.T, source, name string) string {
+	t.Helper()
+	raw, err := os.ReadFile(source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var fields map[string]any
+	if err := yaml.Unmarshal(raw, &fields); err != nil {
+		t.Fatal(err)
+	}
+	kit := fields["kit"].(map[string]any)
+	kit["key"] = strings.TrimSuffix(name, filepath.Ext(name))
+	kit["id"] = 200
+	raw, err = yaml.Marshal(fields)
+	if err != nil {
+		t.Fatal(err)
+	}
+	target := filepath.Join(filepath.Dir(source), name)
+	if err := os.WriteFile(target, raw, 0600); err != nil {
+		t.Fatal(err)
+	}
+	return target
 }

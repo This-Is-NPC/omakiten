@@ -9,7 +9,7 @@ import (
 )
 
 // TestCLIWalkUpStandaloneInstall exercises the .omakiten/ walk-up path: a
-// fresh repo with a SeedInstall'd .omakiten/ must be the bundle source for
+// fresh repo with an installed .omakiten/ must be the bundle source for
 // every subsequent CLI invocation from the repo (no --config flag passed).
 // The user-global ConfigRoot is pointed at a sibling tmp dir via
 // $OMAKITEN_HOME so the test never touches the host machine's config.
@@ -25,9 +25,9 @@ func TestCLIWalkUpStandaloneInstall(t *testing.T) {
 	// root; we materialise the install manually here so the test does not
 	// have to fabricate a .git directory.
 	repoLocalRoot := filepath.Join(repoDir, ".omakiten")
-	out := runCLI(t, dbPath, "", "config", "init", "--scope", "local", "--preset", "izakaya")
-	if !strings.Contains(out, `"name":"izakaya"`) {
-		t.Skipf("okt config init --scope local not wired yet; output = %s", out)
+	out := runCLI(t, dbPath, "", "config", "init", "--scope", "local", "--preset", "omakase")
+	if !strings.Contains(out, `"name":"omakase"`) {
+		t.Fatalf("local preset was not installed: %s", out)
 	}
 
 	// Now run a regular okt command from a deep subdir with NO --config
@@ -42,8 +42,8 @@ func TestCLIWalkUpStandaloneInstall(t *testing.T) {
 	if !strings.Contains(out, repoLocalRoot) {
 		t.Fatalf("validate output = %s, want path under repo-local %s", out, repoLocalRoot)
 	}
-	if !strings.Contains(out, "izakaya") {
-		t.Fatalf("validate output = %s, want izakaya kit", out)
+	if !strings.Contains(out, "omakase") {
+		t.Fatalf("validate output = %s, want selected project path", out)
 	}
 }
 
@@ -70,27 +70,24 @@ func TestCLIProjectFlagPicksProjectRepoLocal(t *testing.T) {
 	runCLI(t, dbPath, "", "config", "init", "--scope", "local", "--preset", "omakase")
 	runCLI(t, dbPath, "", "init", "--name", "Repo A", "--slug", "repo-a", "--root", projectA)
 
-	// Seed B with izakaya + register in DB.
+	// Seed B with omakase + register in DB.
 	t.Chdir(projectB)
-	runCLI(t, dbPath, "", "config", "init", "--scope", "local", "--preset", "izakaya")
+	runCLI(t, dbPath, "", "config", "init", "--scope", "local", "--preset", "omakase")
 	runCLI(t, dbPath, "", "init", "--name", "Repo B", "--slug", "repo-b", "--root", projectB)
 
 	// chdir to a third unrelated directory; --project B must still pick
 	// B's .omakiten/ via project.root_path walk-up rather than CWD.
 	t.Chdir(tmp)
 	out := runCLI(t, dbPath, "", "--project", "repo-b", "config", "show", "--scope", "local")
-	if !strings.Contains(out, "key: izakaya") {
-		t.Fatalf("--project repo-b output = %s, want izakaya kit", out)
-	}
-	if strings.Contains(out, "key: omakase") {
-		t.Fatalf("--project repo-b leaked into omakase from repo-a")
+	if !strings.Contains(out, projectB) {
+		t.Fatalf("--project repo-b output = %s, want selected project path", out)
 	}
 	assertProjectConfigCommands(t, dbPath, projectB)
 }
 
 func assertProjectConfigCommands(t *testing.T, dbPath, projectRoot string) {
 	t.Helper()
-	path := filepath.Join(projectRoot, ".omakiten", "config", "izakaya.yaml")
+	path := filepath.Join(projectRoot, ".omakiten", "config.yaml")
 	for _, args := range [][]string{
 		{"config", "validate"},
 		{"config", "language", "show"},
@@ -102,12 +99,6 @@ func assertProjectConfigCommands(t *testing.T, dbPath, projectRoot string) {
 			t.Fatalf("selected project lost for %v: %s", args, out)
 		}
 	}
-	writeFile(t, path, "version: 1\nmcp: {}\n")
-	out := runCLI(t, dbPath, "", "--project", "repo-b", "config", "refresh-defaults")
-	if !strings.Contains(out, filepath.Join(projectRoot, ".omakiten")) {
-		t.Fatalf("refresh targeted another install: %s", out)
-	}
-	runCLI(t, dbPath, "", "--project", "repo-b", "config", "validate")
 }
 
 // TestCLIPerProjectListIsolatesTasks is the Phase 3c acceptance check

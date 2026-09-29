@@ -6,6 +6,8 @@ import (
 	"strings"
 	"testing"
 
+	"gopkg.in/yaml.v3"
+
 	"omakiten/internal/domain"
 )
 
@@ -28,6 +30,7 @@ func loadSubtaskKitFixture(t *testing.T, rel string) Bundle {
 	}
 	configPath := filepath.Join(root, "config", "omakase.yaml")
 	if rel != "" {
+		copyFixtureProfile(t, root, rel)
 		appendTopLevelYAML(t, configPath, "subtask_kit: "+rel+"\n")
 	}
 	bundle, err := LoadBundle(configPath)
@@ -38,16 +41,16 @@ func loadSubtaskKitFixture(t *testing.T, rel string) Bundle {
 }
 
 func TestLoadBundleLoadsSubtaskKit(t *testing.T) {
-	bundle := loadSubtaskKitFixture(t, "izakaya.yaml")
+	bundle := loadSubtaskKitFixture(t, "subtask.yaml")
 
-	if bundle.SubtaskKit != "izakaya.yaml" {
-		t.Fatalf("Bundle.SubtaskKit = %q, want izakaya.yaml", bundle.SubtaskKit)
+	if bundle.SubtaskKit != "subtask.yaml" {
+		t.Fatalf("Bundle.SubtaskKit = %q, want subtask.yaml", bundle.SubtaskKit)
 	}
 	if bundle.SubtaskBundle == nil {
 		t.Fatal("Bundle.SubtaskBundle = nil, want loaded sub-kit bundle")
 	}
-	if got := bundle.SubtaskBundle.Kit.Key; got != "izakaya" {
-		t.Fatalf("SubtaskBundle.Kit.Key = %q, want izakaya", got)
+	if got := bundle.SubtaskBundle.Kit.Key; got != "subtask" {
+		t.Fatalf("SubtaskBundle.Kit.Key = %q, want subtask", got)
 	}
 	if bundle.SubtaskBundle.SubtaskBundle != nil {
 		t.Fatal("SubtaskBundle.SubtaskBundle != nil, nested cascade must not load")
@@ -55,7 +58,7 @@ func TestLoadBundleLoadsSubtaskKit(t *testing.T) {
 
 	var sawWarning bool
 	for _, warning := range bundle.Warnings {
-		if strings.Contains(warning.Message, "commands: ignored at depth >=1; agent always resolves at project root") && filepath.Base(warning.Path) == "izakaya.yaml" {
+		if strings.Contains(warning.Message, "commands: ignored at depth >=1; agent always resolves at project root") && filepath.Base(warning.Path) == "subtask.yaml" {
 			sawWarning = true
 			break
 		}
@@ -72,11 +75,11 @@ func TestLoadBundleLoadsSubtaskKit(t *testing.T) {
 	if !ok {
 		t.Fatal("Snapshot.SubtaskKit() ok = false, want true")
 	}
-	if got := snap.SubtaskKitPath(); got != "izakaya.yaml" {
-		t.Fatalf("Snapshot.SubtaskKitPath() = %q, want izakaya.yaml", got)
+	if got := snap.SubtaskKitPath(); got != "subtask.yaml" {
+		t.Fatalf("Snapshot.SubtaskKitPath() = %q, want subtask.yaml", got)
 	}
-	if got := sub.Kit().Key; got != "izakaya" {
-		t.Fatalf("sub Snapshot.Kit().Key = %q, want izakaya", got)
+	if got := sub.Kit().Key; got != "subtask" {
+		t.Fatalf("sub Snapshot.Kit().Key = %q, want subtask", got)
 	}
 	if commands := sub.Commands(); len(commands) != 0 {
 		t.Fatalf("sub Snapshot.Commands() = %+v, want empty because sub-kit commands are ignored", commands)
@@ -89,7 +92,7 @@ func TestLoadBundleRejectsInvalidSubtaskKitPaths(t *testing.T) {
 		wantErr string
 	}{
 		"absolute path": {rel: filepath.Join(string(os.PathSeparator), "tmp", "sub.yaml"), wantErr: "must be relative"},
-		"parent escape": {rel: "../izakaya.yaml", wantErr: "must not contain parent directory segments"},
+		"parent escape": {rel: "../subtask.yaml", wantErr: "must not contain parent directory segments"},
 	}
 
 	for name, tc := range cases {
@@ -192,7 +195,7 @@ func TestLoadBundleRejectsMissingPartialAndNestedSubtaskKit(t *testing.T) {
 		},
 		"nested subtask kit": {
 			setup: func(t *testing.T, root string) string {
-				src := filepath.Join(root, "config", "izakaya.yaml")
+				src := filepath.Join(root, "config", "omakase.yaml")
 				raw, err := os.ReadFile(src)
 				if err != nil {
 					t.Fatalf("ReadFile(%s): %v", src, err)
@@ -229,19 +232,19 @@ func TestLoadBundleRejectsMissingPartialAndNestedSubtaskKit(t *testing.T) {
 
 func TestNewSubtaskKitNoticeNeeded(t *testing.T) {
 	without := BuildSnapshot(loadSubtaskKitFixture(t, ""))
-	withIzakaya := BuildSnapshot(loadSubtaskKitFixture(t, "izakaya.yaml"))
-	withKaiseki := BuildSnapshot(loadSubtaskKitFixture(t, "kaiseki.yaml"))
+	withSubtask := BuildSnapshot(loadSubtaskKitFixture(t, "subtask.yaml"))
+	withAlternate := BuildSnapshot(loadSubtaskKitFixture(t, "alternate.yaml"))
 
 	cases := map[string]struct {
 		prev *Snapshot
 		next *Snapshot
 		want bool
 	}{
-		"nil previous is not an enablement transition": {prev: nil, next: withIzakaya, want: false},
-		"enablement":         {prev: without, next: withIzakaya, want: true},
-		"same subkit reload": {prev: withIzakaya, next: withIzakaya, want: false},
-		"subkit swap":        {prev: withIzakaya, next: withKaiseki, want: false},
-		"disable":            {prev: withIzakaya, next: without, want: false},
+		"nil previous is not an enablement transition": {prev: nil, next: withSubtask, want: false},
+		"enablement":         {prev: without, next: withSubtask, want: true},
+		"same subkit reload": {prev: withSubtask, next: withSubtask, want: false},
+		"subkit swap":        {prev: withSubtask, next: withAlternate, want: false},
+		"disable":            {prev: withSubtask, next: without, want: false},
 		"still absent":       {prev: without, next: without, want: false},
 	}
 
@@ -316,4 +319,29 @@ func TestSnapshotForResolvesRootAndSubtaskKits(t *testing.T) {
 	if got := withoutSub.For(domain.Task{ID: 4, ParentID: &parentID}).Kit().Key; got != "root" {
 		t.Fatalf("Snapshot.For(subtask without sub-kit).Kit().Key = %q, want root", got)
 	}
+}
+
+func copyFixtureProfile(t *testing.T, root, name string) string {
+	t.Helper()
+	source := filepath.Join(root, "config", "omakase.yaml")
+	raw, err := os.ReadFile(source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var fields map[string]any
+	if err := yaml.Unmarshal(raw, &fields); err != nil {
+		t.Fatal(err)
+	}
+	kit := fields["kit"].(map[string]any)
+	kit["key"] = strings.TrimSuffix(name, filepath.Ext(name))
+	kit["id"] = 200
+	raw, err = yaml.Marshal(fields)
+	if err != nil {
+		t.Fatal(err)
+	}
+	target := filepath.Join(root, "config", name)
+	if err := os.WriteFile(target, raw, 0600); err != nil {
+		t.Fatal(err)
+	}
+	return target
 }

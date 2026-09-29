@@ -13,7 +13,7 @@
 - [`okt update` — fetch latest release and swap the binary](#okt-update--fetch-latest-release-and-swap-the-binary)
 - [`okt uninstall` — remove the binary and shell-rc wrapper](#okt-uninstall--remove-the-binary-and-shell-rc-wrapper)
 - [`okt init` — register the current project](#okt-init--register-the-current-project)
-- [`okt config presets` — list official workflow presets](#okt-config-presets--list-official-workflow-presets)
+- [`okt preset catalog` — list official workflow presets](#okt-preset-catalog--list-official-workflow-presets)
 - [Tasks](#tasks)
 - [Comments](#comments)
 - [Dependencies](#dependencies)
@@ -239,23 +239,25 @@ The bundled `uninstall.sh` / `uninstall.ps1` scripts stay in the repo for the bo
 Run `okt init --help` for the full flag list. Non-obvious behavior:
 
 - `--root` defaults to `$CWD`; the value is what later CWD-based project resolution matches against.
-- `--preset NAME` copies `defaults/config/<NAME>.yaml` into `<root>/.omakiten/config/` and sets `.active`. Without `--root`, a Git worktree is detected by walking up from `$CWD`; outside Git, `$CWD` is used. Use `--preset-force` to overwrite an existing `.omakiten` target.
+- `--preset SOURCE` installs a catalog entry, Git URL, or local workflow package under `<root>/.omakiten/presets/` and selects it through `config.yaml`. Without `--root`, a Git worktree is detected by walking up from `$CWD`; outside Git, `$CWD` is used. `--preset-force` fetches a pristine revision while preserving an active modified snapshot.
 
 ```sh
 okt init --name Omakiten --slug omakiten --root "$PWD"
 okt init --preset kaiseki --name Acme --slug acme
 ```
 
-Official presets are flat YAML starter files in `defaults/config/`: `omakase.yaml` (the canonical kit; full config + workflow), `izakaya.yaml`, `kaiseki.yaml`, and `shokunin.yaml`. Applying one invokes `config.SeedInstall`, which materialises the full install under `.omakiten/`: the preset YAML, `.active`, and every default entity (skills, laws, personas, templates, themes, notifications) for that preset; the resolver finds it on the next invocation.
+Official presets are repository packages listed by `okt preset catalog`. Applying
+one captures its files under `.omakiten/presets/<id>/` and selects it through
+`.omakiten/config.yaml`. Installed packages are self-contained and work offline.
 
 ---
 
-## `okt config presets` — list official workflow presets
+## `okt preset catalog` — list official workflow presets
 
-`internal/cli/config.go`. Returns the bundled preset menu as JSON.
+`internal/cli/preset.go`. Returns official preset names, translated titles, descriptions and repository URLs as JSON.
 
 ```sh
-okt config presets
+okt preset catalog
 ```
 
 Presets:
@@ -263,9 +265,9 @@ Presets:
 | Preset | Style |
 |---|---|
 | `omakase` | Chef's choice: balanced backlog -> dev -> review -> done with self-branch, resume, and documentation guards. |
-| `izakaya` | Casual: backlog -> dev -> done, no guards. |
+| `izakaya` | Casual: backlog -> dev -> done with hypothesis and wave gates. |
 | `kaiseki` | Multi-course: requirements -> planning -> dev -> review -> docs -> done with ritual guards. |
-| `shokunin` | Artisan: kaiseki plus tests-passing and peer-review checkpoints. |
+| `shokunin` | Artisan: risk assessment, rollback plans and dual reviews. |
 
 ---
 
@@ -273,7 +275,8 @@ Presets:
 
 | Command | Behavior |
 |---|---|
-| `add DIRECTORY` | Capture and validate a local package repository; install without activation. |
+| `catalog` | List official names, descriptions, and repository URLs without loading configuration. |
+| `add SOURCE` | Capture and validate a catalog entry, Git URL, or local package; install without activation. |
 | `use NAME_OR_ID` | Validate and activate an installed snapshot. |
 | `list` | List installed ids, names, origin, `dirty`, and `active`. |
 | `export` | Export the active package to one Markdown file; stdout by default. |
@@ -590,15 +593,17 @@ okt config refresh-defaults
 | `global` | `paths.ConfigRoot()` (or the parent of `--config`'s yaml). |
 | `local`  | `<cwd>/.omakiten/` (literal CWD; no walk-up). |
 
-Both scopes share `config.SeedInstall` internally, which copies every embedded shipped file (skills, laws, personas, templates, themes, notifications, every preset yaml) and sets `.active` to the chosen preset. `--force` re-copies the shipped files (preserving every `custom/` subtree).
+Both scopes use the repository installer. A first installation captures the chosen
+catalog repository; later calls can reuse its installed snapshot offline. `--force`
+fetches a current pristine revision. An active modified preset is retained.
 
 Optional language flags mirror `okt setup`: `--cli-lang`, `--tui-lang`, and `--agent-lang`. Missing language flags prompt on an interactive TTY after the preset is seeded; in headless mode the seeded kit defaults remain. CLI/TUI codes are validated against the loaded language packs, while agent-output language is free-form. Pasted responses are consumed in prompt order.
 
 Rerun matrix:
-- Same preset, same files → `no_op:true`.
-- Different preset → flips `.active`, no `no_op`.
-- Tampered shipped file, no force → preserved.
-- Tampered shipped file, `--force` → restored, `refreshed:true`.
+- Same active preset → `no_op:true`.
+- Another installed preset → selects its snapshot offline.
+- `--force` → fetches the source revision and reports `refreshed:true`.
+- Active modified preset → preserved as an independent local preset.
 
 ### `okt config show --scope <global|local>`
 
@@ -910,15 +915,10 @@ Seed a standalone config install rooted in the chosen scope.
 - `--scope global` writes to `paths.ConfigRoot()` or `--config`'s parent. Existing user installs are idempotent.
 - `--scope local` writes to `<cwd>/.omakiten` without a walk-up search.
 
-A complete install includes `config/<preset>.yaml` plus every entity folder, so the runtime can load it without merging with the user-global layer. The walk-up resolver picks this up automatically on subsequent `okt` calls from inside the repo.
-
-Behaviour matrix:
-
-- File missing -> atomic write.
-- Same preset, same files -> `no_op:true` silent success.
-- Different preset -> flips `.active` to the new preset.
-- Tampered shipped files -> preserved unless `--force`.
-- `--force` -> re-copies every embedded shipped file (skills, laws, personas, templates, themes, notifications, every preset yaml); `custom/` subtrees are never touched.
+A complete install includes the repository snapshot and `<scope>/config.yaml`.
+Project discovery selects `.omakiten/config.yaml`; no user-global merge is required.
+The installer reuses an active package offline and fetches its source with `--force`.
+Active modified presets keep their independent configuration.
 
 Language selection: `--cli-lang`, `--tui-lang`, and `--agent-lang` skip the interactive prompts for each surface and write the value directly into the seeded `omakiten.yaml` languages block. `--cli-lang` and `--tui-lang` must match a bundled language code (`en`, `pt-br`, ...); `--agent-lang` is free-form. When no flag is supplied, init prompts on the TTY or leaves the surface at its default when stdin is non-interactive.
 `okt config init [flags]`
@@ -927,9 +927,9 @@ Language selection: `--cli-lang`, `--tui-lang`, and `--agent-lang` skip the inte
 |---|---|---|---|
 | `--agent-lang` |  | string | free-form agent-output language directive (skips the interactive prompt) |
 | `--cli-lang` |  | string | language code for CLI help and usage strings (skips the interactive prompt) |
-| `--force` |  |  | re-copy embedded shipped files (skills, laws, personas, etc.) — custom/ is never touched |
-| `--preset` |  | string | official workflow preset to seed |
-| `--scope` |  | string | config layer to seed: global or local |
+| `--force` |  |  | fetch the selected workflow source; preserve active modified presets |
+| `--preset` |  | string | official workflow repository to install |
+| `--scope` |  | string | preset scope: global or local |
 | `--tui-lang` |  | string | language code for TUI labels and screens (skips the interactive prompt) |
 
 ### `okt config language reset`
@@ -988,10 +988,10 @@ Print the install root that owns the chosen scope's config layer
 |---|---|---|---|
 | `--scope` |  | string | global or local |
 
-### `okt config presets`
+### `okt preset catalog`
 
 List official workflow presets
-`okt config presets [flags]`
+`okt preset catalog [flags]`
 
 _No flags beyond globals._
 

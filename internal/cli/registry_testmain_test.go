@@ -5,6 +5,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"omakiten/internal/testfixtures"
 )
 
 // TestMain isolates config, data, cache and state paths from the host installation.
@@ -29,6 +31,15 @@ func TestMain(m *testing.M) {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
 		}
+	}
+	gitConfig, err := testfixtures.PresetGitConfig(testHome)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+	if err := os.Setenv("GIT_CONFIG_GLOBAL", gitConfig); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
 	}
 	code := m.Run()
 	_ = os.RemoveAll(testHome)

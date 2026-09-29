@@ -24,7 +24,7 @@ func TestCLIConfigInitUsesDefaultsWithDevNullInput(t *testing.T) {
 	os.Stdin, os.Stdout = input, output
 	defer func() { os.Stdin, os.Stdout = stdin, stdout }()
 	cmd := NewRootCommand("test")
-	cmd.SetArgs([]string{"--db", filepath.Join(root, "state.db"), "--config", filepath.Join(root, "config", "omakase.yaml"), "config", "init", "--scope", "global", "--preset", "omakase"})
+	cmd.SetArgs([]string{"--db", filepath.Join(root, "state.db"), "--config", filepath.Join(root, "config.yaml"), "config", "init", "--scope", "global", "--preset", "omakase"})
 	if err := cmd.Execute(); err != nil {
 		t.Fatal(err)
 	}
@@ -37,7 +37,7 @@ func TestCLIConfigInitUsesDefaultsWithDevNullInput(t *testing.T) {
 func TestCLIConfigInitFlagsSetLanguages(t *testing.T) {
 	tmp := t.TempDir()
 	dbPath := filepath.Join(tmp, "omakiten.db")
-	globalConfig := filepath.Join(tmp, "global", "config", "omakase.yaml")
+	globalConfig := filepath.Join(tmp, "global", "config.yaml")
 	t.Chdir(t.TempDir())
 
 	out := runCLI(t, dbPath, globalConfig,
@@ -71,7 +71,7 @@ func TestCLIConfigInitFlagsSetLanguages(t *testing.T) {
 func TestCLIConfigInitRejectsUnknownCLILang(t *testing.T) {
 	tmp := t.TempDir()
 	dbPath := filepath.Join(tmp, "omakiten.db")
-	globalConfig := filepath.Join(tmp, "global", "config", "omakase.yaml")
+	globalConfig := filepath.Join(tmp, "global", "config.yaml")
 	t.Chdir(t.TempDir())
 
 	envelope := runCLIExpectError(t, dbPath, globalConfig, "validation_error",
@@ -88,7 +88,7 @@ func TestCLIConfigInitRejectsUnknownCLILang(t *testing.T) {
 func TestCLIConfigInitWithoutLangFlagsOmitsBlock(t *testing.T) {
 	tmp := t.TempDir()
 	dbPath := filepath.Join(tmp, "omakiten.db")
-	globalConfig := filepath.Join(tmp, "global", "config", "omakase.yaml")
+	globalConfig := filepath.Join(tmp, "global", "config.yaml")
 	t.Chdir(t.TempDir())
 
 	out := runCLI(t, dbPath, globalConfig,

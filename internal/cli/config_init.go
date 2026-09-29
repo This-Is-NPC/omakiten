@@ -14,6 +14,7 @@ import (
 
 	"omakiten/internal/config"
 	"omakiten/internal/domain"
+	"omakiten/internal/installer"
 	"omakiten/internal/paths"
 )
 
@@ -67,12 +68,12 @@ type configInitInputs struct {
 }
 
 func runConfigInit(cmd *cobra.Command, opts *runtimeOptions, inputs configInitInputs) error {
-	return runJSON(cmd, func(context.Context) (any, error) {
+	return runJSON(cmd, func(ctx context.Context) (any, error) {
 		root, err := resolveScopeRoot(opts, inputs.scope)
 		if err != nil {
 			return nil, err
 		}
-		res, err := config.SeedInstall(root, inputs.preset, inputs.force)
+		res, err := installer.InstallPreset(ctx, root, inputs.preset, inputs.force)
 		if err != nil {
 			return nil, presetCLIError(opts, err)
 		}
@@ -91,7 +92,7 @@ func runConfigInit(cmd *cobra.Command, opts *runtimeOptions, inputs configInitIn
 	})
 }
 
-func configInitPayload(scope, root string, res config.SeedResult, langSummary map[string]any) map[string]any {
+func configInitPayload(scope, root string, res config.PresetResult, langSummary map[string]any) map[string]any {
 	payload := map[string]any{
 		"scope": scope,
 		"root":  root,
@@ -289,7 +290,7 @@ func promptFreeForm(cmd *cobra.Command, label, fallback string) (string, error) 
 	return choice, nil
 }
 
-// resolveScopeRoot returns the directory SeedInstall should populate for the
+// resolveScopeRoot returns the directory preset installation should populate for the
 // chosen scope. Global honours --config (deriving the ConfigRoot via
 // ConfigRootFromYAMLPath) and otherwise falls back to paths.ConfigRoot();
 // local writes to <cwd>/.omakiten literally without walk-up so monorepos

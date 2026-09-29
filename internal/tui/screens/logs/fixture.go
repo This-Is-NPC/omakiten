@@ -19,7 +19,7 @@ var (
 
 func logsEnsureEventRegistry() {
 	logsEventRegistryOnce.Do(func() {
-		cfg, err := config.LoadKitConfigByKey("omakase")
+		cfg, err := config.LoadKitConfig()
 		if err != nil {
 			logsEventRegistryErr = fmt.Errorf("load omakase kit: %w", err)
 			return

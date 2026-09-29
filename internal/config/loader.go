@@ -186,7 +186,7 @@ func finishBundleLoad(path, rootDir string, wired wiring, importSources []string
 		// Hot reload watches all of these — editing an imported file triggers
 		// the same rebuild as editing the root YAML.
 		SourcePaths: append([]string{path}, importSources...),
-		Sources:     buildSettingsSources(wired.Config, wired.Kit.Key),
+		Sources:     buildSettingsSources(wired.Config),
 	}
 
 	if themeErr != nil {
@@ -219,7 +219,7 @@ func prepareBundle(bundle *Bundle, path string, wired wiring, entities bundleEnt
 	}
 	bundle.Warnings = append(bundle.Warnings, warnDanglingRefs(wired, entities.skills, entities.laws, entities.personItems, entities.templateItems)...)
 	bundle.Warnings = append(bundle.Warnings, appendBundleReferenceWarnings(*bundle, entities)...)
-	if kit, kitErr := LoadKitConfigByKey(bundle.Kit.Key); kitErr == nil {
+	if kit, kitErr := LoadKitConfig(); kitErr == nil {
 		NormalizeEventsRetention(&bundle.Config, kit)
 		NormalizeEventsOrphanSweep(&bundle.Config, kit)
 	}
@@ -312,18 +312,10 @@ func appendBundleReferenceWarnings(bundle Bundle, entities bundleEntities) []Sou
 	return warnings
 }
 
-// buildSettingsSources computes the per-leaf-path origin map for the
-// loaded Settings against the embedded kit baseline matching `kitKey`
-// (falls back to omakase when the binary does not ship a baseline for
-// the bundle's custom kit). The env-overlay hook fires after the diff so
-// a future loader-level env binding promotes its path to SourceEnv
-// without disturbing default/project classification.
-//
-// Returns nil when the kit baseline is unreadable; consumers fall back
-// to SourceDefault via Bundle.SourceFor, so a missing baseline degrades
-// to "show every leaf as default" rather than aborting the load.
-func buildSettingsSources(user Settings, kitKey string) map[string]string {
-	kit, err := LoadKitConfigByKey(kitKey)
+// buildSettingsSources compares settings with the Omakase baseline, then
+// applies environment provenance to the resulting leaf paths.
+func buildSettingsSources(user Settings) map[string]string {
+	kit, err := LoadKitConfig()
 	if err != nil {
 		return nil
 	}

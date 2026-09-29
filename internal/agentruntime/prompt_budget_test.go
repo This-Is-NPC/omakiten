@@ -7,7 +7,6 @@ import (
 	"testing"
 
 	"omakiten/internal/commandcatalog"
-	"omakiten/internal/config"
 	"omakiten/internal/contract"
 )
 
@@ -145,11 +144,7 @@ func TestDefaultKitCoversAllCommandsEntitySourced(t *testing.T) {
 		t.Fatal("command catalog is empty")
 	}
 
-	for _, preset := range config.ListPresets() {
-		t.Run(preset.Name, func(t *testing.T) {
-			assertPresetCommands(t, preset.Name, names)
-		})
-	}
+	assertPresetCommands(t, "omakase", names)
 }
 
 func assertPresetCommands(t *testing.T, preset string, names []string) {

@@ -96,7 +96,7 @@ func replyToTerminal(master *os.File, replies []terminalReply) (string, int) {
 func TestCLIInteractiveConfigInitValidatesAndPersistsLanguages(t *testing.T) {
 	root := t.TempDir()
 	t.Chdir(root)
-	cfg := filepath.Join(root, "config", "omakase.yaml")
+	cfg := filepath.Join(root, "config.yaml")
 	replies := []terminalReply{{"CLI language [", "unavailable\nen\npt-br\nPortuguês\n"}}
 	var stdout bytes.Buffer
 	driveTerminal(t, replies, func(context.Context) {

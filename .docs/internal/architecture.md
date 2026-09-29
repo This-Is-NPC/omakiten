@@ -36,6 +36,13 @@
 
 ## Preset package publication
 
+`internal/config/presets.go` contains official repository metadata.
+`internal/installer` captures catalog names, Git URLs and local directories;
+setup and configuration initialization use this installer. Remote checkouts
+are temporary. Installed snapshots support offline activation and runtime.
+The Omakase fixture supplies settings baselines and test scenarios; tests use
+a local Git URL rewrite to exercise repository acquisition without network.
+
 `internal/config` owns package manifests, strict Markdown transport, source
 capture, content identities, and selection resolution. `internal/configstore`
 implements the `BundleStore.EditBundle` port. `BundleEditor` publishes config

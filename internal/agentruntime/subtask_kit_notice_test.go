@@ -24,8 +24,9 @@ func TestBundleCacheFiresSubtaskKitNoticeOnFirstEnablement(t *testing.T) {
 		t.Fatalf("seed reload emitted notice; events=%+v", events)
 	}
 
-	// Transition: no sub-kit → izakaya.yaml. Helper must fire.
-	appendRuntimeTopLevelYAML(t, rt.configPath, "subtask_kit: izakaya.yaml\n")
+	// Transition: no sub-kit → subtask.yaml. Helper must fire.
+	copyRuntimeFixture(t, rt.configPath, "subtask.yaml")
+	appendRuntimeTopLevelYAML(t, rt.configPath, "subtask_kit: subtask.yaml\n")
 	if _, err := rt.Cache().Reload(ctx, rt.defaultProjectID, rt.configPath); err != nil {
 		t.Fatalf("Reload enabling sub-kit: %v", err)
 	}
@@ -42,7 +43,7 @@ func TestBundleCacheFiresSubtaskKitNoticeOnFirstEnablement(t *testing.T) {
 	if !strings.Contains(events[0].Payload, config.SubtaskKitTransparencyNoticeKey()) {
 		t.Fatalf("payload missing i18n key: %q", events[0].Payload)
 	}
-	if !strings.Contains(events[0].Payload, `"to_kit":"izakaya"`) {
+	if !strings.Contains(events[0].Payload, `"to_kit":"subtask"`) {
 		t.Fatalf("payload missing to_kit: %q", events[0].Payload)
 	}
 

@@ -10,42 +10,48 @@ laws:
 Precedence (full contract in `.docs/configuration-guide/path-resolution.md`):
 
 1. `--config <path>` flag (CLI / TUI).
-2. `$OMAKITEN_HOME/config/<active>.yaml`.
-3. `$XDG_CONFIG_HOME/omakiten/config/<active>.yaml`.
-4. `~/.config/omakiten/config/<active>.yaml`.
+2. A discovered project `.omakiten/config.yaml`.
+3. `$OMAKITEN_HOME/config.yaml`.
+4. `$XDG_CONFIG_HOME/omakiten/config.yaml`.
+5. `~/.config/omakiten/config.yaml`.
 
-`<active>` is the basename written in `<config-dir>/.active`. The resolver prefers `<config-dir>/custom/<name>.yaml` over `<config-dir>/<name>.yaml` — user-authored overrides shadow defaults. If `.active` is missing or names a vanished profile, the resolver falls through to discovery: first alphabetical `.yaml` at the root, then under `custom/`.
+The selection file references the active snapshot under `<root>/presets/<id>/`.
+Installed snapshots are complete packages and run without the source checkout.
 
 ## Layout under `<root>`
 
-Full tree in `.docs/configuration-guide/path-resolution.md`. Quick map:
-
-| Folder | Purpose |
+| Path | Purpose |
 | --- | --- |
-| `config/<profile>.yaml` | Workflow profile (write-model). Embedded presets ship here; refreshed on update. |
-| `config/custom/<profile>.yaml` | User-authored profile; survives default refreshes; shadows same-named root profile. |
-| `config/.active` | One-line state file naming the active profile basename. |
-| `<entity>/<slug>.md` | Default entity files (laws / skills / personas / templates). Overwritten on update. |
-| `<entity>/custom/<slug>.md` | User-authored overrides. Preserved; always win over same-named defaults. |
-| `themes/<slug>.yaml`, `notifications/<slug>.yaml` | TUI palettes / notification cards. |
+| `config.yaml` | Active snapshot selection. |
+| `presets/<id>/preset.yaml` | Package identity, version, and origin. |
+| `presets/<id>/config/preset.yaml` | Entry linking settings, workflows, personas, and bindings. |
+| `presets/<id>/config/*.yaml` | Modules that own each configuration section. |
+| `presets/<id>/<entity>/<slug>.md` | Entity bodies (laws / skills / personas / templates). |
+| `presets/<id>/themes/<slug>.yaml` | Color palettes. |
+| `presets/<id>/notifications/<slug>.yaml` | Notification cards. |
 
 ## Workflow presets
 
-Four official presets ship in the embedded kit, listed in menu order:
+The official catalog lists repository packages:
 
 | Slug | Workflow shape | Tone |
 | --- | --- | --- |
-| `omakase` | backlog → dev → review → done (+ regressions) | Default balanced kit, also the canonical full config. |
-| `izakaya` | backlog → dev → done | Minimal; no transition guards. |
+| `omakase` | backlog → dev → review → done (+ regressions) | Balanced delivery with branch, resume, and review evidence. |
+| `izakaya` | backlog → dev → done | Lightweight experiments with hypothesis and wave gates. |
 | `kaiseki` | requirements → planning → dev → review → docs → done | Formal six-stage flow with handoff guards. |
-| `shokunin` | requirements → planning → dev → review → docs → done | Kaiseki + stricter operation guards (peer-review on delete). |
+| `shokunin` | requirements → planning → dev → review → docs → done | Risk assessment, rollback plans, and dual reviews. |
 
-CLI / TUI surface:
+- `okt preset catalog` — list names, descriptions, and repository URLs.
+- `okt preset add <source>` — install a catalog entry, Git URL, or local directory.
+- `okt preset use <name-or-id>` — select an installed snapshot.
+- `okt config validate <path>` — validate configuration without applying it.
+- `okt init --preset <source>` — install and select a project workflow.
+- `okt preset export --output workflow.md` — share the complete package in one file.
+- `okt preset import --file workflow.md` — install a shared package.
 
-- `okt config presets` — list the menu (CLI-only metadata read).
-- `okt config validate <path>` — run the strict loader against a yaml without applying it.
-- `okt init --preset <name>` — copy the preset's yaml into `<project-root>/.omakiten/config/<name>.yaml` and set it active for that project. Requires `--preset-force` to overwrite.
-- **Switch the global active profile** — TUI only today (Settings › Config picker, which writes `<config-dir>/.active`). The CLI accepts a per-invocation override via `--config <path>` or by editing `<config-dir>/.active` directly.
+Use `--scope global` with `add`, `use`, `list`, or `import` for user-wide presets.
+Edits through Omakiten create a modified `<name>-local` snapshot and retain the
+original package. Further edits retain that name.
 
 ## Entity frontmatter
 
@@ -265,11 +271,12 @@ Every required field is rejected by the validator if missing — error messages 
 
 ## Editing a workflow safely
 
-1. **Identify the active file.** Read `<config-dir>/.active` and resolve via the precedence above. Default config-dir: `~/.config/omakiten/config/`.
-2. **Copy before editing.** Either copy the profile under `<config-dir>/custom/<name>.yaml` (so a future kit refresh doesn't overwrite it) or override field-by-field inside the existing active file.
-3. **Edit and validate.** `okt config validate <path>` runs the same strict parser the runtime uses — missing required fields, dangling refs, unknown event types, and guard typos surface here.
-4. **Activate.** TUI: Settings › Config picker. CLI: edit `<config-dir>/.active` to the new basename, or pass `--config <path>` per invocation.
-5. **Reload.** CLI reload on next invocation. The TUI hot-reloads on picker selection; otherwise relaunch.
+1. **Identify the selection.** Use `okt config show` and `okt preset list`.
+2. **Edit the active package.** CLI and Studio edits create an independent
+   modified snapshot. Repository edits belong in the module that owns the field.
+3. **Validate.** Run `okt config validate` for schema and reference checks.
+4. **Select.** Use `okt preset use <name-or-id>` for an installed package.
+5. **Share.** Export the complete preset with `okt preset export --output workflow.md`.
 
 ## Canonical references
 

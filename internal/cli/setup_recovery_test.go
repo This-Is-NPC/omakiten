@@ -38,7 +38,7 @@ func TestCLISetupFlagsOverrideEnvironmentAndReportInvalidChoices(t *testing.T) {
 func TestCLIConfigInitIsIdempotentAndRefreshesOnForce(t *testing.T) {
 	root := t.TempDir()
 	t.Chdir(root)
-	db, cfg := filepath.Join(root, "state.db"), filepath.Join(root, "config", "omakase.yaml")
+	db, cfg := filepath.Join(root, "state.db"), filepath.Join(root, "config.yaml")
 	args := []string{"config", "init", "--scope", "global", "--preset", "omakase", "--cli-lang", "", "--tui-lang", "", "--agent-lang", ""}
 	runCLI(t, db, cfg, args...)
 	before := readFile(t, cfg)

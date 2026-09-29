@@ -6,35 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
-	"strings"
-
-	"omakiten/internal/paths"
 )
-
-// WriteActivePreset records the chosen preset in <configDir>/.active so
-// the next CLI invocation resolves to it. Mirrors install.sh's
-// write_active_preset: creates the config dir if missing and writes
-// "<preset>.yaml\n" via paths.SetActiveConfigInDir (which handles the
-// basename guard + trailing newline).
-//
-// configDir is resolved from paths.ConfigDir() — the same precedence
-// chain the rest of the runtime uses (OMAKITEN_HOME → XDG → ~/.config).
-// Returns the resolved dir so the caller can echo it in the
-// `cli.setup.status.preset_written` message.
-func WriteActivePreset(preset string) (configDir string, err error) {
-	preset = strings.TrimSpace(preset)
-	if preset == "" {
-		return "", errors.New("installer: preset name is required")
-	}
-	dir, err := paths.ConfigDir()
-	if err != nil {
-		return "", err
-	}
-	if err := paths.SetActiveConfigInDir(dir, preset+".yaml"); err != nil {
-		return "", err
-	}
-	return dir, nil
-}
 
 // WrapperTargets is the set of rc files the installer considers writing
 // the okt() wrapper into. Order is deterministic so test assertions

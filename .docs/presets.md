@@ -1,8 +1,23 @@
 # Presets — side-by-side comparison
 
-Omakiten ships four official workflow presets. Pick one at install time (`okt setup --preset <name>`) or per-project under `.omakiten/config/.active`.
+Omakiten offers four official workflow repositories. Inspect their metadata with
+`okt preset catalog`, then choose one with `okt setup --preset <name>` or
+`okt config init --scope local --preset <name>`. Each repository owns its workflow,
+entities, settings and version. See [configuration-guide/README.md](configuration-guide/README.md)
+for schemas and [command-surface.md](command-surface.md) for command roles.
 
-The YAML under `defaults/config/<preset>.yaml` is the source of truth for shipped defaults. This page compares workflow discipline and guard shape only. For YAML schemas, start at [configuration-guide/README.md](configuration-guide/README.md). For command roles/scopes, see [command-surface.md](command-surface.md).
+| Preset | Repository |
+| --- | --- |
+| `omakase` | `https://github.com/This-Is-NPC/okt-workflow-omakase.git` |
+| `izakaya` | `https://github.com/This-Is-NPC/okt-workflow-izakaya.git` |
+| `kaiseki` | `https://github.com/This-Is-NPC/okt-workflow-kaiseki.git` |
+| `shokunin` | `https://github.com/This-Is-NPC/okt-workflow-shokunin.git` |
+
+The binary carries catalog metadata and an Omakase fixture for development and
+verification. Installation reads the chosen repository. Git and repository access
+are required for a first installation by name or URL; a local directory also works.
+Once installed, runtime and preset selection work offline. Setup updates pristine
+snapshots from their recorded source and preserves the active modified preset.
 
 ## Repository packages
 
@@ -10,7 +25,9 @@ A preset repository is a self-contained package. Install and select it in the
 current project:
 
 ```sh
-okt preset add /path/to/okt-workflow-omakase
+okt preset catalog
+okt preset add omakase
+# A Git URL or /path/to/okt-workflow-omakase also works
 okt preset use omakase
 okt config validate
 ```
@@ -45,7 +62,7 @@ personas: {from: ./personas.yaml}
 commands: {from: ./bindings.yaml}
 ```
 
-Exports of a bundled preset create these modules. Settings reference separate
+Fixture exports create these modules. Settings reference separate
 `views.yaml`, `events.yaml`, and `hooks.yaml` modules. Short scalar lists and
 simple records use compact YAML rows; nested rules remain indented blocks.
 Package edits update the files that own changed values, preserving imports
@@ -86,8 +103,8 @@ executable permissions. It writes one Markdown document with strict YAML
 frontmatter. `export` writes Markdown to stdout by default; `import --file -`
 reads stdin. Existing output files require `--force`. `--name` and `--version`
 override export metadata. Import installs without activating. The package
-and its encoded document are limited to 16 MiB. Repository installation uses
-a local directory; Git cloning and checkout remain ordinary user operations.
+and its encoded document are limited to 16 MiB. Repository installation accepts catalog names, Git URLs and local directories.
+Remote checkouts are temporary and are deleted after their files are captured.
 
 ## At a glance
 
@@ -100,7 +117,7 @@ a local directory; Git cloning and checkout remain ordinary user operations.
 
 ## How presets differ
 
-Per-preset workflow behavior is derived from `defaults/config/<preset>.yaml`. What changes by discipline level is:
+Per-preset workflow behavior is declared in each repository's `config/workflows.yaml`. What changes by discipline level is:
 
 - **`workflows[].buckets` / `transitions` / `operations`** — bucket count, forward gates, regression paths, and destructive-operation guards.
 - **Guard vocabulary** — each discipline level adds checks without prescribing code architecture.
@@ -108,7 +125,7 @@ Per-preset workflow behavior is derived from `defaults/config/<preset>.yaml`. Wh
 Inspect any preset's full wiring when you need exact active slugs:
 
 ```bash
-yq '.' defaults/config/omakase.yaml          # full preset YAML
+okt preset catalog                          # repository metadata
 okt config init --preset izakaya --scope local --force
 okt config show --scope local                # render the active file
 ```
@@ -124,10 +141,11 @@ okt config show --scope local                # render the active file
 
 ## Switching between presets
 
-Presets live as separate YAML files under `<config-root>/config/`. The `.active` state file picks one:
+Install a workflow package and select its snapshot in the current scope:
 
 ```bash
-echo "kaiseki.yaml" > "$HOME/.config/omakiten/config/.active"
+okt preset add kaiseki
+okt preset use kaiseki
 okt config validate
 ```
 
@@ -137,7 +155,7 @@ For smaller changes, prefer editing the relevant config module over whole-preset
 
 ## Update when
 
-- A new official preset lands under `defaults/config/<preset>.yaml` — add a row to [At a glance](#at-a-glance) and a guidance entry to [Picking a preset](#picking-a-preset).
+- A new official workflow repository is added to the catalog — add a row to [At a glance](#at-a-glance) and a guidance entry to [Picking a preset](#picking-a-preset).
 - A preset's bucket count or guard set changes meaningfully (sanity-check the row in the comparison table).
 - The selection guidance shifts (new discipline, new vocabulary).
 
@@ -148,4 +166,4 @@ For smaller changes, prefer editing the relevant config module over whole-preset
 - [configuration-guide/workflows.md](configuration-guide/workflows.md) — workflow schema.
 - [configuration-guide/command-bindings.md](configuration-guide/command-bindings.md) — command role/skill/law/template binding schema.
 - [configuration-guide/guards.md](configuration-guide/guards.md) — the guard types these presets compose.
-- `defaults/config/<preset>.yaml` — source of truth for shipped defaults.
+- Each workflow repository's `config/workflows.yaml` — its buckets and guards.
