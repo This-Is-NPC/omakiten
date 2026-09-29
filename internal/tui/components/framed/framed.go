@@ -19,6 +19,7 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 
+	"omakiten/internal/tui/components/gridtable"
 	"omakiten/internal/tui/components/panel"
 	"omakiten/internal/tui/components/screenlayout"
 )
@@ -51,6 +52,26 @@ func Box(border lipgloss.Style, width int, kicker string, items []string) screen
 
 // ContentWidth is the space inside a framed section's side borders.
 func ContentWidth(width int) int { return max(1, width-panel.Borders) }
+
+// Table pins the first table row and outer borders around scrolling content.
+func Table(border lipgloss.Style, width int, rows [][]gridtable.Cell) screenlayout.Block {
+	if len(rows) == 0 {
+		return screenlayout.Block{Cursor: screenlayout.NoSelection()}
+	}
+	widths := gridtable.ColumnWidths(width, gridtable.Options{LabelWidth: gridtable.LabelWidth, ValueWidth: 1, Auto: true}, rows)
+	view, layout := gridtable.RenderCellsWithLayout(rows, widths, border)
+	lines := Document(view)
+	end := len(lines) - 1
+	headerEnd := end
+	if len(rows) > 1 {
+		headerEnd = layout.RowOffsets[1]
+	}
+	return screenlayout.Block{
+		Header: lines[:headerEnd], Items: lines[headerEnd:end], Footer: lines[end:],
+		Chrome: panel.WrapBlock(border, ContentWidth(lipgloss.Width(lines[0]))),
+		Cursor: screenlayout.NoSelection(),
+	}
+}
 
 // List is [Box] for a scrollable section whose header carries one or more
 // pinned lines below the kicker's joining rule — a column heading, a hint

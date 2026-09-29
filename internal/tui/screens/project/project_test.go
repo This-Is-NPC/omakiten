@@ -9,6 +9,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	"omakiten/internal/domain"
+	"omakiten/internal/tui/components/framed"
 	"omakiten/internal/tui/screenhost"
 	"omakiten/internal/tui/screens/screentest"
 )
@@ -316,7 +317,7 @@ func assertProjectBodyZone(t *testing.T, payload Payload, width, height int, nam
 }
 
 func TestScreenNavigationAndPresentationEdges(t *testing.T) {
-	for name, size := range map[string][2]int{"tiny": {46, 14}, "compact": {80, 24}} {
+	for name, size := range map[string][2]int{"narrow": {46, 18}, "compact": {80, 24}} {
 		t.Run(name, func(t *testing.T) {
 			frame := screentest.FrameAt(t, size[0], size[1])
 			assertProjectCompactPresentation(t, frame)
@@ -337,9 +338,35 @@ func assertProjectCompactPresentation(t *testing.T, frame screenhost.Frame) {
 		if screen.Focus() != focus {
 			t.Fatalf("compact zone cycle = %v, want %v", screen.Focus(), focus)
 		}
+		assertProjectSectionFrame(t, frame, screen)
 	}
 	if !projectZoneReaches(t, frame, screen, "pgup", "ProjectDescriptionMarker") && !projectZoneReaches(t, frame, screen, "pgdown", "ProjectDescriptionMarker") {
 		t.Fatal("narrow view never reveals the description through the screen's own paging keys")
+	}
+}
+
+func assertProjectSectionFrame(t *testing.T, frame screenhost.Frame, screen Screen) {
+	t.Helper()
+	first := strings.Split(strings.TrimSpace(screentest.StripANSI(screen.View(frame))), "\n")
+	if len(first) < framed.Rows || !strings.HasPrefix(first[0], "┌") {
+		t.Fatal("project section must start with its own top border")
+	}
+	for _, key := range []string{"pgdown", "end", "pgup", "home"} {
+		screen = screen.Update(frame, screentest.Key(key)).Screen.(Screen)
+		lines := strings.Split(strings.TrimSpace(screentest.StripANSI(screen.View(frame))), "\n")
+		if len(lines) < framed.Rows || lines[0] != first[0] || lines[1] != first[1] {
+			t.Fatalf("%s moved the section border or title", key)
+		}
+		bottom := false
+		for _, line := range lines {
+			line = strings.TrimSpace(line)
+			if strings.HasPrefix(line, "└") && strings.HasSuffix(line, "┘") {
+				bottom = true
+			}
+		}
+		if !bottom {
+			t.Fatalf("%s hides the section's bottom border:\n%s", key, strings.Join(lines, "\n"))
+		}
 	}
 }
 

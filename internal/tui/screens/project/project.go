@@ -327,7 +327,8 @@ func (s Screen) metaSection(kit screenkit.Kit, focus Focus) screenlayout.Func {
 	return screenlayout.Func{
 		Def: spec,
 		Body: func(canvas screenlayout.Canvas) screenlayout.Block {
-			return screenlayout.Block{Items: strings.Split(s.metaPanel(kit, canvas.Width(), focus == FocusForm), "\n"), Cursor: screenlayout.NoSelection()}
+			rows := s.metaRows(kit, framed.ContentWidth(canvas.Width()), focus == FocusForm)
+			return framed.Fill(framed.Table(kit.Styles.Border, canvas.Width(), rows), canvas.Rows())
 		},
 	}
 }
@@ -338,8 +339,8 @@ func (s Screen) dashboardSection(kit screenkit.Kit, focus Focus) screenlayout.Fu
 	return screenlayout.Func{
 		Def: spec,
 		Body: func(canvas screenlayout.Canvas) screenlayout.Block {
-			header, rows := s.dashboardPanel(kit, focus == FocusDashboard, canvas.Width())
-			return screenlayout.Block{Header: header, Items: rows, Cursor: screenlayout.NoSelection()}
+			rows := s.dashboardRows(kit, focus == FocusDashboard)
+			return framed.Fill(framed.Table(kit.Styles.Border, canvas.Width(), rows), canvas.Rows())
 		},
 	}
 }
@@ -351,15 +352,20 @@ func (s Screen) activitySection(kit screenkit.Kit, focus Focus) screenlayout.Fun
 	return screenlayout.Func{
 		Def: spec,
 		Body: func(canvas screenlayout.Canvas) screenlayout.Block {
-			header := []string{kit.Styles.SectionKickerCount(kit.T("tui.kicker.activity"), len(s.payload.Activity), focus == FocusActivity)}
+			header := kit.Styles.SectionKickerCount(kit.T("tui.kicker.activity"), len(s.payload.Activity), focus == FocusActivity)
 			selected := -1
 			if focus == FocusActivity {
 				selected = canvas.Cursor()
 			}
+			items := s.activityCards(kit, framed.ContentWidth(canvas.Width()), selected)
 			if len(s.payload.Activity) == 0 {
-				return screenlayout.Block{Header: header, Items: []string{"", kit.Styles.Hint.Render(kit.T("tui.empty.project_activity"))}, Cursor: screenlayout.NoSelection()}
+				items = []string{kit.Styles.Hint.Render(kit.T("tui.empty.project_activity"))}
 			}
-			return screenlayout.Block{Header: header, Items: s.activityCards(kit, canvas.Width(), selected)}
+			block := framed.Box(kit.Styles.Border, canvas.Width(), header, items)
+			if len(s.payload.Activity) == 0 {
+				block.Cursor = screenlayout.NoSelection()
+			}
+			return framed.Fill(block, canvas.Rows())
 		},
 	}
 }
@@ -503,14 +509,8 @@ func (s Screen) states(frame screenhost.Frame) []screenstate.State {
 	}
 }
 
-// metaPanel renders the project meta box at the width the ARRANGER gave the
-// zone. It used to derive that width itself, out of a copy of the feed's
-// percentage expression and the join's two spaces.
-func (s Screen) metaPanel(kit screenkit.Kit, panelWidth int, focused bool) string {
-	valueWidth := panelWidth - gridtable.LabelWidth - 3
-	if valueWidth < 8 {
-		valueWidth = 8
-	}
+// metaRows supplies the project fields and description to the framed table.
+func (s Screen) metaRows(kit screenkit.Kit, contentWidth int, focused bool) [][]gridtable.Cell {
 	slug := screenkit.Sanitize(s.payload.Project.Slug)
 	kicker := kit.Styles.SectionKicker(fmt.Sprintf(kit.T("tui.kicker.project_fmt"), slug), focused)
 	root := s.payload.Project.RootPath
@@ -521,15 +521,15 @@ func (s Screen) metaPanel(kit screenkit.Kit, panelWidth int, focused bool) strin
 	if line := tagsLine(s.payload.Tags); line != "" {
 		tags = line
 	}
-	detail := gridtable.NewDetail(valueWidth, kit.Styles.Info).Custom(gridtable.Styled(kicker)).
+	detail := gridtable.NewDetail(0, kit.Styles.Info).Custom(gridtable.Styled(kicker)).
 		Row(kit.T("tui.row.name"), s.payload.Project.Name).
 		Row(kit.T("tui.row.slug"), s.payload.Project.Slug).
 		Row(kit.T("tui.row.root_path"), root).
 		Row(kit.T("tui.row.id"), fmt.Sprintf("%d", s.payload.Project.ID)).
 		Row(kit.T("tui.row.tags"), tags).
 		Row(kit.T("tui.row.comments"), fmt.Sprintf("%d", len(s.payload.Activity))).
-		Kicker(kit.T("tui.kicker.description")).Span(gridtable.Styled(s.inlineDescription(kit, valueWidth)))
-	return detail.View(kit.Styles.Border)
+		Kicker(kit.T("tui.kicker.description")).Span(gridtable.Styled(s.inlineDescription(kit, contentWidth)))
+	return detail.Cells()
 }
 
 func (s Screen) inlineDescription(kit screenkit.Kit, width int) string {
@@ -546,10 +546,8 @@ func (s Screen) inlineDescription(kit screenkit.Kit, width int) string {
 	return strings.Join(lines[:descriptionCap], "\n") + "\n" + kit.Styles.Hint.Render(fmt.Sprintf(kit.T("tui.task.description_more_fmt"), len(lines)-descriptionCap))
 }
 
-// dashboardPanel returns the zone's chrome and its scrollable rows separately,
-// because the arranger charges the two differently: a Header is measured, paid
-// for and pinned, while the rows below it are the item window.
-func (s Screen) dashboardPanel(kit screenkit.Kit, focused bool, width int) (header, rows []string) {
+// dashboardRows supplies task, subtask and plan summaries to the framed table.
+func (s Screen) dashboardRows(kit screenkit.Kit, focused bool) [][]gridtable.Cell {
 	d := s.payload.Dashboard
 	fields := make([][2]string, 0, len(d.Buckets)+1)
 	for _, bucket := range d.Buckets {
@@ -564,17 +562,10 @@ func (s Screen) dashboardPanel(kit screenkit.Kit, focused bool, width int) (head
 	}
 	plans := gridtable.Rows(kit.Styles.Kicker, kit.T("tui.dashboard.plans"), [2]string{kit.T("tui.dashboard.plan_count"), fmt.Sprintf("%d", d.PlanCount)}, [2]string{kit.T("tui.dashboard.plan_progress"), fmt.Sprintf("%d/%d", d.PlanDone, d.PlanTotal)}, [2]string{kit.T("tui.dashboard.plan_percent"), percent})
 	kicker := kit.Styles.SectionKicker(kit.T("tui.kicker.dashboard"), focused)
-	// Shared Auto + FitWidths sizing; join with a single newline so adjacent
-	// table borders stay flush (Render's stacked gap is for distinct panels).
-	widths := gridtable.ColumnWidths(width, gridtable.Options{
-		LabelWidth: 10, ValueWidth: 8, Auto: true,
-	}, tasks, subs, plans)
-	body := strings.Join([]string{
-		gridtable.RenderCells(tasks, widths, kit.Styles.Border),
-		gridtable.RenderCells(subs, widths, kit.Styles.Border),
-		gridtable.RenderCells(plans, widths, kit.Styles.Border),
-	}, "\n")
-	return []string{kicker, ""}, strings.Split(body, "\n")
+	rows := [][]gridtable.Cell{{gridtable.Styled(kicker)}}
+	rows = append(rows, tasks...)
+	rows = append(rows, subs...)
+	return append(rows, plans...)
 }
 
 func tagsLine(tags []domain.Tag) string {

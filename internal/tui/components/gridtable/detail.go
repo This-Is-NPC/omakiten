@@ -73,6 +73,15 @@ func (d Detail) Span(content Cell) Detail {
 	return d
 }
 
+// Cells returns independent row slices for composition into a framed table.
+func (d Detail) Cells() [][]Cell {
+	rows := make([][]Cell, len(d.rows))
+	for i, row := range d.rows {
+		rows[i] = append([]Cell(nil), row...)
+	}
+	return rows
+}
+
 // View paints the accumulated rows through the grid layout and returns
 // the string. It does not window, hint, or scroll — callers that need a
 // viewport apply it to these bytes.
