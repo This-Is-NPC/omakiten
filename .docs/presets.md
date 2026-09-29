@@ -31,6 +31,26 @@ version: 0.1.0
 config: config/preset.yaml
 ```
 
+`config/preset.yaml` links modules with the existing `from` directive:
+
+```yaml
+version: 1
+kit: {id: 101, key: omakase, name: Omakase Workflow Preset}
+config: {from: ./settings.yaml}
+workflows: {from: ./workflows.yaml}
+surfaces: {from: ./surfaces.yaml}
+skills: {from: ./catalog.yaml#skills}
+laws: {from: ./catalog.yaml#laws}
+personas: {from: ./personas.yaml}
+commands: {from: ./bindings.yaml}
+```
+
+Exports of a bundled preset create these modules. Settings reference separate
+`views.yaml`, `events.yaml`, and `hooks.yaml` modules. Short scalar lists and
+simple records use compact YAML rows; nested rules remain indented blocks.
+Package edits update the files that own changed values, preserving imports
+and comments. Unchanged modules retain their exact bytes and permissions.
+
 The config references sibling `skills/`, `laws/`, `personas/`, `templates/`,
 `themes/`, `notifications/`, and `languages/` directories. Additional assets,
 including hook scripts, belong in the same repository. Entity files live

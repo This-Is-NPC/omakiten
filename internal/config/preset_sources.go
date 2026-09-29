@@ -41,7 +41,7 @@ func ReadPresetDirectory(root string) (PresetPackage, error) {
 	return p, p.validate()
 }
 
-// SnapshotPreset flattens the active bundle and includes its resolved assets.
+// SnapshotPreset captures modular configuration and its resolved assets.
 func SnapshotPreset(path, name, version string) (PresetPackage, error) {
 	bundle, reader, err := loadBundlePlanSources(path)
 	if err != nil {
@@ -57,13 +57,13 @@ func SnapshotPreset(path, name, version string) (PresetPackage, error) {
 	if err != nil {
 		return PresetPackage{}, err
 	}
-	raw, err := marshalWiring(wired)
+	files, err := presetConfigFiles(wired)
 	if err != nil {
 		return PresetPackage{}, err
 	}
 	p := PresetPackage{Type: "Omakiten Preset", Manifest: PresetManifest{
 		SchemaVersion: 1, Name: name, Version: version, Config: "config/preset.yaml",
-	}, Files: map[string]PresetFile{"config/preset.yaml": {Content: string(raw), Mode: 0o644}}}
+	}, Files: files}
 	assets := presetBundleAssets(bundle)
 	for target, source := range assets {
 		data := reader.raw[source]

@@ -61,7 +61,11 @@ func TestPresetPublicationRejectsInvalidCandidates(t *testing.T) {
 func TestPresetSharedEditorProtectsSnapshotsAndStalePlans(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
-	installed, err := config.InstallPreset(root, presetFixture(t))
+	p := presetFixture(t)
+	settings := p.Files["config/settings.yaml"]
+	settings.Content = "# Project settings\n" + settings.Content
+	p.Files["config/settings.yaml"] = settings
+	installed, err := config.InstallPreset(root, p)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -91,12 +95,33 @@ func TestPresetSharedEditorProtectsSnapshotsAndStalePlans(t *testing.T) {
 	if err != nil || resolved.Config.Languages.AgentOutput != "Portuguese" {
 		t.Fatalf("published settings were lost: %v", err)
 	}
+	assertPresetModuleEdit(t, selection, p)
 	if _, err := config.ActivatePreset(root, installed.ID); err != nil {
 		t.Fatal(err)
 	}
 	base, err := editor.Load()
 	if err != nil || base.Config.Languages.AgentOutput == "Portuguese" {
 		t.Fatalf("original snapshot changed: %v", err)
+	}
+}
+
+func assertPresetModuleEdit(t *testing.T, selection string, p config.PresetPackage) {
+	t.Helper()
+	activePath, _, err := config.ResolvePresetSelection(selection)
+	if err != nil {
+		t.Fatal(err)
+	}
+	modified, err := config.ReadPresetDirectory(config.ConfigRootFromYAMLPath(activePath))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(modified.Files["config/settings.yaml"].Content, "# Project settings\n") {
+		t.Fatal("settings comment was lost")
+	}
+	for name, original := range p.Files {
+		if name != "config/settings.yaml" && modified.Files[name] != original {
+			t.Fatalf("unrelated source changed: %s", name)
+		}
 	}
 }
 
