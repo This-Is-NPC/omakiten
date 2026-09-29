@@ -84,6 +84,7 @@ func TestPresetSharedEditorProtectsSnapshotsAndStalePlans(t *testing.T) {
 	}
 	if _, err := editor.Apply(context.Background(), bundle, hashes, func(candidate *config.Bundle) error {
 		candidate.Config.Languages.AgentOutput = "Portuguese"
+		candidate.Config.Hooks = nil
 		return nil
 	}); err != nil {
 		t.Fatal(err)
@@ -92,7 +93,7 @@ func TestPresetSharedEditorProtectsSnapshotsAndStalePlans(t *testing.T) {
 		t.Fatal("stale plan overwrote the active package")
 	}
 	resolved, err := editor.Load()
-	if err != nil || resolved.Config.Languages.AgentOutput != "Portuguese" {
+	if err != nil || resolved.Config.Languages.AgentOutput != "Portuguese" || len(resolved.Config.Hooks) != 0 {
 		t.Fatalf("published settings were lost: %v", err)
 	}
 	assertPresetModuleEdit(t, selection, p)
@@ -118,8 +119,11 @@ func assertPresetModuleEdit(t *testing.T, selection string, p config.PresetPacka
 	if !strings.HasPrefix(modified.Files["config/settings.yaml"].Content, "# Project settings\n") {
 		t.Fatal("settings comment was lost")
 	}
+	if !strings.Contains(modified.Files["config/settings.yaml"].Content, "hooks: {from: ./hooks.yaml}") || modified.Files["config/hooks.yaml"].Content != "[]\n" {
+		t.Fatal("clearing hooks did not retain its imported module")
+	}
 	for name, original := range p.Files {
-		if name != "config/settings.yaml" && modified.Files[name] != original {
+		if name != "config/settings.yaml" && name != "config/hooks.yaml" && modified.Files[name] != original {
 			t.Fatalf("unrelated source changed: %s", name)
 		}
 	}
