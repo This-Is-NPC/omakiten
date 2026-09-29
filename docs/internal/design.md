@@ -129,6 +129,12 @@ on the destination filesystem. Strict installers validate signer identity,
 provenance, manifest, and archive digests before extraction. Preset installation
 validates package integrity and schema, without evaluating script content.
 
+Filesystem validation retains user symlinks for rejection. On macOS, the system
+aliases `/var`, `/tmp`, and `/etc` resolve to their corresponding `/private/`
+directories before descriptor-relative access. Windows opens synchronous NT
+handles with synchronization access and uses Win32 error codes for missing
+targets and name collisions.
+
 ## Next
 
 - [Working on Omakiten](development.md) — toolchain, tests, gate, and releases.

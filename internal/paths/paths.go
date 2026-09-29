@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 )
@@ -295,11 +296,28 @@ func regularConfigFile(path string) (bool, error) {
 	return true, nil
 }
 
-// validateNoSymlinkComponents rejects links in an explicit config path. The
+// AbsolutePath resolves macOS system directory aliases while retaining user symlinks.
+func AbsolutePath(path string) (string, error) {
+	abs, err := filepath.Abs(path)
+	if err != nil || runtime.GOOS != "darwin" {
+		return abs, err
+	}
+	component := strings.SplitN(strings.TrimPrefix(abs, "/"), "/", 2)[0]
+	switch component {
+	case "var", "tmp", "etc":
+		target, err := os.Readlink("/" + component)
+		if err == nil && filepath.Clean(filepath.Join("/", target)) == "/private/"+component {
+			return "/private" + abs, nil
+		}
+	}
+	return abs, nil
+}
+
+// ValidateNoSymlinkComponents rejects links in an explicit config path. The
 // repo-local walker has the same check in internal/config, while this copy
 // keeps the paths package independent of that adapter.
 func ValidateNoSymlinkComponents(path string) error {
-	abs, err := filepath.Abs(path)
+	abs, err := AbsolutePath(path)
 	if err != nil {
 		return err
 	}

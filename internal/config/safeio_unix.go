@@ -11,6 +11,8 @@ import (
 	"strings"
 
 	"golang.org/x/sys/unix"
+
+	"omakiten/internal/paths"
 )
 
 var syncDirectory = unix.Fsync
@@ -182,7 +184,7 @@ func listFilesAtRelative(rootFD int, rootAbsolute, dir string, exts []string, is
 }
 
 func openDirNoFollow(path string, create bool) (int, string, error) {
-	absolute, err := filepath.Abs(path)
+	absolute, err := paths.AbsolutePath(path)
 	if err != nil {
 		return -1, "", err
 	}
