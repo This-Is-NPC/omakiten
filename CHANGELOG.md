@@ -28,6 +28,22 @@
 * **config:** unified `config.events.retention` policy for every row in the `events` table — category defaults, per-type overrides, generic SQLite prune on insert and at `ApplyConfig`, and a TUI Logs footer that contrasts storage retention with `views.logs.window_days`.
 * **cli:** rewrite `okt logs` as the unified event inspector with `--category`, `--since`, and `--limit` flags. Default scope is the last `views.logs.window_days` for the active project; `--category` is repeatable and comma-separated and accepts the same chips as the TUI (`task`, `comment`, `plan`, `tag-dep`, `guard`, `audit`, `hook`, `tool_call`, `trick`, `domain`, plus the `all` shortcut).
 
+## [0.32.0](https://github.com/This-Is-NPC/omakiten/compare/v0.31.0...v0.32.0) (2026-09-29)
+
+
+### ⚠ BREAKING CHANGES
+
+* **omakiten:** remove bundled playbooks and fixed agent command names; workflows must define command skills.
+
+### Features
+
+* **omakiten:** connect knowledge and commands ([#137](https://github.com/This-Is-NPC/omakiten/issues/137)) ([e17ed14](https://github.com/This-Is-NPC/omakiten/commit/e17ed14a4abf8ec23b52f3a2fa7ac3f2ca277d7a))
+
+
+### Bug Fixes
+
+* **release:** prepare tags and isolate signing ([264b8de](https://github.com/This-Is-NPC/omakiten/commit/264b8deaa2ad0f4d7312aebf7f98a80048242200))
+
 ## [0.31.0](https://github.com/This-Is-NPC/omakiten/compare/v0.30.0...v0.31.0) (2026-09-29)
 
 
