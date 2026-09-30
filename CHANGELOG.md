@@ -28,6 +28,17 @@
 * **config:** unified `config.events.retention` policy for every row in the `events` table — category defaults, per-type overrides, generic SQLite prune on insert and at `ApplyConfig`, and a TUI Logs footer that contrasts storage retention with `views.logs.window_days`.
 * **cli:** rewrite `okt logs` as the unified event inspector with `--category`, `--since`, and `--limit` flags. Default scope is the last `views.logs.window_days` for the active project; `--category` is repeatable and comma-separated and accepts the same chips as the TUI (`task`, `comment`, `plan`, `tag-dep`, `guard`, `audit`, `hook`, `tool_call`, `trick`, `domain`, plus the `all` shortcut).
 
+## [0.33.0](https://github.com/This-Is-NPC/omakiten/compare/v0.32.0...v0.33.0) (2026-09-30)
+
+
+### ⚠ BREAKING CHANGES
+
+* **serve:** every surfaces row must declare `http`, and surfaces tables must declare task.show, db.backup, db.reindex, and project.delete. `okt db backup`, `okt db reindex`, and `okt projects delete` report prune warnings in `prune_warnings`.
+
+### Features
+
+* **serve:** serve the board over a local HTTP API ([#139](https://github.com/This-Is-NPC/omakiten/issues/139)) ([8ef7f70](https://github.com/This-Is-NPC/omakiten/commit/8ef7f7003729c485a25eeea5c1d1d1c27111a2fb))
+
 ## [0.32.0](https://github.com/This-Is-NPC/omakiten/compare/v0.31.0...v0.32.0) (2026-09-29)
 
 
