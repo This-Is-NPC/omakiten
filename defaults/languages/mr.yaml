@@ -285,6 +285,7 @@ keys:
   cli.config.why.flag.scope: "global किंवा local"
   cli.config.language.set.flag.cli: "CLI मदत आणि वापर string साठी भाषा कोड"
   cli.config.language.set.flag.tui: "TUI लेबल आणि screen साठी भाषा कोड"
+  cli.config.language.set.flag.gui: "GUI लेबल आणि screen साठी भाषा कोड"
   cli.config.language.set.flag.agent: "मुक्त-स्वरूप agent output भाषा निर्देश (साफ करण्यासाठी \"\" वापरा)"
   cli.law.list.flag.scope: "scope द्वारे फिल्टर करा: global, project, किंवा persona"
   cli.law.list.flag.project: "project slug द्वारे फिल्टर करा"

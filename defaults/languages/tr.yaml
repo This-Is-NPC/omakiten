@@ -286,6 +286,7 @@ keys:
   cli.config.why.flag.scope: "global veya local"
   cli.config.language.set.flag.cli: "CLI yardımı ve kullanım string'leri için dil kodu"
   cli.config.language.set.flag.tui: "TUI etiketleri ve ekranları için dil kodu"
+  cli.config.language.set.flag.gui: "GUI etiketleri ve ekranları için dil kodu"
   cli.config.language.set.flag.agent: "serbest form agent çıktı dil yönergesi (temizlemek için \"\" kullan)"
   cli.law.list.flag.scope: "scope'a göre filtrele: global, project veya persona"
   cli.law.list.flag.project: "project slug'a göre filtrele"

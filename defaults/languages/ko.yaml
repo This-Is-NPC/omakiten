@@ -284,6 +284,7 @@ keys:
   cli.config.why.flag.scope: "global 또는 local"
   cli.config.language.set.flag.cli: "CLI 도움말 및 usage 의 언어 코드"
   cli.config.language.set.flag.tui: "TUI 라벨 및 화면의 언어 코드"
+  cli.config.language.set.flag.gui: "GUI 라벨 및 화면의 언어 코드"
   cli.config.language.set.flag.agent: "agent 출력 언어의 자유 형식 지시문(\"\" 로 지움)"
   cli.law.list.flag.scope: "scope 로 필터: global, project 또는 persona"
   cli.law.list.flag.project: "프로젝트 slug 로 필터"

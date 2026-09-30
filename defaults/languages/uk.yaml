@@ -286,6 +286,7 @@ keys:
   cli.config.why.flag.scope: "global або local"
   cli.config.language.set.flag.cli: "код мови для CLI help і рядків usage"
   cli.config.language.set.flag.tui: "код мови для лейблів і екранів TUI"
+  cli.config.language.set.flag.gui: "код мови для лейблів і екранів GUI"
   cli.config.language.set.flag.agent: "вільна директива мови agent output (використовуйте \"\" для очищення)"
   cli.law.list.flag.scope: "фільтр за scope: global, project або persona"
   cli.law.list.flag.project: "фільтр за slug проєкту"

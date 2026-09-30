@@ -11,11 +11,12 @@ They are separate settings.
 
 ```bash
 okt config language show
-okt config language set --cli pt-br --tui en --agent "Português (Brasil)"
+okt config language set --cli pt-br --tui en --gui pt-br --agent "Português (Brasil)"
 ```
 
-`show` lists available bundled catalogs and the preference path. CLI and TUI
-use language codes. The agent preference is an output-language directive;
+`show` lists available bundled catalogs and the preference path. CLI, TUI, and
+GUI use language codes; GUI selects the text the local HTTP API resolves for
+graphical clients. The agent preference is an output-language directive;
 it does not translate a workflow repository's instruction files.
 
 Preferences are stored in `<application config root>/preferences.yaml`:
@@ -24,6 +25,7 @@ Preferences are stored in `<application config root>/preferences.yaml`:
 languages:
   cli: pt-br
   tui: en
+  gui: pt-br
   agent_output: "Português (Brasil)"
 ```
 

@@ -289,6 +289,7 @@ keys:
   cli.config.why.flag.scope: "global o local"
   cli.config.language.set.flag.cli: "codice di lingua per help e usage del CLI"
   cli.config.language.set.flag.tui: "codice di lingua per etichette e schermate della TUI"
+  cli.config.language.set.flag.gui: "codice di lingua per etichette e schermate della GUI"
   cli.config.language.set.flag.agent: "direttiva libera di lingua di output dell'agent (usa \"\" per azzerare)"
   cli.law.list.flag.scope: "filtra per scope: global, project o persona"
   cli.law.list.flag.project: "filtra per slug del progetto"

@@ -48,12 +48,18 @@ func TestSnapshot_LanguageByCode(t *testing.T) {
 func TestSnapshot_CatalogResolvesActive(t *testing.T) {
 	en := Language{Code: "en", Name: "English", Native: "English", Keys: map[string]string{"cli.hi": "Hello"}}
 	ptbr := Language{Code: "pt-br", Name: "Portuguese", Native: "Português", Keys: map[string]string{"cli.hi": "Olá"}}
-	snap := BuildSnapshot(bundleWithLanguages([]Language{en, ptbr}, LanguageSettings{CLI: "pt-br", TUI: "en"}))
+	snap := BuildSnapshot(bundleWithLanguages([]Language{en, ptbr}, LanguageSettings{CLI: "pt-br", TUI: "en", GUI: "pt-br"}))
 	if got := snap.Catalog(SurfaceCLI).Get("cli.hi"); got != "Olá" {
 		t.Fatalf("CLI catalog active: got %q, want Olá", got)
 	}
 	if got := snap.Catalog(SurfaceTUI).Get("cli.hi"); got != "Hello" {
 		t.Fatalf("TUI catalog active: got %q, want Hello", got)
+	}
+	if got := snap.Catalog(SurfaceGUI).Get("cli.hi"); got != "Olá" {
+		t.Fatalf("GUI catalog active: got %q, want Olá", got)
+	}
+	if got := snap.Catalog(SurfaceGUI).Get("gui.missing"); got != "gui.missing" {
+		t.Fatalf("GUI catalog missing key: got %q, want the key", got)
 	}
 }
 

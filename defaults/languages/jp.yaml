@@ -284,6 +284,7 @@ keys:
   cli.config.why.flag.scope: "global または local"
   cli.config.language.set.flag.cli: "CLI ヘルプと usage の言語コード"
   cli.config.language.set.flag.tui: "TUI ラベルと画面の言語コード"
+  cli.config.language.set.flag.gui: "GUI ラベルと画面の言語コード"
   cli.config.language.set.flag.agent: "agent 出力言語の自由記述指示 (\"\" でクリア)"
   cli.law.list.flag.scope: "scope でフィルタ: global、project、または persona"
   cli.law.list.flag.project: "プロジェクト slug でフィルタ"

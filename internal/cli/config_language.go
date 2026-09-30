@@ -41,9 +41,11 @@ func newConfigLanguageShowCommand(opts *runtimeOptions) *cobra.Command {
 type languageSetInputs struct {
 	cli      string
 	tui      string
+	gui      string
 	agent    string
 	cliSet   bool
 	tuiSet   bool
+	guiSet   bool
 	agentSet bool
 }
 
@@ -52,9 +54,10 @@ func newConfigLanguageSetCommand(opts *runtimeOptions) *cobra.Command {
 	cmd := &cobra.Command{Use: "set", Short: opts.t("cli.config.language.set.short"), Long: opts.t("cli.config.language.set.long"), Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error {
 		inputs.cliSet = cmd.Flags().Changed("cli")
 		inputs.tuiSet = cmd.Flags().Changed("tui")
+		inputs.guiSet = cmd.Flags().Changed("gui")
 		inputs.agentSet = cmd.Flags().Changed("agent")
 		return runJSON(cmd, func(context.Context) (any, error) {
-			if !inputs.cliSet && !inputs.tuiSet && !inputs.agentSet {
+			if !inputs.cliSet && !inputs.tuiSet && !inputs.guiSet && !inputs.agentSet {
 				return nil, domain.NewError(domain.ErrValidation, opts.t("cli.err.language_set_no_flags"), nil)
 			}
 			p, err := loadApplicationPreferences()
@@ -67,6 +70,7 @@ func newConfigLanguageSetCommand(opts *runtimeOptions) *cobra.Command {
 	}}
 	cmd.Flags().StringVar(&inputs.cli, "cli", "", opts.t("cli.config.language.set.flag.cli"))
 	cmd.Flags().StringVar(&inputs.tui, "tui", "", opts.t("cli.config.language.set.flag.tui"))
+	cmd.Flags().StringVar(&inputs.gui, "gui", "", opts.t("cli.config.language.set.flag.gui"))
 	cmd.Flags().StringVar(&inputs.agent, "agent", "", opts.t("cli.config.language.set.flag.agent"))
 	return cmd
 }
@@ -77,6 +81,9 @@ func languageSettingsFromInputs(settings config.LanguageSettings, inputs languag
 	}
 	if inputs.tuiSet {
 		settings.TUI = strings.TrimSpace(inputs.tui)
+	}
+	if inputs.guiSet {
+		settings.GUI = strings.TrimSpace(inputs.gui)
 	}
 	if inputs.agentSet {
 		settings.AgentOutput = strings.TrimSpace(inputs.agent)
@@ -114,5 +121,5 @@ func saveApplicationPreferences(p config.Preferences) (any, error) {
 }
 
 func settingsToMap(s config.LanguageSettings) map[string]any {
-	return map[string]any{"cli": s.CLI, "tui": s.TUI, "agent_output": s.AgentOutput}
+	return map[string]any{"cli": s.CLI, "tui": s.TUI, "gui": s.GUI, "agent_output": s.AgentOutput}
 }

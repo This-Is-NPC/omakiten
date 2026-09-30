@@ -235,6 +235,7 @@ type Snapshot struct {
 	languagesByCode map[string]int
 	catalogCLI      *Catalog
 	catalogTUI      *Catalog
+	catalogGUI      *Catalog
 	agentOutputLang string
 
 	registry *domain.EnumRegistry
@@ -379,6 +380,7 @@ func populateSnapshotLanguages(snap *Snapshot, bundle Bundle) {
 	baseline := snap.lookupLanguage("en")
 	snap.catalogCLI = buildSurfaceCatalog(snap, eff.CLI, baseline)
 	snap.catalogTUI = buildSurfaceCatalog(snap, eff.TUI, baseline)
+	snap.catalogGUI = buildSurfaceCatalog(snap, eff.GUI, baseline)
 	snap.agentOutputLang = eff.AgentOutput
 	trimInactiveLanguages(snap, eff)
 }
@@ -390,6 +392,9 @@ func trimInactiveLanguages(snap *Snapshot, eff LanguageSettings) {
 	}
 	if eff.TUI != "" {
 		keep[eff.TUI] = true
+	}
+	if eff.GUI != "" {
+		keep[eff.GUI] = true
 	}
 	if eff.AgentOutput != "" {
 		keep[eff.AgentOutput] = true
@@ -717,6 +722,8 @@ func (s *Snapshot) Catalog(surface Surface) *Catalog {
 	switch surface {
 	case SurfaceTUI:
 		return s.catalogTUI
+	case SurfaceGUI:
+		return s.catalogGUI
 	default:
 		return s.catalogCLI
 	}

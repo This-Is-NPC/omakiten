@@ -10,7 +10,8 @@ import (
 // hand out independent catalogs per delivery layer. CLI drives cobra
 // help/usage chrome; TUI drives terminal-UI labels and screens. New
 // surfaces (notifications, agent) reuse one of these today rather than
-// adding fragmentation.
+// adding fragmentation. GUI drives the text the local HTTP API resolves
+// for graphical clients.
 type Surface int
 
 const (
@@ -18,6 +19,8 @@ const (
 	SurfaceCLI Surface = iota
 	// SurfaceTUI selects the catalog resolved against languages.tui.
 	SurfaceTUI
+	// SurfaceGUI selects the catalog resolved against languages.gui.
+	SurfaceGUI
 )
 
 // Language contains a bundled application's locale metadata and translations.

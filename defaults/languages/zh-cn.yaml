@@ -284,6 +284,7 @@ keys:
   cli.config.why.flag.scope: "global 或 local"
   cli.config.language.set.flag.cli: "CLI 帮助和用法的语言代码"
   cli.config.language.set.flag.tui: "TUI 标签和屏幕的语言代码"
+  cli.config.language.set.flag.gui: "GUI 标签和屏幕的语言代码"
   cli.config.language.set.flag.agent: "agent 输出语言的自由形式指令(使用 \"\" 清除)"
   cli.law.list.flag.scope: "按 scope 过滤:global、project 或 persona"
   cli.law.list.flag.project: "按项目 slug 过滤"

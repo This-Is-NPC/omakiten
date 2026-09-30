@@ -287,6 +287,7 @@ keys:
   cli.config.why.flag.scope: "global of local"
   cli.config.language.set.flag.cli: "taalcode voor CLI help- en usage-strings"
   cli.config.language.set.flag.tui: "taalcode voor TUI labels en schermen"
+  cli.config.language.set.flag.gui: "taalcode voor GUI labels en schermen"
   cli.config.language.set.flag.agent: "vrije agent output taal-directive (gebruik \"\" om te wissen)"
   cli.law.list.flag.scope: "filter op scope: global, project of persona"
   cli.law.list.flag.project: "filter op project slug"

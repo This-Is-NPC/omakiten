@@ -285,6 +285,7 @@ keys:
   cli.config.why.flag.scope: "global أو local"
   cli.config.language.set.flag.cli: "رمز اللغة لمساعدة CLI ونصوص الاستخدام"
   cli.config.language.set.flag.tui: "رمز اللغة لتسميات وشاشات TUI"
+  cli.config.language.set.flag.gui: "رمز اللغة لتسميات وشاشات GUI"
   cli.config.language.set.flag.agent: "توجيه لغة إخراج agent (نص حر، استخدم \"\" لإفراغها)"
   cli.law.list.flag.scope: "تصفية حسب scope: global أو project أو persona"
   cli.law.list.flag.project: "تصفية حسب slug المشروع"

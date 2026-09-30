@@ -288,6 +288,7 @@ keys:
   cli.config.why.flag.scope: "global eller local"
   cli.config.language.set.flag.cli: "språkkode for CLI-hjelp og bruksstrenger"
   cli.config.language.set.flag.tui: "språkkode for TUI-etiketter og skjermer"
+  cli.config.language.set.flag.gui: "språkkode for GUI-etiketter og skjermer"
   cli.config.language.set.flag.agent: "fritt agent-output språkdirektiv (bruk \"\" for å tømme)"
   cli.law.list.flag.scope: "filtrer etter scope: global, project eller persona"
   cli.law.list.flag.project: "filtrer etter prosjekt-slug"
