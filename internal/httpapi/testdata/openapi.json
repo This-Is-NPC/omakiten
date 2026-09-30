@@ -1287,6 +1287,85 @@
         ],
         "type": "object"
       },
+      "domain.KnowledgeRelation": {
+        "properties": {
+          "from": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "to": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "from",
+          "kind",
+          "to"
+        ],
+        "type": "object"
+      },
+      "domain.KnowledgeResource": {
+        "properties": {
+          "body": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "project": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "path",
+          "project",
+          "title"
+        ],
+        "type": "object"
+      },
+      "domain.KnowledgeSnapshot": {
+        "properties": {
+          "diagnostics": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "relations": {
+            "items": {
+              "$ref": "#/components/schemas/domain.KnowledgeRelation"
+            },
+            "type": "array"
+          },
+          "resources": {
+            "items": {
+              "$ref": "#/components/schemas/domain.KnowledgeResource"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "relations",
+          "resources"
+        ],
+        "type": "object"
+      },
       "domain.MetricsSummary": {
         "properties": {
           "by_model": {
@@ -1381,6 +1460,33 @@
           "days_stuck",
           "task_id",
           "title"
+        ],
+        "type": "object"
+      },
+      "domain.TransitionGuard": {
+        "properties": {
+          "buckets": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "count": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "hint": {
+            "type": "string"
+          },
+          "tag": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "type"
         ],
         "type": "object"
       },
@@ -1517,6 +1623,367 @@
         "required": [
           "status",
           "version"
+        ],
+        "type": "object"
+      },
+      "httpapi.StudioBucket": {
+        "properties": {
+          "final": {
+            "type": "boolean"
+          },
+          "key": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "position": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "key",
+          "name",
+          "position"
+        ],
+        "type": "object"
+      },
+      "httpapi.StudioCommand": {
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "laws": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "laws_disabled": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "persona": {
+            "type": "string"
+          },
+          "skills": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "templates": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "key"
+        ],
+        "type": "object"
+      },
+      "httpapi.StudioHook": {
+        "properties": {
+          "do": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "notification": {
+            "type": "string"
+          },
+          "on": {
+            "type": "string"
+          },
+          "when": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        },
+        "required": [
+          "on"
+        ],
+        "type": "object"
+      },
+      "httpapi.StudioLaw": {
+        "properties": {
+          "body": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "scope": {
+            "type": "string"
+          },
+          "severity": {
+            "type": "string"
+          },
+          "slug": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "severity",
+          "slug"
+        ],
+        "type": "object"
+      },
+      "httpapi.StudioPersona": {
+        "properties": {
+          "body": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "laws": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "name": {
+            "type": "string"
+          },
+          "skills": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "slug": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "slug"
+        ],
+        "type": "object"
+      },
+      "httpapi.StudioResponse": {
+        "properties": {
+          "commands": {
+            "items": {
+              "$ref": "#/components/schemas/httpapi.StudioCommand"
+            },
+            "type": "array"
+          },
+          "hooks": {
+            "items": {
+              "$ref": "#/components/schemas/httpapi.StudioHook"
+            },
+            "type": "array"
+          },
+          "kit": {
+            "type": "string"
+          },
+          "laws": {
+            "items": {
+              "$ref": "#/components/schemas/httpapi.StudioLaw"
+            },
+            "type": "array"
+          },
+          "personas": {
+            "items": {
+              "$ref": "#/components/schemas/httpapi.StudioPersona"
+            },
+            "type": "array"
+          },
+          "settings": {
+            "items": {
+              "$ref": "#/components/schemas/httpapi.StudioSection"
+            },
+            "type": "array"
+          },
+          "skills": {
+            "items": {
+              "$ref": "#/components/schemas/httpapi.StudioSkill"
+            },
+            "type": "array"
+          },
+          "subtask": {
+            "$ref": "#/components/schemas/httpapi.StudioWorkflow"
+          },
+          "templates": {
+            "items": {
+              "$ref": "#/components/schemas/httpapi.StudioTemplate"
+            },
+            "type": "array"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "workflow": {
+            "$ref": "#/components/schemas/httpapi.StudioWorkflow"
+          }
+        },
+        "required": [
+          "commands",
+          "hooks",
+          "kit",
+          "laws",
+          "personas",
+          "settings",
+          "skills",
+          "templates",
+          "workflow"
+        ],
+        "type": "object"
+      },
+      "httpapi.StudioSection": {
+        "properties": {
+          "entries": {
+            "items": {
+              "$ref": "#/components/schemas/httpapi.StudioSetting"
+            },
+            "type": "array"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "entries",
+          "name"
+        ],
+        "type": "object"
+      },
+      "httpapi.StudioSetting": {
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string"
+          },
+          "value": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "key",
+          "value"
+        ],
+        "type": "object"
+      },
+      "httpapi.StudioSkill": {
+        "properties": {
+          "body": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "role_affinity": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "slug": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "slug"
+        ],
+        "type": "object"
+      },
+      "httpapi.StudioTemplate": {
+        "properties": {
+          "body": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "entity": {
+            "type": "string"
+          },
+          "laws": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "name": {
+            "type": "string"
+          },
+          "slug": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "slug"
+        ],
+        "type": "object"
+      },
+      "httpapi.StudioTransition": {
+        "properties": {
+          "from": {
+            "type": "string"
+          },
+          "guards": {
+            "items": {
+              "$ref": "#/components/schemas/domain.TransitionGuard"
+            },
+            "type": "array"
+          },
+          "to": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "from",
+          "guards",
+          "to"
+        ],
+        "type": "object"
+      },
+      "httpapi.StudioWorkflow": {
+        "properties": {
+          "buckets": {
+            "items": {
+              "$ref": "#/components/schemas/httpapi.StudioBucket"
+            },
+            "type": "array"
+          },
+          "key": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "transitions": {
+            "items": {
+              "$ref": "#/components/schemas/httpapi.StudioTransition"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "buckets",
+          "key",
+          "name",
+          "transitions"
         ],
         "type": "object"
       },
@@ -1935,6 +2402,57 @@
         "x-okt-surface": "insights.summary"
       }
     },
+    "/api/v1/projects/{project}/knowledge": {
+      "get": {
+        "operationId": "getKnowledge",
+        "parameters": [
+          {
+            "description": "Project slug.",
+            "in": "path",
+            "name": "project",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/domain.KnowledgeSnapshot"
+                    },
+                    "ok": {
+                      "const": true
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success."
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/output.Envelope"
+                }
+              }
+            },
+            "description": "Error envelope."
+          }
+        },
+        "summary": "File-backed knowledge of a project and its related projects."
+      }
+    },
     "/api/v1/projects/{project}/logs": {
       "get": {
         "operationId": "listLogs",
@@ -2324,6 +2842,57 @@
         },
         "summary": "Full-text search within a project.",
         "x-okt-surface": "search"
+      }
+    },
+    "/api/v1/projects/{project}/studio": {
+      "get": {
+        "operationId": "getStudio",
+        "parameters": [
+          {
+            "description": "Project slug.",
+            "in": "path",
+            "name": "project",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/httpapi.StudioResponse"
+                    },
+                    "ok": {
+                      "const": true
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success."
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/output.Envelope"
+                }
+              }
+            },
+            "description": "Error envelope."
+          }
+        },
+        "summary": "Workflow guards, agent wiring, hooks, and effective settings."
       }
     },
     "/api/v1/projects/{project}/tasks": {

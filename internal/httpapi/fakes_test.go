@@ -141,17 +141,37 @@ func (f *fakeOps) MetricsSummary(_ context.Context, in contract.MetricsSummaryIn
 }
 
 type fakeRuntimes struct {
-	ops      *fakeOps
-	projects map[string]int64
-	catalog  *config.Catalog
+	ops       *fakeOps
+	projects  map[string]int64
+	catalog   *config.Catalog
+	knowledge domain.KnowledgeSnapshot
+	snapshot  *config.Snapshot
 }
 
 func (f fakeRuntimes) Project(_ context.Context, slug string) (Operations, contract.ProjectSelector, error) {
 	id, ok := f.projects[slug]
 	if !ok {
-		return nil, contract.ProjectSelector{}, domain.NewError(domain.ErrProjectNotFound, "project not found", nil)
+		return nil, contract.ProjectSelector{}, errProjectNotFound()
 	}
 	return f.ops, contract.ProjectSelector{ProjectID: id}, nil
+}
+
+func (f fakeRuntimes) Knowledge(_ context.Context, slug string) (domain.KnowledgeSnapshot, error) {
+	if _, ok := f.projects[slug]; !ok {
+		return domain.KnowledgeSnapshot{}, errProjectNotFound()
+	}
+	return f.knowledge, nil
+}
+
+func (f fakeRuntimes) Snapshot(_ context.Context, slug string) (*config.Snapshot, error) {
+	if _, ok := f.projects[slug]; !ok {
+		return nil, errProjectNotFound()
+	}
+	return f.snapshot, nil
+}
+
+func errProjectNotFound() error {
+	return domain.NewError(domain.ErrProjectNotFound, "project not found", nil)
 }
 
 func (f fakeRuntimes) Global(context.Context) (Operations, error) { return f.ops, nil }

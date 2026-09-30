@@ -76,6 +76,14 @@ The workflow's `surfaces.yaml` decides what the API may do: each operation has
 an `http` column. Database backup, search reindex, and project deletion ship
 with `http: false`.
 
+Two reads sit outside that table because they run no operation.
+`GET /api/v1/projects/example/knowledge` returns the project's file-backed
+knowledge, as `okt knowledge list --include-related` reads it: resources,
+relations, and diagnostics. `GET /api/v1/projects/example/studio` returns what
+the TUI Studio and Settings show: buckets, transitions with their guards (and
+the sub-task workflow when its guards differ), commands, personas, laws,
+skills, templates, hooks, and the effective settings.
+
 ## 4. Follow changes live
 
 ```bash

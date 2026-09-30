@@ -79,12 +79,13 @@ func TestRoutesMapRequestsOntoOperationInputs(t *testing.T) {
 	assertEveryJSONRouteCovered(t, covered)
 }
 
-// assertEveryJSONRouteCovered fails when a route is added without a mapping case.
+// assertEveryJSONRouteCovered fails when an operation route is added without
+// a mapping case. Routes outside the operation census test their own reads.
 func assertEveryJSONRouteCovered(t *testing.T, covered map[string]bool) {
 	t.Helper()
 	server, _ := newTestServer(t, &fakeOps{}, fakeLog{})
 	for _, rt := range server.routes() {
-		if rt.stream == nil && !rt.public && rt.id != "getCatalog" && !covered[rt.id] {
+		if rt.stream == nil && !rt.public && rt.slug != "" && !covered[rt.id] {
 			t.Errorf("route %s has no mapping case", rt.id)
 		}
 	}

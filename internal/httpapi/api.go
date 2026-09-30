@@ -126,6 +126,8 @@ func (s *Server) routes() []route {
 			projectParam,
 			queryParam("period", "Window such as `7d`.", stringSchema),
 		}, s.metrics),
+		query("getKnowledge", http.MethodGet, projectPath+"/knowledge", "", "File-backed knowledge of a project and its related projects.", []param{projectParam}, s.knowledge),
+		query("getStudio", http.MethodGet, projectPath+"/studio", "", "Workflow guards, agent wiring, hooks, and effective settings.", []param{projectParam}, s.studio),
 		s.eventsRoute(),
 	}
 }

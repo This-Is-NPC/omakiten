@@ -40,6 +40,11 @@ type Runtimes interface {
 	Project(ctx context.Context, slug string) (Operations, contract.ProjectSelector, error)
 	// Global returns the facade for project-independent operations.
 	Global(ctx context.Context) (Operations, error)
+	// Knowledge reads the file-backed knowledge of project slug and of the
+	// projects it names as related.
+	Knowledge(ctx context.Context, slug string) (domain.KnowledgeSnapshot, error)
+	// Snapshot returns the configuration project slug runs with.
+	Snapshot(ctx context.Context, slug string) (*config.Snapshot, error)
 	// Catalog returns the catalog for the GUI language preference.
 	Catalog() *config.Catalog
 }
