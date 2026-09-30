@@ -3,7 +3,6 @@ package tui
 import (
 	"context"
 	"fmt"
-	"path/filepath"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -11,7 +10,6 @@ import (
 	"omakiten/internal/config"
 	"omakiten/internal/contract"
 	"omakiten/internal/domain"
-	"omakiten/internal/paths"
 	"omakiten/internal/tui/screenhost"
 	"omakiten/internal/tui/screens/board"
 	"omakiten/internal/tui/screens/graph"
@@ -152,15 +150,12 @@ func (m *Model) resolveProjectRuntime(project domain.Project) (*contract.Runtime
 		path = entry.SourcePath
 	}
 	if path == "" {
-		repoLocal, found, err := config.FindRepoLocal(project.RootPath)
+		repoLocalPath, found, err := config.RepoLocalConfigFile(project.RootPath)
 		if err != nil {
 			return nil, "", err
 		}
 		if found {
-			path, err = paths.ActiveConfigFileInDir(filepath.Join(repoLocal, "config"))
-			if err != nil {
-				return nil, "", err
-			}
+			path = repoLocalPath
 		} else if m.repos.RepoLocalDir == "" {
 			path = m.repos.ConfigPath
 		}
