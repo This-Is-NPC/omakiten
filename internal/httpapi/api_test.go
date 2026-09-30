@@ -29,6 +29,7 @@ func TestRoutesMapRequestsOntoOperationInputs(t *testing.T) {
 		{"getProject", http.MethodGet, "/api/v1/projects/alpha", "", "Overview", contract.OverviewInput{ProjectSelector: alpha}},
 		{"resumeProject", http.MethodGet, "/api/v1/projects/alpha/resume", "", "ResumeProject", contract.ResumeProjectInput{ProjectSelector: alpha}},
 		{"getWorkflow", http.MethodGet, "/api/v1/projects/alpha/workflow", "", "ShowWorkflow", contract.WorkflowInput{ProjectSelector: alpha}},
+		{"getBoard", http.MethodGet, "/api/v1/projects/alpha/board", "", "TaskBoard", contract.TaskBoardInput{ProjectSelector: alpha}},
 		{"listTasks", http.MethodGet, "/api/v1/projects/alpha/tasks?parent=12", "", "ListTasks", contract.ListTasksInput{
 			ProjectSelector: alpha, ParentID: contract.OptionalInt64{Set: true, Value: ptr[int64](12)},
 		}},

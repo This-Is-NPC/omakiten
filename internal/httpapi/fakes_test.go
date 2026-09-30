@@ -46,6 +46,11 @@ func (f *fakeOps) ShowWorkflow(_ context.Context, in contract.WorkflowInput) (co
 	return contract.WorkflowResponse{}, nil
 }
 
+func (f *fakeOps) TaskBoard(_ context.Context, in contract.TaskBoardInput) (contract.TaskBoardResponse, error) {
+	f.record("TaskBoard", in)
+	return contract.TaskBoardResponse{}, nil
+}
+
 func (f *fakeOps) ListTasks(_ context.Context, in contract.ListTasksInput) (contract.ListTasksResponse, error) {
 	if f.listTasks != nil {
 		return f.listTasks(in)

@@ -15,6 +15,7 @@ type Operations interface {
 	Overview(ctx context.Context, input contract.OverviewInput) (contract.OverviewResponse, error)
 	ResumeProject(ctx context.Context, input contract.ResumeProjectInput) (contract.ResumeProjectResponse, error)
 	ShowWorkflow(ctx context.Context, input contract.WorkflowInput) (contract.WorkflowResponse, error)
+	TaskBoard(ctx context.Context, input contract.TaskBoardInput) (contract.TaskBoardResponse, error)
 	ListTasks(ctx context.Context, input contract.ListTasksInput) (contract.ListTasksResponse, error)
 	ShowTask(ctx context.Context, input contract.ShowTaskInput) (contract.ShowTaskResponse, error)
 	CreateTaskIntent(ctx context.Context, input contract.CreateTaskInput) (contract.CreateTaskResponse, error)

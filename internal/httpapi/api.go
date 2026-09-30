@@ -80,6 +80,7 @@ func (s *Server) routes() []route {
 		query("getProject", http.MethodGet, projectPath, "project.overview", "Project overview with bucket counts.", []param{projectParam}, s.projectOverview),
 		query("resumeProject", http.MethodGet, projectPath+"/resume", "project.resume", "Context to resume work on a project.", []param{projectParam}, s.resumeProject),
 		query("getWorkflow", http.MethodGet, projectPath+"/workflow", "workflow.show", "Buckets, transitions, and permissions.", []param{projectParam}, s.workflow),
+		query("getBoard", http.MethodGet, projectPath+"/board", "task.list", "Workflow and active tasks with their relation counts.", []param{projectParam}, s.board),
 		query("listTasks", http.MethodGet, projectPath+"/tasks", "task.list", "Tasks of a project.", []param{
 			projectParam,
 			queryParam("bucket", "Bucket key filter.", stringSchema),
@@ -172,6 +173,14 @@ func (s *Server) workflow(r *http.Request) (contract.WorkflowResponse, error) {
 		return contract.WorkflowResponse{}, err
 	}
 	return ops.ShowWorkflow(r.Context(), contract.WorkflowInput{ProjectSelector: selector})
+}
+
+func (s *Server) board(r *http.Request) (contract.TaskBoardResponse, error) {
+	ops, selector, err := s.project(r)
+	if err != nil {
+		return contract.TaskBoardResponse{}, err
+	}
+	return ops.TaskBoard(r.Context(), contract.TaskBoardInput{ProjectSelector: selector})
 }
 
 func (s *Server) listTasks(r *http.Request) (contract.ListTasksResponse, error) {

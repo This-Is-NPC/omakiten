@@ -20,6 +20,62 @@
         ],
         "type": "object"
       },
+      "contract.BoardTask": {
+        "properties": {
+          "blockers": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "bucket_key": {
+            "type": "string"
+          },
+          "comments": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "description": {
+            "type": "string"
+          },
+          "id": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "parent_id": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "priority": {
+            "type": "string"
+          },
+          "priority_color": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string"
+          },
+          "subtasks": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "tags": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "blockers",
+          "comments",
+          "id",
+          "subtasks",
+          "title"
+        ],
+        "type": "object"
+      },
       "contract.BucketCount": {
         "properties": {
           "bucket_key": {
@@ -917,6 +973,28 @@
         ],
         "type": "object"
       },
+      "contract.TaskBoardResponse": {
+        "properties": {
+          "project": {
+            "$ref": "#/components/schemas/contract.ProjectSummary"
+          },
+          "tasks": {
+            "items": {
+              "$ref": "#/components/schemas/contract.BoardTask"
+            },
+            "type": "array"
+          },
+          "workflow": {
+            "$ref": "#/components/schemas/contract.WorkflowSummary"
+          }
+        },
+        "required": [
+          "project",
+          "tasks",
+          "workflow"
+        ],
+        "type": "object"
+      },
       "contract.TaskSummary": {
         "properties": {
           "bucket_key": {
@@ -1655,6 +1733,58 @@
         },
         "summary": "Project overview with bucket counts.",
         "x-okt-surface": "project.overview"
+      }
+    },
+    "/api/v1/projects/{project}/board": {
+      "get": {
+        "operationId": "getBoard",
+        "parameters": [
+          {
+            "description": "Project slug.",
+            "in": "path",
+            "name": "project",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/contract.TaskBoardResponse"
+                    },
+                    "ok": {
+                      "const": true
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success."
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/output.Envelope"
+                }
+              }
+            },
+            "description": "Error envelope."
+          }
+        },
+        "summary": "Workflow and active tasks with their relation counts.",
+        "x-okt-surface": "task.list"
       }
     },
     "/api/v1/projects/{project}/dependencies": {
