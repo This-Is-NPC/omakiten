@@ -41,6 +41,9 @@ behavior and the owner of each rule, rather than a historical feature ledger.
 | Search repair is transactional and verified against canonical records. | Search integrity adapter |
 | CLI data output is machine-readable, errors exit nonzero, and diagnostics preserve actionable context. | CLI execution and output |
 | CLI and TUI use common contracts and application policy while remaining independent delivery adapters. | Composition root and architecture tests |
+| The HTTP API listens on loopback only, authenticates with a per-run token, and gates each route by its surface slug. | `internal/httpapi`, `internal/daemon`, surfaces table |
+| The HTTP API's OpenAPI document is generated from its routes and delivery types and reviewed as a golden file. | `internal/httpapi` |
+| The event stream delivers events committed by any process, resumes from Last-Event-ID, and asks slow clients to resync. | `internal/daemon` feed and `internal/httpapi` hub |
 | TUI screens receive business projections; shared components own geometry, cursor, scroll, and framing. | Screen assembly contract |
 | Release verification checks the intended repository, tag, identity, metadata, and complete archive set. | Release metadata and verification packages |
 

@@ -30,6 +30,7 @@ can add them when the work needs them.
 | [How to choose and share a workflow](how-to-manage-presets.md) | Catalog, repositories, installed snapshots, activation, and single-file transport. |
 | [How to give a project its own workflow](how-to-configure-a-project.md) | `.omakiten/`, discovery, application preferences, and the shared database. |
 | [How to change a workflow](how-to-customize-a-workflow.md) | Modules, entities, command bindings, buckets, permissions, guards, and staged edits. |
+| [How to serve the board to a graphical client](how-to-run-the-local-api.md) | The local HTTP API, discovery, authentication, and the live event stream. |
 | [How to run an action when work changes](how-to-use-hooks.md) | Events, executable actions, notifications, and where to inspect failures. |
 | [How to change the appearance and language](how-to-change-appearance-and-language.md) | Color themes, persona themes, and application language preferences. |
 | [How to keep and recover the board](how-to-back-up-and-recover.md) | Database snapshots, restore, search integrity, and recovery before deletion. |

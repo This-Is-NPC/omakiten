@@ -31,6 +31,9 @@ and runs the terminal against that isolated selection and database. Git and
 repository access are needed when installing the workflow. `mise run tui:bare`
 uses the existing installed development selection.
 
+`mise run serve` runs the local HTTP daemon against the same development state.
+Its discovery file and token land under `dev_env/state/`.
+
 `mise run install` instead installs into the user's real application roots,
 runs setup, and registers the checkout. Use it when verifying the installation
 flow, rather than as a prerequisite for every code change.

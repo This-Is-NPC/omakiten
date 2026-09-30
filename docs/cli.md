@@ -67,6 +67,7 @@ working directory. Configuration discovery is described in
 | `db backup`, `check`, `reindex` | Recovery snapshots and search-index maintenance. |
 | `completion` | Shell completion from the command tree. |
 | `tui` | Open the interactive terminal. |
+| `serve` | Serve every project to graphical clients over a [local HTTP API](how-to-run-the-local-api.md). |
 
 ## Read the result
 

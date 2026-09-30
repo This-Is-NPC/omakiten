@@ -20,8 +20,12 @@ preset registry is needed to activate an installed package.
 flowchart TD
     Entry[cmd/okt] --> CLI[cli]
     Entry --> Terminal[terminal]
+    Entry --> Daemon[daemon]
     Terminal --> TUI[tui]
     Terminal --> Runtime[agentruntime]
+    Daemon --> HTTPAPI[httpapi]
+    Daemon --> Runtime
+    HTTPAPI --> Operations
     CLI --> Runtime
     CLI --> Operations[operation]
     Runtime --> Operations
@@ -40,8 +44,10 @@ through ports. SQLite and configuration storage are leaf adapters, isolated
 from each other.
 
 TUI imports no CLI, concrete operation service, runtime, or storage adapter.
-`internal/terminal` binds its ports and starts Bubble Tea. CLI receives an
-injected interactive runner and imports no TUI. The executable composes both.
+`internal/terminal` binds its ports and starts Bubble Tea. `internal/httpapi`
+imports no runtime or storage adapter; `internal/daemon` binds its runtime and
+event-log ports. CLI receives both runners injected and imports neither
+adapter. The executable composes all three.
 
 | Owner | Responsibility |
 | --- | --- |
@@ -52,6 +58,8 @@ injected interactive runner and imports no TUI. The executable composes both.
 | `internal/cli` | Cobra contracts, help, completion, scope selection, and output. |
 | `internal/terminal` | Production bindings for interactive ports. |
 | `internal/tui` | Host, routes, screen state, overlays, and asynchronous delivery. |
+| `internal/httpapi` | Loopback HTTP routes, Bearer authentication, SSE hub, and the generated OpenAPI document. |
+| `internal/daemon` | Server composition, per-project runtime resolution, event-log tailing, lock, token, and discovery file. |
 | `internal/config` | Package schema, loading, validation, identities, and snapshots. |
 | `internal/configstore` | Filesystem adapter for staged package and asset edits. |
 | `internal/sqlite` | Transactions, operational queries, events, and live snapshots. |
@@ -59,6 +67,7 @@ injected interactive runner and imports no TUI. The executable composes both.
 | `internal/workfile` | Bounded UTF-8 OKF Markdown codec. |
 | `internal/knowledgefile` | File-backed Markdown, OpenAPI, and CLI knowledge reader. |
 | `internal/recovery` | Recovery images, directory leases, and retention. |
+| `internal/filelock` | Non-blocking advisory file locks shared by leases and the daemon. |
 | `internal/installer`, `internal/updater` | Package capture, setup, and executable updates. |
 | `internal/releaseverify`, `internal/releasemeta` | Release verification policy and metadata. |
 
@@ -122,6 +131,11 @@ The event bus dispatches hooks; each runtime owns an engine and action registry.
 Admission, cancellation, and bounded drain belong to the engine. Notification
 actions contain structured operation arguments; terminal bindings execute
 them without invoking Cobra or parsing CLI output.
+
+The bus is in-process, so the daemon streams from the events table instead.
+It polls `PRAGMA data_version`, which moves when any connection commits, and
+reads rows after its id cursor. Writes from the CLI, TUI, agents, and the API
+reach SSE clients through that one read.
 
 ## 6. Presentation ownership
 
