@@ -10,14 +10,14 @@ const (
 	SurfaceKindWiring  SurfaceKind = "wiring"
 
 	// CanonicalSurfaceCount is the closed size of operation.Service.
-	CanonicalSurfaceCount = 74
+	CanonicalSurfaceCount = 75
 
 	// DeniedWiringReason is the default reason token for wiring rows.
 	// Stored as an intl token; not resolved at load.
 	DeniedWiringReason = "${{intl:operations.denied.wiring}}"
 )
 
-// SurfaceCensusEntry is one row of the canonical 74-slug census.
+// SurfaceCensusEntry is one row of the canonical census.
 type SurfaceCensusEntry struct {
 	Slug string
 	Kind SurfaceKind
@@ -84,6 +84,7 @@ var CanonicalSurfaceCensus = []SurfaceCensusEntry{
 	{Slug: "task.export", Kind: SurfaceKindProduct},
 	{Slug: "task.import", Kind: SurfaceKindProduct},
 	{Slug: "task.list", Kind: SurfaceKindProduct},
+	{Slug: "task.show", Kind: SurfaceKindProduct},
 	{Slug: "task.transition", Kind: SurfaceKindProduct},
 	{Slug: "task.unarchive", Kind: SurfaceKindProduct},
 	{Slug: "task_activity.list", Kind: SurfaceKindProduct},
@@ -101,7 +102,7 @@ var CanonicalSurfaceCensus = []SurfaceCensusEntry{
 	{Slug: "wiring.synonyms", Kind: SurfaceKindWiring},
 }
 
-// CanonicalSurfaceTable returns the shipped default 74-row table:
+// CanonicalSurfaceTable returns the shipped default table:
 // product all-true, wiring all-false with DeniedWiringReason. Each call
 // allocates a fresh map and fresh bool pointers so tests can mutate a
 // row without aliasing the rest of the table.

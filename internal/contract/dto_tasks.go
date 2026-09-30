@@ -66,6 +66,18 @@ type ContinueTaskInput struct {
 	IncludeWorkflow *bool `json:"include_workflow,omitempty"`
 }
 
+type ShowTaskInput struct {
+	ProjectSelector
+	TaskID int64 `json:"task_id"`
+}
+
+type ShowTaskResponse struct {
+	Project      ProjectSummary      `json:"project"`
+	Task         TaskSummary         `json:"task"`
+	Dependencies []DependencySummary `json:"dependencies,omitempty"`
+	Comments     []CommentSummary    `json:"comments,omitempty"`
+}
+
 type ContinueTaskResponse struct {
 	Project        ProjectSummary      `json:"project"`
 	Task           TaskSummary         `json:"task"`

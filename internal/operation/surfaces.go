@@ -66,7 +66,7 @@ func (s *Service) ForHTTP() *Service {
 }
 
 // allow is the first line of every product method. Wiring methods and
-// TUI-shaped extras that are not in the 74-slug census must not call it.
+// TUI-shaped extras that are not in the census must not call it.
 // Zero surface, a nil snapshot, or an empty table are unrestricted.
 func (s *Service) allow(op string) error {
 	if s == nil || s.surface == "" {

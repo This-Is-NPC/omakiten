@@ -40,7 +40,7 @@ working directory. Configuration discovery is described in
 | `init`, `projects list`, `projects delete` | Register, discover, and remove projects. |
 | `project overview`, `project resume`, `project edit` | Read project state, recover context, and edit its description. |
 | `task create`, `task import`, `task export` | Create work and move structured work documents. |
-| `task continue`, `task activity` | Recover a task and read its activity. |
+| `task show`, `task continue`, `task activity` | Read a task with every comment, recover it for an agent, and read its activity. |
 | `list`, `edit`, `move` | List work, change fields, and request a workflow transition. |
 | `assign`, `archive`, `unarchive`, `delete` | Assignment and task lifecycle. |
 | `comment add`, `list`, `edit`, `delete` | Task, project, and universal comments. |

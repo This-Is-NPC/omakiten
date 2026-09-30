@@ -11,7 +11,7 @@ import (
 	"omakiten/defaults"
 )
 
-// withCanonicalSurfaces appends the shipped 74-row surfaces table to a
+// withCanonicalSurfaces appends the shipped surfaces table to a
 // wiring YAML fixture that omitted it, so LoadBundle completeness checks
 // pass. Fixtures that already declare surfaces: are left unchanged.
 func withCanonicalSurfaces(src string) string {
@@ -126,8 +126,8 @@ func TestCanonicalSurfaceCensusIsClosed(t *testing.T) {
 			t.Fatalf("slug %q: unknown kind %q", e.Slug, e.Kind)
 		}
 	}
-	if product != 65 || wiring != 9 {
-		t.Fatalf("census split product=%d wiring=%d, want 65/9", product, wiring)
+	if product != 66 || wiring != 9 {
+		t.Fatalf("census split product=%d wiring=%d, want 66/9", product, wiring)
 	}
 }
 

@@ -92,6 +92,7 @@ keys:
   cli.progress.record.flag.comment: "optional progress comment"
   cli.progress.record.flag.author-type: "comment author type: human or agent"
   cli.task.short: Create, import, export, continue and inspect tasks
+  cli.task.show.short: "Show a task with its dependencies and every comment"
   cli.task.continue.short: "Load a task with dependencies, comments, and workflow context"
   cli.task.continue.flag.include-workflow: "include workflow block (default true; pass false to skip)"
   cli.task.activity.short: "List the unified activity feed for a task"

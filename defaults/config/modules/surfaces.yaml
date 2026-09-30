@@ -66,6 +66,7 @@ task.edit: { cli: true, tui: true, http: true }
 task.export: { cli: true, tui: true, http: true }
 task.import: { cli: true, tui: true, http: true }
 task.list: { cli: true, tui: true, http: true }
+task.show: { cli: true, tui: true, http: true }
 task.transition: { cli: true, tui: true, http: true }
 task.unarchive: { cli: true, tui: true, http: true }
 task_activity.list: { cli: true, tui: true, http: true }

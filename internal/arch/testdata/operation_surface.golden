@@ -57,6 +57,7 @@ task.edit product
 task.export product
 task.import product
 task.list product
+task.show product
 task.transition product
 task.unarchive product
 task_activity.list product
