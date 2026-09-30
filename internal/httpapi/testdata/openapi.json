@@ -1,0 +1,2891 @@
+{
+  "components": {
+    "schemas": {
+      "contract.AssignTaskResponse": {
+        "properties": {
+          "event": {
+            "$ref": "#/components/schemas/contract.EventSummary"
+          },
+          "project": {
+            "$ref": "#/components/schemas/contract.ProjectSummary"
+          },
+          "task": {
+            "$ref": "#/components/schemas/contract.TaskSummary"
+          }
+        },
+        "required": [
+          "event",
+          "project",
+          "task"
+        ],
+        "type": "object"
+      },
+      "contract.BucketCount": {
+        "properties": {
+          "bucket_key": {
+            "type": "string"
+          },
+          "count": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "bucket_key",
+          "count"
+        ],
+        "type": "object"
+      },
+      "contract.BucketSummary": {
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "position": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "key",
+          "name",
+          "position"
+        ],
+        "type": "object"
+      },
+      "contract.CommentResponse": {
+        "properties": {
+          "comment": {
+            "$ref": "#/components/schemas/contract.CommentSummary"
+          },
+          "project": {
+            "$ref": "#/components/schemas/contract.ProjectSummary"
+          }
+        },
+        "required": [
+          "comment",
+          "project"
+        ],
+        "type": "object"
+      },
+      "contract.CommentSummary": {
+        "properties": {
+          "author_type": {
+            "type": "string"
+          },
+          "body": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string"
+          },
+          "id": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "pinned": {
+            "type": "boolean"
+          },
+          "scope": {
+            "type": "string"
+          },
+          "tags": {
+            "items": {
+              "$ref": "#/components/schemas/contract.TagSummary"
+            },
+            "type": "array"
+          },
+          "task_id": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "title": {
+            "type": "string"
+          },
+          "updated_at": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "author_type",
+          "body",
+          "id",
+          "task_id"
+        ],
+        "type": "object"
+      },
+      "contract.CommentsResponse": {
+        "properties": {
+          "comments": {
+            "items": {
+              "$ref": "#/components/schemas/contract.CommentSummary"
+            },
+            "type": "array"
+          },
+          "project": {
+            "$ref": "#/components/schemas/contract.ProjectSummary"
+          }
+        },
+        "required": [
+          "comments",
+          "project"
+        ],
+        "type": "object"
+      },
+      "contract.Confirmation": {
+        "properties": {
+          "options": {
+            "items": {
+              "$ref": "#/components/schemas/contract.ConfirmationOption"
+            },
+            "type": "array"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "requires_confirmation": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "requires_confirmation"
+        ],
+        "type": "object"
+      },
+      "contract.ConfirmationOption": {
+        "properties": {
+          "action": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "action",
+          "label"
+        ],
+        "type": "object"
+      },
+      "contract.CreateTaskResponse": {
+        "properties": {
+          "confirmation": {
+            "$ref": "#/components/schemas/contract.Confirmation"
+          },
+          "project": {
+            "$ref": "#/components/schemas/contract.ProjectSummary"
+          },
+          "similar_tasks": {
+            "items": {
+              "$ref": "#/components/schemas/contract.TaskSummary"
+            },
+            "type": "array"
+          },
+          "task": {
+            "$ref": "#/components/schemas/contract.TaskSummary"
+          },
+          "template": {
+            "$ref": "#/components/schemas/contract.TaskTemplateSummary"
+          }
+        },
+        "required": [
+          "project"
+        ],
+        "type": "object"
+      },
+      "contract.DependenciesResponse": {
+        "properties": {
+          "dependencies": {
+            "items": {
+              "$ref": "#/components/schemas/contract.DependencySummary"
+            },
+            "type": "array"
+          },
+          "project": {
+            "$ref": "#/components/schemas/contract.ProjectSummary"
+          }
+        },
+        "required": [
+          "dependencies",
+          "project"
+        ],
+        "type": "object"
+      },
+      "contract.DependencySummary": {
+        "properties": {
+          "depends_on_task_id": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "task_id": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "depends_on_task_id",
+          "task_id"
+        ],
+        "type": "object"
+      },
+      "contract.EditTaskResponse": {
+        "properties": {
+          "project": {
+            "$ref": "#/components/schemas/contract.ProjectSummary"
+          },
+          "task": {
+            "$ref": "#/components/schemas/contract.TaskSummary"
+          }
+        },
+        "required": [
+          "project",
+          "task"
+        ],
+        "type": "object"
+      },
+      "contract.EventSummary": {
+        "properties": {
+          "author_type": {
+            "type": "string"
+          },
+          "body": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string"
+          },
+          "event_type": {
+            "type": "string"
+          },
+          "id": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "payload": {
+            "type": "string"
+          },
+          "tags": {
+            "items": {
+              "$ref": "#/components/schemas/contract.TagSummary"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "created_at",
+          "event_type",
+          "id"
+        ],
+        "type": "object"
+      },
+      "contract.InsightsModelSummary": {
+        "properties": {
+          "agent_model": {
+            "type": "string"
+          },
+          "avg_dwell_days": {
+            "type": "number"
+          },
+          "dwell_samples": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "first_stamped_at": {
+            "type": "string"
+          },
+          "guard_violations": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "guards_per_task": {
+            "type": "number"
+          },
+          "partial": {
+            "type": "boolean"
+          },
+          "sample_size": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "agent_model",
+          "avg_dwell_days",
+          "dwell_samples",
+          "first_stamped_at",
+          "guard_violations",
+          "guards_per_task",
+          "partial",
+          "sample_size"
+        ],
+        "type": "object"
+      },
+      "contract.InsightsPerModelSummary": {
+        "properties": {
+          "has_data": {
+            "type": "boolean"
+          },
+          "models": {
+            "items": {
+              "$ref": "#/components/schemas/contract.InsightsModelSummary"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "has_data",
+          "models"
+        ],
+        "type": "object"
+      },
+      "contract.InsightsSummaryBoard": {
+        "properties": {
+          "cycle_time": {
+            "$ref": "#/components/schemas/domain.CycleTimeInsight"
+          },
+          "error_loop": {
+            "$ref": "#/components/schemas/domain.ErrorLoopInsight"
+          },
+          "guards": {
+            "$ref": "#/components/schemas/domain.GuardInsight"
+          },
+          "per_model": {
+            "$ref": "#/components/schemas/contract.InsightsPerModelSummary"
+          },
+          "stuck": {
+            "$ref": "#/components/schemas/domain.StuckInsight"
+          },
+          "stuck_days": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "wip": {
+            "$ref": "#/components/schemas/domain.WIPInsight"
+          }
+        },
+        "required": [
+          "cycle_time",
+          "error_loop",
+          "guards",
+          "per_model",
+          "stuck",
+          "stuck_days",
+          "wip"
+        ],
+        "type": "object"
+      },
+      "contract.InsightsSummaryResponse": {
+        "properties": {
+          "insights": {
+            "$ref": "#/components/schemas/contract.InsightsSummaryBoard"
+          },
+          "project": {
+            "$ref": "#/components/schemas/contract.ProjectSummary"
+          },
+          "schema_version": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "insights",
+          "schema_version"
+        ],
+        "type": "object"
+      },
+      "contract.ListLogsResponse": {
+        "properties": {
+          "order": {
+            "type": "string"
+          },
+          "project": {
+            "$ref": "#/components/schemas/contract.ProjectSummary"
+          },
+          "rows": {
+            "items": {
+              "$ref": "#/components/schemas/contract.LogsRow"
+            },
+            "type": "array"
+          },
+          "window_since": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "order",
+          "project",
+          "rows"
+        ],
+        "type": "object"
+      },
+      "contract.ListPlansResponse": {
+        "properties": {
+          "plans": {
+            "items": {
+              "$ref": "#/components/schemas/contract.PlanSummary"
+            },
+            "type": "array"
+          },
+          "project": {
+            "$ref": "#/components/schemas/contract.ProjectSummary"
+          }
+        },
+        "required": [
+          "plans",
+          "project"
+        ],
+        "type": "object"
+      },
+      "contract.ListTaskActivityResponse": {
+        "properties": {
+          "events": {
+            "items": {
+              "$ref": "#/components/schemas/contract.EventSummary"
+            },
+            "type": "array"
+          },
+          "order": {
+            "type": "string"
+          },
+          "project": {
+            "$ref": "#/components/schemas/contract.ProjectSummary"
+          }
+        },
+        "required": [
+          "events",
+          "order",
+          "project"
+        ],
+        "type": "object"
+      },
+      "contract.ListTasksResponse": {
+        "properties": {
+          "project": {
+            "$ref": "#/components/schemas/contract.ProjectSummary"
+          },
+          "tasks": {
+            "items": {
+              "$ref": "#/components/schemas/contract.TaskSummary"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "project",
+          "tasks"
+        ],
+        "type": "object"
+      },
+      "contract.LogsRow": {
+        "properties": {
+          "agent_model": {
+            "type": "string"
+          },
+          "author_type": {
+            "type": "string"
+          },
+          "body": {
+            "type": "string"
+          },
+          "category": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string"
+          },
+          "duration_ms": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "entity_id": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "entity_type": {
+            "type": "string"
+          },
+          "error_message": {
+            "type": "string"
+          },
+          "event_type": {
+            "type": "string"
+          },
+          "finished_at": {
+            "type": "string"
+          },
+          "id": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "payload": {
+            "type": "string"
+          },
+          "project_id": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "project_slug": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "summary": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "category",
+          "event_type",
+          "id",
+          "summary"
+        ],
+        "type": "object"
+      },
+      "contract.MetricsSummaryResponse": {
+        "properties": {
+          "project": {
+            "$ref": "#/components/schemas/contract.ProjectSummary"
+          },
+          "summary": {
+            "$ref": "#/components/schemas/domain.MetricsSummary"
+          }
+        },
+        "required": [
+          "summary"
+        ],
+        "type": "object"
+      },
+      "contract.MoveTaskResponse": {
+        "properties": {
+          "project": {
+            "$ref": "#/components/schemas/contract.ProjectSummary"
+          },
+          "task": {
+            "$ref": "#/components/schemas/contract.TaskSummary"
+          }
+        },
+        "required": [
+          "project",
+          "task"
+        ],
+        "type": "object"
+      },
+      "contract.OverviewResponse": {
+        "properties": {
+          "next_step_prompt": {
+            "type": "string"
+          },
+          "pending_count": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "project": {
+            "$ref": "#/components/schemas/contract.ProjectSummary"
+          },
+          "task_buckets": {
+            "items": {
+              "$ref": "#/components/schemas/contract.BucketCount"
+            },
+            "type": "array"
+          },
+          "workflow": {
+            "$ref": "#/components/schemas/contract.WorkflowSummary"
+          }
+        },
+        "required": [
+          "next_step_prompt",
+          "pending_count",
+          "project",
+          "workflow"
+        ],
+        "type": "object"
+      },
+      "contract.PlanSummary": {
+        "properties": {
+          "completed_at": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string"
+          },
+          "goal_body": {
+            "type": "string"
+          },
+          "id": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          },
+          "slug": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "updated_at": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "slug",
+          "status"
+        ],
+        "type": "object"
+      },
+      "contract.PlanTaskRow": {
+        "properties": {
+          "assigned_to": {
+            "type": "string"
+          },
+          "bucket_key": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string"
+          },
+          "task_id": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "task_id",
+          "title"
+        ],
+        "type": "object"
+      },
+      "contract.PlanWaveView": {
+        "properties": {
+          "done_count": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "id": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          },
+          "position": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "tasks": {
+            "items": {
+              "$ref": "#/components/schemas/contract.PlanTaskRow"
+            },
+            "type": "array"
+          },
+          "total_count": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "done_count",
+          "id",
+          "name",
+          "position",
+          "total_count"
+        ],
+        "type": "object"
+      },
+      "contract.ProjectSummary": {
+        "properties": {
+          "id": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          },
+          "root_path": {
+            "type": "string"
+          },
+          "slug": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "root_path",
+          "slug"
+        ],
+        "type": "object"
+      },
+      "contract.ResumeProjectResponse": {
+        "properties": {
+          "blocked_work": {
+            "items": {
+              "$ref": "#/components/schemas/contract.TaskSummary"
+            },
+            "type": "array"
+          },
+          "dependencies": {
+            "items": {
+              "$ref": "#/components/schemas/contract.DependencySummary"
+            },
+            "type": "array"
+          },
+          "likely_next_work": {
+            "items": {
+              "$ref": "#/components/schemas/contract.TaskSummary"
+            },
+            "type": "array"
+          },
+          "next_step_prompt": {
+            "type": "string"
+          },
+          "project": {
+            "$ref": "#/components/schemas/contract.ProjectSummary"
+          },
+          "task_buckets": {
+            "items": {
+              "$ref": "#/components/schemas/contract.BucketCount"
+            },
+            "type": "array"
+          },
+          "workflow": {
+            "$ref": "#/components/schemas/contract.WorkflowSummary"
+          }
+        },
+        "required": [
+          "next_step_prompt",
+          "project",
+          "workflow"
+        ],
+        "type": "object"
+      },
+      "contract.SearchHitDTO": {
+        "properties": {
+          "entity_type": {
+            "type": "string"
+          },
+          "id": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "project_id": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "score": {
+            "type": "number"
+          },
+          "snippet": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "entity_type",
+          "id",
+          "project_id",
+          "score",
+          "snippet"
+        ],
+        "type": "object"
+      },
+      "contract.SearchResponse": {
+        "properties": {
+          "hits": {
+            "items": {
+              "$ref": "#/components/schemas/contract.SearchHitDTO"
+            },
+            "type": "array"
+          },
+          "project": {
+            "$ref": "#/components/schemas/contract.ProjectSummary"
+          }
+        },
+        "required": [
+          "hits",
+          "project"
+        ],
+        "type": "object"
+      },
+      "contract.ShowPlanResponse": {
+        "properties": {
+          "active_wave_id": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "done_count": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "percent": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "plan": {
+            "$ref": "#/components/schemas/contract.PlanSummary"
+          },
+          "project": {
+            "$ref": "#/components/schemas/contract.ProjectSummary"
+          },
+          "total_count": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "waves": {
+            "items": {
+              "$ref": "#/components/schemas/contract.PlanWaveView"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "done_count",
+          "percent",
+          "plan",
+          "project",
+          "total_count",
+          "waves"
+        ],
+        "type": "object"
+      },
+      "contract.ShowTaskResponse": {
+        "properties": {
+          "comments": {
+            "items": {
+              "$ref": "#/components/schemas/contract.CommentSummary"
+            },
+            "type": "array"
+          },
+          "dependencies": {
+            "items": {
+              "$ref": "#/components/schemas/contract.DependencySummary"
+            },
+            "type": "array"
+          },
+          "project": {
+            "$ref": "#/components/schemas/contract.ProjectSummary"
+          },
+          "task": {
+            "$ref": "#/components/schemas/contract.TaskSummary"
+          }
+        },
+        "required": [
+          "project",
+          "task"
+        ],
+        "type": "object"
+      },
+      "contract.TagSummary": {
+        "properties": {
+          "id": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "label": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "usage_count": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "label",
+          "name"
+        ],
+        "type": "object"
+      },
+      "contract.TaskSummary": {
+        "properties": {
+          "bucket_key": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "id": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "parent_id": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "priority": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "title"
+        ],
+        "type": "object"
+      },
+      "contract.TaskTemplateSummary": {
+        "properties": {
+          "body": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "slug": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "body",
+          "slug"
+        ],
+        "type": "object"
+      },
+      "contract.TransitionSummary": {
+        "properties": {
+          "from": {
+            "type": "string"
+          },
+          "to": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "from",
+          "to"
+        ],
+        "type": "object"
+      },
+      "contract.WorkflowResponse": {
+        "properties": {
+          "project": {
+            "$ref": "#/components/schemas/contract.ProjectSummary"
+          },
+          "workflow": {
+            "$ref": "#/components/schemas/contract.WorkflowSummary"
+          }
+        },
+        "required": [
+          "project",
+          "workflow"
+        ],
+        "type": "object"
+      },
+      "contract.WorkflowSummary": {
+        "properties": {
+          "buckets": {
+            "items": {
+              "$ref": "#/components/schemas/contract.BucketSummary"
+            },
+            "type": "array"
+          },
+          "key": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "transitions": {
+            "items": {
+              "$ref": "#/components/schemas/contract.TransitionSummary"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "key",
+          "name"
+        ],
+        "type": "object"
+      },
+      "domain.AgentMetrics": {
+        "properties": {
+          "agent_model": {
+            "type": "string"
+          },
+          "buckets": {
+            "additionalProperties": {
+              "format": "int32",
+              "type": "integer"
+            },
+            "type": "object"
+          },
+          "like_rate": {
+            "type": "number"
+          },
+          "search_before_record_ratio": {
+            "type": "number"
+          },
+          "session_correlated_sample": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "agent_model",
+          "buckets",
+          "like_rate",
+          "search_before_record_ratio",
+          "session_correlated_sample"
+        ],
+        "type": "object"
+      },
+      "domain.BucketDwell": {
+        "properties": {
+          "avg_dwell_days": {
+            "type": "number"
+          },
+          "from_bucket": {
+            "type": "string"
+          },
+          "samples": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "avg_dwell_days",
+          "from_bucket",
+          "samples"
+        ],
+        "type": "object"
+      },
+      "domain.BucketWIP": {
+        "properties": {
+          "bucket_id": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "count": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "bucket_id",
+          "count"
+        ],
+        "type": "object"
+      },
+      "domain.CycleTimeInsight": {
+        "properties": {
+          "bottleneck": {
+            "type": "string"
+          },
+          "buckets": {
+            "items": {
+              "$ref": "#/components/schemas/domain.BucketDwell"
+            },
+            "type": "array"
+          },
+          "has_data": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "buckets",
+          "has_data"
+        ],
+        "type": "object"
+      },
+      "domain.ErrorLoopInsight": {
+        "properties": {
+          "has_data": {
+            "type": "boolean"
+          },
+          "open": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "resolved": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "total": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "has_data",
+          "open",
+          "resolved",
+          "total"
+        ],
+        "type": "object"
+      },
+      "domain.GuardHotspot": {
+        "properties": {
+          "hits": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "recent_7d": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "rule": {
+            "type": "string"
+          },
+          "tag": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "hits",
+          "recent_7d",
+          "rule",
+          "tag"
+        ],
+        "type": "object"
+      },
+      "domain.GuardInsight": {
+        "properties": {
+          "has_data": {
+            "type": "boolean"
+          },
+          "hotspots": {
+            "items": {
+              "$ref": "#/components/schemas/domain.GuardHotspot"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "has_data",
+          "hotspots"
+        ],
+        "type": "object"
+      },
+      "domain.MetricsSummary": {
+        "properties": {
+          "by_model": {
+            "items": {
+              "$ref": "#/components/schemas/domain.AgentMetrics"
+            },
+            "type": "array"
+          },
+          "period": {
+            "type": "string"
+          },
+          "since": {
+            "type": "string"
+          },
+          "total": {
+            "$ref": "#/components/schemas/domain.AgentMetrics"
+          }
+        },
+        "required": [
+          "by_model",
+          "period",
+          "total"
+        ],
+        "type": "object"
+      },
+      "domain.Project": {
+        "properties": {
+          "description": {
+            "type": "string"
+          },
+          "id": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          },
+          "root_path": {
+            "type": "string"
+          },
+          "slug": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "description",
+          "id",
+          "name",
+          "root_path",
+          "slug"
+        ],
+        "type": "object"
+      },
+      "domain.StuckInsight": {
+        "properties": {
+          "has_data": {
+            "type": "boolean"
+          },
+          "tasks": {
+            "items": {
+              "$ref": "#/components/schemas/domain.StuckTask"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "has_data",
+          "tasks"
+        ],
+        "type": "object"
+      },
+      "domain.StuckTask": {
+        "properties": {
+          "bucket_id": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "days_stuck": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "task_id": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "bucket_id",
+          "days_stuck",
+          "task_id",
+          "title"
+        ],
+        "type": "object"
+      },
+      "domain.WIPInsight": {
+        "properties": {
+          "buckets": {
+            "items": {
+              "$ref": "#/components/schemas/domain.BucketWIP"
+            },
+            "type": "array"
+          },
+          "has_data": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "buckets",
+          "has_data"
+        ],
+        "type": "object"
+      },
+      "httpapi.AssigneeBody": {
+        "properties": {
+          "assignee": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "assignee"
+        ],
+        "type": "object"
+      },
+      "httpapi.CatalogResponse": {
+        "properties": {
+          "entries": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "language": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "entries",
+          "language"
+        ],
+        "type": "object"
+      },
+      "httpapi.CommentBody": {
+        "properties": {
+          "body": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "pinned": {
+            "type": "boolean"
+          },
+          "tags": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "template_slug": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "body"
+        ],
+        "type": "object"
+      },
+      "httpapi.CreateTaskBody": {
+        "properties": {
+          "bucket_key": {
+            "type": "string"
+          },
+          "confirmed": {
+            "type": "boolean"
+          },
+          "description": {
+            "type": "string"
+          },
+          "parent_id": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "priority": {
+            "type": "string"
+          },
+          "template_slug": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "description"
+        ],
+        "type": "object"
+      },
+      "httpapi.EditTaskBody": {
+        "properties": {
+          "description": {
+            "type": "string"
+          },
+          "parent_id": {},
+          "priority": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "httpapi.HealthResponse": {
+        "properties": {
+          "status": {
+            "type": "string"
+          },
+          "version": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "version"
+        ],
+        "type": "object"
+      },
+      "httpapi.TransitionBody": {
+        "properties": {
+          "bucket_key": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "bucket_key"
+        ],
+        "type": "object"
+      },
+      "output.Envelope": {
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "data": {},
+          "details": {
+            "additionalProperties": {},
+            "type": "object"
+          },
+          "msg": {
+            "type": "string"
+          },
+          "ok": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "type": "object"
+      }
+    },
+    "securitySchemes": {
+      "bearer": {
+        "scheme": "bearer",
+        "type": "http"
+      }
+    }
+  },
+  "info": {
+    "title": "Omakiten local API",
+    "version": "1"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/api/v1/catalog": {
+      "get": {
+        "operationId": "getCatalog",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/httpapi.CatalogResponse"
+                    },
+                    "ok": {
+                      "const": true
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success."
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/output.Envelope"
+                }
+              }
+            },
+            "description": "Error envelope."
+          }
+        },
+        "summary": "Text for the GUI language preference."
+      }
+    },
+    "/api/v1/events": {
+      "get": {
+        "operationId": "streamEvents",
+        "parameters": [
+          {
+            "description": "Project slug; repeatable or comma-separated.",
+            "in": "query",
+            "name": "project",
+            "required": true,
+            "schema": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            }
+          },
+          {
+            "description": "Event category; repeatable or comma-separated.",
+            "in": "query",
+            "name": "category",
+            "required": false,
+            "schema": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "$ref": "#/components/schemas/contract.LogsRow"
+                }
+              }
+            },
+            "description": "Success."
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/output.Envelope"
+                }
+              }
+            },
+            "description": "Error envelope."
+          }
+        },
+        "summary": "Server-sent stream of committed events. Each message id is the event id; send Last-Event-ID to resume. An `event: resync` message asks the client to reload its lists.",
+        "x-okt-surface": "logs.list"
+      }
+    },
+    "/api/v1/projects": {
+      "get": {
+        "operationId": "listProjects",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "items": {
+                        "$ref": "#/components/schemas/domain.Project"
+                      },
+                      "type": "array"
+                    },
+                    "ok": {
+                      "const": true
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success."
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/output.Envelope"
+                }
+              }
+            },
+            "description": "Error envelope."
+          }
+        },
+        "summary": "Registered projects.",
+        "x-okt-surface": "project.list"
+      }
+    },
+    "/api/v1/projects/{project}": {
+      "get": {
+        "operationId": "getProject",
+        "parameters": [
+          {
+            "description": "Project slug.",
+            "in": "path",
+            "name": "project",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/contract.OverviewResponse"
+                    },
+                    "ok": {
+                      "const": true
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success."
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/output.Envelope"
+                }
+              }
+            },
+            "description": "Error envelope."
+          }
+        },
+        "summary": "Project overview with bucket counts.",
+        "x-okt-surface": "project.overview"
+      }
+    },
+    "/api/v1/projects/{project}/dependencies": {
+      "get": {
+        "operationId": "listDependencies",
+        "parameters": [
+          {
+            "description": "Project slug.",
+            "in": "path",
+            "name": "project",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Limit to one task id.",
+            "in": "query",
+            "name": "task",
+            "required": false,
+            "schema": {
+              "format": "int64",
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/contract.DependenciesResponse"
+                    },
+                    "ok": {
+                      "const": true
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success."
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/output.Envelope"
+                }
+              }
+            },
+            "description": "Error envelope."
+          }
+        },
+        "summary": "Task dependencies of a project.",
+        "x-okt-surface": "dependency.list"
+      }
+    },
+    "/api/v1/projects/{project}/insights": {
+      "get": {
+        "operationId": "getInsights",
+        "parameters": [
+          {
+            "description": "Project slug.",
+            "in": "path",
+            "name": "project",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Days without movement that mark a task stuck.",
+            "in": "query",
+            "name": "stuck_days",
+            "required": false,
+            "schema": {
+              "format": "int32",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/contract.InsightsSummaryResponse"
+                    },
+                    "ok": {
+                      "const": true
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success."
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/output.Envelope"
+                }
+              }
+            },
+            "description": "Error envelope."
+          }
+        },
+        "summary": "Today's insights for a project.",
+        "x-okt-surface": "insights.summary"
+      }
+    },
+    "/api/v1/projects/{project}/logs": {
+      "get": {
+        "operationId": "listLogs",
+        "parameters": [
+          {
+            "description": "Project slug.",
+            "in": "path",
+            "name": "project",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Event category; repeatable or comma-separated.",
+            "in": "query",
+            "name": "category",
+            "required": false,
+            "schema": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            }
+          },
+          {
+            "description": "Window such as `24h` or `7d`.",
+            "in": "query",
+            "name": "since",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Row cap.",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "format": "int32",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "`asc` or `desc` (default).",
+            "in": "query",
+            "name": "order",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/contract.ListLogsResponse"
+                    },
+                    "ok": {
+                      "const": true
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success."
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/output.Envelope"
+                }
+              }
+            },
+            "description": "Error envelope."
+          }
+        },
+        "summary": "Event log of a project.",
+        "x-okt-surface": "logs.list"
+      }
+    },
+    "/api/v1/projects/{project}/metrics": {
+      "get": {
+        "operationId": "getMetrics",
+        "parameters": [
+          {
+            "description": "Project slug.",
+            "in": "path",
+            "name": "project",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Window such as `7d`.",
+            "in": "query",
+            "name": "period",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/contract.MetricsSummaryResponse"
+                    },
+                    "ok": {
+                      "const": true
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success."
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/output.Envelope"
+                }
+              }
+            },
+            "description": "Error envelope."
+          }
+        },
+        "summary": "Task and event metrics for a project.",
+        "x-okt-surface": "metrics.summary"
+      }
+    },
+    "/api/v1/projects/{project}/plans": {
+      "get": {
+        "operationId": "listPlans",
+        "parameters": [
+          {
+            "description": "Project slug.",
+            "in": "path",
+            "name": "project",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/contract.ListPlansResponse"
+                    },
+                    "ok": {
+                      "const": true
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success."
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/output.Envelope"
+                }
+              }
+            },
+            "description": "Error envelope."
+          }
+        },
+        "summary": "Plans of a project.",
+        "x-okt-surface": "plan.list"
+      }
+    },
+    "/api/v1/projects/{project}/plans/{plan}": {
+      "get": {
+        "operationId": "getPlan",
+        "parameters": [
+          {
+            "description": "Project slug.",
+            "in": "path",
+            "name": "project",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Plan slug.",
+            "in": "path",
+            "name": "plan",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/contract.ShowPlanResponse"
+                    },
+                    "ok": {
+                      "const": true
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success."
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/output.Envelope"
+                }
+              }
+            },
+            "description": "Error envelope."
+          }
+        },
+        "summary": "A plan with its waves and tasks.",
+        "x-okt-surface": "plan.show"
+      }
+    },
+    "/api/v1/projects/{project}/resume": {
+      "get": {
+        "operationId": "resumeProject",
+        "parameters": [
+          {
+            "description": "Project slug.",
+            "in": "path",
+            "name": "project",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/contract.ResumeProjectResponse"
+                    },
+                    "ok": {
+                      "const": true
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success."
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/output.Envelope"
+                }
+              }
+            },
+            "description": "Error envelope."
+          }
+        },
+        "summary": "Context to resume work on a project.",
+        "x-okt-surface": "project.resume"
+      }
+    },
+    "/api/v1/projects/{project}/search": {
+      "get": {
+        "operationId": "search",
+        "parameters": [
+          {
+            "description": "Project slug.",
+            "in": "path",
+            "name": "project",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Search query.",
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Entity type filter; repeatable or comma-separated.",
+            "in": "query",
+            "name": "type",
+            "required": false,
+            "schema": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/contract.SearchResponse"
+                    },
+                    "ok": {
+                      "const": true
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success."
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/output.Envelope"
+                }
+              }
+            },
+            "description": "Error envelope."
+          }
+        },
+        "summary": "Full-text search within a project.",
+        "x-okt-surface": "search"
+      }
+    },
+    "/api/v1/projects/{project}/tasks": {
+      "get": {
+        "operationId": "listTasks",
+        "parameters": [
+          {
+            "description": "Project slug.",
+            "in": "path",
+            "name": "project",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Bucket key filter.",
+            "in": "query",
+            "name": "bucket",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "`root` for root tasks or a parent task id.",
+            "in": "query",
+            "name": "parent",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/contract.ListTasksResponse"
+                    },
+                    "ok": {
+                      "const": true
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success."
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/output.Envelope"
+                }
+              }
+            },
+            "description": "Error envelope."
+          }
+        },
+        "summary": "Tasks of a project.",
+        "x-okt-surface": "task.list"
+      },
+      "post": {
+        "operationId": "createTask",
+        "parameters": [
+          {
+            "description": "Project slug.",
+            "in": "path",
+            "name": "project",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/httpapi.CreateTaskBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/contract.CreateTaskResponse"
+                    },
+                    "ok": {
+                      "const": true
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success."
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/output.Envelope"
+                }
+              }
+            },
+            "description": "Error envelope."
+          }
+        },
+        "summary": "Create a task; similar work requires confirmation.",
+        "x-okt-surface": "task.create_intent"
+      }
+    },
+    "/api/v1/projects/{project}/tasks/{task}": {
+      "get": {
+        "operationId": "getTask",
+        "parameters": [
+          {
+            "description": "Project slug.",
+            "in": "path",
+            "name": "project",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Task id.",
+            "in": "path",
+            "name": "task",
+            "required": true,
+            "schema": {
+              "format": "int64",
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/contract.ShowTaskResponse"
+                    },
+                    "ok": {
+                      "const": true
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success."
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/output.Envelope"
+                }
+              }
+            },
+            "description": "Error envelope."
+          }
+        },
+        "summary": "A task with dependencies and every comment.",
+        "x-okt-surface": "task.show"
+      },
+      "patch": {
+        "operationId": "editTask",
+        "parameters": [
+          {
+            "description": "Project slug.",
+            "in": "path",
+            "name": "project",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Task id.",
+            "in": "path",
+            "name": "task",
+            "required": true,
+            "schema": {
+              "format": "int64",
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/httpapi.EditTaskBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/contract.EditTaskResponse"
+                    },
+                    "ok": {
+                      "const": true
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success."
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/output.Envelope"
+                }
+              }
+            },
+            "description": "Error envelope."
+          }
+        },
+        "summary": "Edit task fields.",
+        "x-okt-surface": "task.edit"
+      }
+    },
+    "/api/v1/projects/{project}/tasks/{task}/activity": {
+      "get": {
+        "operationId": "listTaskActivity",
+        "parameters": [
+          {
+            "description": "Project slug.",
+            "in": "path",
+            "name": "project",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Task id.",
+            "in": "path",
+            "name": "task",
+            "required": true,
+            "schema": {
+              "format": "int64",
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "`asc` (default) or `desc`.",
+            "in": "query",
+            "name": "order",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/contract.ListTaskActivityResponse"
+                    },
+                    "ok": {
+                      "const": true
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success."
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/output.Envelope"
+                }
+              }
+            },
+            "description": "Error envelope."
+          }
+        },
+        "summary": "Unified activity feed of a task.",
+        "x-okt-surface": "task_activity.list"
+      }
+    },
+    "/api/v1/projects/{project}/tasks/{task}/assignee": {
+      "put": {
+        "operationId": "assignTask",
+        "parameters": [
+          {
+            "description": "Project slug.",
+            "in": "path",
+            "name": "project",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Task id.",
+            "in": "path",
+            "name": "task",
+            "required": true,
+            "schema": {
+              "format": "int64",
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/httpapi.AssigneeBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/contract.AssignTaskResponse"
+                    },
+                    "ok": {
+                      "const": true
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success."
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/output.Envelope"
+                }
+              }
+            },
+            "description": "Error envelope."
+          }
+        },
+        "summary": "Set or clear the task assignee.",
+        "x-okt-surface": "task.assign"
+      }
+    },
+    "/api/v1/projects/{project}/tasks/{task}/comments": {
+      "get": {
+        "operationId": "listTaskComments",
+        "parameters": [
+          {
+            "description": "Project slug.",
+            "in": "path",
+            "name": "project",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Task id.",
+            "in": "path",
+            "name": "task",
+            "required": true,
+            "schema": {
+              "format": "int64",
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/contract.CommentsResponse"
+                    },
+                    "ok": {
+                      "const": true
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success."
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/output.Envelope"
+                }
+              }
+            },
+            "description": "Error envelope."
+          }
+        },
+        "summary": "Comments of a task.",
+        "x-okt-surface": "comment.list"
+      },
+      "post": {
+        "operationId": "addTaskComment",
+        "parameters": [
+          {
+            "description": "Project slug.",
+            "in": "path",
+            "name": "project",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Task id.",
+            "in": "path",
+            "name": "task",
+            "required": true,
+            "schema": {
+              "format": "int64",
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/httpapi.CommentBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/contract.CommentResponse"
+                    },
+                    "ok": {
+                      "const": true
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success."
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/output.Envelope"
+                }
+              }
+            },
+            "description": "Error envelope."
+          }
+        },
+        "summary": "Add a human comment to a task.",
+        "x-okt-surface": "comment.add"
+      }
+    },
+    "/api/v1/projects/{project}/tasks/{task}/transitions": {
+      "post": {
+        "operationId": "moveTask",
+        "parameters": [
+          {
+            "description": "Project slug.",
+            "in": "path",
+            "name": "project",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Task id.",
+            "in": "path",
+            "name": "task",
+            "required": true,
+            "schema": {
+              "format": "int64",
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/httpapi.TransitionBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/contract.MoveTaskResponse"
+                    },
+                    "ok": {
+                      "const": true
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success."
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/output.Envelope"
+                }
+              }
+            },
+            "description": "Error envelope."
+          }
+        },
+        "summary": "Move a task through a workflow transition.",
+        "x-okt-surface": "task.transition"
+      }
+    },
+    "/api/v1/projects/{project}/workflow": {
+      "get": {
+        "operationId": "getWorkflow",
+        "parameters": [
+          {
+            "description": "Project slug.",
+            "in": "path",
+            "name": "project",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/contract.WorkflowResponse"
+                    },
+                    "ok": {
+                      "const": true
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success."
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/output.Envelope"
+                }
+              }
+            },
+            "description": "Error envelope."
+          }
+        },
+        "summary": "Buckets, transitions, and permissions.",
+        "x-okt-surface": "workflow.show"
+      }
+    },
+    "/health": {
+      "get": {
+        "operationId": "getHealth",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/httpapi.HealthResponse"
+                    },
+                    "ok": {
+                      "const": true
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success."
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/output.Envelope"
+                }
+              }
+            },
+            "description": "Error envelope."
+          }
+        },
+        "security": [],
+        "summary": "Daemon liveness; needs no token."
+      }
+    }
+  },
+  "security": [
+    {
+      "bearer": []
+    }
+  ]
+}

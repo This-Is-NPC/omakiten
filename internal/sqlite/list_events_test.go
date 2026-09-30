@@ -59,6 +59,28 @@ func TestListEventsEmptyFilterReturnsAllRows(t *testing.T) {
 	}
 }
 
+func TestListEventsAfterIDCursor(t *testing.T) {
+	ctx := context.Background()
+	store := openStoreFixture(t, t.TempDir()+"/omakiten.db")
+	now := time.Now().UTC()
+
+	first := seedEvent(ctx, t, store, 1, domain.EventTypeTaskCreated, now.Add(-2*time.Hour))
+	second := seedEvent(ctx, t, store, 2, domain.EventTypeComment, now.Add(-1*time.Hour))
+	third := seedEvent(ctx, t, store, 1, domain.EventTypeTaskMoved, now.Add(-3*time.Hour))
+
+	got, err := store.ListEvents(ctx, domain.EventFilter{AfterID: first, Order: "desc"})
+	if err != nil {
+		t.Fatalf("ListEvents() error = %v", err)
+	}
+	if len(got) != 2 || got[0].ID != second || got[1].ID != third {
+		t.Fatalf("ids after %d = %+v, want [%d %d] in id order", first, got, second, third)
+	}
+	latest, err := store.LatestEventID(ctx)
+	if err != nil || latest != third {
+		t.Fatalf("LatestEventID() = %d, %v; want %d", latest, err, third)
+	}
+}
+
 // TestListEventsSingleCategoryFilter locks AC#2 — a single category
 // only returns rows whose event_type belongs to that category.
 func TestListEventsSingleCategoryFilter(t *testing.T) {

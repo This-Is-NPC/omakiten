@@ -14,7 +14,7 @@ for target in "${targets[@]}"; do
   mkdir -p .tmp/tests
   packages=(config paths)
   if [[ "${target%/*}" != plan9 ]]; then
-    packages+=(sqlite)
+    packages+=(sqlite filelock)
   fi
   for package in "${packages[@]}"; do
     printf 'Compiling %s for %s\n' "$package" "$target"

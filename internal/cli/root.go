@@ -122,6 +122,7 @@ func (r *runtime) activeSnapshot() *config.Snapshot {
 // none of their implementations.
 type Runners struct {
 	Interactive func(context.Context, agentruntime.Session) error
+	Serve       func(context.Context, agentruntime.Session, contract.ServeOptions) error
 }
 
 func NewRootCommand(version string, runners Runners) *cobra.Command {
@@ -184,6 +185,7 @@ func addRootCommands(cmd *cobra.Command, opts *runtimeOptions, version string, r
 	cmd.AddCommand(newKnowledgeCommand(opts))
 	cmd.AddCommand(newTagCommand(opts))
 	cmd.AddCommand(newTUICommand(opts, version, runners.Interactive))
+	cmd.AddCommand(newServeCommand(opts, version, runners.Serve))
 	cmd.AddCommand(newCommandCommand(opts))
 	cmd.AddCommand(newSetupCommand(opts))
 	cmd.AddCommand(newUninstallCommand(opts))

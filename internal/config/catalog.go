@@ -70,6 +70,41 @@ func (c *Catalog) Get(key string) string {
 	return key
 }
 
+// Entries returns every resolvable key with its text: baseline values
+// overlaid by the active language. The map is a fresh copy.
+func (c *Catalog) Entries() map[string]string {
+	out := map[string]string{}
+	if c == nil {
+		return out
+	}
+	if c.baseline != nil {
+		for key, value := range c.baseline.Keys {
+			out[key] = value
+		}
+	}
+	if c.active != nil {
+		for key, value := range c.active.Keys {
+			out[key] = value
+		}
+	}
+	return out
+}
+
+// Code returns the active language code, or the baseline code when no
+// active language is loaded.
+func (c *Catalog) Code() string {
+	switch {
+	case c == nil:
+		return ""
+	case c.active != nil:
+		return c.active.Code
+	case c.baseline != nil:
+		return c.baseline.Code
+	default:
+		return ""
+	}
+}
+
 // tokenPattern matches optional `$` escape + `${{namespace:key}}`.
 // Group 1: escape prefix (empty or "$"). Group 2: namespace
 // ([a-zA-Z][a-zA-Z0-9_-]*). Group 3: key ([a-zA-Z0-9._-]+).

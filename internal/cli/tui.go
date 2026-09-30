@@ -25,35 +25,24 @@ func newTUICommand(opts *runtimeOptions, version string, run func(context.Contex
 }
 
 func runTUI(ctx context.Context, opts *runtimeOptions, version string, run func(context.Context, agentruntime.Session) error) error {
-	rt, err := opts.open(ctx, true)
+	ctx = activity.WithAgent(ctx, "tui", "tui", "human", "")
+	session, rt, err := opts.openSession(ctx, version)
 	if err != nil {
-		emitTUIHealthCheckFailedFromOpenError(ctx, opts, err)
+		if rt == nil {
+			emitTUIHealthCheckFailedFromOpenError(ctx, opts, err)
+		}
 		return err
 	}
 	defer rt.close()
-
-	ctx = activity.WithAgent(ctx, "tui", "tui", "human", "")
 	ctx = rt.WithActivityRepo(ctx)
 
-	project, err := opts.resolveProject(ctx, rt.store)
-	if err != nil {
-		// Without an explicit --project / --project-id, an unresolvable CWD
-		// is not an error — it is the trigger for the multi-project Home
-		// screen. Explicit flags must still 404 loudly so typos are caught.
-		if opts.projectID == 0 && opts.project == "" && isProjectNotFoundError(err) {
-			project = domain.ProjectContext{}
-		} else {
-			return err
-		}
-	}
-	snap := rt.activeSnapshot()
-	if err := snap.ThemeError(); err != nil {
+	if err := session.Snapshot.ThemeError(); err != nil {
 		// Theme snapshot failures aren't caught by `opts.open`'s
 		// LoadBundle path — the snapshot is built from the loaded
 		// bundle, and an unresolvable theme slug surfaces here as
 		// a distinct boot guard. Reuse the same envelope shape so
 		// the user sees consistent kind + remediation copy.
-		warnings := extractBundleWarnings(config.Bundle{Warnings: snap.Warnings()})
+		warnings := extractBundleWarnings(config.Bundle{Warnings: session.Snapshot.Warnings()})
 		firstKind := classifyValidationError(err)
 		return domain.NewError(
 			domain.ErrConfigInvalid,
@@ -64,7 +53,29 @@ func runTUI(ctx context.Context, opts *runtimeOptions, version string, run func(
 	if run == nil {
 		return fmt.Errorf("interactive runner is not installed")
 	}
-	return run(ctx, agentruntime.Session{CacheProjectID: rt.projectID, Store: rt.store, Cache: rt.cache, Project: project, ConfigPath: rt.configPath, DBPath: rt.dbPath, RepoLocalDir: rt.repoLocalDir, Version: version, Snapshot: snap})
+	return run(ctx, session)
+}
+
+// openSession opens the runtime for a long-lived delivery adapter. Without
+// an explicit --project / --project-id, a working directory outside every
+// registered project is not an error: the session starts with no project,
+// which is the multi-project Home for the TUI. Explicit flags must still
+// 404 loudly so typos are caught. rt is nil when the runtime did not open.
+func (o *runtimeOptions) openSession(ctx context.Context, version string) (agentruntime.Session, *runtime, error) {
+	rt, err := o.open(ctx, true)
+	if err != nil {
+		return agentruntime.Session{}, nil, err
+	}
+	project, err := o.resolveProject(ctx, rt.store)
+	if err != nil {
+		if o.projectID == 0 && o.project == "" && isProjectNotFoundError(err) {
+			project = domain.ProjectContext{}
+		} else {
+			rt.close()
+			return agentruntime.Session{}, rt, err
+		}
+	}
+	return agentruntime.Session{CacheProjectID: rt.projectID, Store: rt.store, Cache: rt.cache, Project: project, ConfigPath: rt.configPath, DBPath: rt.dbPath, RepoLocalDir: rt.repoLocalDir, Version: version, Snapshot: rt.activeSnapshot()}, rt, nil
 }
 
 // isProjectNotFoundError returns true when the resolver signalled that the
