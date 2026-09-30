@@ -8,6 +8,9 @@ import (
 
 func TestTaskBoardCountsRelationsWithinProject(t *testing.T) {
 	fixture := newAgentFixture(t)
+	if _, err := fixture.service.AddTag(fixture.ctx, contract.AddTagInput{EntityType: "task", EntityID: fixture.taskA1.ID, TagName: "layout"}); err != nil {
+		t.Fatalf("AddTag() error = %v", err)
+	}
 
 	board, err := fixture.service.TaskBoard(fixture.ctx, contract.TaskBoardInput{})
 	if err != nil {
@@ -31,5 +34,9 @@ func TestTaskBoardCountsRelationsWithinProject(t *testing.T) {
 	}
 	if counts[fixture.taskA1.ID].Priority == "" {
 		t.Fatalf("A1 priority label missing: %+v", counts[fixture.taskA1.ID])
+	}
+	// The board carries the label the TUI shows, not the normalised name.
+	if got := counts[fixture.taskA1.ID].Tags; len(got) != 1 || got[0] != "Layout" {
+		t.Fatalf("A1 tags = %v, want the label [Layout]", got)
 	}
 }

@@ -48,7 +48,7 @@ func (s *Service) TaskBoard(ctx context.Context, input contract.TaskBoardInput) 
 			row.PriorityColor = definition.Color
 		}
 		for _, tag := range snap.TaskTagsByID[task.ID] {
-			row.Tags = append(row.Tags, tag.Name)
+			row.Tags = append(row.Tags, tag.Label)
 		}
 		board = append(board, row)
 	}
