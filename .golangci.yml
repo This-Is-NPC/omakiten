@@ -170,6 +170,10 @@ linters:
               desc: agentruntime is independent of delivery implementations
             - pkg: omakiten/internal/cli
               desc: agentruntime is independent of delivery implementations
+            - pkg: omakiten/internal/httpapi
+              desc: agentruntime is independent of delivery implementations
+            - pkg: omakiten/internal/daemon
+              desc: the daemon composes the headless runtime
 
         runtime-has-no-terminal:
           list-mode: lax
@@ -190,6 +194,42 @@ linters:
               desc: the interactive runner is injected by the executable
             - pkg: omakiten/internal/terminal
               desc: the executable owns interactive composition
+            - pkg: omakiten/internal/httpapi
+              desc: the server runner is injected by the executable
+            - pkg: omakiten/internal/daemon
+              desc: the executable owns server composition
+
+        httpapi-talks-to-ports:
+          list-mode: lax
+          files:
+            - "**/internal/httpapi/**"
+          deny:
+            - pkg: omakiten/internal/app
+              desc: httpapi receives operation and runtime ports
+            - pkg: omakiten/internal/agentruntime
+              desc: the daemon binds the runtime outside the HTTP adapter
+            - pkg: omakiten/internal/sqlite
+              desc: httpapi receives an event-log port
+            - pkg: omakiten/internal/configstore
+              desc: httpapi receives filesystem ports
+            - pkg: omakiten/internal/recovery
+              desc: maintenance is an operation
+            - pkg: omakiten/internal/cli
+              desc: delivery adapters are independent
+            - pkg: omakiten/internal/tui
+              desc: delivery adapters are independent
+            - pkg: omakiten/internal/terminal
+              desc: delivery adapters are independent
+            - pkg: omakiten/internal/daemon
+              desc: the daemon composes the HTTP adapter
+
+        filelock-is-a-leaf:
+          list-mode: lax
+          files:
+            - "**/internal/filelock/**"
+          deny:
+            - pkg: omakiten/internal
+              desc: filelock is a leaf primitive
 
         tui-talks-to-ports:
           list-mode: lax
@@ -210,6 +250,10 @@ linters:
               desc: tui receives repository ports
             - pkg: omakiten/internal/recovery
               desc: project deletion is an injected operation
+            - pkg: omakiten/internal/httpapi
+              desc: delivery adapters are independent
+            - pkg: omakiten/internal/daemon
+              desc: delivery adapters are independent
 
         contracts-have-no-implementations:
           list-mode: lax
@@ -236,6 +280,10 @@ linters:
               desc: this package consumes contracts rather than delivery implementations
             - pkg: omakiten/internal/updater
               desc: this package consumes contracts rather than delivery implementations
+            - pkg: omakiten/internal/httpapi
+              desc: this package consumes contracts rather than delivery implementations
+            - pkg: omakiten/internal/daemon
+              desc: this package consumes contracts rather than delivery implementations
 
         configuration-has-no-delivery:
           list-mode: lax
@@ -248,6 +296,10 @@ linters:
               desc: this package consumes contracts rather than delivery implementations
             - pkg: omakiten/internal/terminal
               desc: this package consumes contracts rather than delivery implementations
+            - pkg: omakiten/internal/httpapi
+              desc: this package consumes contracts rather than delivery implementations
+            - pkg: omakiten/internal/daemon
+              desc: this package consumes contracts rather than delivery implementations
 
         operations-have-no-delivery:
           list-mode: lax
@@ -259,6 +311,10 @@ linters:
             - pkg: omakiten/internal/cli
               desc: this package consumes contracts rather than delivery implementations
             - pkg: omakiten/internal/terminal
+              desc: this package consumes contracts rather than delivery implementations
+            - pkg: omakiten/internal/httpapi
+              desc: this package consumes contracts rather than delivery implementations
+            - pkg: omakiten/internal/daemon
               desc: this package consumes contracts rather than delivery implementations
 
         screens-do-not-import-operation:

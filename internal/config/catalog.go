@@ -10,7 +10,8 @@ import (
 // hand out independent catalogs per delivery layer. CLI drives cobra
 // help/usage chrome; TUI drives terminal-UI labels and screens. New
 // surfaces (notifications, agent) reuse one of these today rather than
-// adding fragmentation.
+// adding fragmentation. GUI drives the text the local HTTP API resolves
+// for graphical clients.
 type Surface int
 
 const (
@@ -18,6 +19,8 @@ const (
 	SurfaceCLI Surface = iota
 	// SurfaceTUI selects the catalog resolved against languages.tui.
 	SurfaceTUI
+	// SurfaceGUI selects the catalog resolved against languages.gui.
+	SurfaceGUI
 )
 
 // Language contains a bundled application's locale metadata and translations.
@@ -65,6 +68,41 @@ func (c *Catalog) Get(key string) string {
 	}
 	slog.Debug("catalog: key missing from active and baseline; returning key literal", "key", key)
 	return key
+}
+
+// Entries returns every resolvable key with its text: baseline values
+// overlaid by the active language. The map is a fresh copy.
+func (c *Catalog) Entries() map[string]string {
+	out := map[string]string{}
+	if c == nil {
+		return out
+	}
+	if c.baseline != nil {
+		for key, value := range c.baseline.Keys {
+			out[key] = value
+		}
+	}
+	if c.active != nil {
+		for key, value := range c.active.Keys {
+			out[key] = value
+		}
+	}
+	return out
+}
+
+// Code returns the active language code, or the baseline code when no
+// active language is loaded.
+func (c *Catalog) Code() string {
+	switch {
+	case c == nil:
+		return ""
+	case c.active != nil:
+		return c.active.Code
+	case c.baseline != nil:
+		return c.baseline.Code
+	default:
+		return ""
+	}
 }
 
 // tokenPattern matches optional `$` escape + `${{namespace:key}}`.

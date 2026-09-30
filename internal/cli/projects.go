@@ -10,6 +10,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"omakiten/internal/agentruntime"
+	"omakiten/internal/contract"
 	"omakiten/internal/domain"
 	"omakiten/internal/sqlite"
 )
@@ -85,22 +86,18 @@ func runProjectsDelete(ctx context.Context, cmd *cobra.Command, opts *runtimeOpt
 		}
 	}
 
-	backup, _, err := buildCLIBackupService(cmd, opts, rt.dbPath, true)
-	if err != nil {
+	svc := rt.operationService()
+	if err := bindMaintenance(cmd, opts, svc, agentruntime.MaintenanceOptions{DBPath: rt.dbPath, Projects: rt.store}, true); err != nil {
 		return nil, err
 	}
-	result, err := agentruntime.DeleteProject(ctx, rt.store, backup, project.ID, counters)
+	result, err := svc.DeleteProject(ctx, contract.ProjectDeleteInput{ProjectID: project.ID, Counters: counters})
 	if err != nil {
 		return nil, err
 	}
 
+	printPruneWarnings(cmd, opts, result.PruneWarnings)
 	fmt.Fprintf(cmd.ErrOrStderr(), opts.t("cli.projects.delete.success_fmt")+"\n", result.Project.Slug, result.BackupPath)
-	return map[string]any{
-		"project":     result.Project,
-		"counters":    result.Counters,
-		"backup_path": result.BackupPath,
-		"event_type":  result.EventType,
-	}, nil
+	return result, nil
 }
 
 // resolveProjectTarget accepts either a numeric id or a slug. Numeric

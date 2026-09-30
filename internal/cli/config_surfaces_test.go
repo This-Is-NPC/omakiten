@@ -13,7 +13,7 @@ import (
 )
 
 func TestConfigSurfacesScaffoldEmitsCanonicalTable(t *testing.T) {
-	cmd := NewRootCommand("test")
+	cmd := NewRootCommand("test", Runners{})
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetArgs([]string{"config", "surfaces", "--scaffold"})
@@ -46,20 +46,15 @@ func assertCanonicalSurfaceTable(t *testing.T, table config.SurfaceTable) {
 }
 
 func assertCanonicalSurfaceRow(t *testing.T, slug string, got, want config.SurfacePolicy) {
-	if want.Reason != "" {
-		if got.Reason != want.Reason {
-			t.Errorf("%s: reason = %q, want %q", slug, got.Reason, want.Reason)
-		}
-		if got.CLI == nil || *got.CLI || got.TUI == nil || *got.TUI {
-			t.Errorf("%s: wiring row = %+v, want all false", slug, got)
-		}
+	if got.CLI == nil || got.TUI == nil || got.HTTP == nil {
+		t.Errorf("%s: row = %+v, want every surface declared", slug, got)
 		return
 	}
-	if got.CLI == nil || !*got.CLI || got.TUI == nil || !*got.TUI {
-		t.Errorf("%s: product row = %+v, want all true", slug, got)
+	if *got.CLI != *want.CLI || *got.TUI != *want.TUI || *got.HTTP != *want.HTTP {
+		t.Errorf("%s: cli/tui/http = %v/%v/%v, want %v/%v/%v", slug, *got.CLI, *got.TUI, *got.HTTP, *want.CLI, *want.TUI, *want.HTTP)
 	}
-	if strings.TrimSpace(got.Reason) != "" {
-		t.Errorf("%s: product reason = %q, want empty", slug, got.Reason)
+	if strings.TrimSpace(got.Reason) != want.Reason {
+		t.Errorf("%s: reason = %q, want %q", slug, got.Reason, want.Reason)
 	}
 }
 
@@ -104,7 +99,7 @@ func TestConfigSurfacesCheckMissingSlugIsError(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read surfaces module: %v", err)
 	}
-	stripped := strings.Replace(string(raw), "task.delete: { cli: true, tui: true, }\n", "", 1)
+	stripped := strings.Replace(string(raw), "task.delete: { cli: true, tui: true, http: true }\n", "", 1)
 	if stripped == string(raw) {
 		t.Fatal("surfaces module did not contain the task.delete row to strip")
 	}
@@ -134,7 +129,7 @@ func TestConfigSurfacesCheckMissingSlugIsError(t *testing.T) {
 }
 
 func TestConfigSurfacesRequiresExactlyOneFlag(t *testing.T) {
-	cmd := NewRootCommand("test")
+	cmd := NewRootCommand("test", Runners{})
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetArgs([]string{"config", "surfaces"})
@@ -144,7 +139,7 @@ func TestConfigSurfacesRequiresExactlyOneFlag(t *testing.T) {
 }
 
 func TestConfigSurfacesRejectsBothFlags(t *testing.T) {
-	cmd := NewRootCommand("test")
+	cmd := NewRootCommand("test", Runners{})
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetArgs([]string{"config", "surfaces", "--scaffold", "--check"})

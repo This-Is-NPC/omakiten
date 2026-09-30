@@ -32,7 +32,7 @@ func TestRunTUI_BrokenConfigReturnsStructuredEnvelope(t *testing.T) {
 		t.Fatalf("write broken yaml: %v", err)
 	}
 
-	cmd := NewRootCommand("test")
+	cmd := NewRootCommand("test", Runners{})
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -162,7 +162,7 @@ func TestRunTUI_BrokenConfigEmitsTUIHealthCheckFailed(t *testing.T) {
 		t.Fatalf("write broken yaml: %v", err)
 	}
 
-	cmd := NewRootCommand("test")
+	cmd := NewRootCommand("test", Runners{})
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)

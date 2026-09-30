@@ -13,7 +13,7 @@ import (
 	"omakiten/internal/testutil"
 )
 
-// The operation surface is the 74-slug census, not every exported
+// The operation surface is the census, not every exported
 // operation.Service method. Service still carries TUI extras outside
 // that table; reflecting the type would snapshot the wrong contract.
 // CanonicalSurfaceCensus is the single source of truth — validator,
@@ -33,11 +33,11 @@ func TestOperationSurfaceMatchesItsGolden(t *testing.T) {
 
 // assertOperationSurfaceListingNotVacuous refuses to pass on an empty
 // census. An empty listing compares equal to an empty golden — green,
-// and covering nothing. The floor is CanonicalSurfaceCount itself (74),
+// and covering nothing. The floor is CanonicalSurfaceCount itself,
 // so shrinking the census without updating the constant still fails.
 func assertOperationSurfaceListingNotVacuous(t *testing.T, listing string) {
 	t.Helper()
-	if got, want := config.CanonicalSurfaceCount, 74; got != want {
+	if got, want := config.CanonicalSurfaceCount, 78; got != want {
 		t.Fatalf("CanonicalSurfaceCount = %d, want %d — the census floor moved without a reviewable golden", got, want)
 	}
 	if got, want := len(config.CanonicalSurfaceCensus), config.CanonicalSurfaceCount; got != want {

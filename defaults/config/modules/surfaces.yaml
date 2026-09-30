@@ -1,83 +1,88 @@
-# Canonical surfaces table (74 operation.Service methods).
+# Canonical surfaces table (operation.Service census).
 # Shared by every kit via:
 #   surfaces:
 #     from: ./modules/surfaces.yaml
 #
 # Sibling of workflows: — not nested under workflow.operations (domain guards).
-# Product (65): cli/tui true. Wiring (9): all false + reason token.
+# Product rows: cli/tui/http true. Destructive rows: off HTTP + reason token.
+# Wiring rows: all false + reason token.
 # Tokens are stored as-is; the catalog resolves them at display time.
 
-command.list: { cli: true, tui: true, }
-command.resolve: { cli: true, tui: true, }
-comment.add: { cli: true, tui: true, }
-comment.delete: { cli: true, tui: true, }
-comment.edit: { cli: true, tui: true, }
-comment.list: { cli: true, tui: true, }
-dependency.add: { cli: true, tui: true, }
-dependency.list: { cli: true, tui: true, }
-dependency.remove: { cli: true, tui: true, }
-error.record: { cli: true, tui: true, }
-insights.summary: { cli: true, tui: true, }
-law.get: { cli: true, tui: true, }
-law.list: { cli: true, tui: true, }
-logs.list: { cli: true, tui: true, }
-metrics.summary: { cli: true, tui: true, }
-orphans.migrate: { cli: true, tui: true, }
-persona.get: { cli: true, tui: true, }
-persona.list: { cli: true, tui: true, }
-plan.continue: { cli: true, tui: true, }
-plan.create: { cli: true, tui: true, }
-plan.delete: { cli: true, tui: true, }
-plan.edit: { cli: true, tui: true, }
-plan.export: { cli: true, tui: true, }
-plan.import: { cli: true, tui: true, }
-plan.list: { cli: true, tui: true, }
-plan.show: { cli: true, tui: true, }
-plan.task.assign: { cli: true, tui: true, }
-plan.task.claim_next: { cli: true, tui: true, }
-plan.task.unassign: { cli: true, tui: true, }
-plan.wave.add: { cli: true, tui: true, }
-plan.wave.remove: { cli: true, tui: true, }
-plan.wave.rename: { cli: true, tui: true, }
-plan.wave.reorder: { cli: true, tui: true, }
-progress.record: { cli: true, tui: true, }
-project.edit: { cli: true, tui: true, }
-project.overview: { cli: true, tui: true, }
-project.list: { cli: true, tui: true }
-project.resume: { cli: true, tui: true, }
-search: { cli: true, tui: true, }
-skill.get: { cli: true, tui: true, }
-skill.list: { cli: true, tui: true, }
-solution.add: { cli: true, tui: true, }
-solution.confirm: { cli: true, tui: true, }
-solution.list_top: { cli: true, tui: true, }
-tag.add: { cli: true, tui: true, }
-tag.list: { cli: true, tui: true, }
-tag.list_all: { cli: true, tui: true, }
-tag.merge: { cli: true, tui: true, }
-tag.remove: { cli: true, tui: true, }
-task.archive: { cli: true, tui: true, }
-task.assign: { cli: true, tui: true, }
-task.continue: { cli: true, tui: true, }
-task.create: { cli: true, tui: true, }
-task.create_intent: { cli: true, tui: true, }
-task.delete: { cli: true, tui: true, }
-task.edit: { cli: true, tui: true, }
-task.export: { cli: true, tui: true, }
-task.import: { cli: true, tui: true, }
-task.list: { cli: true, tui: true, }
-task.transition: { cli: true, tui: true, }
-task.unarchive: { cli: true, tui: true, }
-task_activity.list: { cli: true, tui: true, }
-template.list: { cli: true, tui: true, }
-template.show: { cli: true, tui: true, }
-workflow.show: { cli: true, tui: true, }
-wiring.command_description: { cli: false, tui: false, reason: "${{intl:operations.denied.wiring}}" }
-wiring.selector: { cli: false, tui: false, reason: "${{intl:operations.denied.wiring}}" }
-wiring.set_now: { cli: false, tui: false, reason: "${{intl:operations.denied.wiring}}" }
-wiring.set_orphan_service: { cli: false, tui: false, reason: "${{intl:operations.denied.wiring}}" }
-wiring.set_project_selector: { cli: false, tui: false, reason: "${{intl:operations.denied.wiring}}" }
-wiring.set_settings: { cli: false, tui: false, reason: "${{intl:operations.denied.wiring}}" }
-wiring.set_snapshot: { cli: false, tui: false, reason: "${{intl:operations.denied.wiring}}" }
-wiring.snapshot: { cli: false, tui: false, reason: "${{intl:operations.denied.wiring}}" }
-wiring.synonyms: { cli: false, tui: false, reason: "${{intl:operations.denied.wiring}}" }
+command.list: { cli: true, tui: true, http: true }
+command.resolve: { cli: true, tui: true, http: true }
+comment.add: { cli: true, tui: true, http: true }
+comment.delete: { cli: true, tui: true, http: true }
+comment.edit: { cli: true, tui: true, http: true }
+comment.list: { cli: true, tui: true, http: true }
+db.backup: { cli: true, tui: true, http: false, reason: "${{intl:operations.denied.destructive_http}}" }
+db.reindex: { cli: true, tui: true, http: false, reason: "${{intl:operations.denied.destructive_http}}" }
+dependency.add: { cli: true, tui: true, http: true }
+dependency.list: { cli: true, tui: true, http: true }
+dependency.remove: { cli: true, tui: true, http: true }
+error.record: { cli: true, tui: true, http: true }
+insights.summary: { cli: true, tui: true, http: true }
+law.get: { cli: true, tui: true, http: true }
+law.list: { cli: true, tui: true, http: true }
+logs.list: { cli: true, tui: true, http: true }
+metrics.summary: { cli: true, tui: true, http: true }
+orphans.migrate: { cli: true, tui: true, http: true }
+persona.get: { cli: true, tui: true, http: true }
+persona.list: { cli: true, tui: true, http: true }
+plan.continue: { cli: true, tui: true, http: true }
+plan.create: { cli: true, tui: true, http: true }
+plan.delete: { cli: true, tui: true, http: true }
+plan.edit: { cli: true, tui: true, http: true }
+plan.export: { cli: true, tui: true, http: true }
+plan.import: { cli: true, tui: true, http: true }
+plan.list: { cli: true, tui: true, http: true }
+plan.show: { cli: true, tui: true, http: true }
+plan.task.assign: { cli: true, tui: true, http: true }
+plan.task.claim_next: { cli: true, tui: true, http: true }
+plan.task.unassign: { cli: true, tui: true, http: true }
+plan.wave.add: { cli: true, tui: true, http: true }
+plan.wave.remove: { cli: true, tui: true, http: true }
+plan.wave.rename: { cli: true, tui: true, http: true }
+plan.wave.reorder: { cli: true, tui: true, http: true }
+progress.record: { cli: true, tui: true, http: true }
+project.delete: { cli: true, tui: true, http: false, reason: "${{intl:operations.denied.destructive_http}}" }
+project.edit: { cli: true, tui: true, http: true }
+project.overview: { cli: true, tui: true, http: true }
+project.list: { cli: true, tui: true, http: true }
+project.resume: { cli: true, tui: true, http: true }
+search: { cli: true, tui: true, http: true }
+skill.get: { cli: true, tui: true, http: true }
+skill.list: { cli: true, tui: true, http: true }
+solution.add: { cli: true, tui: true, http: true }
+solution.confirm: { cli: true, tui: true, http: true }
+solution.list_top: { cli: true, tui: true, http: true }
+tag.add: { cli: true, tui: true, http: true }
+tag.list: { cli: true, tui: true, http: true }
+tag.list_all: { cli: true, tui: true, http: true }
+tag.merge: { cli: true, tui: true, http: true }
+tag.remove: { cli: true, tui: true, http: true }
+task.archive: { cli: true, tui: true, http: true }
+task.assign: { cli: true, tui: true, http: true }
+task.continue: { cli: true, tui: true, http: true }
+task.create: { cli: true, tui: true, http: true }
+task.create_intent: { cli: true, tui: true, http: true }
+task.delete: { cli: true, tui: true, http: true }
+task.edit: { cli: true, tui: true, http: true }
+task.export: { cli: true, tui: true, http: true }
+task.import: { cli: true, tui: true, http: true }
+task.list: { cli: true, tui: true, http: true }
+task.show: { cli: true, tui: true, http: true }
+task.transition: { cli: true, tui: true, http: true }
+task.unarchive: { cli: true, tui: true, http: true }
+task_activity.list: { cli: true, tui: true, http: true }
+template.list: { cli: true, tui: true, http: true }
+template.show: { cli: true, tui: true, http: true }
+workflow.show: { cli: true, tui: true, http: true }
+wiring.command_description: { cli: false, tui: false, http: false, reason: "${{intl:operations.denied.wiring}}" }
+wiring.selector: { cli: false, tui: false, http: false, reason: "${{intl:operations.denied.wiring}}" }
+wiring.set_now: { cli: false, tui: false, http: false, reason: "${{intl:operations.denied.wiring}}" }
+wiring.set_orphan_service: { cli: false, tui: false, http: false, reason: "${{intl:operations.denied.wiring}}" }
+wiring.set_project_selector: { cli: false, tui: false, http: false, reason: "${{intl:operations.denied.wiring}}" }
+wiring.set_settings: { cli: false, tui: false, http: false, reason: "${{intl:operations.denied.wiring}}" }
+wiring.set_snapshot: { cli: false, tui: false, http: false, reason: "${{intl:operations.denied.wiring}}" }
+wiring.snapshot: { cli: false, tui: false, http: false, reason: "${{intl:operations.denied.wiring}}" }
+wiring.synonyms: { cli: false, tui: false, http: false, reason: "${{intl:operations.denied.wiring}}" }

@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"omakiten/internal/config"
+	"omakiten/internal/domain"
 )
 
 // Surface is the construction-time identity of a facade consumer.
@@ -13,8 +14,9 @@ import (
 type Surface string
 
 const (
-	SurfaceCLI Surface = "cli"
-	SurfaceTUI Surface = "tui"
+	SurfaceCLI  Surface = "cli"
+	SurfaceTUI  Surface = "tui"
+	SurfaceHTTP Surface = "http"
 )
 
 // OperationDenied is returned when the surfaces table turns the
@@ -30,6 +32,23 @@ func (e OperationDenied) Error() string {
 		return fmt.Sprintf("operation %q denied on %s: %s", e.Op, e.Surface, e.Reason)
 	}
 	return fmt.Sprintf("operation %q denied on %s", e.Op, e.Surface)
+}
+
+// Coded maps the denial onto the operation_denied error. catalog resolves
+// the reason token and the fallback message.
+func (e OperationDenied) Coded(catalog *config.Catalog) *domain.CodedError {
+	reason := catalog.Resolve(e.Reason)
+	if reason == "" {
+		reason = catalog.Get("cli.err.operation_denied")
+	}
+	details := map[string]any{
+		"op":      e.Op,
+		"surface": string(e.Surface),
+	}
+	if e.Reason != "" {
+		details["reason"] = reason
+	}
+	return domain.NewError(domain.ErrOperationDenied, reason, details)
 }
 
 // ForCLI returns a shallow copy pinned to the CLI surface. The
@@ -54,8 +73,18 @@ func (s *Service) ForTUI() *Service {
 	return &c
 }
 
+// ForHTTP returns a shallow copy pinned to the HTTP surface.
+func (s *Service) ForHTTP() *Service {
+	if s == nil {
+		return nil
+	}
+	c := *s
+	c.surface = SurfaceHTTP
+	return &c
+}
+
 // allow is the first line of every product method. Wiring methods and
-// TUI-shaped extras that are not in the 74-slug census must not call it.
+// TUI-shaped extras that are not in the census must not call it.
 // Zero surface, a nil snapshot, or an empty table are unrestricted.
 func (s *Service) allow(op string) error {
 	if s == nil || s.surface == "" {
@@ -86,6 +115,8 @@ func surfaceFlag(row config.SurfacePolicy, surface Surface) *bool {
 		return row.CLI
 	case SurfaceTUI:
 		return row.TUI
+	case SurfaceHTTP:
+		return row.HTTP
 	default:
 		return nil
 	}

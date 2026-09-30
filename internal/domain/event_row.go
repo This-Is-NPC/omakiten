@@ -62,6 +62,10 @@ type EventFilter struct {
 	// Limit caps the number of rows returned. Values <= 0 mean
 	// "no cap"; adapters may still impose a hard ceiling for safety.
 	Limit int
+	// AfterID keeps only rows whose id is greater and orders them by id,
+	// ignoring Order. Zero disables the cursor; stream consumers pass the
+	// last id they delivered.
+	AfterID int64
 	// Order is the sort direction key understood by the adapter.
 	// Empty means adapter default. Conventional values: "desc"
 	// (newest first) and "asc" (oldest first).

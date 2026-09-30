@@ -47,6 +47,13 @@ keys:
   cli.task.assign.long: "Define tasks.assigned_to com o WHO fornecido e emite task.assigned. Passe um WHO vazio (ou omita) para limpar a coluna e emitir task.unassigned — o caminho de recuperação para uma task cujo agente reivindicante caiu sem terminar. Moves manuais para fora de dev também limpam assigned_to automaticamente."
   cli.init.short: "Registra o projeto atual no banco global"
   cli.tui.short: "Abre a interface de terminal"
+  cli.serve.short: "Serve a API HTTP local para clientes gráficos"
+  cli.serve.long: "Serve todos os projetos registrados por uma API HTTP em loopback com stream de eventos SSE. O daemon grava um arquivo de descoberta e um token Bearer no diretório de estado e os remove ao sair. Só um daemon roda por diretório de estado."
+  cli.serve.flag.addr: "host:porta de loopback para escutar (porta 0 escolhe uma porta livre)"
+  cli.serve.flag.poll: "intervalo entre verificações de eventos gravados por qualquer processo"
+  cli.serve.listening_fmt: "okt serve escutando em %s (descoberta: %s)"
+  cli.serve.error.running: "okt serve já está rodando para este diretório de estado"
+  cli.serve.error.not_loopback: "okt serve só escuta em endereço de loopback, como 127.0.0.1"
   cli.comment.short: "Gerencia comentários de tasks"
   cli.comment.add.short: "Adiciona um comentário à task"
   cli.comment.list.short: "Lista os comentários da task"
@@ -91,6 +98,7 @@ keys:
   cli.progress.record.flag.comment: "optional progress comment"
   cli.progress.record.flag.author-type: "comment author type: human or agent"
   cli.task.short: Create, import, export, continue and inspect tasks
+  cli.task.show.short: "Mostra uma task com dependências e todos os comments"
   cli.task.continue.short: "Carrega uma task com dependências, comments e workflow"
   cli.task.continue.flag.include-workflow: "include workflow block (default true; pass false to skip)"
   cli.task.activity.short: "Lista o feed unificado de activity de uma task"
@@ -288,6 +296,7 @@ keys:
   cli.config.why.flag.scope: "global ou local"
   cli.config.language.set.flag.cli: "código de idioma para help e usage do CLI"
   cli.config.language.set.flag.tui: "código de idioma para labels e telas da TUI"
+  cli.config.language.set.flag.gui: "código de idioma para labels e telas da GUI"
   cli.config.language.set.flag.agent: "diretiva livre de idioma de saída do agente (use \"\" para limpar)"
   cli.law.list.flag.scope: "filtra por escopo: global, project ou persona"
   cli.law.list.flag.project: "filtra por slug do projeto"
@@ -1578,6 +1587,13 @@ keys:
 
   operations.denied.wiring: "Internal composition injector/getter; not available on CLI or TUI."
   operations.denied.agent_delete: "Agents cannot delete this resource."
+  operations.denied.destructive_http: "Operações destrutivas de banco ficam desativadas na API HTTP."
+  # http.error.* — messages of failures the local HTTP API detects before an operation runs.
+  http.error.unauthorized: "É necessário um token Bearer válido."
+  http.error.host_rejected: "O daemon só responde a requisições endereçadas à interface de loopback."
+  http.error.route_not_found: "Nenhuma rota da API corresponde a este método e caminho."
+  http.error.invalid_body: "O corpo da requisição não é o objeto JSON esperado."
+  http.error.invalid_parameter: "Um parâmetro de caminho, query ou cabeçalho é inválido."
 
   cli.command.short: "Discover and resolve configured agent commands"
   cli.command.list.short: "List available agent commands"

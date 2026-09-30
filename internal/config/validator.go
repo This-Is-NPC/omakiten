@@ -1434,6 +1434,9 @@ func validateLanguageSettings(ls LanguageSettings, loaded []Language) error {
 	if err := check("tui", ls.TUI); err != nil {
 		return err
 	}
+	if err := check("gui", ls.GUI); err != nil {
+		return err
+	}
 	// agent_output is free-form by design; any value (including empty) is
 	// accepted. Composer skips the directive line when empty.
 	return nil

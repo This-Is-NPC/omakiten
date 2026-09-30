@@ -83,6 +83,26 @@ func TestContinueTaskRejectsCrossProjectTask(t *testing.T) {
 	assertCodedError(t, err, domain.ErrTaskNotFound)
 }
 
+func TestShowTaskReturnsDetailsWithinProject(t *testing.T) {
+	fixture := newAgentFixture(t)
+
+	_, err := fixture.service.ShowTask(fixture.ctx, contract.ShowTaskInput{TaskID: 0})
+	assertCodedError(t, err, domain.ErrValidation)
+	_, err = fixture.service.ShowTask(fixture.ctx, contract.ShowTaskInput{TaskID: fixture.taskB.ID})
+	assertCodedError(t, err, domain.ErrTaskNotFound)
+
+	shown, err := fixture.service.ShowTask(fixture.ctx, contract.ShowTaskInput{TaskID: fixture.taskA1.ID})
+	if err != nil {
+		t.Fatalf("ShowTask() error = %v", err)
+	}
+	if shown.Task.ID != fixture.taskA1.ID {
+		t.Fatalf("ShowTask().Task.ID = %d, want %d", shown.Task.ID, fixture.taskA1.ID)
+	}
+	if len(shown.Comments) != 1 || shown.Comments[0].Body != "A comment" {
+		t.Fatalf("ShowTask().Comments = %#v, want A comment", shown.Comments)
+	}
+}
+
 func TestResumeProjectDoesNotMixProjectState(t *testing.T) {
 	fixture := newAgentFixture(t)
 

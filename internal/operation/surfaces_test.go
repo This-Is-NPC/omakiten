@@ -56,6 +56,32 @@ func TestForCLIProductDenied(t *testing.T) {
 	}
 }
 
+func TestForHTTPProductDenied(t *testing.T) {
+	table := config.CanonicalSurfaceTable()
+	deniedFlag := false
+	row := table["template.list"]
+	row.HTTP = &deniedFlag
+	row.Reason = "${{intl:operations.denied.agent_delete}}"
+	table["template.list"] = row
+
+	svc := NewService(nil, contract.ProjectSelector{}).ForHTTP()
+	svc.SetSnapshot(snapshotWithSurfaces(t, table))
+	_, err := svc.ListTemplates(context.Background(), contract.ListTemplatesInput{})
+	var denied OperationDenied
+	if !errors.As(err, &denied) {
+		t.Fatalf("ListTemplates err = %v, want OperationDenied", err)
+	}
+	if denied.Surface != SurfaceHTTP || denied.Op != "template.list" {
+		t.Fatalf("denied = %+v", denied)
+	}
+
+	cli := NewService(nil, contract.ProjectSelector{}).ForCLI()
+	cli.SetSnapshot(snapshotWithSurfaces(t, table))
+	if _, err := cli.ListTemplates(context.Background(), contract.ListTemplatesInput{}); err != nil {
+		t.Fatalf("CLI ListTemplates with http:false = %v, want allowed", err)
+	}
+}
+
 func TestNewServiceZeroSurfaceAllowsProduct(t *testing.T) {
 	table := config.CanonicalSurfaceTable()
 	deniedFlag := false

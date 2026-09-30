@@ -36,7 +36,7 @@ nested policy and multiline text. YAML does not have a separate table syntax.
 | --- | --- |
 | `settings.yaml` | Output shape, active workflow, agent response limits, SQLite tuning, backups, themes, views, search, and event settings. |
 | `workflows.yaml` | Ordered buckets, transitions, permissions, guards, and subtask kit selection. |
-| `surfaces.yaml` | Which operations are exposed to CLI and TUI. |
+| `surfaces.yaml` | Which operations are exposed to the CLI, the TUI, and the local HTTP API. Every row declares `cli`, `tui`, and `http`; a false entry needs a `reason`. |
 | `catalog.yaml` | Skill and law references. |
 | `personas.yaml` and `personas/` | Persona references, role text, skill repertoire, and themed presentation. |
 | `bindings.yaml` | Command bindings to personas, skills, laws, and templates. |

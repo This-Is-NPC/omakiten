@@ -231,3 +231,27 @@ func TestCatalog_Resolve_malformedAlongsideValidLogsDebug(t *testing.T) {
 		t.Fatalf("expected debug log for trailing malformed token, got %q", out)
 	}
 }
+
+func TestCatalogEntriesOverlayActiveOnBaseline(t *testing.T) {
+	baseline := &Language{Code: "en", Keys: map[string]string{"a": "A", "b": "B"}}
+	active := &Language{Code: "pt-br", Keys: map[string]string{"b": "Bê"}}
+	catalog := NewCatalog(active, baseline)
+	entries := catalog.Entries()
+	if len(entries) != 2 || entries["a"] != "A" || entries["b"] != "Bê" {
+		t.Fatalf("Entries = %v", entries)
+	}
+	entries["a"] = "mutated"
+	if catalog.Get("a") != "A" {
+		t.Fatal("Entries returned shared storage")
+	}
+	if got := catalog.Code(); got != "pt-br" {
+		t.Fatalf("Code = %q, want pt-br", got)
+	}
+	if got := NewCatalog(nil, baseline).Code(); got != "en" {
+		t.Fatalf("baseline Code = %q, want en", got)
+	}
+	var none *Catalog
+	if len(none.Entries()) != 0 || none.Code() != "" {
+		t.Fatal("nil catalog must be empty")
+	}
+}

@@ -9,7 +9,7 @@ import (
 	"os"
 	"syscall"
 
-	"golang.org/x/sys/unix"
+	"omakiten/internal/filelock"
 )
 
 func validateBackupFileSecurity(info os.FileInfo, kind string) error {
@@ -41,18 +41,15 @@ func lockBackupDirectory(ctx context.Context, path string, expected, _ os.FileIn
 			_ = directory.Close()
 			return nil, err
 		}
-		err := unix.Flock(int(directory.Fd()), unix.LOCK_EX|unix.LOCK_NB)
-		if err == nil {
-			return func() error {
-				return errors.Join(unix.Flock(int(directory.Fd()), unix.LOCK_UN), directory.Close())
-			}, nil
-		}
-		if errors.Is(err, unix.EINTR) {
-			continue
-		}
-		if !errors.Is(err, unix.EWOULDBLOCK) && !errors.Is(err, unix.EAGAIN) {
+		unlock, locked, err := filelock.TryLock(directory)
+		if err != nil {
 			_ = directory.Close()
 			return nil, err
+		}
+		if locked {
+			return func() error {
+				return errors.Join(unlock(), directory.Close())
+			}, nil
 		}
 		if err := waitForBackupLockRetry(ctx); err != nil {
 			_ = directory.Close()

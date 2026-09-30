@@ -99,3 +99,18 @@ func repoLocalAt(dir string) (string, bool, error) {
 func ValidateRepoLocalRoot(root string) error {
 	return paths.ValidateNoSymlinkComponents(root)
 }
+
+// RepoLocalConfigFile returns the active config file of the repo-local
+// install found walking up from startDir. found is false when no install
+// is reachable.
+func RepoLocalConfigFile(startDir string) (string, bool, error) {
+	repoLocal, found, err := FindRepoLocal(startDir)
+	if err != nil || !found {
+		return "", false, err
+	}
+	path, err := paths.ActiveConfigFileInDir(filepath.Join(repoLocal, "config"))
+	if err != nil {
+		return "", false, err
+	}
+	return path, true, nil
+}

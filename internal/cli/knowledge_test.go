@@ -12,7 +12,7 @@ import (
 )
 
 func TestCLIInventoryExportsLiveCommandTree(t *testing.T) {
-	cmd := NewRootCommand("test")
+	cmd := NewRootCommand("test", Runners{})
 	var output bytes.Buffer
 	cmd.SetOut(&output)
 	cmd.SetArgs([]string{"knowledge", "export-cli"})

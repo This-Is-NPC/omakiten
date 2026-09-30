@@ -101,7 +101,7 @@ func TestCLIInteractiveConfigInitValidatesAndPersistsLanguages(t *testing.T) {
 	replies := []terminalReply{{"CLI language [", "unavailable\nen\npt-br\nPortuguês\n"}}
 	var stdout bytes.Buffer
 	driveTerminal(t, replies, func(context.Context) {
-		cmd := NewRootCommand("test")
+		cmd := NewRootCommand("test", Runners{})
 		cmd.SetOut(&stdout)
 		cmd.SetArgs([]string{"--db", filepath.Join(root, "state.db"), "--config", cfg, "config", "init", "--scope", "global", "--preset", "omakase"})
 		if err := cmd.Execute(); err != nil {

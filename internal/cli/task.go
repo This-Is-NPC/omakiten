@@ -13,12 +13,39 @@ func newTaskCommand(opts *runtimeOptions) *cobra.Command {
 		Use:   "task",
 		Short: opts.t("cli.task.short"),
 	}
+	cmd.AddCommand(newTaskShowCommand(opts))
 	cmd.AddCommand(newTaskContinueCommand(opts))
 	cmd.AddCommand(newTaskCreateCommand(opts))
 	cmd.AddCommand(newTaskActivityCommand(opts))
 	cmd.AddCommand(newWorkImportCommand(opts, "task"))
 	cmd.AddCommand(newWorkExportCommand(opts, "task"))
 	return cmd
+}
+
+func newTaskShowCommand(opts *runtimeOptions) *cobra.Command {
+	return &cobra.Command{
+		Use:   "show TASK_ID",
+		Short: opts.t("cli.task.show.short"),
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runJSON(cmd, func(ctx context.Context) (any, error) {
+				taskID, err := parseID(args[0], "task id")
+				if err != nil {
+					return nil, err
+				}
+				rt, err := opts.open(ctx, true)
+				if err != nil {
+					return nil, err
+				}
+				defer rt.close()
+
+				return rt.operationService().ShowTask(ctx, contract.ShowTaskInput{
+					ProjectSelector: opts.projectSelector(),
+					TaskID:          taskID,
+				})
+			})
+		},
+	}
 }
 
 func newTaskContinueCommand(opts *runtimeOptions) *cobra.Command {

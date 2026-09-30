@@ -7,8 +7,8 @@ import (
 	"runtime"
 	"testing"
 
+	"omakiten/internal/contract"
 	"omakiten/internal/domain"
-	"omakiten/internal/paths"
 	"omakiten/internal/sqlite"
 )
 
@@ -18,16 +18,11 @@ func TestHomeProjectDeleteUsesSQLiteSnapshotWriterWithPinnedWALReader(t *testing
 		t.Fatalf("insert WAL task: %v", err)
 	}
 
-	dir, err := paths.BackupDir()
-	if err != nil {
-		t.Fatal(err)
-	}
-	backup := NewBackup(BackupOptions{SourcePath: dbPath, DestDir: dir})
 	counters, err := store.ProjectDeleteCounts(ctx, project.ID)
 	if err != nil {
 		t.Fatalf("ProjectDeleteCounts: %v", err)
 	}
-	result, err := DeleteProject(ctx, store, backup, project.ID, counters)
+	result, err := NewMaintenance(MaintenanceOptions{DBPath: dbPath, Projects: store}).DeleteProject(ctx, contract.ProjectDeleteInput{ProjectID: project.ID, Counters: counters})
 	if err != nil {
 		t.Fatalf("DeleteProject: %v", err)
 	}

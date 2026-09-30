@@ -18,7 +18,7 @@ import (
 func TestDBSearchCommandsRegistered(t *testing.T) {
 	t.Parallel()
 
-	root := NewRootCommand("test")
+	root := NewRootCommand("test", Runners{})
 	for _, path := range [][]string{{"db", "check"}, {"db", "reindex"}} {
 		command, _, err := root.Find(path)
 		if err != nil || command == nil || command.Name() != path[1] {
@@ -197,7 +197,7 @@ func assertDBReindexRefusal(t *testing.T, dbPath, configPath string) {
 
 func assertDBReindexRepair(t *testing.T, dbPath, configPath string) {
 	t.Helper()
-	cmd := NewRootCommand("test")
+	cmd := NewRootCommand("test", Runners{})
 	var stdout, stderr bytes.Buffer
 	cmd.SetOut(&stdout)
 	cmd.SetErr(&stderr)

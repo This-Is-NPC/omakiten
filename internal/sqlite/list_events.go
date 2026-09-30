@@ -115,11 +115,15 @@ func listEventsQuery(filter domain.EventFilter, registry *domain.EventRegistry) 
 	if len(conds) > 0 {
 		query += " WHERE " + strings.Join(conds, " AND ")
 	}
-	direction := "DESC"
-	if strings.EqualFold(filter.Order, "asc") {
-		direction = "ASC"
+	if filter.AfterID > 0 {
+		query += " ORDER BY id ASC"
+	} else {
+		direction := "DESC"
+		if strings.EqualFold(filter.Order, "asc") {
+			direction = "ASC"
+		}
+		query += " ORDER BY created_at " + direction + ", id " + direction
 	}
-	query += " ORDER BY created_at " + direction + ", id " + direction
 	effective := filter.Limit
 	if effective <= 0 || effective > MaxListEventsLimit {
 		effective = MaxListEventsLimit
@@ -151,6 +155,10 @@ func eventFilterConditions(filter domain.EventFilter, registry *domain.EventRegi
 	if !filter.Since.IsZero() {
 		conds = append(conds, "created_at >= ?")
 		args = append(args, filter.Since.UTC().Format(sqliteTimestampLayout))
+	}
+	if filter.AfterID > 0 {
+		conds = append(conds, "id > ?")
+		args = append(args, filter.AfterID)
 	}
 	return conds, args, false
 }
@@ -187,6 +195,13 @@ func scanEventRows(rows *sql.Rows) ([]domain.EventRow, error) {
 		out = append(out, row)
 	}
 	return out, rows.Err()
+}
+
+// LatestEventID returns the highest event id, or zero for an empty log.
+func (s *Store) LatestEventID(ctx context.Context) (int64, error) {
+	var id int64
+	err := s.query(ctx).QueryRowContext(ctx, "SELECT COALESCE(MAX(id), 0) FROM events").Scan(&id)
+	return id, err
 }
 
 // EventCategoryCounts returns a count of events per known category over

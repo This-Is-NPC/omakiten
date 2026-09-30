@@ -24,7 +24,7 @@ func TestCLIConfigInitUsesDefaultsWithDevNullInput(t *testing.T) {
 	stdin, stdout := os.Stdin, os.Stdout
 	os.Stdin, os.Stdout = input, output
 	defer func() { os.Stdin, os.Stdout = stdin, stdout }()
-	cmd := NewRootCommand("test")
+	cmd := NewRootCommand("test", Runners{})
 	cmd.SetArgs([]string{"--db", filepath.Join(root, "state.db"), "--config", filepath.Join(root, "config.yaml"), "config", "init", "--scope", "global", "--preset", "omakase"})
 	if err := cmd.Execute(); err != nil {
 		t.Fatal(err)

@@ -82,6 +82,12 @@ depends = ["knowledge:inventory"]
 raw = true
 run = "scripts/tui.sh --bare"
 
+[tasks.serve]
+description = "Serve the local HTTP API against the development state under dev_env/"
+env = { OMAKITEN_HOME = "dev_env" }
+raw = true
+run = "scripts/serve.sh"
+
 [tasks.gallery]
 description = "Browse the shared TUI components one at a time (dev-only, not shipped in the okt binary)"
 raw = true

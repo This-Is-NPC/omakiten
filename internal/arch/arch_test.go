@@ -62,7 +62,7 @@ var hexagonalRules = []rule{
 	{
 		from: "internal/agentruntime",
 		forbidden: []string{
-			"internal/tui", "internal/cli", "internal/terminal",
+			"internal/tui", "internal/cli", "internal/terminal", "internal/httpapi", "internal/daemon",
 		},
 		reason: "agentruntime is the headless composition root; TUI delivery must stay behind neutral hook actions and sender ports",
 	},
@@ -74,12 +74,21 @@ var hexagonalRules = []rule{
 	ruleCLINoApp,
 	ruleTUINoApp,
 	ruleScreensNoOperation,
-	{from: "internal/tui", forbidden: []string{"internal/cli", "internal/operation", "internal/agentruntime", "internal/configstore", "internal/sqlite", "internal/recovery"}, reason: "tui receives neutral contracts and ports"},
-	{from: "internal/cli", forbidden: []string{"internal/tui", "internal/terminal"}, reason: "cli receives an injected interactive runner"},
-	{from: "internal/contract", forbidden: []string{"internal/app", "internal/operation", "internal/agentruntime", "internal/sqlite", "internal/configstore", "internal/recovery", "internal/tui", "internal/cli", "internal/terminal", "internal/updater"}, reason: "contracts contain no implementations"},
-	{from: "internal/config", forbidden: []string{"internal/tui", "internal/cli", "internal/terminal"}, reason: "configuration is independent of delivery"},
+	{from: "internal/tui", forbidden: []string{"internal/cli", "internal/operation", "internal/agentruntime", "internal/configstore", "internal/sqlite", "internal/recovery", "internal/httpapi", "internal/daemon"}, reason: "tui receives neutral contracts and ports"},
+	{from: "internal/cli", forbidden: []string{"internal/tui", "internal/terminal", "internal/httpapi", "internal/daemon"}, reason: "cli receives injected delivery runners"},
+	ruleHTTPAPIPorts,
+	{from: "internal/filelock", forbidden: []string{"internal/"}, reason: "filelock is a leaf primitive"},
+	{from: "internal/contract", forbidden: []string{"internal/app", "internal/operation", "internal/agentruntime", "internal/sqlite", "internal/configstore", "internal/recovery", "internal/tui", "internal/cli", "internal/terminal", "internal/updater", "internal/httpapi", "internal/daemon"}, reason: "contracts contain no implementations"},
+	{from: "internal/config", forbidden: []string{"internal/tui", "internal/cli", "internal/terminal", "internal/httpapi", "internal/daemon"}, reason: "configuration is independent of delivery"},
 	{from: "internal/app", forbidden: []string{"internal/recovery", "internal/terminal", "internal/hooks"}, reason: "application services use adapter ports"},
-	{from: "internal/operation", forbidden: []string{"internal/tui", "internal/cli", "internal/terminal"}, reason: "operations are independent of their consumers"},
+	{from: "internal/operation", forbidden: []string{"internal/tui", "internal/cli", "internal/terminal", "internal/httpapi", "internal/daemon"}, reason: "operations are independent of their consumers"},
+}
+
+// The HTTP adapter reaches runtimes and storage only through its ports.
+var ruleHTTPAPIPorts = rule{
+	from:      "internal/httpapi",
+	forbidden: []string{"internal/app", "internal/agentruntime", "internal/sqlite", "internal/configstore", "internal/recovery", "internal/cli", "internal/tui", "internal/terminal", "internal/daemon"},
+	reason:    "httpapi receives operation and runtime ports; the daemon binds them",
 }
 
 // Delivery adapters cannot bypass their operation contracts to call application services.
@@ -112,6 +121,7 @@ var deliveryTestRules = []rule{
 	ruleCLINoApp,
 	ruleTUINoApp,
 	ruleScreensNoOperation,
+	ruleHTTPAPIPorts,
 }
 
 // TestHexagonalBoundaries scans every non-test Go file in internal/ and

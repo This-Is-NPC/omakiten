@@ -95,7 +95,7 @@ func TestCLIConfigInvalidUsesCodedError(t *testing.T) {
 		t.Fatalf("WriteFile() error = %v", err)
 	}
 
-	cmd := NewRootCommand("test")
+	cmd := NewRootCommand("test", Runners{})
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetArgs([]string{"config", "validate", configPath})
@@ -125,7 +125,7 @@ func TestConfigValidateMigrateAcceptsLegacyUpdaterArgumentOrder(t *testing.T) {
 		t.Fatalf("WriteFile() error = %v", err)
 	}
 
-	cmd := NewRootCommand("test")
+	cmd := NewRootCommand("test", Runners{})
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetArgs([]string{"--db", dbPath, "config", "validate", "--migrate", "--config", configPath})
@@ -150,7 +150,7 @@ func TestConfigValidateMigrateAcceptsLegacyUpdaterArgumentOrder(t *testing.T) {
 
 func runCLI(t *testing.T, dbPath, configPath string, args ...string) string {
 	t.Helper()
-	cmd := NewRootCommand("test")
+	cmd := NewRootCommand("test", Runners{})
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	fullArgs := cliArguments(dbPath, configPath, args)
@@ -174,7 +174,7 @@ func runCLI(t *testing.T, dbPath, configPath string, args ...string) string {
 
 func runCLIExpectError(t *testing.T, dbPath, configPath, wantCode string, args ...string) map[string]any {
 	t.Helper()
-	cmd := NewRootCommand("test")
+	cmd := NewRootCommand("test", Runners{})
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	fullArgs := cliArguments(dbPath, configPath, args)

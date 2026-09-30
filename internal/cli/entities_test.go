@@ -99,7 +99,7 @@ func TestCLILawAddRejectsInvalidSeverity(t *testing.T) {
 
 	runCLI(t, dbPath, configPath, "init", "--name", "Project", "--slug", "project")
 
-	cmd := NewRootCommand("test")
+	cmd := NewRootCommand("test", Runners{})
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetArgs([]string{"--db", dbPath, "--config", configPath, "law", "add", "-k", "x", "-s", "fatal", "-b", "anything", "--no-edit"})

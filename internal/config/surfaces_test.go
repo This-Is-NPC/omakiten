@@ -11,7 +11,7 @@ import (
 	"omakiten/defaults"
 )
 
-// withCanonicalSurfaces appends the shipped 74-row surfaces table to a
+// withCanonicalSurfaces appends the shipped surfaces table to a
 // wiring YAML fixture that omitted it, so LoadBundle completeness checks
 // pass. Fixtures that already declare surfaces: are left unchanged.
 func withCanonicalSurfaces(src string) string {
@@ -49,7 +49,7 @@ func TestDiffSurfacesReportsMissingAndExtra(t *testing.T) {
 	got := CanonicalSurfaceTable()
 	delete(got, "task.delete")
 	tru := true
-	got["task.delet"] = SurfacePolicy{CLI: &tru, TUI: &tru}
+	got["task.delet"] = SurfacePolicy{CLI: &tru, TUI: &tru, HTTP: &tru}
 
 	missing, extra := DiffSurfaces(got)
 	if len(missing) != 1 || missing[0] != "task.delete" {
@@ -82,10 +82,11 @@ func TestSurfaceScaffoldYAMLMatchesCensus(t *testing.T) {
 			continue
 		}
 		if surfaceBoolVal(got.CLI) != surfaceBoolVal(wantRow.CLI) ||
-			surfaceBoolVal(got.TUI) != surfaceBoolVal(wantRow.TUI) {
-			t.Errorf("%s: cli/tui = %v/%v, want %v/%v", slug,
-				surfaceBoolVal(got.CLI), surfaceBoolVal(got.TUI),
-				surfaceBoolVal(wantRow.CLI), surfaceBoolVal(wantRow.TUI))
+			surfaceBoolVal(got.TUI) != surfaceBoolVal(wantRow.TUI) ||
+			surfaceBoolVal(got.HTTP) != surfaceBoolVal(wantRow.HTTP) {
+			t.Errorf("%s: cli/tui/http = %v/%v/%v, want %v/%v/%v", slug,
+				surfaceBoolVal(got.CLI), surfaceBoolVal(got.TUI), surfaceBoolVal(got.HTTP),
+				surfaceBoolVal(wantRow.CLI), surfaceBoolVal(wantRow.TUI), surfaceBoolVal(wantRow.HTTP))
 		}
 		if got.Reason != wantRow.Reason {
 			t.Errorf("%s: reason = %q, want %q", slug, got.Reason, wantRow.Reason)
@@ -94,10 +95,10 @@ func TestSurfaceScaffoldYAMLMatchesCensus(t *testing.T) {
 	if !strings.Contains(raw, "command.list:") {
 		t.Fatal("scaffold missing command.list")
 	}
-	if !strings.Contains(raw, "command.list: { cli: true, tui: true }\ncommand.resolve: { cli: true, tui: true }\n\ncomment.add:") {
+	if !strings.Contains(raw, "command.list: { cli: true, tui: true, http: true }\ncommand.resolve: { cli: true, tui: true, http: true }\n\ncomment.add:") {
 		t.Fatal("scaffold should group by entity with a blank line between command and comment")
 	}
-	if !strings.Contains(raw, `wiring.set_snapshot: { cli: false, tui: false, reason: "${{intl:operations.denied.wiring}}" }`) {
+	if !strings.Contains(raw, `wiring.set_snapshot: { cli: false, tui: false, http: false, reason: "${{intl:operations.denied.wiring}}" }`) {
 		t.Fatal("scaffold wiring row missing reason token")
 	}
 }
@@ -107,7 +108,7 @@ func TestCanonicalSurfaceCensusIsClosed(t *testing.T) {
 		t.Fatalf("CanonicalSurfaceCensus len = %d, want %d", got, CanonicalSurfaceCount)
 	}
 	seen := map[string]struct{}{}
-	var product, wiring int
+	var product, destructive, wiring int
 	for _, e := range CanonicalSurfaceCensus {
 		if e.Slug == "" {
 			t.Fatal("census entry with empty slug")
@@ -119,14 +120,16 @@ func TestCanonicalSurfaceCensusIsClosed(t *testing.T) {
 		switch e.Kind {
 		case SurfaceKindProduct:
 			product++
+		case SurfaceKindDestructive:
+			destructive++
 		case SurfaceKindWiring:
 			wiring++
 		default:
 			t.Fatalf("slug %q: unknown kind %q", e.Slug, e.Kind)
 		}
 	}
-	if product != 65 || wiring != 9 {
-		t.Fatalf("census split product=%d wiring=%d, want 65/9", product, wiring)
+	if product != 66 || destructive != 3 || wiring != 9 {
+		t.Fatalf("census split product=%d destructive=%d wiring=%d, want 66/3/9", product, destructive, wiring)
 	}
 }
 
@@ -152,7 +155,7 @@ func TestValidateSurfacesRejectsMissingCensusSlug(t *testing.T) {
 func TestValidateSurfacesRejectsUnknownSlug(t *testing.T) {
 	b := validTestBundle()
 	tru := true
-	b.Surfaces["task.delet"] = SurfacePolicy{CLI: &tru, TUI: &tru}
+	b.Surfaces["task.delet"] = SurfacePolicy{CLI: &tru, TUI: &tru, HTTP: &tru}
 	err := ValidateBundle(b, b.Skills, b.Laws, b.Personas, b.Templates)
 	if err == nil {
 		t.Fatal("ValidateBundle() error = nil, want unknown slug")
@@ -173,6 +176,17 @@ func TestValidateSurfacesRejectsOmittedSurfaceKey(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "task.transition") || !strings.Contains(err.Error(), "cli is required") {
 		t.Fatalf("ValidateBundle() error = %q, want tui is required", err)
+	}
+}
+
+func TestValidateSurfacesRejectsOmittedHTTPKey(t *testing.T) {
+	b := validTestBundle()
+	row := b.Surfaces["task.transition"]
+	row.HTTP = nil
+	b.Surfaces["task.transition"] = row
+	err := ValidateBundle(b, b.Skills, b.Laws, b.Personas, b.Templates)
+	if err == nil || !strings.Contains(err.Error(), "surfaces.task.transition: http is required") {
+		t.Fatalf("ValidateBundle() error = %v, want http is required on task.transition", err)
 	}
 }
 
@@ -217,10 +231,11 @@ func TestShippedSurfacesModuleMatchesCensus(t *testing.T) {
 			continue
 		}
 		if surfaceBoolVal(got.CLI) != surfaceBoolVal(wantRow.CLI) ||
-			surfaceBoolVal(got.TUI) != surfaceBoolVal(wantRow.TUI) {
-			t.Errorf("%s: cli/tui = %v/%v, want %v/%v", slug,
-				surfaceBoolVal(got.CLI), surfaceBoolVal(got.TUI),
-				surfaceBoolVal(wantRow.CLI), surfaceBoolVal(wantRow.TUI))
+			surfaceBoolVal(got.TUI) != surfaceBoolVal(wantRow.TUI) ||
+			surfaceBoolVal(got.HTTP) != surfaceBoolVal(wantRow.HTTP) {
+			t.Errorf("%s: cli/tui/http = %v/%v/%v, want %v/%v/%v", slug,
+				surfaceBoolVal(got.CLI), surfaceBoolVal(got.TUI), surfaceBoolVal(got.HTTP),
+				surfaceBoolVal(wantRow.CLI), surfaceBoolVal(wantRow.TUI), surfaceBoolVal(wantRow.HTTP))
 		}
 		if got.Reason != wantRow.Reason {
 			t.Errorf("%s: reason = %q, want %q", slug, got.Reason, wantRow.Reason)

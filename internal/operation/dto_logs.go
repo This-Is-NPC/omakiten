@@ -5,7 +5,8 @@ import (
 	"omakiten/internal/domain"
 )
 
-func logsRow(row domain.EventRow) contract.LogsRow {
+// LogsRow projects one event row onto the logs delivery contract.
+func LogsRow(row domain.EventRow) contract.LogsRow {
 	return contract.LogsRow{
 		ID:           row.ID,
 		EntityType:   row.EntityType,
@@ -34,7 +35,7 @@ func logsRows(rows []domain.EventRow) []contract.LogsRow {
 	}
 	out := make([]contract.LogsRow, len(rows))
 	for i, r := range rows {
-		out[i] = logsRow(r)
+		out[i] = LogsRow(r)
 	}
 	return out
 }

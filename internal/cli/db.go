@@ -5,26 +5,15 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"path/filepath"
-	"strings"
 
 	"github.com/spf13/cobra"
 
 	"omakiten/internal/agentruntime"
 	"omakiten/internal/contract"
 	"omakiten/internal/domain"
+	"omakiten/internal/operation"
 	"omakiten/internal/sqlite"
 )
-
-// forbiddenBackupOutRoots are the absolute path prefixes the `db backup
-// --out` flag refuses to write into. Catches the common slip of typing
-// "/etc/foo.db" or similar — the snapshot carries every project's data
-// and dropping it into a system tree (a) leaks across users on a shared
-// box and (b) almost certainly is not what the operator intended.
-// Resolved relative to filepath.Separator at check time so the same
-// constant works on either path style. Order does not matter — the
-// guard exits on the first match.
-var forbiddenBackupOutRoots = []string{"/etc", "/usr", "/proc", "/sys", "/dev"}
 
 func newDBCommand(opts *runtimeOptions) *cobra.Command {
 	cmd := &cobra.Command{
@@ -85,57 +74,37 @@ func runDBReindex(ctx context.Context, cmd *cobra.Command, opts *runtimeOptions,
 	if err != nil {
 		return nil, err
 	}
-	store, err := openExistingSearchStoreAt(ctx, opts, dbPath)
-	if err != nil {
-		return nil, err
+	maintenance := agentruntime.MaintenanceOptions{
+		DBPath: dbPath,
+		OpenSearchStore: func(ctx context.Context) (*sqlite.Store, error) {
+			return openExistingSearchStoreAt(ctx, opts, dbPath)
+		},
 	}
-	defer func() { _ = store.Close() }()
-	if !confirm {
-		result, err := store.ReindexSearchConfirmed(ctx, false)
-		if err != nil {
+	// The unconfirmed plan writes no backup, so it loads no bundle for retention.
+	svc := operation.NewService(nil, contract.ProjectSelector{}).ForCLI()
+	if confirm {
+		if err := bindMaintenance(cmd, opts, svc, maintenance, false); err != nil {
+			return nil, err
+		}
+	} else {
+		maintenance.Catalog = opts.catalog
+		svc.SetMaintenance(agentruntime.NewMaintenance(maintenance))
+	}
+	result, err := svc.ReindexSearch(ctx, contract.SearchReindexInput{Confirm: confirm})
+	if err != nil {
+		if !confirm {
 			return nil, reindexConfirmationErrorWithRetryGuidance(err, dbPath, opts.t("cli.db.reindex.error.confirm_required"))
 		}
-		return dbReindexResponse{SearchIndexReindexReport: result, DatabasePath: dbPath}, nil
-	}
-
-	backup, _, err := buildCLIBackupService(cmd, opts, dbPath, false)
-	if err != nil {
 		return nil, err
 	}
-	var result domain.SearchIndexReindexReport
-	backupPath, operation, leaseErr := runConfirmedDBReindex(ctx, store, backup, &result)
-	if !operation.MutationCompleted {
-		if operation.Err != nil {
-			return nil, fmt.Errorf("verified backup and search reindex: %w", errors.Join(operation.Err, leaseErr))
-		}
-		return nil, fmt.Errorf("acquire reindex backup lease: %w", leaseErr)
+	printPruneWarnings(cmd, opts, result.PruneWarnings)
+	if result.LeaseReleaseWarning != "" {
+		fmt.Fprintf(cmd.ErrOrStderr(), "warning: backup lease release failed after reindex committed (%s)\n", result.LeaseReleaseWarning)
 	}
-	if leaseErr != nil {
-		fmt.Fprintf(cmd.ErrOrStderr(), "warning: backup lease release failed after reindex committed (%s)\n", leaseErr.Error())
+	if result.BackupRecommended && result.BackupPath != "" {
+		fmt.Fprintf(cmd.ErrOrStderr(), opts.t("cli.db.reindex.warning.backup")+"\n", result.BackupPath)
 	}
-	if result.BackupRecommended && backupPath != "" {
-		fmt.Fprintf(cmd.ErrOrStderr(), opts.t("cli.db.reindex.warning.backup")+"\n", backupPath)
-	}
-	return dbReindexResponse{SearchIndexReindexReport: result, DatabasePath: dbPath, BackupPath: backupPath}, nil
-}
-
-func runConfirmedDBReindex(ctx context.Context, store *sqlite.Store, backup *agentruntime.Backup, result *domain.SearchIndexReindexReport) (string, agentruntime.DestructiveResult, error) {
-	var backupPath string
-	operation, leaseErr := agentruntime.RunLeased(ctx, backup, func(lease contract.RecoveryLease) agentruntime.DestructiveResult {
-		createBackup := func(backupCtx context.Context, write func(string) error) (string, error) {
-			return lease.WriteSnapshot(backupCtx, write)
-		}
-		var operationErr error
-		*result, backupPath, operationErr = store.ReindexSearchConfirmedWithBackup(ctx, createBackup, lease.Discard, lease.Validate)
-		return agentruntime.DestructiveResult{BackupPath: backupPath, MutationCompleted: operationErr == nil, Err: operationErr}
-	})
-	return operation.BackupPath, operation, leaseErr
-}
-
-type dbReindexResponse struct {
-	domain.SearchIndexReindexReport
-	DatabasePath string `json:"database_path"`
-	BackupPath   string `json:"backup_path,omitempty"`
+	return result, nil
 }
 
 func dbReindexRetryGuidance(dbPath string) (string, []string) {
@@ -207,77 +176,24 @@ func newDBBackupCommand(opts *runtimeOptions) *cobra.Command {
 	return cmd
 }
 
-// runDBBackup wires the BackupService against the resolved DB and config
-// paths. SQLite's online snapshot mechanism includes committed WAL frames
-// without checkpointing or mutating the source. The bundle is loaded via
-// buildCLIBackupService so the retention knob threads through without a
-// runtime/cache spin-up; the standalone command runs in soft-strict
-// mode so a partially-migrated config does not block recovery.
-//
-// When --out is supplied the snapshot is written to that exact path
-// (parent dirs created as needed with 0o700 to match the default
-// BackupDir perm — DB snapshots carry every project's data and must
-// not relax permissions because the user picked a path) and the prune
-// pass is skipped — the user pinned the destination, so retention
-// rotation against the default state directory does not apply.
+// runDBBackup snapshots the database through the operation facade. SQLite's
+// online snapshot includes committed WAL frames without checkpointing or
+// mutating the source. --out pins the destination and skips retention
+// pruning; the default destination is the retained backup directory.
 func runDBBackup(ctx context.Context, cmd *cobra.Command, opts *runtimeOptions, out string, force bool) (any, error) {
 	dbPath, err := opts.resolvedDBPath()
 	if err != nil {
 		return nil, err
 	}
-
-	if out != "" {
-		return runDBBackupToPath(ctx, cmd, opts, dbPath, out, force)
-	}
-
-	svc, retention, err := buildCLIBackupService(cmd, opts, dbPath, false)
+	svc, err := databaseMaintenanceService(cmd, opts, agentruntime.MaintenanceOptions{DBPath: dbPath}, false)
 	if err != nil {
 		return nil, err
 	}
-	finalPath, err := svc.Run(ctx)
+	result, err := svc.BackupDatabase(ctx, contract.DatabaseBackupInput{Out: out, Force: force})
 	if err != nil {
 		return nil, err
 	}
-	fmt.Fprintf(cmd.ErrOrStderr(), opts.t("cli.db.backup.success_fmt")+"\n", finalPath)
-	return map[string]any{"path": finalPath, "pruned": true, "retention": retention}, nil
-}
-
-func runDBBackupToPath(ctx context.Context, cmd *cobra.Command, opts *runtimeOptions, dbPath, out string, force bool) (any, error) {
-	finalPath, err := filepath.Abs(out)
-	if err != nil {
-		return nil, err
-	}
-	finalPath = filepath.Clean(finalPath)
-	if root, blocked := blockedBackupOutRoot(finalPath); blocked {
-		return nil, domain.NewError(domain.ErrValidation, fmt.Sprintf(opts.t("cli.db.backup.error.system_path_fmt"), finalPath, root), map[string]any{"path": finalPath, "root": root})
-	}
-	if !force {
-		if _, statErr := os.Stat(finalPath); statErr == nil {
-			return nil, domain.NewError(domain.ErrValidation, fmt.Sprintf(opts.t("cli.db.backup.error.exists_fmt"), finalPath), map[string]any{"path": finalPath})
-		} else if !errors.Is(statErr, os.ErrNotExist) {
-			return nil, fmt.Errorf("backup --out stat: %w", statErr)
-		}
-	}
-	snapshot := sqlite.SnapshotDatabase
-	if force {
-		snapshot = sqlite.SnapshotDatabaseReplace
-	}
-	if err := snapshot(ctx, dbPath, finalPath); err != nil {
-		return nil, err
-	}
-	fmt.Fprintf(cmd.ErrOrStderr(), opts.t("cli.db.backup.success_fmt")+"\n", finalPath)
-	return map[string]any{"path": finalPath, "pruned": false}, nil
-}
-
-// blockedBackupOutRoot reports whether the cleaned absolute path lives
-// inside one of the forbiddenBackupOutRoots. Returns the matched root
-// so the caller's error message can name the rule that fired. Strict
-// prefix check: "/etc/foo" matches "/etc", but "/etcetera" does not.
-func blockedBackupOutRoot(absClean string) (string, bool) {
-	for _, root := range forbiddenBackupOutRoots {
-		if absClean == root || strings.HasPrefix(absClean, root+string(filepath.Separator)) {
-			return root, true
-		}
-	}
-	return "", false
+	printPruneWarnings(cmd, opts, result.PruneWarnings)
+	fmt.Fprintf(cmd.ErrOrStderr(), opts.t("cli.db.backup.success_fmt")+"\n", result.Path)
+	return result, nil
 }

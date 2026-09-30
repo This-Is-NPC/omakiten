@@ -13,6 +13,7 @@ import (
 type LanguageSettings struct {
 	CLI         string `yaml:"cli,omitempty" json:"cli,omitempty"`
 	TUI         string `yaml:"tui,omitempty" json:"tui,omitempty"`
+	GUI         string `yaml:"gui,omitempty" json:"gui,omitempty"`
 	AgentOutput string `yaml:"agent_output,omitempty" json:"agent_output,omitempty"`
 }
 
@@ -24,6 +25,9 @@ func (s LanguageSettings) Effective() LanguageSettings {
 	}
 	if s.TUI == "" {
 		s.TUI = "en"
+	}
+	if s.GUI == "" {
+		s.GUI = "en"
 	}
 	return s
 }
@@ -92,6 +96,7 @@ func SavePreferences(p Preferences) error {
 func (s LanguageSettings) normalized() LanguageSettings {
 	s.CLI = strings.TrimSpace(s.CLI)
 	s.TUI = strings.TrimSpace(s.TUI)
+	s.GUI = strings.TrimSpace(s.GUI)
 	s.AgentOutput = strings.TrimSpace(s.AgentOutput)
 	return s
 }

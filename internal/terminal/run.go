@@ -33,9 +33,22 @@ func Run(ctx context.Context, session agentruntime.Session) error {
 			return entry.Service.ForTUI().ExecuteAction(ctx, request)
 		},
 		ResolveCommandPreview: agentruntime.ResolveCommandPreview,
-		DeleteProject:         agentruntime.ProjectDeleter(session.Store, session.Store, session.DBPath, session.Snapshot.Settings().Backup.RetentionCount),
-		Tasks:                 session.Store,
-		Projects:              session.Store,
+		DeleteProject: func(ctx context.Context, input contract.ProjectDeleteInput) (contract.ProjectDeleteResult, error) {
+			entry := session.Cache.Get(session.CacheProjectID)
+			if entry == nil || entry.Service == nil {
+				return contract.ProjectDeleteResult{}, fmt.Errorf("project deletion is unavailable")
+			}
+			svc := entry.Service.ForTUI()
+			svc.SetMaintenance(agentruntime.NewMaintenance(agentruntime.MaintenanceOptions{
+				DBPath:    session.DBPath,
+				Retention: session.Snapshot.Settings().Backup.RetentionCount,
+				Projects:  session.Store,
+				Catalog:   session.Snapshot.Catalog(config.SurfaceTUI),
+			}))
+			return svc.DeleteProject(ctx, input)
+		},
+		Tasks:    session.Store,
+		Projects: session.Store,
 		Knowledge: func(ctx context.Context, project domain.ProjectContext) domain.KnowledgeSnapshot {
 			return knowledgefile.Load(ctx, project, true, session.Store.FindProjectBySlug)
 		},

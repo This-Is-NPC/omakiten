@@ -12,7 +12,9 @@ import (
 
 	"omakiten/internal/agentruntime"
 	"omakiten/internal/config"
+	"omakiten/internal/contract"
 	"omakiten/internal/domain"
+	"omakiten/internal/operation"
 	"omakiten/internal/testfixtures/runtimecache"
 	"omakiten/internal/testfixtures/snapstore"
 	"omakiten/internal/token"
@@ -711,7 +713,9 @@ func newHomeModel(ctx context.Context, project domain.ProjectContext, repos Repo
 		if snap := repos.activeSnapshot(); snap != nil {
 			retention = snap.Settings().Backup.RetentionCount
 		}
-		repos.DeleteProject = agentruntime.ProjectDeleter(store, repos.Events, repos.DBPath, retention)
+		svc := operation.NewService(nil, contract.ProjectSelector{}).ForTUI()
+		svc.SetMaintenance(agentruntime.NewMaintenance(agentruntime.MaintenanceOptions{DBPath: repos.DBPath, Retention: retention, Projects: store, Events: repos.Events}))
+		repos.DeleteProject = svc.DeleteProject
 	}
 	return NewModel(ctx, project, repos, theme, counter, badge, priorities, severities, notifications)
 }

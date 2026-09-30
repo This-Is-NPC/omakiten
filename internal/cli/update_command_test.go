@@ -48,7 +48,7 @@ func checkUpdateCommandProfile(t *testing.T, name string, refreshFailure bool) {
 	defaultUpdateClientFactory = func(version string) (updateClient, error) {
 		return updateClient{Current: version, BinaryPath: binary, Fetcher: stubFetcher{Tag: "0.32.0"}, Downloader: stubDownloader{Assets: map[string][]byte{asset: archive}}, ReleaseVerifier: acceptingReleaseVerifier()}, nil
 	}
-	cmd := NewRootCommand("0.31.0")
+	cmd := NewRootCommand("0.31.0", Runners{})
 	var output bytes.Buffer
 	cmd.SetOut(&output)
 	args := []string{"--db", db, "--config", profile, "update", "--yes"}

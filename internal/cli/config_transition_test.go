@@ -34,7 +34,7 @@ func TestConfigValidateMigrateAcceptsExactV030DatabaseWithoutReadingConfig(t *te
 	}
 	beforeSidecars := cliDatabaseSidecarSnapshot(t, dbPath)
 
-	cmd := NewRootCommand("test")
+	cmd := NewRootCommand("test", Runners{})
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetArgs([]string{"--db", dbPath, "config", "validate", "--migrate", "--config", configPath})
@@ -131,7 +131,7 @@ func TestConfigValidateMigrateSubprocessChild(t *testing.T) {
 		os.Exit(2)
 	}
 	defer func() { _ = output.Close() }()
-	cmd := NewRootCommand("test")
+	cmd := NewRootCommand("test", Runners{})
 	cmd.SetOut(output)
 	cmd.SetArgs([]string{"--db", os.Getenv("OKT_HISTORICAL_DB"), "config", "validate", "--migrate", "--config", os.Getenv("OKT_HISTORICAL_CONFIG")})
 	if err := cmd.Execute(); err != nil {

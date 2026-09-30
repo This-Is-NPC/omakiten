@@ -14,22 +14,9 @@ func (s *Service) ContinueTask(ctx context.Context, input contract.ContinueTaskI
 	if err := s.allow("task.continue"); err != nil {
 		return contract.ContinueTaskResponse{}, err
 	}
-	if input.TaskID <= 0 {
-		return contract.ContinueTaskResponse{}, domain.NewError(domain.ErrValidation, "task id must be positive", map[string]any{"task_id": input.TaskID})
-	}
-
-	project, err := s.resolveProject(ctx, input.ProjectSelector)
+	detail, err := s.loadTaskDetail(ctx, input.ProjectSelector, input.TaskID)
 	if err != nil {
 		return contract.ContinueTaskResponse{}, err
-	}
-
-	tasks, err := app.NewTaskServiceFromStore(s.repo, s.registry, s.snapshot).List(ctx, project, domain.TaskFilter{})
-	if err != nil {
-		return contract.ContinueTaskResponse{}, err
-	}
-	task, ok := findTask(tasks, input.TaskID)
-	if !ok {
-		return contract.ContinueTaskResponse{}, domain.NewError(domain.ErrTaskNotFound, "task not found in active project", map[string]any{"task_id": input.TaskID, "project_id": project.ID})
 	}
 
 	// Workflow shape is heavy (~150 tokens) and rarely changes mid-session.
@@ -45,28 +32,70 @@ func (s *Service) ContinueTask(ctx context.Context, input contract.ContinueTaskI
 		workflowSum = workflowSummary(s.snapshot.Workflow())
 	}
 
-	dependencies, err := app.NewDependencyService(s.repo).List(ctx, project, input.TaskID)
-	if err != nil {
-		return contract.ContinueTaskResponse{}, err
-	}
-	comments, err := s.newCommentService().List(ctx, project, input.TaskID)
-	if err != nil {
-		return contract.ContinueTaskResponse{}, err
-	}
-
 	var agentOutputLang string
 	if s.snapshot != nil {
 		agentOutputLang = s.snapshot.AgentOutputLanguage()
 	}
 	return contract.ContinueTaskResponse{
-		Project:             projectSummary(project),
-		Task:                taskSummary(task, s.registry),
+		Project:             projectSummary(detail.project),
+		Task:                taskSummary(detail.task, s.registry),
 		Workflow:            workflowSum,
-		Dependencies:        dependencySummaries(dependencies),
-		Comments:            s.shapedRecentComments(comments),
-		NextStepPrompt:      fmt.Sprintf("Continue task #%d from this checkpoint, then record material progress with `progress.record`.", task.ID),
+		Dependencies:        dependencySummaries(detail.dependencies),
+		Comments:            s.shapedRecentComments(detail.comments),
+		NextStepPrompt:      fmt.Sprintf("Continue task #%d from this checkpoint, then record material progress with `progress.record`.", detail.task.ID),
 		AgentOutputLanguage: agentOutputLang,
 	}, nil
+}
+
+// ShowTask returns one task with its dependencies and every comment, unshaped.
+func (s *Service) ShowTask(ctx context.Context, input contract.ShowTaskInput) (contract.ShowTaskResponse, error) {
+	if err := s.allow("task.show"); err != nil {
+		return contract.ShowTaskResponse{}, err
+	}
+	detail, err := s.loadTaskDetail(ctx, input.ProjectSelector, input.TaskID)
+	if err != nil {
+		return contract.ShowTaskResponse{}, err
+	}
+	return contract.ShowTaskResponse{
+		Project:      projectSummary(detail.project),
+		Task:         taskSummary(detail.task, s.registry),
+		Dependencies: dependencySummaries(detail.dependencies),
+		Comments:     commentSummaries(detail.comments),
+	}, nil
+}
+
+type taskDetail struct {
+	project      domain.ProjectContext
+	task         domain.Task
+	dependencies []domain.TaskDependency
+	comments     []domain.Comment
+}
+
+func (s *Service) loadTaskDetail(ctx context.Context, selector contract.ProjectSelector, taskID int64) (taskDetail, error) {
+	if taskID <= 0 {
+		return taskDetail{}, domain.NewError(domain.ErrValidation, "task id must be positive", map[string]any{"task_id": taskID})
+	}
+	project, err := s.resolveProject(ctx, selector)
+	if err != nil {
+		return taskDetail{}, err
+	}
+	tasks, err := app.NewTaskServiceFromStore(s.repo, s.registry, s.snapshot).List(ctx, project, domain.TaskFilter{})
+	if err != nil {
+		return taskDetail{}, err
+	}
+	task, ok := findTask(tasks, taskID)
+	if !ok {
+		return taskDetail{}, domain.NewError(domain.ErrTaskNotFound, "task not found in active project", map[string]any{"task_id": taskID, "project_id": project.ID})
+	}
+	dependencies, err := app.NewDependencyService(s.repo).List(ctx, project, taskID)
+	if err != nil {
+		return taskDetail{}, err
+	}
+	comments, err := s.newCommentService().List(ctx, project, taskID)
+	if err != nil {
+		return taskDetail{}, err
+	}
+	return taskDetail{project: project, task: task, dependencies: dependencies, comments: comments}, nil
 }
 
 // shapedRecentComments applies the configured recent-comment cap and the
