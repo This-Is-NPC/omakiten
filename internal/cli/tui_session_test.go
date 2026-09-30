@@ -28,10 +28,10 @@ func checkInteractiveSession(t *testing.T, db, cfg, name, project string) {
 	called := false
 	finished := errors.New("interactive runner finished")
 	var session agentruntime.Session
-	cmd := NewRootCommand("0.31.0", func(_ context.Context, supplied agentruntime.Session) error {
+	cmd := NewRootCommand("0.31.0", Runners{Interactive: func(_ context.Context, supplied agentruntime.Session) error {
 		called, session = true, supplied
 		return finished
-	})
+	}})
 	cmd.SetArgs([]string{"--db", db, "--config", cfg, "--project", project, "tui"})
 	err := cmd.Execute()
 	if name == "unknown project" {

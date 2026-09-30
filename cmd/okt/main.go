@@ -10,5 +10,5 @@ import (
 var version = "dev"
 
 func main() {
-	os.Exit(cli.Execute(cli.NewRootCommand(version, terminal.Run)))
+	os.Exit(cli.Execute(cli.NewRootCommand(version, cli.Runners{Interactive: terminal.Run})))
 }

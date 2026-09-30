@@ -13,7 +13,7 @@ import (
 )
 
 func TestConfigSurfacesScaffoldEmitsCanonicalTable(t *testing.T) {
-	cmd := NewRootCommand("test")
+	cmd := NewRootCommand("test", Runners{})
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetArgs([]string{"config", "surfaces", "--scaffold"})
@@ -129,7 +129,7 @@ func TestConfigSurfacesCheckMissingSlugIsError(t *testing.T) {
 }
 
 func TestConfigSurfacesRequiresExactlyOneFlag(t *testing.T) {
-	cmd := NewRootCommand("test")
+	cmd := NewRootCommand("test", Runners{})
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetArgs([]string{"config", "surfaces"})
@@ -139,7 +139,7 @@ func TestConfigSurfacesRequiresExactlyOneFlag(t *testing.T) {
 }
 
 func TestConfigSurfacesRejectsBothFlags(t *testing.T) {
-	cmd := NewRootCommand("test")
+	cmd := NewRootCommand("test", Runners{})
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetArgs([]string{"config", "surfaces", "--scaffold", "--check"})

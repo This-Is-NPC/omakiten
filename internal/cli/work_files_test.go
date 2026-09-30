@@ -140,7 +140,7 @@ func TestCLIWorkExportIncludesDescendantsAndRejectsExternalDependencies(t *testi
 	db, profile := filepath.Join(root, "state.db"), filepath.Join(root, "config", "omakase.yaml")
 	runCLI(t, db, profile, "init", "--name", "Example", "--slug", "example", "--root", root)
 	input := strings.ReplaceAll(planDocument, "reader", "task-1")
-	cmd := NewRootCommand("test")
+	cmd := NewRootCommand("test", Runners{})
 	var imported bytes.Buffer
 	cmd.SetOut(&imported)
 	cmd.SetIn(strings.NewReader(input))
@@ -152,7 +152,7 @@ func TestCLIWorkExportIncludesDescendantsAndRejectsExternalDependencies(t *testi
 	parent := strconv.FormatInt(int64(ids["task-1"].(float64)), 10)
 	child := decodeEnvelope(t, runCLI(t, db, profile, "task", "create", "--parent", parent, "--title", "Unassigned descendant", "--confirm"))["data"].(map[string]any)["task"].(map[string]any)
 	childID := strconv.FormatInt(int64(child["id"].(float64)), 10)
-	cmd = NewRootCommand("test")
+	cmd = NewRootCommand("test", Runners{})
 	var exported bytes.Buffer
 	cmd.SetOut(&exported)
 	cmd.SetArgs([]string{"--db", db, "--config", profile, "plan", "export", "file-transport"})

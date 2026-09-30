@@ -35,10 +35,10 @@ func TestExecuteConfigRecoveryFromAncestor(t *testing.T) {
 	db := filepath.Join(home, "data", "test.db")
 	var stdout, stderr bytes.Buffer
 	called := false
-	cmd := NewRootCommand("test", func(context.Context, agentruntime.Session) error {
+	cmd := NewRootCommand("test", Runners{Interactive: func(context.Context, agentruntime.Session) error {
 		called = true
 		return nil
-	})
+	}})
 	cmd.SetOut(&stdout)
 	cmd.SetErr(&stderr)
 	cmd.SetArgs([]string{"--db", db, "tui"})
@@ -67,10 +67,10 @@ func TestExecuteCustomEntityRepair(t *testing.T) {
 	writeFile(t, custom, "---\nname: My template\nunsupported: true\n---\nUser template\n")
 	var stderr bytes.Buffer
 	called := false
-	cmd := NewRootCommand("test", func(context.Context, agentruntime.Session) error {
+	cmd := NewRootCommand("test", Runners{Interactive: func(context.Context, agentruntime.Session) error {
 		called = true
 		return nil
-	})
+	}})
 	cmd.SetErr(&stderr)
 	cmd.SetArgs([]string{"--db", fixture.dbPath, "--config", fixture.configPath, "tui"})
 	if code := Execute(cmd); code != 1 || called {
@@ -96,7 +96,7 @@ func TestExecutePreservesJSONAndShowsArgumentHelp(t *testing.T) {
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
 			var stdout, stderr bytes.Buffer
-			cmd := NewRootCommand("test")
+			cmd := NewRootCommand("test", Runners{})
 			cmd.SetOut(&stdout)
 			cmd.SetErr(&stderr)
 			cmd.SetArgs(append([]string{"--config", filepath.Join(t.TempDir(), "config", "omakase.yaml")}, tc.args...))

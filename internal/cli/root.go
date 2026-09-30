@@ -118,7 +118,13 @@ func (r *runtime) activeSnapshot() *config.Snapshot {
 	return pr.Snapshot
 }
 
-func NewRootCommand(version string, interactive ...func(context.Context, agentruntime.Session) error) *cobra.Command {
+// Runners are the delivery adapters the executable injects; the CLI imports
+// none of their implementations.
+type Runners struct {
+	Interactive func(context.Context, agentruntime.Session) error
+}
+
+func NewRootCommand(version string, runners Runners) *cobra.Command {
 	ensurePkgCatalog()
 	opts := &runtimeOptions{catalog: pkgCatalog}
 	cmd := &cobra.Command{
@@ -130,7 +136,7 @@ func NewRootCommand(version string, interactive ...func(context.Context, agentru
 		SilenceErrors: true,
 	}
 	configureRootFlags(cmd, opts)
-	addRootCommands(cmd, opts, version, interactive...)
+	addRootCommands(cmd, opts, version, runners)
 	cmd.MarkFlagsMutuallyExclusive("project", "project-id")
 	configureCommandTree(cmd)
 	return cmd
@@ -145,7 +151,7 @@ func configureRootFlags(cmd *cobra.Command, opts *runtimeOptions) {
 	_ = cmd.MarkPersistentFlagFilename("db", "db")
 }
 
-func addRootCommands(cmd *cobra.Command, opts *runtimeOptions, version string, interactive ...func(context.Context, agentruntime.Session) error) {
+func addRootCommands(cmd *cobra.Command, opts *runtimeOptions, version string, runners Runners) {
 	cmd.AddCommand(newInitCommand(opts))
 	cmd.AddCommand(newListCommand(opts))
 	cmd.AddCommand(newMoveCommand(opts))
@@ -177,11 +183,7 @@ func addRootCommands(cmd *cobra.Command, opts *runtimeOptions, version string, i
 	cmd.AddCommand(newSearchCommand(opts))
 	cmd.AddCommand(newKnowledgeCommand(opts))
 	cmd.AddCommand(newTagCommand(opts))
-	var run func(context.Context, agentruntime.Session) error
-	if len(interactive) > 0 {
-		run = interactive[0]
-	}
-	cmd.AddCommand(newTUICommand(opts, version, run))
+	cmd.AddCommand(newTUICommand(opts, version, runners.Interactive))
 	cmd.AddCommand(newCommandCommand(opts))
 	cmd.AddCommand(newSetupCommand(opts))
 	cmd.AddCommand(newUninstallCommand(opts))

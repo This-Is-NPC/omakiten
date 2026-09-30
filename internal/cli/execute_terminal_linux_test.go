@@ -13,7 +13,7 @@ func TestCLITerminalErrorKeepsStdoutMachineReadable(t *testing.T) {
 	fixture := newCLIDBFixture(t, "database with spaces.db")
 	var stdout bytes.Buffer
 	transcript := driveTerminal(t, []terminalReply{{"okt task continue --help", "\n"}}, func(ctx context.Context) {
-		cmd := NewRootCommand("test")
+		cmd := NewRootCommand("test", Runners{})
 		cmd.SetContext(ctx)
 		cmd.SetOut(&stdout)
 		cmd.SetArgs([]string{"--db", fixture.dbPath, "--config", fixture.configPath, "task", "continue", "999999"})

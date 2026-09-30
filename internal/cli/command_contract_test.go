@@ -21,7 +21,7 @@ func TestCLIRejectsExtraArgumentsAcrossCommandTree(t *testing.T) {
 			visit(child)
 		}
 	}
-	visit(NewRootCommand("test"))
+	visit(NewRootCommand("test", Runners{}))
 	for _, path := range paths {
 		t.Run(strings.Join(path, " "), func(t *testing.T) {
 			args := append(append([]string{}, path...), strings.Fields("unexpected unexpected unexpected unexpected unexpected unexpected")...)
@@ -68,7 +68,7 @@ func assertCLIRejectsBeforeWriting(t *testing.T, args []string) {
 	root := t.TempDir()
 	db := filepath.Join(root, "test.db")
 	config := filepath.Join(root, "config", "omakase.yaml")
-	cmd := NewRootCommand("test")
+	cmd := NewRootCommand("test", Runners{})
 	var stdout, stderr bytes.Buffer
 	cmd.SetOut(&stdout)
 	cmd.SetErr(&stderr)
@@ -103,7 +103,7 @@ func TestCLINotFoundGuidanceKeepsScope(t *testing.T) {
 		{"plan", "show", "absent"},
 	} {
 		t.Run(strings.Join(args, " "), func(t *testing.T) {
-			cmd := NewRootCommand("test")
+			cmd := NewRootCommand("test", Runners{})
 			var stdout bytes.Buffer
 			cmd.SetOut(&stdout)
 			cmd.SetArgs(append([]string{"--db", fixture.dbPath, "--config", fixture.configPath}, args...))

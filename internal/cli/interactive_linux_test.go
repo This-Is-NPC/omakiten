@@ -107,7 +107,7 @@ func TestCLIInteractiveProjectDeletionRequiresConsent(t *testing.T) {
 			runCLI(t, db, cfg, "init", "--name", "Example", "--slug", "example")
 			runCLI(t, db, cfg, "task", "create", "--confirm", "-t", "Retain on cancellation")
 			driveTerminal(t, []terminalReply{{"[y/N]", reply}}, func(context.Context) {
-				cmd := NewRootCommand("test")
+				cmd := NewRootCommand("test", Runners{})
 				cmd.SetArgs([]string{"--db", db, "--config", cfg, "projects", "delete", "example"})
 				err := cmd.Execute()
 				if (err != nil) != (name == "decline") {

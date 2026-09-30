@@ -142,7 +142,7 @@ func TestCLIDeniedOperationNamedError(t *testing.T) {
 		t.Fatalf("write patched surfaces: %v", err)
 	}
 
-	help := NewRootCommand("test")
+	help := NewRootCommand("test", Runners{})
 	var helpOut bytes.Buffer
 	help.SetOut(&helpOut)
 	help.SetArgs([]string{"template", "list", "--help"})
