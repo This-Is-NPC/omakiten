@@ -4,6 +4,8 @@ comment.add product
 comment.delete product
 comment.edit product
 comment.list product
+db.backup destructive
+db.reindex destructive
 dependency.add product
 dependency.list product
 dependency.remove product
@@ -32,6 +34,7 @@ plan.wave.remove product
 plan.wave.rename product
 plan.wave.reorder product
 progress.record product
+project.delete destructive
 project.edit product
 project.overview product
 project.list product

@@ -126,6 +126,9 @@ type Service struct {
 	// Wired by the composition root via SetEntityRepos; nil in tests
 	// that only exercise read-only catalog methods.
 	entity entityRepos
+	// maintenance performs database-wide recovery work. Nil refuses
+	// backup, reindex, and project deletion.
+	maintenance contract.Maintenance
 	// Zero means unrestricted. Production composition roots wrap the
 	// cached Service with ForCLI/ForTUI/Foragent so this field is never
 	// mutated on the shared ProjectRuntime pointer.

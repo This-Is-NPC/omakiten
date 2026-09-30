@@ -18,32 +18,50 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/spf13/cobra"
 
+	"omakiten/internal/agentruntime"
+	"omakiten/internal/contract"
 	"omakiten/internal/domain"
 	"omakiten/internal/lifecycle"
+	"omakiten/internal/operation"
 	"omakiten/internal/paths"
 	"omakiten/internal/releaseverify"
 	"omakiten/internal/sqlite"
 	"omakiten/internal/updater"
 )
 
-// updateBackupForOpts constructs the pre-swap BackupService through
-// the shared buildCLIBackupService helper in strict mode — the
-// auto-backup is non-optional per #191 AC #36 / #39 so any failure to
-// resolve the backup dir or load the bundle aborts the update before
-// the swap. Callers must propagate the error to the JSON envelope so
-// the user sees the underlying cause; silent bypass to `client.Backup
-// = nil` (the pre-fix shape) would let the destructive flow run
-// without its safety net.
+// updateBackupForOpts binds the pre-swap snapshot through the shared
+// maintenance helper in strict mode — the auto-backup is non-optional
+// per #191 AC #36 / #39 so a bundle that cannot load aborts the update
+// before the swap. Callers must propagate the error to the JSON envelope
+// so the user sees the underlying cause; silent bypass to `client.Backup
+// = nil` (the pre-fix shape) would let the destructive flow run without
+// its safety net.
 func updateBackupForOpts(cmd *cobra.Command, opts *runtimeOptions) (updateBackupRunner, error) {
 	dbPath, err := opts.resolvedDBPath()
 	if err != nil {
 		return nil, err
 	}
-	svc, _, err := buildCLIBackupService(cmd, opts, dbPath, true)
+	svc, err := databaseMaintenanceService(cmd, opts, agentruntime.MaintenanceOptions{DBPath: dbPath}, true)
 	if err != nil {
 		return nil, err
 	}
-	return svc, nil
+	return updateBackup{cmd: cmd, opts: opts, svc: svc}, nil
+}
+
+// updateBackup adapts the operation facade to the updater's Run port.
+type updateBackup struct {
+	cmd  *cobra.Command
+	opts *runtimeOptions
+	svc  *operation.Service
+}
+
+func (b updateBackup) Run(ctx context.Context) (string, error) {
+	result, err := b.svc.BackupDatabase(ctx, contract.DatabaseBackupInput{})
+	if err != nil {
+		return "", err
+	}
+	printPruneWarnings(b.cmd, b.opts, result.PruneWarnings)
+	return result.Path, nil
 }
 
 // updateRepo is the GitHub repository the in-binary updater polls

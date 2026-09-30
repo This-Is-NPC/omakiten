@@ -4,7 +4,8 @@
 #     from: ./modules/surfaces.yaml
 #
 # Sibling of workflows: — not nested under workflow.operations (domain guards).
-# Product rows: cli/tui/http true. Wiring rows: all false + reason token.
+# Product rows: cli/tui/http true. Destructive rows: off HTTP + reason token.
+# Wiring rows: all false + reason token.
 # Tokens are stored as-is; the catalog resolves them at display time.
 
 command.list: { cli: true, tui: true, http: true }
@@ -13,6 +14,8 @@ comment.add: { cli: true, tui: true, http: true }
 comment.delete: { cli: true, tui: true, http: true }
 comment.edit: { cli: true, tui: true, http: true }
 comment.list: { cli: true, tui: true, http: true }
+db.backup: { cli: true, tui: true, http: false, reason: "${{intl:operations.denied.destructive_http}}" }
+db.reindex: { cli: true, tui: true, http: false, reason: "${{intl:operations.denied.destructive_http}}" }
 dependency.add: { cli: true, tui: true, http: true }
 dependency.list: { cli: true, tui: true, http: true }
 dependency.remove: { cli: true, tui: true, http: true }
@@ -41,6 +44,7 @@ plan.wave.remove: { cli: true, tui: true, http: true }
 plan.wave.rename: { cli: true, tui: true, http: true }
 plan.wave.reorder: { cli: true, tui: true, http: true }
 progress.record: { cli: true, tui: true, http: true }
+project.delete: { cli: true, tui: true, http: false, reason: "${{intl:operations.denied.destructive_http}}" }
 project.edit: { cli: true, tui: true, http: true }
 project.overview: { cli: true, tui: true, http: true }
 project.list: { cli: true, tui: true, http: true }

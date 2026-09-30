@@ -1,4 +1,4 @@
-package cli
+package agentruntime
 
 import (
 	"path/filepath"

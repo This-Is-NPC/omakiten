@@ -1,20 +1,26 @@
 package config
 
-// SurfaceKind classifies a census slug as product (user-facing) or
-// wiring (composition injectors/getters). Scaffold and the default
-// starts all-false with DeniedWiringReason.
+// SurfaceKind classifies a census slug as product (user-facing),
+// destructive (database-wide recovery work), or wiring (composition
+// injectors/getters). The default table enables product rows, keeps
+// destructive rows off HTTP, and turns wiring rows off everywhere.
 type SurfaceKind string
 
 const (
-	SurfaceKindProduct SurfaceKind = "product"
-	SurfaceKindWiring  SurfaceKind = "wiring"
+	SurfaceKindProduct     SurfaceKind = "product"
+	SurfaceKindDestructive SurfaceKind = "destructive"
+	SurfaceKindWiring      SurfaceKind = "wiring"
 
 	// CanonicalSurfaceCount is the closed size of operation.Service.
-	CanonicalSurfaceCount = 75
+	CanonicalSurfaceCount = 78
 
 	// DeniedWiringReason is the default reason token for wiring rows.
 	// Stored as an intl token; not resolved at load.
 	DeniedWiringReason = "${{intl:operations.denied.wiring}}"
+
+	// DeniedDestructiveHTTPReason is the default reason token for
+	// destructive rows, which ship disabled on the HTTP surface.
+	DeniedDestructiveHTTPReason = "${{intl:operations.denied.destructive_http}}"
 )
 
 // SurfaceCensusEntry is one row of the canonical census.
@@ -31,6 +37,8 @@ var CanonicalSurfaceCensus = []SurfaceCensusEntry{
 	{Slug: "comment.delete", Kind: SurfaceKindProduct},
 	{Slug: "comment.edit", Kind: SurfaceKindProduct},
 	{Slug: "comment.list", Kind: SurfaceKindProduct},
+	{Slug: "db.backup", Kind: SurfaceKindDestructive},
+	{Slug: "db.reindex", Kind: SurfaceKindDestructive},
 	{Slug: "dependency.add", Kind: SurfaceKindProduct},
 	{Slug: "dependency.list", Kind: SurfaceKindProduct},
 	{Slug: "dependency.remove", Kind: SurfaceKindProduct},
@@ -59,6 +67,7 @@ var CanonicalSurfaceCensus = []SurfaceCensusEntry{
 	{Slug: "plan.wave.rename", Kind: SurfaceKindProduct},
 	{Slug: "plan.wave.reorder", Kind: SurfaceKindProduct},
 	{Slug: "progress.record", Kind: SurfaceKindProduct},
+	{Slug: "project.delete", Kind: SurfaceKindDestructive},
 	{Slug: "project.edit", Kind: SurfaceKindProduct},
 	{Slug: "project.overview", Kind: SurfaceKindProduct},
 	{Slug: "project.list", Kind: SurfaceKindProduct},
@@ -102,26 +111,35 @@ var CanonicalSurfaceCensus = []SurfaceCensusEntry{
 	{Slug: "wiring.synonyms", Kind: SurfaceKindWiring},
 }
 
-// CanonicalSurfaceTable returns the shipped default table:
-// product all-true, wiring all-false with DeniedWiringReason. Each call
+// CanonicalSurfaceTable returns the shipped default table: product
+// all-true, destructive off HTTP with DeniedDestructiveHTTPReason, wiring
+// all-false with DeniedWiringReason. Each call
 // allocates a fresh map and fresh bool pointers so tests can mutate a
 // row without aliasing the rest of the table.
 func CanonicalSurfaceTable() SurfaceTable {
 	table := make(SurfaceTable, len(CanonicalSurfaceCensus))
 	for _, e := range CanonicalSurfaceCensus {
-		if e.Kind == SurfaceKindWiring {
+		switch e.Kind {
+		case SurfaceKindWiring:
 			table[e.Slug] = SurfacePolicy{
 				CLI:    surfaceBool(false),
 				TUI:    surfaceBool(false),
 				HTTP:   surfaceBool(false),
 				Reason: DeniedWiringReason,
 			}
-			continue
-		}
-		table[e.Slug] = SurfacePolicy{
-			CLI:  surfaceBool(true),
-			TUI:  surfaceBool(true),
-			HTTP: surfaceBool(true),
+		case SurfaceKindDestructive:
+			table[e.Slug] = SurfacePolicy{
+				CLI:    surfaceBool(true),
+				TUI:    surfaceBool(true),
+				HTTP:   surfaceBool(false),
+				Reason: DeniedDestructiveHTTPReason,
+			}
+		default:
+			table[e.Slug] = SurfacePolicy{
+				CLI:  surfaceBool(true),
+				TUI:  surfaceBool(true),
+				HTTP: surfaceBool(true),
+			}
 		}
 	}
 	return table

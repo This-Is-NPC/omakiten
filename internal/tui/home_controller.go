@@ -257,11 +257,9 @@ type homeProjectDeleteResultMsg struct {
 	result     contract.ProjectDeleteResult
 	err        error
 	audit      string
-	pruneWarn  error
 }
 
 func (m *Model) executeHomeProjectDelete(project domain.Project, counters domain.ProjectDeleteCounters, generation uint64) tea.Cmd {
-	var pruneWarn error
 	if m.repos.DeleteProject == nil {
 		m.status = "project deletion is unavailable"
 		return nil
@@ -274,8 +272,8 @@ func (m *Model) executeHomeProjectDelete(project domain.Project, counters domain
 	m.status = fmt.Sprintf(m.t("tui.status.deleting_project_fmt"), project.Name)
 	ctx, repos := m.ctx, m.repos
 	return func() tea.Msg {
-		result, deleteErr := repos.DeleteProject(ctx, project.ID, counters, func(err error) { pruneWarn = err })
-		return homeProjectDeleteResultMsg{generation: generation, project: project, result: result, err: deleteErr, audit: result.Audit, pruneWarn: pruneWarn}
+		result, deleteErr := repos.DeleteProject(ctx, contract.ProjectDeleteInput{ProjectID: project.ID, Counters: counters})
+		return homeProjectDeleteResultMsg{generation: generation, project: project, result: result, err: deleteErr, audit: result.Audit}
 	}
 }
 
@@ -297,8 +295,8 @@ func (m *Model) handleHomeProjectDeleteResult(msg homeProjectDeleteResultMsg) {
 		return
 	}
 	m.status = fmt.Sprintf(m.t("tui.status.project_deleted_fmt"), msg.result.Project.Slug, msg.result.BackupPath)
-	if msg.pruneWarn != nil {
-		m.status += " · " + fmt.Sprintf(m.t("cli.db.backup.prune_warn_fmt"), msg.pruneWarn.Error())
+	for _, warning := range msg.result.PruneWarnings {
+		m.status += " · " + fmt.Sprintf(m.t("cli.db.backup.prune_warn_fmt"), warning)
 	}
 	drainAuditString(&m.status, msg.audit)
 }

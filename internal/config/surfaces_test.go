@@ -108,7 +108,7 @@ func TestCanonicalSurfaceCensusIsClosed(t *testing.T) {
 		t.Fatalf("CanonicalSurfaceCensus len = %d, want %d", got, CanonicalSurfaceCount)
 	}
 	seen := map[string]struct{}{}
-	var product, wiring int
+	var product, destructive, wiring int
 	for _, e := range CanonicalSurfaceCensus {
 		if e.Slug == "" {
 			t.Fatal("census entry with empty slug")
@@ -120,14 +120,16 @@ func TestCanonicalSurfaceCensusIsClosed(t *testing.T) {
 		switch e.Kind {
 		case SurfaceKindProduct:
 			product++
+		case SurfaceKindDestructive:
+			destructive++
 		case SurfaceKindWiring:
 			wiring++
 		default:
 			t.Fatalf("slug %q: unknown kind %q", e.Slug, e.Kind)
 		}
 	}
-	if product != 66 || wiring != 9 {
-		t.Fatalf("census split product=%d wiring=%d, want 66/9", product, wiring)
+	if product != 66 || destructive != 3 || wiring != 9 {
+		t.Fatalf("census split product=%d destructive=%d wiring=%d, want 66/3/9", product, destructive, wiring)
 	}
 }
 

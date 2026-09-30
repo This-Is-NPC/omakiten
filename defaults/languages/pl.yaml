@@ -1579,6 +1579,7 @@ keys:
 
   operations.denied.wiring: "Internal composition injector/getter; not available on CLI or TUI."
   operations.denied.agent_delete: "Agents cannot delete this resource."
+  operations.denied.destructive_http: "Destructive database operations are disabled on the HTTP API."
 
   cli.command.short: "Discover and resolve configured agent commands"
   cli.command.list.short: "List available agent commands"

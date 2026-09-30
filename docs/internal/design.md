@@ -135,8 +135,10 @@ content, archetypes, styles, and keys. Rendering consumes prepared state.
 
 ## 7. Recovery and release boundaries
 
-Project deletion and confirmed search reindex use a directory lease and a live
-SQLite snapshot before mutation. A pinned connection verifies the database
+Database backup, search reindex, and project deletion are operations like any
+other: `internal/operation` gates them by surface and delegates to
+`agentruntime.Maintenance`. Project deletion and confirmed search reindex use a
+directory lease and a live SQLite snapshot before mutation. A pinned connection verifies the database
 generation around the transaction. Recovery images include committed WAL data.
 Retention follows the same protected directory identity.
 
