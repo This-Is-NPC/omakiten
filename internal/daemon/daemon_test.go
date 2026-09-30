@@ -18,6 +18,7 @@ import (
 
 	"omakiten/internal/agentruntime"
 	"omakiten/internal/contract"
+	"omakiten/internal/domain"
 	"omakiten/internal/paths"
 )
 
@@ -127,10 +128,7 @@ func request(t *testing.T, method, url, token, body string) (int, map[string]any
 func TestDaemonServesProjectsAndStreamsWritesFromOtherProcesses(t *testing.T) {
 	fixture := newDaemonFixture(t)
 	daemonRuntime := fixture.open(t)
-	project, err := agentruntime.InitProject(context.Background(), daemonRuntime.Store(), "Alpha", "alpha", fixture.root)
-	if err != nil {
-		t.Fatalf("InitProject: %v", err)
-	}
+	project := registerProject(t, daemonRuntime, "alpha", fixture.root)
 	discovery, token, _ := startDaemon(t, daemonRuntime)
 
 	status, body := request(t, http.MethodGet, discovery.URL+"/api/v1/projects", token, "")
@@ -170,18 +168,10 @@ func TestDaemonServesProjectsAndStreamsWritesFromOtherProcesses(t *testing.T) {
 func TestDaemonKeepsTheSessionRuntimeForTheSessionProject(t *testing.T) {
 	fixture := newDaemonFixture(t)
 	rt := fixture.open(t)
-	project, err := agentruntime.InitProject(context.Background(), rt.Store(), "Alpha", "alpha", fixture.root)
-	if err != nil {
-		t.Fatalf("InitProject: %v", err)
-	}
+	project := registerProject(t, rt, "alpha", fixture.root)
 	// A stale repo-local install at the project root must not replace the
 	// workflow the session was opened with.
-	if err := os.MkdirAll(filepath.Join(fixture.root, ".omakiten"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(fixture.root, ".omakiten", "config.yaml"), []byte("preset: missing.yaml\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
+	writeRepoLocalConfig(t, fixture.root, "preset: missing.yaml\n")
 	s := session(rt)
 	s.Project = project.Context()
 	discovery, token, _ := startSession(t, s)
@@ -196,10 +186,7 @@ func TestDaemonKeepsTheSessionRuntimeForTheSessionProject(t *testing.T) {
 func TestDaemonResumesStreamAfterReconnect(t *testing.T) {
 	fixture := newDaemonFixture(t)
 	rt := fixture.open(t)
-	project, err := agentruntime.InitProject(context.Background(), rt.Store(), "Alpha", "alpha", fixture.root)
-	if err != nil {
-		t.Fatalf("InitProject: %v", err)
-	}
+	project := registerProject(t, rt, "alpha", fixture.root)
 	stderr := &lockedBuffer{}
 	discovery, token, _ := startWithStderr(t, session(rt), stderr)
 	waitForLine(t, stderr, discovery.URL, discoveryFile)
@@ -257,6 +244,73 @@ func (b *lockedBuffer) String() string {
 	return b.buf.String()
 }
 
+// TestDaemonResolvesEachProjectWorkflowIndependently: a project whose own
+// repo-local install is broken fails alone; the others keep answering.
+func TestDaemonResolvesEachProjectWorkflowIndependently(t *testing.T) {
+	fixture := newDaemonFixture(t)
+	rt := fixture.open(t)
+	registerProject(t, rt, "alpha", fixture.root)
+	broken := filepath.Join(filepath.Dir(fixture.root), "broken")
+	registerProject(t, rt, "broken", broken)
+	writeRepoLocalConfig(t, broken, "preset: missing.yaml\n")
+	discovery, token, _ := startDaemon(t, rt)
+
+	cases := map[string]struct {
+		status int
+		code   string
+	}{
+		"alpha":  {http.StatusOK, ""},
+		"broken": {http.StatusInternalServerError, "config_invalid"},
+		"ghost":  {http.StatusNotFound, "project_not_found"},
+	}
+	for slug, want := range cases {
+		status, body := request(t, http.MethodGet, discovery.URL+"/api/v1/projects/"+slug+"/tasks", token, "")
+		if status != want.status || (want.code != "" && body["code"] != want.code) {
+			t.Errorf("%s = %d %v, want %d %s", slug, status, body, want.status, want.code)
+		}
+	}
+}
+
+// TestDaemonFromRepoLocalInstallRefusesProjectsWithoutOne: the session's
+// repo-local workflow belongs to its own project, so another project
+// without an install gets config_invalid instead of a foreign policy.
+func TestDaemonFromRepoLocalInstallRefusesProjectsWithoutOne(t *testing.T) {
+	fixture := newDaemonFixture(t)
+	rt := fixture.open(t)
+	registerProject(t, rt, "alpha", fixture.root)
+	s := session(rt)
+	s.RepoLocalDir = filepath.Join(filepath.Dir(fixture.root), "elsewhere", ".omakiten")
+	discovery, token, _ := startSession(t, s)
+
+	status, body := request(t, http.MethodGet, discovery.URL+"/api/v1/projects/alpha/tasks", token, "")
+	if status != http.StatusInternalServerError || body["code"] != "config_invalid" || !strings.Contains(toJSON(body), "outside a repo-local install") {
+		t.Fatalf("alpha = %d %v, want config_invalid with guidance", status, body)
+	}
+}
+
+func registerProject(t *testing.T, rt *agentruntime.Runtime, slug, root string) domain.Project {
+	t.Helper()
+	if err := os.MkdirAll(root, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	project, err := agentruntime.InitProject(context.Background(), rt.Store(), slug, slug, root)
+	if err != nil {
+		t.Fatalf("InitProject(%s): %v", slug, err)
+	}
+	return project
+}
+
+func writeRepoLocalConfig(t *testing.T, root, content string) {
+	t.Helper()
+	dir := filepath.Join(root, ".omakiten")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "config.yaml"), []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestDaemonRefusesSecondInstanceAndCleansUp(t *testing.T) {
 	fixture := newDaemonFixture(t)
 	rt := fixture.open(t)
@@ -266,8 +320,10 @@ func TestDaemonRefusesSecondInstanceAndCleansUp(t *testing.T) {
 	if err == nil || !strings.Contains(toJSON(err), discovery.URL) {
 		t.Fatalf("second Run = %v, want already running with %s", err, discovery.URL)
 	}
-	if err := Run(context.Background(), session(rt), contract.ServeOptions{Addr: "0.0.0.0:0", Poll: time.Second}); err == nil {
-		t.Fatal("Run on a non-loopback address succeeded")
+	for _, addr := range []string{"0.0.0.0:0", "example.com:80", "7766"} {
+		if err := Run(context.Background(), session(rt), contract.ServeOptions{Addr: addr, Poll: time.Second}); err == nil {
+			t.Errorf("Run on %q succeeded, want a loopback address error", addr)
+		}
 	}
 }
 
