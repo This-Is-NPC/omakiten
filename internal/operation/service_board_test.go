@@ -39,15 +39,23 @@ func TestTaskBoardCountsRelationsWithinProject(t *testing.T) {
 	if got := counts[fixture.taskA1.ID].Tags; len(got) != 1 || got[0] != "Layout" {
 		t.Fatalf("A1 tags = %v, want the label [Layout]", got)
 	}
-	// The priorities a task can take, so a client can offer them.
-	if len(board.Priorities) == 0 {
-		t.Fatal("board priorities missing")
+}
+
+// The board lists the priorities a task can take, so a client can offer them.
+func TestTaskBoardServesPriorities(t *testing.T) {
+	fixture := newAgentFixture(t)
+	board, err := fixture.service.TaskBoard(fixture.ctx, contract.TaskBoardInput{})
+	if err != nil {
+		t.Fatalf("TaskBoard() error = %v", err)
 	}
-	var found bool
+	if len(board.Priorities) == 0 || len(board.Tasks) == 0 {
+		t.Fatalf("board priorities/tasks = %+v / %+v", board.Priorities, board.Tasks)
+	}
+	want := board.Tasks[0].Priority
 	for _, priority := range board.Priorities {
-		found = found || priority.Value == counts[fixture.taskA1.ID].Priority
+		if priority.Value == want {
+			return
+		}
 	}
-	if !found {
-		t.Fatalf("priorities %+v lack A1's priority %q", board.Priorities, counts[fixture.taskA1.ID].Priority)
-	}
+	t.Fatalf("priorities %+v lack the task priority %q", board.Priorities, want)
 }
