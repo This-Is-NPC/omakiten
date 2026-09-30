@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 
 	"golang.org/x/sys/windows"
+
+	"omakiten/internal/filelock"
 )
 
 // Windows POSIX mode bits do not describe ACL confidentiality. This layer does
@@ -33,28 +35,20 @@ func lockBackupDirectory(ctx context.Context, dirPath string, _, expected os.Fil
 		_ = file.Close()
 		return nil, errors.New("backup lease file changed while opening anti-rename handle")
 	}
-	overlapped := new(windows.Overlapped)
 	for {
 		if err := ctx.Err(); err != nil {
 			_ = file.Close()
 			return nil, err
 		}
-		err := windows.LockFileEx(
-			handle,
-			windows.LOCKFILE_EXCLUSIVE_LOCK|windows.LOCKFILE_FAIL_IMMEDIATELY,
-			0,
-			1,
-			0,
-			overlapped,
-		)
-		if err == nil {
-			return func() error {
-				return errors.Join(windows.UnlockFileEx(handle, 0, 1, 0, overlapped), file.Close())
-			}, nil
-		}
-		if !errors.Is(err, windows.ERROR_LOCK_VIOLATION) {
+		unlock, locked, err := filelock.TryLock(file)
+		if err != nil {
 			_ = file.Close()
 			return nil, err
+		}
+		if locked {
+			return func() error {
+				return errors.Join(unlock(), file.Close())
+			}, nil
 		}
 		if err := waitForBackupLockRetry(ctx); err != nil {
 			_ = file.Close()
