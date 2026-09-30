@@ -3,6 +3,7 @@ package httpapi
 import (
 	"bufio"
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -113,6 +114,52 @@ func TestStreamReplaysAfterLastEventID(t *testing.T) {
 	reader, _ := openStream(t, server, "project=alpha", "4")
 	if message := nextMessage(t, reader); message["id"] != "5" {
 		t.Fatalf("replay = %+v, want id 5", message)
+	}
+}
+
+func TestStreamAsksForResyncWhenTheGapCannotBeReplayed(t *testing.T) {
+	gap := make([]contract.LogsRow, replayLimit+1)
+	for i := range gap {
+		gap[i] = contract.LogsRow{ID: int64(i + 2), ProjectID: 7}
+	}
+	for name, log := range map[string]fakeLog{
+		"gap exceeds replay limit": {rows: gap},
+		"event log unreadable":     {err: errors.New("database is locked")},
+	} {
+		t.Run(name, func(t *testing.T) {
+			server, _ := newTestServer(t, &fakeOps{}, log)
+			reader, _ := openStream(t, server, "project=alpha", "1")
+			if message := nextMessage(t, reader); message["event"] != "resync" {
+				t.Fatalf("message = %+v, want resync", message)
+			}
+		})
+	}
+}
+
+func TestStreamSendsHeartbeatComments(t *testing.T) {
+	server, _ := newTestServer(t, &fakeOps{}, fakeLog{})
+	server.opts.Heartbeat = 10 * time.Millisecond
+	reader, _ := openStream(t, server, "project=alpha", "")
+	line := make(chan string, 1)
+	go func() {
+		text, _ := reader.ReadString('\n')
+		line <- text
+	}()
+	select {
+	case text := <-line:
+		if text != ": ping\n" {
+			t.Fatalf("first line = %q, want a ping comment", text)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("no heartbeat within 5s")
+	}
+}
+
+func TestStreamRejectsMalformedLastEventID(t *testing.T) {
+	server, _ := newTestServer(t, &fakeOps{}, fakeLog{})
+	rec := do(t, server, http.MethodGet, "/api/v1/events?project=alpha", "", map[string]string{"Last-Event-ID": "abc"})
+	if rec.Code != http.StatusBadRequest || decode(t, rec).Code != "invalid_parameter" {
+		t.Fatalf("got %d %s", rec.Code, rec.Body.String())
 	}
 }
 

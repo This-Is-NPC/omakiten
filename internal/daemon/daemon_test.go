@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -9,7 +10,9 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -64,10 +67,15 @@ func startDaemon(t *testing.T, rt *agentruntime.Runtime) (Discovery, string, <-c
 
 func startSession(t *testing.T, s agentruntime.Session) (Discovery, string, <-chan error) {
 	t.Helper()
+	return startWithStderr(t, s, nil)
+}
+
+func startWithStderr(t *testing.T, s agentruntime.Session, stderr io.Writer) (Discovery, string, <-chan error) {
+	t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() {
-		done <- Run(ctx, s, contract.ServeOptions{Addr: "127.0.0.1:0", Poll: 20 * time.Millisecond})
+		done <- Run(ctx, s, contract.ServeOptions{Addr: "127.0.0.1:0", Poll: 20 * time.Millisecond, Stderr: stderr})
 	}()
 	t.Cleanup(func() {
 		cancel()
@@ -183,6 +191,72 @@ func TestDaemonKeepsTheSessionRuntimeForTheSessionProject(t *testing.T) {
 	}
 }
 
+// TestDaemonResumesStreamAfterReconnect: a client that reconnects with
+// Last-Event-ID receives the events committed while it was away.
+func TestDaemonResumesStreamAfterReconnect(t *testing.T) {
+	fixture := newDaemonFixture(t)
+	rt := fixture.open(t)
+	project, err := agentruntime.InitProject(context.Background(), rt.Store(), "Alpha", "alpha", fixture.root)
+	if err != nil {
+		t.Fatalf("InitProject: %v", err)
+	}
+	stderr := &lockedBuffer{}
+	discovery, token, _ := startWithStderr(t, session(rt), stderr)
+	waitForLine(t, stderr, discovery.URL, discoveryFile)
+
+	seen, err := rt.Store().LatestEventID(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := rt.Service().ForCLI().CreateTask(context.Background(), contract.CreateTaskInput{
+		ProjectSelector: contract.ProjectSelector{ProjectID: project.ID},
+		Title:           "Committed while disconnected",
+		Description:     "Replay must deliver this.",
+	}); err != nil {
+		t.Fatalf("CreateTask: %v", err)
+	}
+
+	stream := openStreamFrom(t, discovery.URL+"/api/v1/events?project=alpha", token, itoa(seen))
+	if data := waitForEvent(t, stream, "task.created"); !strings.Contains(data, `"project_id":`+itoa(project.ID)) {
+		t.Fatalf("replayed task.created = %s", data)
+	}
+}
+
+// waitForLine waits until the startup line names every part.
+func waitForLine(t *testing.T, stderr *lockedBuffer, parts ...string) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		line := stderr.String()
+		missing := slices.ContainsFunc(parts, func(part string) bool { return !strings.Contains(line, part) })
+		if !missing {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("startup line = %q, want %v", line, parts)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+// lockedBuffer is an io.Writer the daemon goroutine and the test share.
+type lockedBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *lockedBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *lockedBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
+}
+
 func TestDaemonRefusesSecondInstanceAndCleansUp(t *testing.T) {
 	fixture := newDaemonFixture(t)
 	rt := fixture.open(t)
@@ -227,6 +301,11 @@ func TestDaemonRemovesDiscoveryOnShutdown(t *testing.T) {
 
 func openStream(t *testing.T, url, token string) *bufio.Reader {
 	t.Helper()
+	return openStreamFrom(t, url, token, "")
+}
+
+func openStreamFrom(t *testing.T, url, token, lastEventID string) *bufio.Reader {
+	t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
@@ -234,6 +313,9 @@ func openStream(t *testing.T, url, token string) *bufio.Reader {
 		t.Fatal(err)
 	}
 	req.Header.Set("Authorization", "Bearer "+token)
+	if lastEventID != "" {
+		req.Header.Set("Last-Event-ID", lastEventID)
+	}
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatalf("open stream: %v", err)

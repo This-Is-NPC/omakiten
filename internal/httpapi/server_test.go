@@ -1,8 +1,8 @@
 package httpapi
 
 import (
-	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"slices"
@@ -17,64 +17,6 @@ import (
 )
 
 const testToken = "secret-token"
-
-type fakeOps struct {
-	Operations
-	listTasks  func(contract.ListTasksInput) (contract.ListTasksResponse, error)
-	createTask func(contract.CreateTaskInput) (contract.CreateTaskResponse, error)
-	listLogs   func(contract.ListLogsInput) (contract.ListLogsResponse, error)
-}
-
-func (f *fakeOps) ListProjects(context.Context) ([]domain.Project, error) {
-	return []domain.Project{{ID: 7, Name: "Alpha", Slug: "alpha"}}, nil
-}
-
-func (f *fakeOps) ListTasks(_ context.Context, input contract.ListTasksInput) (contract.ListTasksResponse, error) {
-	return f.listTasks(input)
-}
-
-func (f *fakeOps) CreateTaskIntent(_ context.Context, input contract.CreateTaskInput) (contract.CreateTaskResponse, error) {
-	return f.createTask(input)
-}
-
-func (f *fakeOps) ListLogs(_ context.Context, input contract.ListLogsInput) (contract.ListLogsResponse, error) {
-	if f.listLogs == nil {
-		return contract.ListLogsResponse{}, nil
-	}
-	return f.listLogs(input)
-}
-
-type fakeRuntimes struct {
-	ops      *fakeOps
-	projects map[string]int64
-	catalog  *config.Catalog
-}
-
-func (f fakeRuntimes) Project(_ context.Context, slug string) (Operations, contract.ProjectSelector, error) {
-	id, ok := f.projects[slug]
-	if !ok {
-		return nil, contract.ProjectSelector{}, domain.NewError(domain.ErrProjectNotFound, "project not found", nil)
-	}
-	return f.ops, contract.ProjectSelector{ProjectID: id}, nil
-}
-
-func (f fakeRuntimes) Global(context.Context) (Operations, error) { return f.ops, nil }
-
-func (f fakeRuntimes) Catalog() *config.Catalog { return f.catalog }
-
-type fakeLog struct {
-	rows []contract.LogsRow
-}
-
-func (f fakeLog) EventsAfter(_ context.Context, afterID int64, limit int) ([]contract.LogsRow, error) {
-	var out []contract.LogsRow
-	for _, row := range f.rows {
-		if row.ID > afterID && len(out) < limit {
-			out = append(out, row)
-		}
-	}
-	return out, nil
-}
 
 func newTestServer(t *testing.T, ops *fakeOps, log fakeLog) (*Server, *Hub) {
 	t.Helper()
@@ -210,6 +152,10 @@ func TestOperationErrorsMapToStatusAndResolvedMessages(t *testing.T) {
 		{"guard", domain.NewError(domain.ErrGuardViolation, "blocked: ${{intl:denied.reason}}", nil), http.StatusUnprocessableEntity, "guard_violation", "blocked: Resolved denial reason."},
 		{"missing task", domain.NewError(domain.ErrTaskNotFound, "task not found", nil), http.StatusNotFound, "task_not_found", "task not found"},
 		{"transition", domain.NewError(domain.ErrWorkflowInvalidTransition, "no transition", nil), http.StatusConflict, "workflow_invalid_transition", "no transition"},
+		{"validation", domain.NewError(domain.ErrValidation, "title is required", nil), http.StatusBadRequest, "validation_error", "title is required"},
+		{"config", domain.NewError(domain.ErrConfigInvalid, "config is invalid", nil), http.StatusInternalServerError, "config_invalid", "config is invalid"},
+		{"uncoded", errors.New("disk I/O error"), http.StatusInternalServerError, "internal_error", "disk I/O error"},
+		{"denied without reason", operation.OperationDenied{Surface: operation.SurfaceHTTP, Op: "task.list"}, http.StatusForbidden, "operation_denied", "cli.err.operation_denied"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
