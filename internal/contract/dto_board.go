@@ -18,9 +18,20 @@ type BoardTask struct {
 	Tags []string `json:"tags,omitempty"`
 }
 
-// TaskBoardResponse is a project's workflow and its active tasks.
+// BoardPriority is one priority a task can take, in the configured order.
+type BoardPriority struct {
+	Value string `json:"value"`
+	// Color is the colour token of the priority: error, warning, success,
+	// or info.
+	Color   string `json:"color,omitempty"`
+	Default bool   `json:"default,omitempty"`
+}
+
+// TaskBoardResponse is a project's workflow, its active tasks, and the
+// priorities they can take.
 type TaskBoardResponse struct {
-	Project  ProjectSummary  `json:"project"`
-	Workflow WorkflowSummary `json:"workflow"`
-	Tasks    []BoardTask     `json:"tasks"`
+	Project    ProjectSummary  `json:"project"`
+	Workflow   WorkflowSummary `json:"workflow"`
+	Tasks      []BoardTask     `json:"tasks"`
+	Priorities []BoardPriority `json:"priorities,omitempty"`
 }

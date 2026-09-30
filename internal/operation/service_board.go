@@ -52,9 +52,14 @@ func (s *Service) TaskBoard(ctx context.Context, input contract.TaskBoardInput) 
 		}
 		board = append(board, row)
 	}
+	priorities := make([]contract.BoardPriority, 0, len(source.Priorities))
+	for _, priority := range source.Priorities {
+		priorities = append(priorities, contract.BoardPriority{Value: priority.Value, Color: priority.Color, Default: priority.Default})
+	}
 	return contract.TaskBoardResponse{
-		Project:  projectSummary(project),
-		Workflow: workflowSummary(snap.Workflow),
-		Tasks:    board,
+		Project:    projectSummary(project),
+		Workflow:   workflowSummary(snap.Workflow),
+		Tasks:      board,
+		Priorities: priorities,
 	}, nil
 }

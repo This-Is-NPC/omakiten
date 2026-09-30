@@ -20,6 +20,23 @@
         ],
         "type": "object"
       },
+      "contract.BoardPriority": {
+        "properties": {
+          "color": {
+            "type": "string"
+          },
+          "default": {
+            "type": "boolean"
+          },
+          "value": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "value"
+        ],
+        "type": "object"
+      },
       "contract.BoardTask": {
         "properties": {
           "blockers": {
@@ -975,6 +992,12 @@
       },
       "contract.TaskBoardResponse": {
         "properties": {
+          "priorities": {
+            "items": {
+              "$ref": "#/components/schemas/contract.BoardPriority"
+            },
+            "type": "array"
+          },
           "project": {
             "$ref": "#/components/schemas/contract.ProjectSummary"
           },

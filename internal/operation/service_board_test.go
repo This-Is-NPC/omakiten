@@ -39,4 +39,15 @@ func TestTaskBoardCountsRelationsWithinProject(t *testing.T) {
 	if got := counts[fixture.taskA1.ID].Tags; len(got) != 1 || got[0] != "Layout" {
 		t.Fatalf("A1 tags = %v, want the label [Layout]", got)
 	}
+	// The priorities a task can take, so a client can offer them.
+	if len(board.Priorities) == 0 {
+		t.Fatal("board priorities missing")
+	}
+	var found bool
+	for _, priority := range board.Priorities {
+		found = found || priority.Value == counts[fixture.taskA1.ID].Priority
+	}
+	if !found {
+		t.Fatalf("priorities %+v lack A1's priority %q", board.Priorities, counts[fixture.taskA1.ID].Priority)
+	}
 }
