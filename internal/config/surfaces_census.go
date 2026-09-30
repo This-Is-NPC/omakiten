@@ -112,13 +112,15 @@ func CanonicalSurfaceTable() SurfaceTable {
 			table[e.Slug] = SurfacePolicy{
 				CLI:    surfaceBool(false),
 				TUI:    surfaceBool(false),
+				HTTP:   surfaceBool(false),
 				Reason: DeniedWiringReason,
 			}
 			continue
 		}
 		table[e.Slug] = SurfacePolicy{
-			CLI: surfaceBool(true),
-			TUI: surfaceBool(true),
+			CLI:  surfaceBool(true),
+			TUI:  surfaceBool(true),
+			HTTP: surfaceBool(true),
 		}
 	}
 	return table

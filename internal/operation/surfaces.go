@@ -13,8 +13,9 @@ import (
 type Surface string
 
 const (
-	SurfaceCLI Surface = "cli"
-	SurfaceTUI Surface = "tui"
+	SurfaceCLI  Surface = "cli"
+	SurfaceTUI  Surface = "tui"
+	SurfaceHTTP Surface = "http"
 )
 
 // OperationDenied is returned when the surfaces table turns the
@@ -54,6 +55,16 @@ func (s *Service) ForTUI() *Service {
 	return &c
 }
 
+// ForHTTP returns a shallow copy pinned to the HTTP surface.
+func (s *Service) ForHTTP() *Service {
+	if s == nil {
+		return nil
+	}
+	c := *s
+	c.surface = SurfaceHTTP
+	return &c
+}
+
 // allow is the first line of every product method. Wiring methods and
 // TUI-shaped extras that are not in the 74-slug census must not call it.
 // Zero surface, a nil snapshot, or an empty table are unrestricted.
@@ -86,6 +97,8 @@ func surfaceFlag(row config.SurfacePolicy, surface Surface) *bool {
 		return row.CLI
 	case SurfaceTUI:
 		return row.TUI
+	case SurfaceHTTP:
+		return row.HTTP
 	default:
 		return nil
 	}

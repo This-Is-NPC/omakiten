@@ -860,17 +860,18 @@ func (p *CommentOpPolicy) UnmarshalYAML(value *yaml.Node) error {
 }
 
 // SurfaceTable is the top-level `surfaces:` mapping: one row per
-// operation.Service method (70 census slugs). Pointer bools distinguish
-// not an implicit true.
+// operation.Service census slug. Pointer bools distinguish a missing key
+// from an explicit false.
 type SurfaceTable map[string]SurfacePolicy
 
-// SurfacePolicy is one row of the surfaces table. CLI/TUI are
+// SurfacePolicy is one row of the surfaces table. CLI/TUI/HTTP are
 // pointers so ValidateBundle can reject a row that skipped a key.
 // Reason is required when any of the three is false; `${{intl:...}}`
 // tokens are stored as-is and resolved by the catalog at display time.
 type SurfacePolicy struct {
 	CLI    *bool  `yaml:"cli" json:"cli"`
 	TUI    *bool  `yaml:"tui" json:"tui"`
+	HTTP   *bool  `yaml:"http" json:"http"`
 	Reason string `yaml:"reason,omitempty" json:"reason,omitempty"`
 }
 

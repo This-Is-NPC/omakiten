@@ -132,8 +132,8 @@ func TestCLIDeniedOperationNamedError(t *testing.T) {
 		t.Fatalf("read surfaces module: %v", err)
 	}
 	patched := strings.Replace(string(raw),
-		"template.list: { cli: true, tui: true, }",
-		`template.list: { cli: false, tui: true, reason: "${{intl:operations.denied.agent_delete}}" }`,
+		"template.list: { cli: true, tui: true, http: true }",
+		`template.list: { cli: false, tui: true, http: true, reason: "${{intl:operations.denied.agent_delete}}" }`,
 		1)
 	if patched == string(raw) {
 		t.Fatal("surfaces module did not contain the template.list row to patch")

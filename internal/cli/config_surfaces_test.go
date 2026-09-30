@@ -104,7 +104,7 @@ func TestConfigSurfacesCheckMissingSlugIsError(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read surfaces module: %v", err)
 	}
-	stripped := strings.Replace(string(raw), "task.delete: { cli: true, tui: true, }\n", "", 1)
+	stripped := strings.Replace(string(raw), "task.delete: { cli: true, tui: true, http: true }\n", "", 1)
 	if stripped == string(raw) {
 		t.Fatal("surfaces module did not contain the task.delete row to strip")
 	}

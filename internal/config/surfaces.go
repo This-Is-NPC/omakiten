@@ -33,7 +33,10 @@ func validateSurfaceRow(slug string, row SurfacePolicy) error {
 	if row.TUI == nil {
 		return fmt.Errorf("surfaces.%s: tui is required", slug)
 	}
-	if !*row.CLI || !*row.TUI {
+	if row.HTTP == nil {
+		return fmt.Errorf("surfaces.%s: http is required", slug)
+	}
+	if !*row.CLI || !*row.TUI || !*row.HTTP {
 		if strings.TrimSpace(row.Reason) == "" {
 			return fmt.Errorf("surfaces.%s: reason is required when any surface is false", slug)
 		}
@@ -80,7 +83,7 @@ func LoadSurfaceTable(path string) (SurfaceTable, error) {
 	return wired.Surfaces, nil
 }
 
-// SurfaceScaffoldYAML emits the canonical 74-row table as a mapping
+// SurfaceScaffoldYAML emits the canonical table as a mapping
 // body suitable to drop under `surfaces:` or into a module file.
 // Product rows are all-true; wiring rows are all-false with
 // DeniedWiringReason. Rows are grouped by entity prefix with a blank
@@ -110,7 +113,8 @@ func surfaceEntity(slug string) string {
 
 func formatSurfaceRow(slug string, row SurfacePolicy) string {
 	line := slug + ": { cli: " + yamlSurfaceBool(row.CLI) +
-		", tui: " + yamlSurfaceBool(row.TUI)
+		", tui: " + yamlSurfaceBool(row.TUI) +
+		", http: " + yamlSurfaceBool(row.HTTP)
 	if strings.TrimSpace(row.Reason) != "" {
 		line += ", reason: \"" + row.Reason + "\""
 	}
