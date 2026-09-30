@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"omakiten/internal/config"
+	"omakiten/internal/domain"
 )
 
 // Surface is the construction-time identity of a facade consumer.
@@ -31,6 +32,23 @@ func (e OperationDenied) Error() string {
 		return fmt.Sprintf("operation %q denied on %s: %s", e.Op, e.Surface, e.Reason)
 	}
 	return fmt.Sprintf("operation %q denied on %s", e.Op, e.Surface)
+}
+
+// Coded maps the denial onto the operation_denied error. catalog resolves
+// the reason token and the fallback message.
+func (e OperationDenied) Coded(catalog *config.Catalog) *domain.CodedError {
+	reason := catalog.Resolve(e.Reason)
+	if reason == "" {
+		reason = catalog.Get("cli.err.operation_denied")
+	}
+	details := map[string]any{
+		"op":      e.Op,
+		"surface": string(e.Surface),
+	}
+	if e.Reason != "" {
+		details["reason"] = reason
+	}
+	return domain.NewError(domain.ErrOperationDenied, reason, details)
 }
 
 // ForCLI returns a shallow copy pinned to the CLI surface. The

@@ -437,18 +437,7 @@ func codedFromOperationDenied(err error) *domain.CodedError {
 		return nil
 	}
 	ensurePkgCatalog()
-	reason := pkgCatalog.Resolve(denied.Reason)
-	if reason == "" {
-		reason = t("cli.err.operation_denied")
-	}
-	details := map[string]any{
-		"op":      denied.Op,
-		"surface": string(denied.Surface),
-	}
-	if denied.Reason != "" {
-		details["reason"] = reason
-	}
-	return domain.NewError(domain.ErrOperationDenied, reason, details)
+	return denied.Coded(pkgCatalog)
 }
 
 // emitBundleWarnings surfaces non-fatal config issues (skipped custom
