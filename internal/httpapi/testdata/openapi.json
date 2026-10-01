@@ -1104,6 +1104,20 @@
         ],
         "type": "object"
       },
+      "contract.ListTemplatesResponse": {
+        "properties": {
+          "templates": {
+            "items": {
+              "$ref": "#/components/schemas/contract.TemplateSummary"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "templates"
+        ],
+        "type": "object"
+      },
       "contract.LogsRow": {
         "properties": {
           "agent_model": {
@@ -2015,6 +2029,48 @@
         },
         "required": [
           "body",
+          "slug"
+        ],
+        "type": "object"
+      },
+      "contract.TemplateSummary": {
+        "properties": {
+          "body": {
+            "type": "string"
+          },
+          "default": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "entity": {
+            "type": "string"
+          },
+          "is_custom": {
+            "type": "boolean"
+          },
+          "laws": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "name": {
+            "type": "string"
+          },
+          "project": {
+            "type": "string"
+          },
+          "slug": {
+            "type": "string"
+          },
+          "source_path": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
           "slug"
         ],
         "type": "object"
@@ -7230,6 +7286,85 @@
         },
         "summary": "Restore an archived task.",
         "x-okt-surface": "task.unarchive"
+      }
+    },
+    "/api/v1/projects/{project}/templates": {
+      "get": {
+        "operationId": "listTemplates",
+        "parameters": [
+          {
+            "description": "Project slug.",
+            "in": "path",
+            "name": "project",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Default kind filter.",
+            "in": "query",
+            "name": "kind",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Resolve each default kind for this project slug, preferring its own template over the global one.",
+            "in": "query",
+            "name": "scope_project",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "`true` includes template bodies.",
+            "in": "query",
+            "name": "include_body",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/contract.ListTemplatesResponse"
+                    },
+                    "ok": {
+                      "const": true
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success."
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/output.Envelope"
+                }
+              }
+            },
+            "description": "Error envelope."
+          }
+        },
+        "summary": "Templates the project configuration loads.",
+        "x-okt-surface": "template.list"
       }
     },
     "/api/v1/projects/{project}/waves/{wave}": {

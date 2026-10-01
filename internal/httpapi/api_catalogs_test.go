@@ -14,6 +14,9 @@ var _ = mapping([]mappingCase{
 	{"getPersona", http.MethodGet, "/api/v1/projects/alpha/personas/reviewer", "", "ShowPersona", contract.ShowPersonaInput{Slug: "reviewer"}},
 	{"listSkills", http.MethodGet, "/api/v1/projects/alpha/skills", "", "ListSkills", contract.ListSkillsInput{}},
 	{"getSkill", http.MethodGet, "/api/v1/projects/alpha/skills/tdd", "", "ShowSkill", contract.ShowSkillInput{Slug: "tdd"}},
+	{"listTemplates", http.MethodGet, "/api/v1/projects/alpha/templates?kind=handoff&scope_project=alpha&include_body=true", "", "ListTemplates", contract.ListTemplatesInput{
+		ProjectSelector: alpha, Kind: "handoff", Project: "alpha", IncludeBody: true,
+	}},
 })
 
 func (f *fakeOps) ListLaws(_ context.Context, in contract.ListLawsInput) (contract.ListLawsResponse, error) {
@@ -44,4 +47,9 @@ func (f *fakeOps) ListSkills(_ context.Context, in contract.ListSkillsInput) (co
 func (f *fakeOps) ShowSkill(_ context.Context, in contract.ShowSkillInput) (contract.ShowSkillResponse, error) {
 	f.record("ShowSkill", in)
 	return contract.ShowSkillResponse{}, nil
+}
+
+func (f *fakeOps) ListTemplates(_ context.Context, in contract.ListTemplatesInput) (contract.ListTemplatesResponse, error) {
+	f.record("ListTemplates", in)
+	return contract.ListTemplatesResponse{}, nil
 }

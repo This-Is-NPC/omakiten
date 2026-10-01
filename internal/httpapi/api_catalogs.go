@@ -16,6 +16,7 @@ type CatalogOperations interface {
 	ShowPersona(ctx context.Context, input contract.ShowPersonaInput) (contract.ShowPersonaResponse, error)
 	ListSkills(ctx context.Context, input contract.ListSkillsInput) (contract.ListSkillsResponse, error)
 	ShowSkill(ctx context.Context, input contract.ShowSkillInput) (contract.ShowSkillResponse, error)
+	ListTemplates(ctx context.Context, input contract.ListTemplatesInput) (contract.ListTemplatesResponse, error)
 }
 
 func (s *Server) catalogRoutes() []route {
@@ -31,7 +32,30 @@ func (s *Server) catalogRoutes() []route {
 		query("getPersona", http.MethodGet, projectPath+"/personas/{persona}", "persona.get", "A persona with its body and expanded laws and skills.", []param{projectParam, pathParam("persona", "Persona slug.", stringSchema)}, s.showPersona),
 		query("listSkills", http.MethodGet, projectPath+"/skills", "skill.list", "Skills the project configuration loads, without bodies.", []param{projectParam}, s.listSkills),
 		query("getSkill", http.MethodGet, projectPath+"/skills/{skill}", "skill.get", "A skill with its body.", []param{projectParam, pathParam("skill", "Skill slug.", stringSchema)}, s.showSkill),
+		query("listTemplates", http.MethodGet, projectPath+"/templates", "template.list", "Templates the project configuration loads.", []param{
+			projectParam,
+			queryParam("kind", "Default kind filter.", stringSchema),
+			queryParam("scope_project", "Resolve each default kind for this project slug, preferring its own template over the global one.", stringSchema),
+			queryParam("include_body", "`true` includes template bodies.", boolSchema),
+		}, s.listTemplates),
 	}
+}
+
+func (s *Server) listTemplates(r *http.Request) (contract.ListTemplatesResponse, error) {
+	ops, selector, err := s.project(r)
+	if err != nil {
+		return contract.ListTemplatesResponse{}, err
+	}
+	includeBody, err := optionalBool(r, "include_body")
+	if err != nil {
+		return contract.ListTemplatesResponse{}, err
+	}
+	return ops.ListTemplates(r.Context(), contract.ListTemplatesInput{
+		ProjectSelector: selector,
+		Kind:            r.URL.Query().Get("kind"),
+		Project:         r.URL.Query().Get("scope_project"),
+		IncludeBody:     includeBody != nil && *includeBody,
+	})
 }
 
 func (s *Server) showSkill(r *http.Request) (contract.ShowSkillResponse, error) {
