@@ -108,7 +108,7 @@ func TestInvalidParametersNeverReachOperations(t *testing.T) {
 // unknown slug with project_not_found before any operation runs.
 func TestProjectRoutesResolveTheProjectFirst(t *testing.T) {
 	server, _ := newTestServer(t, &fakeOps{}, fakeLog{})
-	fill := strings.NewReplacer("{project}", "ghost", "{task}", "5", "{plan}", "delivery", "{wave}", "3", "{comment}", "9", "{depends_on}", "6", "{error}", "3", "{solution}", "4", "{tag}", "3", "{law}", "no-secrets")
+	fill := strings.NewReplacer("{project}", "ghost", "{task}", "5", "{plan}", "delivery", "{wave}", "3", "{comment}", "9", "{depends_on}", "6", "{error}", "3", "{solution}", "4", "{tag}", "3", "{law}", "no-secrets", "{persona}", "reviewer")
 	for _, rt := range server.routes() {
 		if !strings.Contains(rt.path, "{project}") {
 			continue

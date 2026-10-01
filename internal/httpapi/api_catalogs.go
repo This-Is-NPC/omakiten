@@ -13,6 +13,7 @@ type CatalogOperations interface {
 	ListLaws(ctx context.Context, input contract.ListLawsInput) (contract.ListLawsResponse, error)
 	ShowLaw(ctx context.Context, input contract.ShowLawInput) (contract.ShowLawResponse, error)
 	ListPersonas(ctx context.Context, input contract.ListPersonasInput) (contract.ListPersonasResponse, error)
+	ShowPersona(ctx context.Context, input contract.ShowPersonaInput) (contract.ShowPersonaResponse, error)
 }
 
 func (s *Server) catalogRoutes() []route {
@@ -25,7 +26,16 @@ func (s *Server) catalogRoutes() []route {
 		}, s.listLaws),
 		query("getLaw", http.MethodGet, projectPath+"/laws/{law}", "law.get", "A law with its body.", []param{projectParam, pathParam("law", "Law slug.", stringSchema)}, s.showLaw),
 		query("listPersonas", http.MethodGet, projectPath+"/personas", "persona.list", "Personas the project configuration loads, without bodies.", []param{projectParam}, s.listPersonas),
+		query("getPersona", http.MethodGet, projectPath+"/personas/{persona}", "persona.get", "A persona with its body and expanded laws and skills.", []param{projectParam, pathParam("persona", "Persona slug.", stringSchema)}, s.showPersona),
 	}
+}
+
+func (s *Server) showPersona(r *http.Request) (contract.ShowPersonaResponse, error) {
+	ops, _, err := s.project(r)
+	if err != nil {
+		return contract.ShowPersonaResponse{}, err
+	}
+	return ops.ShowPersona(r.Context(), contract.ShowPersonaInput{Slug: r.PathValue("persona")})
 }
 
 func (s *Server) listPersonas(r *http.Request) (contract.ListPersonasResponse, error) {

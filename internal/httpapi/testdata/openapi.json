@@ -220,6 +220,65 @@
         ],
         "type": "object"
       },
+      "contract.CommandDefinition": {
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "next": {
+            "items": {
+              "$ref": "#/components/schemas/contract.CommandReference"
+            },
+            "type": "array"
+          },
+          "parameters": {
+            "items": {
+              "$ref": "#/components/schemas/contract.CommandParameter"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "type": "object"
+      },
+      "contract.CommandParameter": {
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "required": {
+            "type": "boolean"
+          },
+          "type": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "type"
+        ],
+        "type": "object"
+      },
+      "contract.CommandReference": {
+        "properties": {
+          "context": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "when": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "context",
+          "name"
+        ],
+        "type": "object"
+      },
       "contract.CommentResponse": {
         "properties": {
           "comment": {
@@ -860,6 +919,37 @@
         ],
         "type": "object"
       },
+      "contract.LawInfo": {
+        "properties": {
+          "body": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "persona": {
+            "type": "string"
+          },
+          "project": {
+            "type": "string"
+          },
+          "scope": {
+            "type": "string"
+          },
+          "severity": {
+            "type": "string"
+          },
+          "slug": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "body",
+          "severity",
+          "slug"
+        ],
+        "type": "object"
+      },
       "contract.LawSummary": {
         "properties": {
           "body": {
@@ -1147,6 +1237,38 @@
           "pending_count",
           "project",
           "workflow"
+        ],
+        "type": "object"
+      },
+      "contract.PersonaDetail": {
+        "properties": {
+          "body": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "laws": {
+            "items": {
+              "$ref": "#/components/schemas/contract.LawInfo"
+            },
+            "type": "array"
+          },
+          "name": {
+            "type": "string"
+          },
+          "skill_repertoire": {
+            "items": {
+              "$ref": "#/components/schemas/contract.SkillSummary"
+            },
+            "type": "array"
+          },
+          "slug": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "slug"
         ],
         "type": "object"
       },
@@ -1565,6 +1687,17 @@
         ],
         "type": "object"
       },
+      "contract.ShowPersonaResponse": {
+        "properties": {
+          "persona": {
+            "$ref": "#/components/schemas/contract.PersonaDetail"
+          }
+        },
+        "required": [
+          "persona"
+        ],
+        "type": "object"
+      },
       "contract.ShowPlanResponse": {
         "properties": {
           "active_wave_id": {
@@ -1630,6 +1763,29 @@
         "required": [
           "project",
           "task"
+        ],
+        "type": "object"
+      },
+      "contract.SkillSummary": {
+        "properties": {
+          "body": {
+            "type": "string"
+          },
+          "command": {
+            "$ref": "#/components/schemas/contract.CommandDefinition"
+          },
+          "description": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "slug": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "slug"
         ],
         "type": "object"
       },
@@ -4331,6 +4487,67 @@
         },
         "summary": "Personas the project configuration loads, without bodies.",
         "x-okt-surface": "persona.list"
+      }
+    },
+    "/api/v1/projects/{project}/personas/{persona}": {
+      "get": {
+        "operationId": "getPersona",
+        "parameters": [
+          {
+            "description": "Project slug.",
+            "in": "path",
+            "name": "project",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Persona slug.",
+            "in": "path",
+            "name": "persona",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/contract.ShowPersonaResponse"
+                    },
+                    "ok": {
+                      "const": true
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success."
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/output.Envelope"
+                }
+              }
+            },
+            "description": "Error envelope."
+          }
+        },
+        "summary": "A persona with its body and expanded laws and skills.",
+        "x-okt-surface": "persona.get"
       }
     },
     "/api/v1/projects/{project}/plans": {
