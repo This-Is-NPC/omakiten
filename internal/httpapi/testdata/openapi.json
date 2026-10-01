@@ -660,6 +660,28 @@
         ],
         "type": "object"
       },
+      "contract.MigrateOrphansResponse": {
+        "properties": {
+          "applied": {
+            "type": "boolean"
+          },
+          "confirmation": {
+            "$ref": "#/components/schemas/contract.Confirmation"
+          },
+          "project": {
+            "$ref": "#/components/schemas/contract.ProjectSummary"
+          },
+          "report": {
+            "$ref": "#/components/schemas/domain.OrphanReport"
+          }
+        },
+        "required": [
+          "applied",
+          "project",
+          "report"
+        ],
+        "type": "object"
+      },
       "contract.MoveTaskResponse": {
         "properties": {
           "project": {
@@ -1459,6 +1481,86 @@
         ],
         "type": "object"
       },
+      "domain.OrphanGroup": {
+        "properties": {
+          "count": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "from_bucket_key": {
+            "type": "string"
+          },
+          "tasks": {
+            "items": {
+              "$ref": "#/components/schemas/domain.OrphanedTask"
+            },
+            "type": "array"
+          },
+          "to_bucket_key": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "count",
+          "from_bucket_key",
+          "to_bucket_key"
+        ],
+        "type": "object"
+      },
+      "domain.OrphanReport": {
+        "properties": {
+          "groups": {
+            "items": {
+              "$ref": "#/components/schemas/domain.OrphanGroup"
+            },
+            "type": "array"
+          },
+          "total": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "workflow_key": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "total",
+          "workflow_key"
+        ],
+        "type": "object"
+      },
+      "domain.OrphanedTask": {
+        "properties": {
+          "depth": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "from_bucket_key": {
+            "type": "string"
+          },
+          "parent_id": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "task_id": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "title": {
+            "type": "string"
+          },
+          "to_bucket_key": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "from_bucket_key",
+          "task_id",
+          "title",
+          "to_bucket_key"
+        ],
+        "type": "object"
+      },
       "domain.Project": {
         "properties": {
           "description": {
@@ -1703,6 +1805,14 @@
           "status",
           "version"
         ],
+        "type": "object"
+      },
+      "httpapi.MigrateOrphansBody": {
+        "properties": {
+          "confirmed": {
+            "type": "boolean"
+          }
+        },
         "type": "object"
       },
       "httpapi.StudioBucket": {
@@ -3700,6 +3810,68 @@
         },
         "summary": "Buckets, transitions, and permissions.",
         "x-okt-surface": "workflow.show"
+      }
+    },
+    "/api/v1/projects/{project}/workflow/orphans": {
+      "post": {
+        "operationId": "migrateOrphans",
+        "parameters": [
+          {
+            "description": "Project slug.",
+            "in": "path",
+            "name": "project",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/httpapi.MigrateOrphansBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/contract.MigrateOrphansResponse"
+                    },
+                    "ok": {
+                      "const": true
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success."
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/output.Envelope"
+                }
+              }
+            },
+            "description": "Error envelope."
+          }
+        },
+        "summary": "Preview or apply the rebind of tasks left on removed buckets.",
+        "x-okt-surface": "orphans.migrate"
       }
     },
     "/health": {

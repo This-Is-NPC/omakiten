@@ -17,6 +17,7 @@ type Operations interface {
 	DependencyOperations
 	PlanOperations
 	InsightOperations
+	MaintenanceOperations
 }
 
 // Runtimes resolves the operation facade for each request.

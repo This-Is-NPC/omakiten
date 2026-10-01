@@ -44,6 +44,7 @@ func (s *Server) routes() []route {
 		s.dependencyRoutes(),
 		s.planRoutes(),
 		s.insightRoutes(),
+		s.maintenanceRoutes(),
 		[]route{
 			query("getKnowledge", http.MethodGet, projectPath+"/knowledge", "", "File-backed knowledge of a project and its related projects.", []param{projectParam}, s.knowledge),
 			query("getStudio", http.MethodGet, projectPath+"/studio", "", "Workflow guards, agent wiring, hooks, and effective settings.", []param{projectParam}, s.studio),
