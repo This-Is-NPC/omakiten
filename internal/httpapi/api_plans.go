@@ -24,6 +24,7 @@ type PlanOperations interface {
 	AddPlanWave(ctx context.Context, input contract.AddPlanWaveInput) (contract.AddPlanWaveResponse, error)
 	RemovePlanWave(ctx context.Context, input contract.RemovePlanWaveInput) (contract.RemovePlanWaveResponse, error)
 	RenamePlanWave(ctx context.Context, input contract.RenamePlanWaveInput) (contract.RenamePlanWaveResponse, error)
+	ReorderPlanWave(ctx context.Context, input contract.ReorderPlanWaveInput) (contract.ReorderPlanWaveResponse, error)
 }
 
 // CreatePlanBody is the createPlan request body.
@@ -53,6 +54,12 @@ type WaveNameBody struct {
 	Name string `json:"name"`
 }
 
+// WavePositionBody moves a wave to a 1-based position in its plan; an
+// occupied position swaps the two waves.
+type WavePositionBody struct {
+	Position int `json:"position"`
+}
+
 func (s *Server) planRoutes() []route {
 	return []route{
 		query("listPlans", http.MethodGet, projectPath+"/plans", "plan.list", "Plans of a project.", []param{projectParam}, s.listPlans),
@@ -64,6 +71,7 @@ func (s *Server) planRoutes() []route {
 		command("addPlanWave", http.MethodPost, planPath+"/waves", "plan.wave.add", "Append or insert a wave into a plan.", []param{projectParam, planParam}, s.addPlanWave),
 		query("removePlanWave", http.MethodDelete, wavePath, "plan.wave.remove", "Delete a wave; its tasks stay in the plan, unscheduled.", []param{projectParam, waveParam, confirmedParam}, s.removePlanWave),
 		command("renamePlanWave", http.MethodPut, wavePath+"/name", "plan.wave.rename", "Rename a wave.", []param{projectParam, waveParam}, s.renamePlanWave),
+		command("reorderPlanWave", http.MethodPut, wavePath+"/position", "plan.wave.reorder", "Move a wave to another position in its plan.", []param{projectParam, waveParam}, s.reorderPlanWave),
 	}
 }
 
@@ -171,4 +179,12 @@ func (s *Server) renamePlanWave(r *http.Request, body WaveNameBody) (contract.Re
 		return contract.RenamePlanWaveResponse{}, err
 	}
 	return ops.RenamePlanWave(r.Context(), contract.RenamePlanWaveInput{ProjectSelector: selector, WaveID: waveID, Name: body.Name})
+}
+
+func (s *Server) reorderPlanWave(r *http.Request, body WavePositionBody) (contract.ReorderPlanWaveResponse, error) {
+	ops, selector, waveID, err := s.wave(r)
+	if err != nil {
+		return contract.ReorderPlanWaveResponse{}, err
+	}
+	return ops.ReorderPlanWave(r.Context(), contract.ReorderPlanWaveInput{ProjectSelector: selector, WaveID: waveID, Position: body.Position})
 }

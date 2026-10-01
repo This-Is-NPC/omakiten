@@ -1176,6 +1176,21 @@
         ],
         "type": "object"
       },
+      "contract.ReorderPlanWaveResponse": {
+        "properties": {
+          "project": {
+            "$ref": "#/components/schemas/contract.ProjectSummary"
+          },
+          "wave": {
+            "$ref": "#/components/schemas/contract.PlanWaveSummary"
+          }
+        },
+        "required": [
+          "project",
+          "wave"
+        ],
+        "type": "object"
+      },
       "contract.ResumeProjectResponse": {
         "properties": {
           "blocked_work": {
@@ -2581,6 +2596,18 @@
         },
         "required": [
           "name"
+        ],
+        "type": "object"
+      },
+      "httpapi.WavePositionBody": {
+        "properties": {
+          "position": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "position"
         ],
         "type": "object"
       },
@@ -5160,6 +5187,79 @@
         },
         "summary": "Rename a wave.",
         "x-okt-surface": "plan.wave.rename"
+      }
+    },
+    "/api/v1/projects/{project}/waves/{wave}/position": {
+      "put": {
+        "operationId": "reorderPlanWave",
+        "parameters": [
+          {
+            "description": "Project slug.",
+            "in": "path",
+            "name": "project",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Wave id.",
+            "in": "path",
+            "name": "wave",
+            "required": true,
+            "schema": {
+              "format": "int64",
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/httpapi.WavePositionBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/contract.ReorderPlanWaveResponse"
+                    },
+                    "ok": {
+                      "const": true
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success."
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/output.Envelope"
+                }
+              }
+            },
+            "description": "Error envelope."
+          }
+        },
+        "summary": "Move a wave to another position in its plan.",
+        "x-okt-surface": "plan.wave.reorder"
       }
     },
     "/api/v1/projects/{project}/workflow": {
