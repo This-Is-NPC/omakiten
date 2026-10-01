@@ -15,6 +15,7 @@ var _ = mapping([]mappingCase{
 	{"deletePlan", http.MethodDelete, "/api/v1/projects/alpha/plans/delivery?confirmed=true", "", "DeletePlan", contract.DeletePlanInput{ProjectSelector: alpha, Slug: "delivery", Confirmed: true}},
 	{"getPlanContinuation", http.MethodGet, "/api/v1/projects/alpha/plans/delivery/continuation", "", "ContinuePlan", contract.ContinuePlanInput{ProjectSelector: alpha, Slug: "delivery"}},
 	{"addPlanWave", http.MethodPost, "/api/v1/projects/alpha/plans/delivery/waves", `{"name":"Build","position":2}`, "AddPlanWave", contract.AddPlanWaveInput{ProjectSelector: alpha, Slug: "delivery", Name: "Build", Position: 2}},
+	{"removePlanWave", http.MethodDelete, "/api/v1/projects/alpha/waves/3?confirmed=true", "", "RemovePlanWave", contract.RemovePlanWaveInput{ProjectSelector: alpha, WaveID: 3, Confirmed: true}},
 })
 
 func (f *fakeOps) ListPlans(_ context.Context, in contract.ListPlansInput) (contract.ListPlansResponse, error) {
@@ -50,4 +51,9 @@ func (f *fakeOps) ContinuePlan(_ context.Context, in contract.ContinuePlanInput)
 func (f *fakeOps) AddPlanWave(_ context.Context, in contract.AddPlanWaveInput) (contract.AddPlanWaveResponse, error) {
 	f.record("AddPlanWave", in)
 	return contract.AddPlanWaveResponse{}, nil
+}
+
+func (f *fakeOps) RemovePlanWave(_ context.Context, in contract.RemovePlanWaveInput) (contract.RemovePlanWaveResponse, error) {
+	f.record("RemovePlanWave", in)
+	return contract.RemovePlanWaveResponse{}, nil
 }

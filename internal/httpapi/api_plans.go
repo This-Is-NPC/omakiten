@@ -7,6 +7,12 @@ import (
 	"omakiten/internal/contract"
 )
 
+// wavePath addresses a wave by its id alone: wave ids are unique in a
+// project and the wave operations take no plan.
+const wavePath = projectPath + "/waves/{wave}"
+
+var waveParam = pathParam("wave", "Wave id.", idSchema)
+
 // PlanOperations reads and changes plans, their waves, and their tasks.
 type PlanOperations interface {
 	ListPlans(ctx context.Context, input contract.ListPlansInput) (contract.ListPlansResponse, error)
@@ -16,6 +22,7 @@ type PlanOperations interface {
 	DeletePlan(ctx context.Context, input contract.DeletePlanInput) (contract.DeletePlanResponse, error)
 	ContinuePlan(ctx context.Context, input contract.ContinuePlanInput) (contract.ContinuePlanResponse, error)
 	AddPlanWave(ctx context.Context, input contract.AddPlanWaveInput) (contract.AddPlanWaveResponse, error)
+	RemovePlanWave(ctx context.Context, input contract.RemovePlanWaveInput) (contract.RemovePlanWaveResponse, error)
 }
 
 // CreatePlanBody is the createPlan request body.
@@ -49,6 +56,7 @@ func (s *Server) planRoutes() []route {
 		query("deletePlan", http.MethodDelete, planPath, "plan.delete", "Delete a plan and its waves; its tasks stay, detached.", []param{projectParam, planParam, confirmedParam}, s.deletePlan),
 		query("getPlanContinuation", http.MethodGet, planPath+"/continuation", "plan.continue", "A plan with a preview of the task a claim would take next.", []param{projectParam, planParam}, s.continuePlan),
 		command("addPlanWave", http.MethodPost, planPath+"/waves", "plan.wave.add", "Append or insert a wave into a plan.", []param{projectParam, planParam}, s.addPlanWave),
+		query("removePlanWave", http.MethodDelete, wavePath, "plan.wave.remove", "Delete a wave; its tasks stay in the plan, unscheduled.", []param{projectParam, waveParam, confirmedParam}, s.removePlanWave),
 	}
 }
 
@@ -127,4 +135,25 @@ func (s *Server) addPlanWave(r *http.Request, body AddPlanWaveBody) (contract.Ad
 		Name:            body.Name,
 		Position:        body.Position,
 	})
+}
+
+func (s *Server) wave(r *http.Request) (Operations, contract.ProjectSelector, int64, error) {
+	waveID, err := parseID(r.PathValue("wave"), "wave")
+	if err != nil {
+		return nil, contract.ProjectSelector{}, 0, err
+	}
+	ops, selector, err := s.project(r)
+	return ops, selector, waveID, err
+}
+
+func (s *Server) removePlanWave(r *http.Request) (contract.RemovePlanWaveResponse, error) {
+	ok, err := confirmed(r)
+	if err != nil {
+		return contract.RemovePlanWaveResponse{}, err
+	}
+	ops, selector, waveID, err := s.wave(r)
+	if err != nil {
+		return contract.RemovePlanWaveResponse{}, err
+	}
+	return ops.RemovePlanWave(r.Context(), contract.RemovePlanWaveInput{ProjectSelector: selector, WaveID: waveID, Confirmed: ok})
 }

@@ -1144,6 +1144,23 @@
         ],
         "type": "object"
       },
+      "contract.RemovePlanWaveResponse": {
+        "properties": {
+          "confirmation": {
+            "$ref": "#/components/schemas/contract.Confirmation"
+          },
+          "project": {
+            "$ref": "#/components/schemas/contract.ProjectSummary"
+          },
+          "wave": {
+            "$ref": "#/components/schemas/contract.PlanWaveSummary"
+          }
+        },
+        "required": [
+          "project"
+        ],
+        "type": "object"
+      },
       "contract.ResumeProjectResponse": {
         "properties": {
           "blocked_work": {
@@ -4972,6 +4989,78 @@
         },
         "summary": "Restore an archived task.",
         "x-okt-surface": "task.unarchive"
+      }
+    },
+    "/api/v1/projects/{project}/waves/{wave}": {
+      "delete": {
+        "operationId": "removePlanWave",
+        "parameters": [
+          {
+            "description": "Project slug.",
+            "in": "path",
+            "name": "project",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Wave id.",
+            "in": "path",
+            "name": "wave",
+            "required": true,
+            "schema": {
+              "format": "int64",
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "`true` performs the change; otherwise the answer asks for confirmation.",
+            "in": "query",
+            "name": "confirmed",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/contract.RemovePlanWaveResponse"
+                    },
+                    "ok": {
+                      "const": true
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success."
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/output.Envelope"
+                }
+              }
+            },
+            "description": "Error envelope."
+          }
+        },
+        "summary": "Delete a wave; its tasks stay in the plan, unscheduled.",
+        "x-okt-surface": "plan.wave.remove"
       }
     },
     "/api/v1/projects/{project}/workflow": {
