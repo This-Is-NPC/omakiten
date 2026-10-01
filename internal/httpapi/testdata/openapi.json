@@ -1220,6 +1220,24 @@
         ],
         "type": "object"
       },
+      "contract.RemoveDependencyResponse": {
+        "properties": {
+          "confirmation": {
+            "$ref": "#/components/schemas/contract.Confirmation"
+          },
+          "project": {
+            "$ref": "#/components/schemas/contract.ProjectSummary"
+          },
+          "removed": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "project",
+          "removed"
+        ],
+        "type": "object"
+      },
       "contract.RemovePlanWaveResponse": {
         "properties": {
           "confirmation": {
@@ -5345,6 +5363,89 @@
         },
         "summary": "Make a task wait on another task.",
         "x-okt-surface": "dependency.add"
+      }
+    },
+    "/api/v1/projects/{project}/tasks/{task}/dependencies/{depends_on}": {
+      "delete": {
+        "operationId": "removeDependency",
+        "parameters": [
+          {
+            "description": "Project slug.",
+            "in": "path",
+            "name": "project",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Task id.",
+            "in": "path",
+            "name": "task",
+            "required": true,
+            "schema": {
+              "format": "int64",
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Id of the task waited on.",
+            "in": "path",
+            "name": "depends_on",
+            "required": true,
+            "schema": {
+              "format": "int64",
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "`true` performs the change; otherwise the answer asks for confirmation.",
+            "in": "query",
+            "name": "confirmed",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/contract.RemoveDependencyResponse"
+                    },
+                    "ok": {
+                      "const": true
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success."
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/output.Envelope"
+                }
+              }
+            },
+            "description": "Error envelope."
+          }
+        },
+        "summary": "Stop a task waiting on another task; requires confirmation.",
+        "x-okt-surface": "dependency.remove"
       }
     },
     "/api/v1/projects/{project}/tasks/{task}/export": {

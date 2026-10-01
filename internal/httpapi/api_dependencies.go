@@ -11,6 +11,7 @@ import (
 type DependencyOperations interface {
 	ListDependencies(ctx context.Context, input contract.ListDependenciesInput) (contract.DependenciesResponse, error)
 	AddDependency(ctx context.Context, input contract.AddDependencyInput) (contract.DependencyResponse, error)
+	RemoveDependency(ctx context.Context, input contract.RemoveDependencyInput) (contract.RemoveDependencyResponse, error)
 }
 
 // DependencyBody names the task the path task waits on.
@@ -25,6 +26,11 @@ func (s *Server) dependencyRoutes() []route {
 			queryParam("task", "Limit to one task id.", idSchema),
 		}, s.listDependencies),
 		command("addDependency", http.MethodPost, taskPath+"/dependencies", "dependency.add", "Make a task wait on another task.", []param{projectParam, taskParam}, s.addDependency),
+		query("removeDependency", http.MethodDelete, taskPath+"/dependencies/{depends_on}", "dependency.remove", "Stop a task waiting on another task; requires confirmation.", []param{
+			projectParam, taskParam,
+			pathParam("depends_on", "Id of the task waited on.", idSchema),
+			confirmedParam,
+		}, s.removeDependency),
 	}
 }
 
@@ -48,4 +54,20 @@ func (s *Server) addDependency(r *http.Request, body DependencyBody) (contract.D
 		return contract.DependencyResponse{}, err
 	}
 	return ops.AddDependency(r.Context(), contract.AddDependencyInput{ProjectSelector: selector, TaskID: taskID, DependsOnTaskID: body.DependsOnTaskID})
+}
+
+func (s *Server) removeDependency(r *http.Request) (contract.RemoveDependencyResponse, error) {
+	dependsOn, err := parseID(r.PathValue("depends_on"), "depends_on")
+	if err != nil {
+		return contract.RemoveDependencyResponse{}, err
+	}
+	ok, err := confirmed(r)
+	if err != nil {
+		return contract.RemoveDependencyResponse{}, err
+	}
+	ops, selector, taskID, err := s.task(r)
+	if err != nil {
+		return contract.RemoveDependencyResponse{}, err
+	}
+	return ops.RemoveDependency(r.Context(), contract.RemoveDependencyInput{ProjectSelector: selector, TaskID: taskID, DependsOnTaskID: dependsOn, Confirmed: ok})
 }
