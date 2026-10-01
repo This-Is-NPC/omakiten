@@ -6,6 +6,11 @@ if [[ "${OKT_SKIP_LOCAL_CHECK:-0}" == 1 ]]; then
   exit 0
 fi
 
+# Git runs the hook with the pushing repository's GIT_* variables; the check
+# and its tests find their own repositories from the working directory.
+# shellcheck disable=SC2046
+unset $(git rev-parse --local-env-vars)
+
 script="$repo_root/scripts/local-check.sh"
 if [[ ! -x "$script" ]]; then
   printf 'pre-push: %s missing or not executable\n' "$script" >&2
