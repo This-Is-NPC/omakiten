@@ -12,6 +12,7 @@ import (
 type CatalogOperations interface {
 	ListLaws(ctx context.Context, input contract.ListLawsInput) (contract.ListLawsResponse, error)
 	ShowLaw(ctx context.Context, input contract.ShowLawInput) (contract.ShowLawResponse, error)
+	ListPersonas(ctx context.Context, input contract.ListPersonasInput) (contract.ListPersonasResponse, error)
 }
 
 func (s *Server) catalogRoutes() []route {
@@ -23,7 +24,16 @@ func (s *Server) catalogRoutes() []route {
 			queryParam("persona", "Owner persona slug filter.", stringSchema),
 		}, s.listLaws),
 		query("getLaw", http.MethodGet, projectPath+"/laws/{law}", "law.get", "A law with its body.", []param{projectParam, pathParam("law", "Law slug.", stringSchema)}, s.showLaw),
+		query("listPersonas", http.MethodGet, projectPath+"/personas", "persona.list", "Personas the project configuration loads, without bodies.", []param{projectParam}, s.listPersonas),
 	}
+}
+
+func (s *Server) listPersonas(r *http.Request) (contract.ListPersonasResponse, error) {
+	ops, _, err := s.project(r)
+	if err != nil {
+		return contract.ListPersonasResponse{}, err
+	}
+	return ops.ListPersonas(r.Context(), contract.ListPersonasInput{})
 }
 
 func (s *Server) showLaw(r *http.Request) (contract.ShowLawResponse, error) {

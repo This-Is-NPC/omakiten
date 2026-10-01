@@ -928,6 +928,20 @@
         ],
         "type": "object"
       },
+      "contract.ListPersonasResponse": {
+        "properties": {
+          "personas": {
+            "items": {
+              "$ref": "#/components/schemas/contract.PersonaSummary"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "personas"
+        ],
+        "type": "object"
+      },
       "contract.ListPlansResponse": {
         "properties": {
           "plans": {
@@ -1133,6 +1147,23 @@
           "pending_count",
           "project",
           "workflow"
+        ],
+        "type": "object"
+      },
+      "contract.PersonaSummary": {
+        "properties": {
+          "description": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "slug": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "slug"
         ],
         "type": "object"
       },
@@ -4248,6 +4279,58 @@
         },
         "summary": "Task and event metrics for a project.",
         "x-okt-surface": "metrics.summary"
+      }
+    },
+    "/api/v1/projects/{project}/personas": {
+      "get": {
+        "operationId": "listPersonas",
+        "parameters": [
+          {
+            "description": "Project slug.",
+            "in": "path",
+            "name": "project",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/contract.ListPersonasResponse"
+                    },
+                    "ok": {
+                      "const": true
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success."
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/output.Envelope"
+                }
+              }
+            },
+            "description": "Error envelope."
+          }
+        },
+        "summary": "Personas the project configuration loads, without bodies.",
+        "x-okt-surface": "persona.list"
       }
     },
     "/api/v1/projects/{project}/plans": {
