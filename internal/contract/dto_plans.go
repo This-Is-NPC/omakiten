@@ -31,8 +31,17 @@ type ListPlansInput struct {
 }
 
 type ListPlansResponse struct {
-	Project ProjectSummary `json:"project"`
-	Plans   []PlanSummary  `json:"plans"`
+	Project ProjectSummary  `json:"project"`
+	Plans   []PlanListEntry `json:"plans"`
+}
+
+// PlanListEntry is a plan of the list with its progress: done and total
+// tasks across its waves, archived ones left out, and the wave in progress.
+type PlanListEntry struct {
+	PlanSummary
+	DoneCount      int    `json:"done_count"`
+	TotalCount     int    `json:"total_count"`
+	ActiveWaveName string `json:"active_wave_name,omitempty"`
 }
 
 type ShowPlanInput struct {

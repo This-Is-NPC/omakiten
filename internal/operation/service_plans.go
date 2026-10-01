@@ -38,9 +38,10 @@ func (s *Service) CreatePlan(ctx context.Context, input contract.CreatePlanInput
 	}, nil
 }
 
-// ListPlans returns every plan in the resolved project, oldest first.
-// GoalBody is stripped from each entry to keep payloads compact — the
-// goal body is full markdown capped at the domain write boundary.
+// ListPlans returns every plan in the resolved project, oldest first, each
+// with its done and total task counts and the wave in progress. GoalBody is
+// stripped from each entry to keep payloads compact — the goal body is full
+// markdown capped at the domain write boundary.
 func (s *Service) ListPlans(ctx context.Context, input contract.ListPlansInput) (contract.ListPlansResponse, error) {
 	if err := s.allow("plan.list"); err != nil {
 		return contract.ListPlansResponse{}, err
@@ -49,15 +50,20 @@ func (s *Service) ListPlans(ctx context.Context, input contract.ListPlansInput) 
 	if err != nil {
 		return contract.ListPlansResponse{}, err
 	}
-	plans, err := s.newPlanService().List(ctx, project)
+	rollups, err := s.newPlanService().ListRollups(ctx, project)
 	if err != nil {
 		return contract.ListPlansResponse{}, err
 	}
-	summaries := make([]contract.PlanSummary, 0, len(plans))
-	for _, p := range plans {
-		s := planSummary(p)
-		s.GoalBody = ""
-		summaries = append(summaries, s)
+	summaries := make([]contract.PlanListEntry, 0, len(rollups))
+	for _, r := range rollups {
+		entry := contract.PlanListEntry{
+			PlanSummary:    planSummary(r.Plan),
+			DoneCount:      r.DoneCount,
+			TotalCount:     r.TotalCount,
+			ActiveWaveName: r.ActiveWaveName,
+		}
+		entry.GoalBody = ""
+		summaries = append(summaries, entry)
 	}
 	return contract.ListPlansResponse{
 		Project: projectSummary(project),

@@ -504,7 +504,7 @@
         "properties": {
           "plans": {
             "items": {
-              "$ref": "#/components/schemas/contract.PlanSummary"
+              "$ref": "#/components/schemas/contract.PlanListEntry"
             },
             "type": "array"
           },
@@ -683,6 +683,55 @@
           "pending_count",
           "project",
           "workflow"
+        ],
+        "type": "object"
+      },
+      "contract.PlanListEntry": {
+        "properties": {
+          "active_wave_name": {
+            "type": "string"
+          },
+          "completed_at": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string"
+          },
+          "done_count": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "goal_body": {
+            "type": "string"
+          },
+          "id": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          },
+          "slug": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "total_count": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "updated_at": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "done_count",
+          "id",
+          "name",
+          "slug",
+          "status",
+          "total_count"
         ],
         "type": "object"
       },
