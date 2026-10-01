@@ -73,20 +73,21 @@ func assertEveryJSONRouteCovered(t *testing.T, covered map[string]bool) {
 // TestInvalidParametersNeverReachOperations covers every parser the routes
 // share: a malformed id, number, or flag is a 400 and no operation runs.
 func TestInvalidParametersNeverReachOperations(t *testing.T) {
-	for _, tc := range []struct{ method, target string }{
-		{http.MethodGet, "/api/v1/projects/alpha/tasks/abc"},
-		{http.MethodGet, "/api/v1/projects/alpha/tasks/0"},
-		{http.MethodGet, "/api/v1/projects/alpha/tasks/-4/comments"},
-		{http.MethodGet, "/api/v1/projects/alpha/dependencies?task=x"},
-		{http.MethodGet, "/api/v1/projects/alpha/logs?limit=ten"},
-		{http.MethodGet, "/api/v1/projects/alpha/insights?stuck_days=1.5"},
-		{http.MethodDelete, "/api/v1/projects/alpha/plans/delivery?confirmed=maybe"},
-		{http.MethodDelete, "/api/v1/projects/alpha/waves/x"},
+	for _, tc := range []struct{ method, target, body string }{
+		{http.MethodGet, "/api/v1/projects/alpha/tasks/abc", ""},
+		{http.MethodGet, "/api/v1/projects/alpha/tasks/0", ""},
+		{http.MethodGet, "/api/v1/projects/alpha/tasks/-4/comments", ""},
+		{http.MethodGet, "/api/v1/projects/alpha/dependencies?task=x", ""},
+		{http.MethodGet, "/api/v1/projects/alpha/logs?limit=ten", ""},
+		{http.MethodGet, "/api/v1/projects/alpha/insights?stuck_days=1.5", ""},
+		{http.MethodDelete, "/api/v1/projects/alpha/plans/delivery?confirmed=maybe", ""},
+		{http.MethodDelete, "/api/v1/projects/alpha/waves/x", ""},
+		{http.MethodPatch, "/api/v1/projects/alpha/comments/x", "{}"},
 	} {
 		t.Run(tc.method+" "+tc.target, func(t *testing.T) {
 			ops := &fakeOps{}
 			server, _ := newTestServer(t, ops, fakeLog{})
-			rec := do(t, server, tc.method, tc.target, "", nil)
+			rec := do(t, server, tc.method, tc.target, tc.body, nil)
 			env := decode(t, rec)
 			if rec.Code != http.StatusBadRequest || env.Code != "invalid_parameter" || env.Details["parameter"] == nil {
 				t.Fatalf("got %d %+v, want invalid_parameter naming the parameter", rec.Code, env)
@@ -102,7 +103,7 @@ func TestInvalidParametersNeverReachOperations(t *testing.T) {
 // unknown slug with project_not_found before any operation runs.
 func TestProjectRoutesResolveTheProjectFirst(t *testing.T) {
 	server, _ := newTestServer(t, &fakeOps{}, fakeLog{})
-	fill := strings.NewReplacer("{project}", "ghost", "{task}", "5", "{plan}", "delivery", "{wave}", "3")
+	fill := strings.NewReplacer("{project}", "ghost", "{task}", "5", "{plan}", "delivery", "{wave}", "3", "{comment}", "9")
 	for _, rt := range server.routes() {
 		if !strings.Contains(rt.path, "{project}") {
 			continue

@@ -11,6 +11,7 @@ import (
 type CommentOperations interface {
 	ListComments(ctx context.Context, input contract.ListCommentsInput) (contract.CommentsResponse, error)
 	AddComment(ctx context.Context, input contract.AddCommentInput) (contract.CommentResponse, error)
+	EditComment(ctx context.Context, input contract.EditCommentInput) (contract.CommentResponse, error)
 }
 
 // CommentBody is the addTaskComment request body.
@@ -23,10 +24,23 @@ type CommentBody struct {
 	TemplateSlug string   `json:"template_slug,omitempty"`
 }
 
+// EditCommentBody is the editComment request body; absent fields stay
+// unchanged and present tags replace the stored ones.
+type EditCommentBody struct {
+	Body   *string  `json:"body,omitempty"`
+	Title  *string  `json:"title,omitempty"`
+	Kind   *string  `json:"kind,omitempty"`
+	Pinned *bool    `json:"pinned,omitempty"`
+	Tags   []string `json:"tags,omitempty"`
+}
+
+var commentParam = pathParam("comment", "Comment id.", idSchema)
+
 func (s *Server) commentRoutes() []route {
 	return []route{
 		query("listTaskComments", http.MethodGet, taskPath+"/comments", "comment.list", "Comments of a task.", []param{projectParam, taskParam}, s.listComments),
 		command("addTaskComment", http.MethodPost, taskPath+"/comments", "comment.add", "Add a human comment to a task.", []param{projectParam, taskParam}, s.addComment),
+		command("editComment", http.MethodPatch, projectPath+"/comments/{comment}", "comment.edit", "Edit comment fields.", []param{projectParam, commentParam}, s.editComment),
 	}
 }
 
@@ -53,5 +67,30 @@ func (s *Server) addComment(r *http.Request, body CommentBody) (contract.Comment
 		AuthorType:      "human",
 		Tags:            body.Tags,
 		TemplateSlug:    body.TemplateSlug,
+	})
+}
+
+func (s *Server) comment(r *http.Request) (Operations, contract.ProjectSelector, int64, error) {
+	commentID, err := parseID(r.PathValue("comment"), "comment")
+	if err != nil {
+		return nil, contract.ProjectSelector{}, 0, err
+	}
+	ops, selector, err := s.project(r)
+	return ops, selector, commentID, err
+}
+
+func (s *Server) editComment(r *http.Request, body EditCommentBody) (contract.CommentResponse, error) {
+	ops, selector, commentID, err := s.comment(r)
+	if err != nil {
+		return contract.CommentResponse{}, err
+	}
+	return ops.EditComment(r.Context(), contract.EditCommentInput{
+		ProjectSelector: selector,
+		CommentID:       commentID,
+		Body:            body.Body,
+		Title:           body.Title,
+		Kind:            body.Kind,
+		Pinned:          body.Pinned,
+		Tags:            body.Tags,
 	})
 }

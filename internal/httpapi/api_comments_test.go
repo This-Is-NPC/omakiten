@@ -12,6 +12,9 @@ var _ = mapping([]mappingCase{
 	{"addTaskComment", http.MethodPost, "/api/v1/projects/alpha/tasks/5/comments", `{"body":"B","title":"Ti","kind":"note","pinned":true,"tags":["a"],"template_slug":"tpl"}`, "AddComment", contract.AddCommentInput{
 		ProjectSelector: alpha, TaskID: 5, Body: "B", Title: "Ti", Kind: "note", Pinned: true, AuthorType: "human", Tags: []string{"a"}, TemplateSlug: "tpl",
 	}},
+	{"editComment", http.MethodPatch, "/api/v1/projects/alpha/comments/9", `{"title":"Ti","pinned":false,"tags":[]}`, "EditComment", contract.EditCommentInput{
+		ProjectSelector: alpha, CommentID: 9, Title: ptr("Ti"), Pinned: ptr(false), Tags: []string{},
+	}},
 })
 
 func (f *fakeOps) ListComments(_ context.Context, in contract.ListCommentsInput) (contract.CommentsResponse, error) {
@@ -21,5 +24,10 @@ func (f *fakeOps) ListComments(_ context.Context, in contract.ListCommentsInput)
 
 func (f *fakeOps) AddComment(_ context.Context, in contract.AddCommentInput) (contract.CommentResponse, error) {
 	f.record("AddComment", in)
+	return contract.CommentResponse{}, nil
+}
+
+func (f *fakeOps) EditComment(_ context.Context, in contract.EditCommentInput) (contract.CommentResponse, error) {
+	f.record("EditComment", in)
 	return contract.CommentResponse{}, nil
 }
