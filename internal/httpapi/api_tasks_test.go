@@ -25,6 +25,7 @@ var _ = mapping([]mappingCase{
 	{"listTaskActivity", http.MethodGet, "/api/v1/projects/alpha/tasks/5/activity?order=desc", "", "ListTaskActivity", contract.ListTaskActivityInput{ProjectSelector: alpha, TaskID: 5, Order: "desc"}},
 	{"deleteTask", http.MethodDelete, "/api/v1/projects/alpha/tasks/5?confirmed=true", "", "DeleteTask", contract.DeleteTaskInput{ProjectSelector: alpha, TaskID: 5, Confirmed: true}},
 	{"archiveTask", http.MethodPost, "/api/v1/projects/alpha/tasks/5/archive", "", "ArchiveTask", contract.ArchiveTaskInput{ProjectSelector: alpha, TaskID: 5}},
+	{"unarchiveTask", http.MethodPost, "/api/v1/projects/alpha/tasks/5/unarchive", "", "UnarchiveTask", contract.ArchiveTaskInput{ProjectSelector: alpha, TaskID: 5}},
 })
 
 // TestMalformedBooleanQueryNeverReachesOperations: a flag that is not a
@@ -95,5 +96,10 @@ func (f *fakeOps) DeleteTask(_ context.Context, in contract.DeleteTaskInput) (co
 
 func (f *fakeOps) ArchiveTask(_ context.Context, in contract.ArchiveTaskInput) (contract.ArchiveTaskResponse, error) {
 	f.record("ArchiveTask", in)
+	return contract.ArchiveTaskResponse{}, nil
+}
+
+func (f *fakeOps) UnarchiveTask(_ context.Context, in contract.ArchiveTaskInput) (contract.ArchiveTaskResponse, error) {
+	f.record("UnarchiveTask", in)
 	return contract.ArchiveTaskResponse{}, nil
 }

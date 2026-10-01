@@ -20,6 +20,7 @@ type TaskOperations interface {
 	ListTaskActivity(ctx context.Context, input contract.ListTaskActivityInput) (contract.ListTaskActivityResponse, error)
 	DeleteTask(ctx context.Context, input contract.DeleteTaskInput) (contract.DeleteTaskResponse, error)
 	ArchiveTask(ctx context.Context, input contract.ArchiveTaskInput) (contract.ArchiveTaskResponse, error)
+	UnarchiveTask(ctx context.Context, input contract.ArchiveTaskInput) (contract.ArchiveTaskResponse, error)
 }
 
 // CreateTaskBody is the createTask request body.
@@ -70,6 +71,7 @@ func (s *Server) taskRoutes() []route {
 			queryParam("confirmed", "`true` deletes; otherwise the confirmation is returned.", boolSchema),
 		}, s.deleteTask),
 		query("archiveTask", http.MethodPost, taskPath+"/archive", "task.archive", "Archive a task.", []param{projectParam, taskParam}, s.archiveTask),
+		query("unarchiveTask", http.MethodPost, taskPath+"/unarchive", "task.unarchive", "Restore an archived task.", []param{projectParam, taskParam}, s.unarchiveTask),
 		query("listTaskActivity", http.MethodGet, taskPath+"/activity", "task_activity.list", "Unified activity feed of a task.", []param{
 			projectParam, taskParam,
 			queryParam("order", "`asc` (default) or `desc`.", stringSchema),
@@ -179,6 +181,14 @@ func (s *Server) archiveTask(r *http.Request) (contract.ArchiveTaskResponse, err
 		return contract.ArchiveTaskResponse{}, err
 	}
 	return ops.ArchiveTask(r.Context(), contract.ArchiveTaskInput{ProjectSelector: selector, TaskID: taskID})
+}
+
+func (s *Server) unarchiveTask(r *http.Request) (contract.ArchiveTaskResponse, error) {
+	ops, selector, taskID, err := s.task(r)
+	if err != nil {
+		return contract.ArchiveTaskResponse{}, err
+	}
+	return ops.UnarchiveTask(r.Context(), contract.ArchiveTaskInput{ProjectSelector: selector, TaskID: taskID})
 }
 
 func (s *Server) taskActivity(r *http.Request) (contract.ListTaskActivityResponse, error) {
