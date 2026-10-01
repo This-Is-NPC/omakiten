@@ -88,6 +88,9 @@ func TestInvalidParametersNeverReachOperations(t *testing.T) {
 		{http.MethodPost, "/api/v1/projects/alpha/errors/0/solutions", "{}"},
 		{http.MethodPost, "/api/v1/projects/alpha/solutions/s/confirmations", "{}"},
 		{http.MethodGet, "/api/v1/projects/alpha/tags?entity_type=task&entity_id=x", ""},
+		{http.MethodDelete, "/api/v1/projects/alpha/tasks/5?confirmed=maybe", ""},
+		{http.MethodDelete, "/api/v1/projects/alpha/tags/x?entity_type=project", ""},
+		{http.MethodDelete, "/api/v1/projects/alpha/tags/9?entity_type=project&confirmed=maybe", ""},
 		{http.MethodGet, "/api/v1/projects/alpha/templates?include_body=yes", ""},
 	} {
 		t.Run(tc.method+" "+tc.target, func(t *testing.T) {

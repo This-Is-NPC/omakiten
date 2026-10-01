@@ -3,7 +3,6 @@ package httpapi
 import (
 	"context"
 	"net/http"
-	"testing"
 
 	"omakiten/internal/contract"
 )
@@ -30,21 +29,6 @@ var _ = mapping([]mappingCase{
 		ProjectSelector: alpha, TaskID: 5, IncludeWorkflow: ptr(false),
 	}},
 })
-
-// TestMalformedBooleanQueryNeverReachesOperations: a flag that is not a
-// boolean is a 400 naming the parameter, and no operation runs.
-func TestMalformedBooleanQueryNeverReachesOperations(t *testing.T) {
-	ops := &fakeOps{}
-	server, _ := newTestServer(t, ops, fakeLog{})
-	rec := do(t, server, http.MethodDelete, "/api/v1/projects/alpha/tasks/5?confirmed=maybe", "", nil)
-	env := decode(t, rec)
-	if rec.Code != http.StatusBadRequest || env.Code != "invalid_parameter" || env.Details["parameter"] != "confirmed" {
-		t.Fatalf("got %d %+v, want invalid_parameter naming confirmed", rec.Code, env)
-	}
-	if len(ops.calls) != 0 {
-		t.Fatalf("operation ran: %+v", ops.calls)
-	}
-}
 
 func (f *fakeOps) TaskBoard(_ context.Context, in contract.TaskBoardInput) (contract.TaskBoardResponse, error) {
 	f.record("TaskBoard", in)

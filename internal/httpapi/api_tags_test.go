@@ -3,29 +3,9 @@ package httpapi
 import (
 	"context"
 	"net/http"
-	"testing"
 
 	"omakiten/internal/contract"
 )
-
-func TestRemoveTagRejectsMalformedParameters(t *testing.T) {
-	for _, target := range []string{
-		"/api/v1/projects/alpha/tags/x?entity_type=project",
-		"/api/v1/projects/alpha/tags/9?entity_type=project&confirmed=maybe",
-	} {
-		t.Run(target, func(t *testing.T) {
-			ops := &fakeOps{}
-			server, _ := newTestServer(t, ops, fakeLog{})
-			rec := do(t, server, http.MethodDelete, target, "", nil)
-			if env := decode(t, rec); rec.Code != http.StatusBadRequest || env.Code != "invalid_parameter" {
-				t.Fatalf("got %d %+v, want invalid_parameter", rec.Code, env)
-			}
-			if len(ops.calls) != 0 {
-				t.Fatalf("operation ran: %+v", ops.calls)
-			}
-		})
-	}
-}
 
 var _ = mapping([]mappingCase{
 	{"listTags", http.MethodGet, "/api/v1/projects/alpha/tags?entity_type=task&entity_id=5", "", "ListTags", contract.ListTagsInput{ProjectSelector: alpha, EntityType: "task", EntityID: 5}},
