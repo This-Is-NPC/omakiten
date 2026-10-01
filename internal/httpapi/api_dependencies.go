@@ -10,6 +10,12 @@ import (
 // DependencyOperations reads and changes task dependencies.
 type DependencyOperations interface {
 	ListDependencies(ctx context.Context, input contract.ListDependenciesInput) (contract.DependenciesResponse, error)
+	AddDependency(ctx context.Context, input contract.AddDependencyInput) (contract.DependencyResponse, error)
+}
+
+// DependencyBody names the task the path task waits on.
+type DependencyBody struct {
+	DependsOnTaskID int64 `json:"depends_on_task_id"`
 }
 
 func (s *Server) dependencyRoutes() []route {
@@ -18,6 +24,7 @@ func (s *Server) dependencyRoutes() []route {
 			projectParam,
 			queryParam("task", "Limit to one task id.", idSchema),
 		}, s.listDependencies),
+		command("addDependency", http.MethodPost, taskPath+"/dependencies", "dependency.add", "Make a task wait on another task.", []param{projectParam, taskParam}, s.addDependency),
 	}
 }
 
@@ -33,4 +40,12 @@ func (s *Server) listDependencies(r *http.Request) (contract.DependenciesRespons
 		}
 	}
 	return ops.ListDependencies(r.Context(), input)
+}
+
+func (s *Server) addDependency(r *http.Request, body DependencyBody) (contract.DependencyResponse, error) {
+	ops, selector, taskID, err := s.task(r)
+	if err != nil {
+		return contract.DependencyResponse{}, err
+	}
+	return ops.AddDependency(r.Context(), contract.AddDependencyInput{ProjectSelector: selector, TaskID: taskID, DependsOnTaskID: body.DependsOnTaskID})
 }

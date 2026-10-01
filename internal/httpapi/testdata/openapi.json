@@ -515,6 +515,21 @@
         ],
         "type": "object"
       },
+      "contract.DependencyResponse": {
+        "properties": {
+          "dependency": {
+            "$ref": "#/components/schemas/contract.DependencySummary"
+          },
+          "project": {
+            "$ref": "#/components/schemas/contract.ProjectSummary"
+          }
+        },
+        "required": [
+          "dependency",
+          "project"
+        ],
+        "type": "object"
+      },
       "contract.DependencySummary": {
         "properties": {
           "depends_on_task_id": {
@@ -2211,6 +2226,18 @@
         },
         "required": [
           "description"
+        ],
+        "type": "object"
+      },
+      "httpapi.DependencyBody": {
+        "properties": {
+          "depends_on_task_id": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "depends_on_task_id"
         ],
         "type": "object"
       },
@@ -5245,6 +5272,79 @@
         },
         "summary": "Add a human comment to a task.",
         "x-okt-surface": "comment.add"
+      }
+    },
+    "/api/v1/projects/{project}/tasks/{task}/dependencies": {
+      "post": {
+        "operationId": "addDependency",
+        "parameters": [
+          {
+            "description": "Project slug.",
+            "in": "path",
+            "name": "project",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Task id.",
+            "in": "path",
+            "name": "task",
+            "required": true,
+            "schema": {
+              "format": "int64",
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/httpapi.DependencyBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/contract.DependencyResponse"
+                    },
+                    "ok": {
+                      "const": true
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success."
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/output.Envelope"
+                }
+              }
+            },
+            "description": "Error envelope."
+          }
+        },
+        "summary": "Make a task wait on another task.",
+        "x-okt-surface": "dependency.add"
       }
     },
     "/api/v1/projects/{project}/tasks/{task}/export": {
