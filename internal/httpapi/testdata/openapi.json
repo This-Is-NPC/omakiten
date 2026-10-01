@@ -302,6 +302,21 @@
         ],
         "type": "object"
       },
+      "contract.CreatePlanResponse": {
+        "properties": {
+          "plan": {
+            "$ref": "#/components/schemas/contract.PlanSummary"
+          },
+          "project": {
+            "$ref": "#/components/schemas/contract.ProjectSummary"
+          }
+        },
+        "required": [
+          "plan",
+          "project"
+        ],
+        "type": "object"
+      },
       "contract.CreateTaskResponse": {
         "properties": {
           "confirmation": {
@@ -1891,6 +1906,24 @@
         ],
         "type": "object"
       },
+      "httpapi.CreatePlanBody": {
+        "properties": {
+          "goal_body": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "slug": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "slug"
+        ],
+        "type": "object"
+      },
       "httpapi.CreateTaskBody": {
         "properties": {
           "bucket_key": {
@@ -3092,6 +3125,66 @@
         },
         "summary": "Plans of a project.",
         "x-okt-surface": "plan.list"
+      },
+      "post": {
+        "operationId": "createPlan",
+        "parameters": [
+          {
+            "description": "Project slug.",
+            "in": "path",
+            "name": "project",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/httpapi.CreatePlanBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/contract.CreatePlanResponse"
+                    },
+                    "ok": {
+                      "const": true
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success."
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/output.Envelope"
+                }
+              }
+            },
+            "description": "Error envelope."
+          }
+        },
+        "summary": "Create a plan.",
+        "x-okt-surface": "plan.create"
       }
     },
     "/api/v1/projects/{project}/plans/import": {

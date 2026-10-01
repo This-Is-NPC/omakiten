@@ -9,6 +9,7 @@ import (
 
 var _ = mapping([]mappingCase{
 	{"listPlans", http.MethodGet, "/api/v1/projects/alpha/plans", "", "ListPlans", contract.ListPlansInput{ProjectSelector: alpha}},
+	{"createPlan", http.MethodPost, "/api/v1/projects/alpha/plans", `{"slug":"delivery","name":"Delivery","goal_body":"Ship it."}`, "CreatePlan", contract.CreatePlanInput{ProjectSelector: alpha, Slug: "delivery", Name: "Delivery", GoalBody: "Ship it."}},
 	{"getPlan", http.MethodGet, "/api/v1/projects/alpha/plans/delivery", "", "ShowPlan", contract.ShowPlanInput{ProjectSelector: alpha, Slug: "delivery"}},
 })
 
@@ -20,4 +21,9 @@ func (f *fakeOps) ListPlans(_ context.Context, in contract.ListPlansInput) (cont
 func (f *fakeOps) ShowPlan(_ context.Context, in contract.ShowPlanInput) (contract.ShowPlanResponse, error) {
 	f.record("ShowPlan", in)
 	return contract.ShowPlanResponse{}, nil
+}
+
+func (f *fakeOps) CreatePlan(_ context.Context, in contract.CreatePlanInput) (contract.CreatePlanResponse, error) {
+	f.record("CreatePlan", in)
+	return contract.CreatePlanResponse{}, nil
 }
