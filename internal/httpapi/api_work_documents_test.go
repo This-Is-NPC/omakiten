@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"strings"
 	"testing"
 
 	"omakiten/internal/contract"
@@ -11,12 +12,35 @@ import (
 	"omakiten/internal/workfile"
 )
 
-var _ = mapping([]mappingCase{
-	{"exportTask", http.MethodGet, "/api/v1/projects/alpha/tasks/5/export", "", "ExportTask", contract.ExportWorkInput{ProjectSelector: alpha, TaskID: 5}},
-})
-
 // exportedTask is the document the fake ExportTask returns.
 var exportedTask = domain.WorkDocument{Type: "Omakiten Task", Spec: domain.WorkSpec{Version: 1, Task: &domain.WorkTask{Key: "ship", Title: "Ship", Description: "Ship it."}}}
+
+// taskMarkdown is exportedTask as OKF Markdown; parsedTask is what an
+// import of it hands the operation.
+var taskMarkdown, parsedTask = okf(exportedTask)
+
+var _ = mapping([]mappingCase{
+	{"exportTask", http.MethodGet, "/api/v1/projects/alpha/tasks/5/export", "", "ExportTask", contract.ExportWorkInput{ProjectSelector: alpha, TaskID: 5}},
+	{"importTask", http.MethodPost, "/api/v1/projects/alpha/tasks/import", `{"markdown":` + taskMarkdown + `,"dry_run":true,"confirmed":true}`, "ImportTask", contract.ImportWorkInput{ProjectSelector: alpha, Document: parsedTask, DryRun: true, Confirmed: true}},
+})
+
+// okf encodes doc and returns it as a JSON string together with the
+// document the codec parses back from it.
+func okf(doc domain.WorkDocument) (string, domain.WorkDocument) {
+	markdown, err := workfile.Encode(doc)
+	if err != nil {
+		panic(err)
+	}
+	parsed, err := workfile.Parse(strings.NewReader(string(markdown)))
+	if err != nil {
+		panic(err)
+	}
+	quoted, err := json.Marshal(string(markdown))
+	if err != nil {
+		panic(err)
+	}
+	return string(quoted), parsed
+}
 
 // TestExportAnswersTheEncodedDocument: the response carries the Markdown
 // the CLI writes for the same document.
@@ -31,16 +55,41 @@ func TestExportAnswersTheEncodedDocument(t *testing.T) {
 	if err := json.Unmarshal(env.Data, &got); err != nil {
 		t.Fatal(err)
 	}
-	want, err := workfile.Encode(exportedTask)
-	if err != nil {
+	var want string
+	if err := json.Unmarshal([]byte(taskMarkdown), &want); err != nil {
 		t.Fatal(err)
 	}
-	if got.Type != exportedTask.Type || got.Markdown != string(want) {
+	if got.Type != exportedTask.Type || got.Markdown != want {
 		t.Fatalf("got %+v, want type %q and markdown %q", got, exportedTask.Type, want)
+	}
+}
+
+// TestImportRejectsMalformedMarkdown: a document the codec cannot parse is
+// a validation error and no operation runs.
+func TestImportRejectsMalformedMarkdown(t *testing.T) {
+	for _, target := range []string{
+		"/api/v1/projects/alpha/tasks/import",
+	} {
+		t.Run(target, func(t *testing.T) {
+			ops := &fakeOps{}
+			server, _ := newTestServer(t, ops, fakeLog{})
+			rec := do(t, server, http.MethodPost, target, `{"markdown":"no frontmatter"}`, nil)
+			if env := decode(t, rec); rec.Code != http.StatusBadRequest || env.Code != string(domain.ErrValidation) {
+				t.Fatalf("got %d %+v, want validation_error", rec.Code, env)
+			}
+			if len(ops.calls) != 0 {
+				t.Fatalf("operation ran: %+v", ops.calls)
+			}
+		})
 	}
 }
 
 func (f *fakeOps) ExportTask(_ context.Context, in contract.ExportWorkInput) (domain.WorkDocument, error) {
 	f.record("ExportTask", in)
 	return exportedTask, nil
+}
+
+func (f *fakeOps) ImportTask(_ context.Context, in contract.ImportWorkInput) (contract.ImportWorkResponse, error) {
+	f.record("ImportTask", in)
+	return contract.ImportWorkResponse{}, nil
 }

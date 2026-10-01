@@ -449,6 +449,50 @@
         ],
         "type": "object"
       },
+      "contract.ImportWorkResponse": {
+        "properties": {
+          "confirmation": {
+            "$ref": "#/components/schemas/contract.Confirmation"
+          },
+          "dry_run": {
+            "type": "boolean"
+          },
+          "plan": {
+            "$ref": "#/components/schemas/domain.Plan"
+          },
+          "project": {
+            "$ref": "#/components/schemas/contract.ProjectSummary"
+          },
+          "similar_tasks": {
+            "items": {
+              "$ref": "#/components/schemas/contract.TaskSummary"
+            },
+            "type": "array"
+          },
+          "task_count": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "tasks": {
+            "additionalProperties": {
+              "format": "int64",
+              "type": "integer"
+            },
+            "type": "object"
+          },
+          "wave_count": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "dry_run",
+          "project",
+          "task_count",
+          "wave_count"
+        ],
+        "type": "object"
+      },
       "contract.InsightsModelSummary": {
         "properties": {
           "agent_model": {
@@ -1631,6 +1675,47 @@
         ],
         "type": "object"
       },
+      "domain.Plan": {
+        "properties": {
+          "completed_at": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string"
+          },
+          "goal_body": {
+            "type": "string"
+          },
+          "id": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          },
+          "project_id": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "slug": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "updated_at": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "project_id",
+          "slug",
+          "status"
+        ],
+        "type": "object"
+      },
       "domain.Project": {
         "properties": {
           "description": {
@@ -1874,6 +1959,23 @@
         "required": [
           "status",
           "version"
+        ],
+        "type": "object"
+      },
+      "httpapi.ImportWorkBody": {
+        "properties": {
+          "confirmed": {
+            "type": "boolean"
+          },
+          "dry_run": {
+            "type": "boolean"
+          },
+          "markdown": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "markdown"
         ],
         "type": "object"
       },
@@ -3357,6 +3459,68 @@
         },
         "summary": "Create a task; similar work requires confirmation.",
         "x-okt-surface": "task.create_intent"
+      }
+    },
+    "/api/v1/projects/{project}/tasks/import": {
+      "post": {
+        "operationId": "importTask",
+        "parameters": [
+          {
+            "description": "Project slug.",
+            "in": "path",
+            "name": "project",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/httpapi.ImportWorkBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/contract.ImportWorkResponse"
+                    },
+                    "ok": {
+                      "const": true
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success."
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/output.Envelope"
+                }
+              }
+            },
+            "description": "Error envelope."
+          }
+        },
+        "summary": "Import a task from an OKF Markdown document.",
+        "x-okt-surface": "task.import"
       }
     },
     "/api/v1/projects/{project}/tasks/{task}": {
