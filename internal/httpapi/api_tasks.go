@@ -67,10 +67,7 @@ func (s *Server) taskRoutes() []route {
 		command("editTask", http.MethodPatch, taskPath, "task.edit", "Edit task fields.", []param{projectParam, taskParam}, s.editTask),
 		command("moveTask", http.MethodPost, taskPath+"/transitions", "task.transition", "Move a task through a workflow transition.", []param{projectParam, taskParam}, s.moveTask),
 		command("assignTask", http.MethodPut, taskPath+"/assignee", "task.assign", "Set or clear the task assignee.", []param{projectParam, taskParam}, s.assignTask),
-		query("deleteTask", http.MethodDelete, taskPath, "task.delete", "Hard-delete a task; without confirmation only the confirmation is returned.", []param{
-			projectParam, taskParam,
-			queryParam("confirmed", "`true` deletes; otherwise the confirmation is returned.", boolSchema),
-		}, s.deleteTask),
+		query("deleteTask", http.MethodDelete, taskPath, "task.delete", "Hard-delete a task; without confirmation only the confirmation is returned.", []param{projectParam, taskParam, confirmedParam}, s.deleteTask),
 		query("archiveTask", http.MethodPost, taskPath+"/archive", "task.archive", "Archive a task.", []param{projectParam, taskParam}, s.archiveTask),
 		query("unarchiveTask", http.MethodPost, taskPath+"/unarchive", "task.unarchive", "Restore an archived task.", []param{projectParam, taskParam}, s.unarchiveTask),
 		query("getTaskCheckpoint", http.MethodGet, taskPath+"/checkpoint", "task.continue", "Checkpoint to resume a task: workflow, dependencies and recent comments.", []param{
@@ -173,11 +170,11 @@ func (s *Server) deleteTask(r *http.Request) (contract.DeleteTaskResponse, error
 	if err != nil {
 		return contract.DeleteTaskResponse{}, err
 	}
-	confirmed, err := optionalBool(r, "confirmed")
+	ok, err := confirmed(r)
 	if err != nil {
 		return contract.DeleteTaskResponse{}, err
 	}
-	return ops.DeleteTask(r.Context(), contract.DeleteTaskInput{ProjectSelector: selector, TaskID: taskID, Confirmed: confirmed != nil && *confirmed})
+	return ops.DeleteTask(r.Context(), contract.DeleteTaskInput{ProjectSelector: selector, TaskID: taskID, Confirmed: ok})
 }
 
 func (s *Server) archiveTask(r *http.Request) (contract.ArchiveTaskResponse, error) {

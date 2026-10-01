@@ -19,7 +19,10 @@ const (
 var (
 	projectParam = pathParam("project", "Project slug.", stringSchema)
 	taskParam    = pathParam("task", "Task id.", idSchema)
-	planParam    = pathParam("plan", "Plan slug.", stringSchema)
+	// confirmedParam gates a destructive route; without it the answer asks
+	// for confirmation and changes nothing.
+	confirmedParam = queryParam("confirmed", "`true` performs the change; otherwise the answer asks for confirmation.", boolSchema)
+	planParam      = pathParam("plan", "Plan slug.", stringSchema)
 )
 
 // HealthResponse reports daemon liveness.
@@ -113,6 +116,12 @@ func optionalBool(r *http.Request, name string) (*bool, error) {
 		return nil, invalidParameter(name, raw)
 	}
 	return &value, nil
+}
+
+// confirmed reads the confirmedParam flag; absent means false.
+func confirmed(r *http.Request) (bool, error) {
+	value, err := optionalBool(r, "confirmed")
+	return value != nil && *value, err
 }
 
 // listValues accepts repeated and comma-separated query values.

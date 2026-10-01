@@ -3671,7 +3671,7 @@
             }
           },
           {
-            "description": "`true` deletes; otherwise the confirmation is returned.",
+            "description": "`true` performs the change; otherwise the answer asks for confirmation.",
             "in": "query",
             "name": "confirmed",
             "required": false,
