@@ -2611,6 +2611,18 @@
         ],
         "type": "object"
       },
+      "httpapi.MergeTagBody": {
+        "properties": {
+          "target_tag_id": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "target_tag_id"
+        ],
+        "type": "object"
+      },
       "httpapi.MigrateOrphansBody": {
         "properties": {
           "confirmed": {
@@ -6959,6 +6971,70 @@
         },
         "summary": "Every tag across all projects.",
         "x-okt-surface": "tag.list_all"
+      }
+    },
+    "/api/v1/tags/{tag}/merge": {
+      "post": {
+        "operationId": "mergeTag",
+        "parameters": [
+          {
+            "description": "Tag id.",
+            "in": "path",
+            "name": "tag",
+            "required": true,
+            "schema": {
+              "format": "int64",
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/httpapi.MergeTagBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/contract.TagResponse"
+                    },
+                    "ok": {
+                      "const": true
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success."
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/output.Envelope"
+                }
+              }
+            },
+            "description": "Error envelope."
+          }
+        },
+        "summary": "Merge a tag into a target tag across all projects.",
+        "x-okt-surface": "tag.merge"
       }
     },
     "/health": {

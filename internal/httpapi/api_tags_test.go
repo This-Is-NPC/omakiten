@@ -34,6 +34,7 @@ var _ = mapping([]mappingCase{
 		ProjectSelector: alpha, EntityType: "task", EntityID: 5, TagID: 9, Confirmed: true,
 	}},
 	{"listAllTags", http.MethodGet, "/api/v1/tags", "", "ListAllTags", nil},
+	{"mergeTag", http.MethodPost, "/api/v1/tags/4/merge", `{"target_tag_id":2}`, "MergeTags", contract.MergeTagsInput{SourceTagID: 4, TargetTagID: 2}},
 })
 
 func (f *fakeOps) ListTags(_ context.Context, in contract.ListTagsInput) (contract.TagListResponse, error) {
@@ -54,4 +55,9 @@ func (f *fakeOps) RemoveTag(_ context.Context, in contract.RemoveTagInput) (cont
 func (f *fakeOps) ListAllTags(context.Context) (contract.AllTagsResponse, error) {
 	f.record("ListAllTags", nil)
 	return contract.AllTagsResponse{}, nil
+}
+
+func (f *fakeOps) MergeTags(_ context.Context, in contract.MergeTagsInput) (contract.TagResponse, error) {
+	f.record("MergeTags", in)
+	return contract.TagResponse{}, nil
 }
