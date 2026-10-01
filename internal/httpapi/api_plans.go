@@ -23,6 +23,7 @@ type PlanOperations interface {
 	ContinuePlan(ctx context.Context, input contract.ContinuePlanInput) (contract.ContinuePlanResponse, error)
 	AddPlanWave(ctx context.Context, input contract.AddPlanWaveInput) (contract.AddPlanWaveResponse, error)
 	RemovePlanWave(ctx context.Context, input contract.RemovePlanWaveInput) (contract.RemovePlanWaveResponse, error)
+	RenamePlanWave(ctx context.Context, input contract.RenamePlanWaveInput) (contract.RenamePlanWaveResponse, error)
 }
 
 // CreatePlanBody is the createPlan request body.
@@ -47,6 +48,11 @@ type AddPlanWaveBody struct {
 	Position int    `json:"position,omitempty"`
 }
 
+// WaveNameBody sets the name of a wave.
+type WaveNameBody struct {
+	Name string `json:"name"`
+}
+
 func (s *Server) planRoutes() []route {
 	return []route{
 		query("listPlans", http.MethodGet, projectPath+"/plans", "plan.list", "Plans of a project.", []param{projectParam}, s.listPlans),
@@ -57,6 +63,7 @@ func (s *Server) planRoutes() []route {
 		query("getPlanContinuation", http.MethodGet, planPath+"/continuation", "plan.continue", "A plan with a preview of the task a claim would take next.", []param{projectParam, planParam}, s.continuePlan),
 		command("addPlanWave", http.MethodPost, planPath+"/waves", "plan.wave.add", "Append or insert a wave into a plan.", []param{projectParam, planParam}, s.addPlanWave),
 		query("removePlanWave", http.MethodDelete, wavePath, "plan.wave.remove", "Delete a wave; its tasks stay in the plan, unscheduled.", []param{projectParam, waveParam, confirmedParam}, s.removePlanWave),
+		command("renamePlanWave", http.MethodPut, wavePath+"/name", "plan.wave.rename", "Rename a wave.", []param{projectParam, waveParam}, s.renamePlanWave),
 	}
 }
 
@@ -156,4 +163,12 @@ func (s *Server) removePlanWave(r *http.Request) (contract.RemovePlanWaveRespons
 		return contract.RemovePlanWaveResponse{}, err
 	}
 	return ops.RemovePlanWave(r.Context(), contract.RemovePlanWaveInput{ProjectSelector: selector, WaveID: waveID, Confirmed: ok})
+}
+
+func (s *Server) renamePlanWave(r *http.Request, body WaveNameBody) (contract.RenamePlanWaveResponse, error) {
+	ops, selector, waveID, err := s.wave(r)
+	if err != nil {
+		return contract.RenamePlanWaveResponse{}, err
+	}
+	return ops.RenamePlanWave(r.Context(), contract.RenamePlanWaveInput{ProjectSelector: selector, WaveID: waveID, Name: body.Name})
 }

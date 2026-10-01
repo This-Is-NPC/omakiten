@@ -1161,6 +1161,21 @@
         ],
         "type": "object"
       },
+      "contract.RenamePlanWaveResponse": {
+        "properties": {
+          "project": {
+            "$ref": "#/components/schemas/contract.ProjectSummary"
+          },
+          "wave": {
+            "$ref": "#/components/schemas/contract.PlanWaveSummary"
+          }
+        },
+        "required": [
+          "project",
+          "wave"
+        ],
+        "type": "object"
+      },
       "contract.ResumeProjectResponse": {
         "properties": {
           "blocked_work": {
@@ -2555,6 +2570,17 @@
         },
         "required": [
           "bucket_key"
+        ],
+        "type": "object"
+      },
+      "httpapi.WaveNameBody": {
+        "properties": {
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
         ],
         "type": "object"
       },
@@ -5061,6 +5087,79 @@
         },
         "summary": "Delete a wave; its tasks stay in the plan, unscheduled.",
         "x-okt-surface": "plan.wave.remove"
+      }
+    },
+    "/api/v1/projects/{project}/waves/{wave}/name": {
+      "put": {
+        "operationId": "renamePlanWave",
+        "parameters": [
+          {
+            "description": "Project slug.",
+            "in": "path",
+            "name": "project",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Wave id.",
+            "in": "path",
+            "name": "wave",
+            "required": true,
+            "schema": {
+              "format": "int64",
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/httpapi.WaveNameBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/contract.RenamePlanWaveResponse"
+                    },
+                    "ok": {
+                      "const": true
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success."
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/output.Envelope"
+                }
+              }
+            },
+            "description": "Error envelope."
+          }
+        },
+        "summary": "Rename a wave.",
+        "x-okt-surface": "plan.wave.rename"
       }
     },
     "/api/v1/projects/{project}/workflow": {
