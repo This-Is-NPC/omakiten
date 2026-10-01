@@ -11,6 +11,7 @@ import (
 // commands a project's configuration loads.
 type CatalogOperations interface {
 	ListLaws(ctx context.Context, input contract.ListLawsInput) (contract.ListLawsResponse, error)
+	ShowLaw(ctx context.Context, input contract.ShowLawInput) (contract.ShowLawResponse, error)
 }
 
 func (s *Server) catalogRoutes() []route {
@@ -21,7 +22,16 @@ func (s *Server) catalogRoutes() []route {
 			queryParam("scope_project", "Owner project slug filter.", stringSchema),
 			queryParam("persona", "Owner persona slug filter.", stringSchema),
 		}, s.listLaws),
+		query("getLaw", http.MethodGet, projectPath+"/laws/{law}", "law.get", "A law with its body.", []param{projectParam, pathParam("law", "Law slug.", stringSchema)}, s.showLaw),
 	}
+}
+
+func (s *Server) showLaw(r *http.Request) (contract.ShowLawResponse, error) {
+	ops, _, err := s.project(r)
+	if err != nil {
+		return contract.ShowLawResponse{}, err
+	}
+	return ops.ShowLaw(r.Context(), contract.ShowLawInput{Slug: r.PathValue("law")})
 }
 
 func (s *Server) listLaws(r *http.Request) (contract.ListLawsResponse, error) {

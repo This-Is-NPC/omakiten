@@ -1523,6 +1523,17 @@
         ],
         "type": "object"
       },
+      "contract.ShowLawResponse": {
+        "properties": {
+          "law": {
+            "$ref": "#/components/schemas/contract.LawSummary"
+          }
+        },
+        "required": [
+          "law"
+        ],
+        "type": "object"
+      },
       "contract.ShowPlanResponse": {
         "properties": {
           "active_wave_id": {
@@ -4023,6 +4034,67 @@
         },
         "summary": "Laws the project configuration loads, without bodies.",
         "x-okt-surface": "law.list"
+      }
+    },
+    "/api/v1/projects/{project}/laws/{law}": {
+      "get": {
+        "operationId": "getLaw",
+        "parameters": [
+          {
+            "description": "Project slug.",
+            "in": "path",
+            "name": "project",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Law slug.",
+            "in": "path",
+            "name": "law",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/contract.ShowLawResponse"
+                    },
+                    "ok": {
+                      "const": true
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success."
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/output.Envelope"
+                }
+              }
+            },
+            "description": "Error envelope."
+          }
+        },
+        "summary": "A law with its body.",
+        "x-okt-surface": "law.get"
       }
     },
     "/api/v1/projects/{project}/logs": {

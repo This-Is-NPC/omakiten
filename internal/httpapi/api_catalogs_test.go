@@ -9,9 +9,15 @@ import (
 
 var _ = mapping([]mappingCase{
 	{"listLaws", http.MethodGet, "/api/v1/projects/alpha/laws?scope=project&scope_project=beta&persona=reviewer", "", "ListLaws", contract.ListLawsInput{Scope: "project", Project: "beta", Persona: "reviewer"}},
+	{"getLaw", http.MethodGet, "/api/v1/projects/alpha/laws/no-secrets", "", "ShowLaw", contract.ShowLawInput{Slug: "no-secrets"}},
 })
 
 func (f *fakeOps) ListLaws(_ context.Context, in contract.ListLawsInput) (contract.ListLawsResponse, error) {
 	f.record("ListLaws", in)
 	return contract.ListLawsResponse{}, nil
+}
+
+func (f *fakeOps) ShowLaw(_ context.Context, in contract.ShowLawInput) (contract.ShowLawResponse, error) {
+	f.record("ShowLaw", in)
+	return contract.ShowLawResponse{}, nil
 }
