@@ -596,6 +596,62 @@
         ],
         "type": "object"
       },
+      "contract.ErrorRecordResponse": {
+        "properties": {
+          "error": {
+            "$ref": "#/components/schemas/contract.ErrorSummary"
+          },
+          "project": {
+            "$ref": "#/components/schemas/contract.ProjectSummary"
+          }
+        },
+        "required": [
+          "error",
+          "project"
+        ],
+        "type": "object"
+      },
+      "contract.ErrorSummary": {
+        "properties": {
+          "context": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "id": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "project_id": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "project_slug": {
+            "type": "string"
+          },
+          "solutions": {
+            "items": {
+              "$ref": "#/components/schemas/contract.SolutionSummary"
+            },
+            "type": "array"
+          },
+          "tags": {
+            "items": {
+              "$ref": "#/components/schemas/contract.TagSummary"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "description",
+          "id"
+        ],
+        "type": "object"
+      },
       "contract.EventSummary": {
         "properties": {
           "author_type": {
@@ -1440,6 +1496,58 @@
         "required": [
           "project",
           "task"
+        ],
+        "type": "object"
+      },
+      "contract.SolutionSummary": {
+        "properties": {
+          "created_at": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "error_id": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "id": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "likes": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "likes_badge": {
+            "type": "string"
+          },
+          "project_id": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "project_slug": {
+            "type": "string"
+          },
+          "steps": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          },
+          "task_id": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "tried_at": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "description",
+          "error_id",
+          "id",
+          "likes"
         ],
         "type": "object"
       },
@@ -2323,6 +2431,26 @@
             "type": "string"
           }
         },
+        "type": "object"
+      },
+      "httpapi.ErrorBody": {
+        "properties": {
+          "context": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "tags": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "description"
+        ],
         "type": "object"
       },
       "httpapi.HealthResponse": {
@@ -3330,6 +3458,68 @@
         },
         "summary": "Task dependencies of a project.",
         "x-okt-surface": "dependency.list"
+      }
+    },
+    "/api/v1/projects/{project}/errors": {
+      "post": {
+        "operationId": "recordError",
+        "parameters": [
+          {
+            "description": "Project slug.",
+            "in": "path",
+            "name": "project",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/httpapi.ErrorBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/contract.ErrorRecordResponse"
+                    },
+                    "ok": {
+                      "const": true
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success."
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/output.Envelope"
+                }
+              }
+            },
+            "description": "Error envelope."
+          }
+        },
+        "summary": "Record an error met while working.",
+        "x-okt-surface": "error.record"
       }
     },
     "/api/v1/projects/{project}/insights": {

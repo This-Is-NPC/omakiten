@@ -19,6 +19,7 @@ type Operations interface {
 	WorkDocumentOperations
 	InsightOperations
 	MaintenanceOperations
+	RecordOperations
 }
 
 // Runtimes resolves the operation facade for each request.
