@@ -18,6 +18,7 @@ type TaskOperations interface {
 	MoveTask(ctx context.Context, input contract.MoveTaskInput) (contract.MoveTaskResponse, error)
 	AssignTask(ctx context.Context, input contract.AssignTaskInput) (contract.AssignTaskResponse, error)
 	ListTaskActivity(ctx context.Context, input contract.ListTaskActivityInput) (contract.ListTaskActivityResponse, error)
+	DeleteTask(ctx context.Context, input contract.DeleteTaskInput) (contract.DeleteTaskResponse, error)
 }
 
 // CreateTaskBody is the createTask request body.
@@ -63,6 +64,10 @@ func (s *Server) taskRoutes() []route {
 		command("editTask", http.MethodPatch, taskPath, "task.edit", "Edit task fields.", []param{projectParam, taskParam}, s.editTask),
 		command("moveTask", http.MethodPost, taskPath+"/transitions", "task.transition", "Move a task through a workflow transition.", []param{projectParam, taskParam}, s.moveTask),
 		command("assignTask", http.MethodPut, taskPath+"/assignee", "task.assign", "Set or clear the task assignee.", []param{projectParam, taskParam}, s.assignTask),
+		query("deleteTask", http.MethodDelete, taskPath, "task.delete", "Hard-delete a task; without confirmation only the confirmation is returned.", []param{
+			projectParam, taskParam,
+			queryParam("confirmed", "`true` deletes; otherwise the confirmation is returned.", boolSchema),
+		}, s.deleteTask),
 		query("listTaskActivity", http.MethodGet, taskPath+"/activity", "task_activity.list", "Unified activity feed of a task.", []param{
 			projectParam, taskParam,
 			queryParam("order", "`asc` (default) or `desc`.", stringSchema),
@@ -152,6 +157,18 @@ func (s *Server) assignTask(r *http.Request, body AssigneeBody) (contract.Assign
 		return contract.AssignTaskResponse{}, err
 	}
 	return ops.AssignTask(r.Context(), contract.AssignTaskInput{ProjectSelector: selector, TaskID: taskID, Assignee: body.Assignee})
+}
+
+func (s *Server) deleteTask(r *http.Request) (contract.DeleteTaskResponse, error) {
+	ops, selector, taskID, err := s.task(r)
+	if err != nil {
+		return contract.DeleteTaskResponse{}, err
+	}
+	confirmed, err := optionalBool(r, "confirmed")
+	if err != nil {
+		return contract.DeleteTaskResponse{}, err
+	}
+	return ops.DeleteTask(r.Context(), contract.DeleteTaskInput{ProjectSelector: selector, TaskID: taskID, Confirmed: confirmed != nil && *confirmed})
 }
 
 func (s *Server) taskActivity(r *http.Request) (contract.ListTaskActivityResponse, error) {

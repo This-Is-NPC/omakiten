@@ -99,6 +99,19 @@ func optionalInt(r *http.Request, name string) (int, error) {
 	return value, nil
 }
 
+// optionalBool returns nil when the query value is absent.
+func optionalBool(r *http.Request, name string) (*bool, error) {
+	raw := strings.TrimSpace(r.URL.Query().Get(name))
+	if raw == "" {
+		return nil, nil
+	}
+	value, err := strconv.ParseBool(raw)
+	if err != nil {
+		return nil, invalidParameter(name, raw)
+	}
+	return &value, nil
+}
+
 // listValues accepts repeated and comma-separated query values.
 func listValues(r *http.Request, name string) []string {
 	var out []string

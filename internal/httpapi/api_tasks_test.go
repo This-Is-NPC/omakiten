@@ -3,6 +3,7 @@ package httpapi
 import (
 	"context"
 	"net/http"
+	"testing"
 
 	"omakiten/internal/contract"
 )
@@ -22,7 +23,23 @@ var _ = mapping([]mappingCase{
 	{"moveTask", http.MethodPost, "/api/v1/projects/alpha/tasks/5/transitions", `{"bucket_key":"review"}`, "MoveTask", contract.MoveTaskInput{ProjectSelector: alpha, TaskID: 5, BucketKey: "review"}},
 	{"assignTask", http.MethodPut, "/api/v1/projects/alpha/tasks/5/assignee", `{"assignee":""}`, "AssignTask", contract.AssignTaskInput{ProjectSelector: alpha, TaskID: 5}},
 	{"listTaskActivity", http.MethodGet, "/api/v1/projects/alpha/tasks/5/activity?order=desc", "", "ListTaskActivity", contract.ListTaskActivityInput{ProjectSelector: alpha, TaskID: 5, Order: "desc"}},
+	{"deleteTask", http.MethodDelete, "/api/v1/projects/alpha/tasks/5?confirmed=true", "", "DeleteTask", contract.DeleteTaskInput{ProjectSelector: alpha, TaskID: 5, Confirmed: true}},
 })
+
+// TestMalformedBooleanQueryNeverReachesOperations: a flag that is not a
+// boolean is a 400 naming the parameter, and no operation runs.
+func TestMalformedBooleanQueryNeverReachesOperations(t *testing.T) {
+	ops := &fakeOps{}
+	server, _ := newTestServer(t, ops, fakeLog{})
+	rec := do(t, server, http.MethodDelete, "/api/v1/projects/alpha/tasks/5?confirmed=maybe", "", nil)
+	env := decode(t, rec)
+	if rec.Code != http.StatusBadRequest || env.Code != "invalid_parameter" || env.Details["parameter"] != "confirmed" {
+		t.Fatalf("got %d %+v, want invalid_parameter naming confirmed", rec.Code, env)
+	}
+	if len(ops.calls) != 0 {
+		t.Fatalf("operation ran: %+v", ops.calls)
+	}
+}
 
 func (f *fakeOps) TaskBoard(_ context.Context, in contract.TaskBoardInput) (contract.TaskBoardResponse, error) {
 	f.record("TaskBoard", in)
@@ -68,4 +85,9 @@ func (f *fakeOps) AssignTask(_ context.Context, in contract.AssignTaskInput) (co
 func (f *fakeOps) ListTaskActivity(_ context.Context, in contract.ListTaskActivityInput) (contract.ListTaskActivityResponse, error) {
 	f.record("ListTaskActivity", in)
 	return contract.ListTaskActivityResponse{}, nil
+}
+
+func (f *fakeOps) DeleteTask(_ context.Context, in contract.DeleteTaskInput) (contract.DeleteTaskResponse, error) {
+	f.record("DeleteTask", in)
+	return contract.DeleteTaskResponse{}, nil
 }

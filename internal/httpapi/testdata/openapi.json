@@ -275,6 +275,23 @@
         ],
         "type": "object"
       },
+      "contract.DeleteTaskResponse": {
+        "properties": {
+          "confirmation": {
+            "$ref": "#/components/schemas/contract.Confirmation"
+          },
+          "project": {
+            "$ref": "#/components/schemas/contract.ProjectSummary"
+          },
+          "snapshot": {
+            "$ref": "#/components/schemas/contract.EventSummary"
+          }
+        },
+        "required": [
+          "project"
+        ],
+        "type": "object"
+      },
       "contract.DependenciesResponse": {
         "properties": {
           "dependencies": {
@@ -3275,6 +3292,76 @@
       }
     },
     "/api/v1/projects/{project}/tasks/{task}": {
+      "delete": {
+        "operationId": "deleteTask",
+        "parameters": [
+          {
+            "description": "Project slug.",
+            "in": "path",
+            "name": "project",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Task id.",
+            "in": "path",
+            "name": "task",
+            "required": true,
+            "schema": {
+              "format": "int64",
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "`true` deletes; otherwise the confirmation is returned.",
+            "in": "query",
+            "name": "confirmed",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/contract.DeleteTaskResponse"
+                    },
+                    "ok": {
+                      "const": true
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success."
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/output.Envelope"
+                }
+              }
+            },
+            "description": "Error envelope."
+          }
+        },
+        "summary": "Hard-delete a task; without confirmation only the confirmation is returned.",
+        "x-okt-surface": "task.delete"
+      },
       "get": {
         "operationId": "getTask",
         "parameters": [
