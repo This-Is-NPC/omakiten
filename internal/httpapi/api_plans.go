@@ -26,6 +26,7 @@ type PlanOperations interface {
 	RenamePlanWave(ctx context.Context, input contract.RenamePlanWaveInput) (contract.RenamePlanWaveResponse, error)
 	ReorderPlanWave(ctx context.Context, input contract.ReorderPlanWaveInput) (contract.ReorderPlanWaveResponse, error)
 	AssignPlanTask(ctx context.Context, input contract.AssignPlanTaskInput) (contract.AssignPlanTaskResponse, error)
+	UnassignPlanTask(ctx context.Context, input contract.UnassignPlanTaskInput) (contract.UnassignPlanTaskResponse, error)
 }
 
 // CreatePlanBody is the createPlan request body.
@@ -79,6 +80,8 @@ func (s *Server) planRoutes() []route {
 		command("renamePlanWave", http.MethodPut, wavePath+"/name", "plan.wave.rename", "Rename a wave.", []param{projectParam, waveParam}, s.renamePlanWave),
 		command("reorderPlanWave", http.MethodPut, wavePath+"/position", "plan.wave.reorder", "Move a wave to another position in its plan.", []param{projectParam, waveParam}, s.reorderPlanWave),
 		command("assignPlanTask", http.MethodPut, planPath+"/tasks/{task}", "plan.task.assign", "Put a task into a wave of a plan.", []param{projectParam, planParam, taskParam}, s.assignPlanTask),
+		// A task belongs to one plan at most, so detaching it names no plan.
+		query("unassignPlanTask", http.MethodDelete, taskPath+"/plan", "plan.task.unassign", "Detach a task from its plan and wave.", []param{projectParam, taskParam}, s.unassignPlanTask),
 	}
 }
 
@@ -207,4 +210,12 @@ func (s *Server) assignPlanTask(r *http.Request, body PlanTaskBody) (contract.As
 		Slug:            r.PathValue("plan"),
 		WaveID:          body.WaveID,
 	})
+}
+
+func (s *Server) unassignPlanTask(r *http.Request) (contract.UnassignPlanTaskResponse, error) {
+	ops, selector, taskID, err := s.task(r)
+	if err != nil {
+		return contract.UnassignPlanTaskResponse{}, err
+	}
+	return ops.UnassignPlanTask(r.Context(), contract.UnassignPlanTaskInput{ProjectSelector: selector, TaskID: taskID})
 }

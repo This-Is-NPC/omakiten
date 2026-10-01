@@ -1495,6 +1495,26 @@
         ],
         "type": "object"
       },
+      "contract.UnassignPlanTaskResponse": {
+        "properties": {
+          "detached": {
+            "type": "boolean"
+          },
+          "project": {
+            "$ref": "#/components/schemas/contract.ProjectSummary"
+          },
+          "task_id": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "detached",
+          "project",
+          "task_id"
+        ],
+        "type": "object"
+      },
       "contract.WorkflowResponse": {
         "properties": {
           "project": {
@@ -5026,6 +5046,69 @@
         },
         "summary": "A task as a portable OKF Markdown document.",
         "x-okt-surface": "task.export"
+      }
+    },
+    "/api/v1/projects/{project}/tasks/{task}/plan": {
+      "delete": {
+        "operationId": "unassignPlanTask",
+        "parameters": [
+          {
+            "description": "Project slug.",
+            "in": "path",
+            "name": "project",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Task id.",
+            "in": "path",
+            "name": "task",
+            "required": true,
+            "schema": {
+              "format": "int64",
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/contract.UnassignPlanTaskResponse"
+                    },
+                    "ok": {
+                      "const": true
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success."
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/output.Envelope"
+                }
+              }
+            },
+            "description": "Error envelope."
+          }
+        },
+        "summary": "Detach a task from its plan and wave.",
+        "x-okt-surface": "plan.task.unassign"
       }
     },
     "/api/v1/projects/{project}/tasks/{task}/transitions": {
