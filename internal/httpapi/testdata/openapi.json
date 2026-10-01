@@ -395,6 +395,21 @@
         ],
         "type": "object"
       },
+      "contract.EditPlanResponse": {
+        "properties": {
+          "plan": {
+            "$ref": "#/components/schemas/contract.PlanSummary"
+          },
+          "project": {
+            "$ref": "#/components/schemas/contract.ProjectSummary"
+          }
+        },
+        "required": [
+          "plan",
+          "project"
+        ],
+        "type": "object"
+      },
       "contract.EditProjectResponse": {
         "properties": {
           "description": {
@@ -1954,6 +1969,23 @@
         ],
         "type": "object"
       },
+      "httpapi.EditPlanBody": {
+        "properties": {
+          "goal_body": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "slug": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "httpapi.EditProjectBody": {
         "properties": {
           "description": {
@@ -3308,6 +3340,75 @@
         },
         "summary": "A plan with its waves and tasks.",
         "x-okt-surface": "plan.show"
+      },
+      "patch": {
+        "operationId": "editPlan",
+        "parameters": [
+          {
+            "description": "Project slug.",
+            "in": "path",
+            "name": "project",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Plan slug.",
+            "in": "path",
+            "name": "plan",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/httpapi.EditPlanBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/contract.EditPlanResponse"
+                    },
+                    "ok": {
+                      "const": true
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success."
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/output.Envelope"
+                }
+              }
+            },
+            "description": "Error envelope."
+          }
+        },
+        "summary": "Edit plan name, slug, status, or goal.",
+        "x-okt-surface": "plan.edit"
       }
     },
     "/api/v1/projects/{project}/plans/{plan}/export": {
