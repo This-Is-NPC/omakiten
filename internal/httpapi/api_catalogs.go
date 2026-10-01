@@ -18,6 +18,7 @@ type CatalogOperations interface {
 	ShowSkill(ctx context.Context, input contract.ShowSkillInput) (contract.ShowSkillResponse, error)
 	ListTemplates(ctx context.Context, input contract.ListTemplatesInput) (contract.ListTemplatesResponse, error)
 	ShowTemplate(ctx context.Context, input contract.ShowTemplateInput) (contract.ShowTemplateResponse, error)
+	ListCommands(ctx context.Context) (contract.ListCommandsResponse, error)
 }
 
 func (s *Server) catalogRoutes() []route {
@@ -40,7 +41,16 @@ func (s *Server) catalogRoutes() []route {
 			queryParam("include_body", "`true` includes template bodies.", boolSchema),
 		}, s.listTemplates),
 		query("getTemplate", http.MethodGet, projectPath+"/templates/{template}", "template.show", "A template with its body; a global template the project overrides is rejected.", []param{projectParam, pathParam("template", "Template slug.", stringSchema)}, s.showTemplate),
+		query("listCommands", http.MethodGet, projectPath+"/commands", "command.list", "Agent commands the project configuration binds.", []param{projectParam}, s.listCommands),
 	}
+}
+
+func (s *Server) listCommands(r *http.Request) (contract.ListCommandsResponse, error) {
+	ops, _, err := s.project(r)
+	if err != nil {
+		return contract.ListCommandsResponse{}, err
+	}
+	return ops.ListCommands(r.Context())
 }
 
 func (s *Server) showTemplate(r *http.Request) (contract.ShowTemplateResponse, error) {

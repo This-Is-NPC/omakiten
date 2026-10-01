@@ -243,6 +243,20 @@
         ],
         "type": "object"
       },
+      "contract.CommandListEntry": {
+        "properties": {
+          "description": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "type": "object"
+      },
       "contract.CommandParameter": {
         "properties": {
           "name": {
@@ -976,6 +990,20 @@
         },
         "required": [
           "slug"
+        ],
+        "type": "object"
+      },
+      "contract.ListCommandsResponse": {
+        "properties": {
+          "commands": {
+            "items": {
+              "$ref": "#/components/schemas/contract.CommandListEntry"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "commands"
         ],
         "type": "object"
       },
@@ -3780,6 +3808,58 @@
         },
         "summary": "Workflow and active tasks with their relation counts.",
         "x-okt-surface": "task.list"
+      }
+    },
+    "/api/v1/projects/{project}/commands": {
+      "get": {
+        "operationId": "listCommands",
+        "parameters": [
+          {
+            "description": "Project slug.",
+            "in": "path",
+            "name": "project",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/contract.ListCommandsResponse"
+                    },
+                    "ok": {
+                      "const": true
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success."
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/output.Envelope"
+                }
+              }
+            },
+            "description": "Error envelope."
+          }
+        },
+        "summary": "Agent commands the project configuration binds.",
+        "x-okt-surface": "command.list"
       }
     },
     "/api/v1/projects/{project}/comments/{comment}": {
