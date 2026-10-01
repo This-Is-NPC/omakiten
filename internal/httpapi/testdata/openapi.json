@@ -188,6 +188,24 @@
         ],
         "type": "object"
       },
+      "contract.ClaimNextPlanTaskResponse": {
+        "properties": {
+          "claimed": {
+            "type": "boolean"
+          },
+          "project": {
+            "$ref": "#/components/schemas/contract.ProjectSummary"
+          },
+          "task": {
+            "$ref": "#/components/schemas/contract.TaskSummary"
+          }
+        },
+        "required": [
+          "claimed",
+          "project"
+        ],
+        "type": "object"
+      },
       "contract.CommentResponse": {
         "properties": {
           "comment": {
@@ -3722,6 +3740,67 @@
         },
         "summary": "Edit plan name, slug, status, or goal.",
         "x-okt-surface": "plan.edit"
+      }
+    },
+    "/api/v1/projects/{project}/plans/{plan}/claims": {
+      "post": {
+        "operationId": "claimNextPlanTask",
+        "parameters": [
+          {
+            "description": "Project slug.",
+            "in": "path",
+            "name": "project",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Plan slug.",
+            "in": "path",
+            "name": "plan",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/contract.ClaimNextPlanTaskResponse"
+                    },
+                    "ok": {
+                      "const": true
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success."
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/output.Envelope"
+                }
+              }
+            },
+            "description": "Error envelope."
+          }
+        },
+        "summary": "Claim the next free task of the active wave.",
+        "x-okt-surface": "plan.task.claim_next"
       }
     },
     "/api/v1/projects/{project}/plans/{plan}/continuation": {
