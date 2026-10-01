@@ -1342,6 +1342,24 @@
         ],
         "type": "object"
       },
+      "contract.RemoveTagResponse": {
+        "properties": {
+          "confirmation": {
+            "$ref": "#/components/schemas/contract.Confirmation"
+          },
+          "project": {
+            "$ref": "#/components/schemas/contract.ProjectSummary"
+          },
+          "removed": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "project",
+          "removed"
+        ],
+        "type": "object"
+      },
       "contract.RenamePlanWaveResponse": {
         "properties": {
           "project": {
@@ -5175,6 +5193,98 @@
         },
         "summary": "Tag a task, an error, or the project.",
         "x-okt-surface": "tag.add"
+      }
+    },
+    "/api/v1/projects/{project}/tags/{tag}": {
+      "delete": {
+        "operationId": "removeTag",
+        "parameters": [
+          {
+            "description": "Project slug.",
+            "in": "path",
+            "name": "project",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Tag id.",
+            "in": "path",
+            "name": "tag",
+            "required": true,
+            "schema": {
+              "format": "int64",
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "`task`, `error`, or `project`.",
+            "in": "query",
+            "name": "entity_type",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Task or error id; omitted for `project`.",
+            "in": "query",
+            "name": "entity_id",
+            "required": false,
+            "schema": {
+              "format": "int64",
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "`true` performs the change; otherwise the answer asks for confirmation.",
+            "in": "query",
+            "name": "confirmed",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/contract.RemoveTagResponse"
+                    },
+                    "ok": {
+                      "const": true
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success."
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/output.Envelope"
+                }
+              }
+            },
+            "description": "Error envelope."
+          }
+        },
+        "summary": "Untag a task, an error, or the project; requires confirmation.",
+        "x-okt-surface": "tag.remove"
       }
     },
     "/api/v1/projects/{project}/tasks": {
