@@ -49,9 +49,9 @@ func runTaskCreate(ctx context.Context, cmd *cobra.Command, opts *runtimeOptions
 			if err := validateStructuredTaskFlags(cmd); err != nil {
 				return nil, err
 			}
-			doc, err := workfile.Decode(bytes.NewReader(data))
+			doc, err := workfile.Parse(bytes.NewReader(data))
 			if err != nil {
-				return nil, domain.NewError(domain.ErrValidation, err.Error(), nil)
+				return nil, err
 			}
 			return importWorkDocument(ctx, opts, "task", doc, dryRun, input.Confirmed)
 		}
