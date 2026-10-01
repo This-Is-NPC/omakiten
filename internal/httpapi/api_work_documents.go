@@ -15,6 +15,7 @@ import (
 type WorkDocumentOperations interface {
 	ExportTask(ctx context.Context, input contract.ExportWorkInput) (domain.WorkDocument, error)
 	ImportTask(ctx context.Context, input contract.ImportWorkInput) (contract.ImportWorkResponse, error)
+	ExportPlan(ctx context.Context, input contract.ExportWorkInput) (domain.WorkDocument, error)
 }
 
 // WorkDocumentResponse carries one exported OKF Markdown document.
@@ -36,6 +37,7 @@ func (s *Server) workDocumentRoutes() []route {
 	return []route{
 		query("exportTask", http.MethodGet, taskPath+"/export", "task.export", "A task as a portable OKF Markdown document.", []param{projectParam, taskParam}, s.exportTask),
 		command("importTask", http.MethodPost, projectPath+"/tasks/import", "task.import", "Import a task from an OKF Markdown document.", []param{projectParam}, s.importTask),
+		query("exportPlan", http.MethodGet, planPath+"/export", "plan.export", "A plan as a portable OKF Markdown document.", []param{projectParam, planParam}, s.exportPlan),
 	}
 }
 
@@ -45,6 +47,14 @@ func (s *Server) exportTask(r *http.Request) (WorkDocumentResponse, error) {
 		return WorkDocumentResponse{}, err
 	}
 	return encodeWorkDocument(ops.ExportTask(r.Context(), contract.ExportWorkInput{ProjectSelector: selector, TaskID: taskID}))
+}
+
+func (s *Server) exportPlan(r *http.Request) (WorkDocumentResponse, error) {
+	ops, selector, err := s.project(r)
+	if err != nil {
+		return WorkDocumentResponse{}, err
+	}
+	return encodeWorkDocument(ops.ExportPlan(r.Context(), contract.ExportWorkInput{ProjectSelector: selector, Slug: r.PathValue("plan")}))
 }
 
 func encodeWorkDocument(doc domain.WorkDocument, err error) (WorkDocumentResponse, error) {

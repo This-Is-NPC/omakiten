@@ -21,6 +21,7 @@ var taskMarkdown, parsedTask = okf(exportedTask)
 
 var _ = mapping([]mappingCase{
 	{"exportTask", http.MethodGet, "/api/v1/projects/alpha/tasks/5/export", "", "ExportTask", contract.ExportWorkInput{ProjectSelector: alpha, TaskID: 5}},
+	{"exportPlan", http.MethodGet, "/api/v1/projects/alpha/plans/delivery/export", "", "ExportPlan", contract.ExportWorkInput{ProjectSelector: alpha, Slug: "delivery"}},
 	{"importTask", http.MethodPost, "/api/v1/projects/alpha/tasks/import", `{"markdown":` + taskMarkdown + `,"dry_run":true,"confirmed":true}`, "ImportTask", contract.ImportWorkInput{ProjectSelector: alpha, Document: parsedTask, DryRun: true, Confirmed: true}},
 })
 
@@ -92,4 +93,9 @@ func (f *fakeOps) ExportTask(_ context.Context, in contract.ExportWorkInput) (do
 func (f *fakeOps) ImportTask(_ context.Context, in contract.ImportWorkInput) (contract.ImportWorkResponse, error) {
 	f.record("ImportTask", in)
 	return contract.ImportWorkResponse{}, nil
+}
+
+func (f *fakeOps) ExportPlan(_ context.Context, in contract.ExportWorkInput) (domain.WorkDocument, error) {
+	f.record("ExportPlan", in)
+	return domain.WorkDocument{}, nil
 }

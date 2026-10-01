@@ -16,10 +16,7 @@ type PlanOperations interface {
 func (s *Server) planRoutes() []route {
 	return []route{
 		query("listPlans", http.MethodGet, projectPath+"/plans", "plan.list", "Plans of a project.", []param{projectParam}, s.listPlans),
-		query("getPlan", http.MethodGet, projectPath+"/plans/{plan}", "plan.show", "A plan with its waves and tasks.", []param{
-			projectParam,
-			pathParam("plan", "Plan slug.", stringSchema),
-		}, s.showPlan),
+		query("getPlan", http.MethodGet, planPath, "plan.show", "A plan with its waves and tasks.", []param{projectParam, planParam}, s.showPlan),
 	}
 }
 

@@ -13,11 +13,13 @@ const (
 	projectsPath = "/api/v1/projects"
 	projectPath  = projectsPath + "/{project}"
 	taskPath     = projectPath + "/tasks/{task}"
+	planPath     = projectPath + "/plans/{plan}"
 )
 
 var (
 	projectParam = pathParam("project", "Project slug.", stringSchema)
 	taskParam    = pathParam("task", "Task id.", idSchema)
+	planParam    = pathParam("plan", "Plan slug.", stringSchema)
 )
 
 // HealthResponse reports daemon liveness.
