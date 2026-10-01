@@ -39,12 +39,7 @@ func Run(ctx context.Context, session agentruntime.Session) error {
 				return contract.ProjectDeleteResult{}, fmt.Errorf("project deletion is unavailable")
 			}
 			svc := entry.Service.ForTUI()
-			svc.SetMaintenance(agentruntime.NewMaintenance(agentruntime.MaintenanceOptions{
-				DBPath:    session.DBPath,
-				Retention: session.Snapshot.Settings().Backup.RetentionCount,
-				Projects:  session.Store,
-				Catalog:   session.Snapshot.Catalog(config.SurfaceTUI),
-			}))
+			svc.SetMaintenance(session.Maintenance(config.SurfaceTUI))
 			return svc.DeleteProject(ctx, input)
 		},
 		Tasks:    session.Store,

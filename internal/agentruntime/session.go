@@ -18,3 +18,14 @@ type Session struct {
 	Version        string
 	Snapshot       *config.Snapshot
 }
+
+// Maintenance is database maintenance on the session's database for
+// surface, keeping the session's backup retention; it can delete projects.
+func (s Session) Maintenance(surface config.Surface) *Maintenance {
+	return NewMaintenance(MaintenanceOptions{
+		DBPath:    s.DBPath,
+		Retention: s.Snapshot.Settings().Backup.RetentionCount,
+		Projects:  s.Store,
+		Catalog:   s.Snapshot.Catalog(surface),
+	})
+}
