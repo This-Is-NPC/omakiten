@@ -34,7 +34,7 @@ plan.wave.remove product
 plan.wave.rename product
 plan.wave.reorder product
 progress.record product
-project.delete destructive
+project.delete product
 project.edit product
 project.overview product
 project.list product

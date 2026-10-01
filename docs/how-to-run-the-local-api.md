@@ -65,7 +65,7 @@ The API serves every operation the CLI runs on a project's work:
 
 | Resource | Routes under `/api/v1/projects/{project}` |
 |---|---|
-| Project | the project itself (`GET`, `PATCH`), `resume`, `workflow`, `workflow/orphans` |
+| Project | the project itself (`GET`, `PATCH`, `DELETE`), `resume`, `workflow`, `workflow/orphans` |
 | Tasks | `tasks`, `tasks/{task}` and its `transitions`, `assignee`, `archive`, `unarchive`, `checkpoint`, `activity`, `progress`, `dependencies`, `comments` |
 | Comments | `comments/{comment}` |
 | Plans | `plans`, `plans/{plan}` and its `continuation`, `waves`, `tasks/{task}`, `claims`; `waves/{wave}`; `tasks/{task}/plan` |
@@ -104,8 +104,10 @@ entry point, and workflow guards judge its calls as made by a user, not an
 agent.
 
 The workflow's `surfaces.yaml` decides what the API may do: each operation has
-an `http` column. Database backup, search reindex, and project deletion ship
-with `http: false`.
+an `http` column. Database backup and search reindex ship with `http: false`.
+Deleting a project is served: unconfirmed, `DELETE /api/v1/projects/{project}`
+answers what it would remove; confirmed, it writes a database backup first and
+answers its path.
 
 Two reads sit outside that table because they run no operation.
 `GET /api/v1/projects/example/knowledge` returns the project's file-backed

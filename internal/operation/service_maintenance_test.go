@@ -38,8 +38,7 @@ func TestMaintenanceOperationsShipDisabledOnHTTP(t *testing.T) {
 
 	_, backupErr := svc.BackupDatabase(ctx, contract.DatabaseBackupInput{})
 	_, reindexErr := svc.ReindexSearch(ctx, contract.SearchReindexInput{Confirm: true})
-	_, deleteErr := svc.DeleteProject(ctx, contract.ProjectDeleteInput{ProjectID: 1})
-	for op, err := range map[string]error{"db.backup": backupErr, "db.reindex": reindexErr, "project.delete": deleteErr} {
+	for op, err := range map[string]error{"db.backup": backupErr, "db.reindex": reindexErr} {
 		var denied OperationDenied
 		if !errors.As(err, &denied) || denied.Op != op || denied.Surface != SurfaceHTTP {
 			t.Fatalf("%s err = %v, want OperationDenied on http", op, err)
@@ -50,6 +49,14 @@ func TestMaintenanceOperationsShipDisabledOnHTTP(t *testing.T) {
 	}
 	if len(maintenance.calls) != 0 {
 		t.Fatalf("maintenance calls = %v, want none", maintenance.calls)
+	}
+
+	// Project deletion is served over HTTP, behind its own confirmation.
+	if _, err := svc.DeleteProject(ctx, contract.ProjectDeleteInput{ProjectID: 1}); err != nil {
+		t.Fatalf("project.delete on http: %v", err)
+	}
+	if len(maintenance.calls) != 1 || maintenance.calls[0] != "delete" {
+		t.Fatalf("maintenance calls = %v, want [delete]", maintenance.calls)
 	}
 }
 

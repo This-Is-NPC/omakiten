@@ -23,7 +23,9 @@ func (r runtimes) Project(ctx context.Context, slug string) (httpapi.Operations,
 	if err != nil {
 		return nil, contract.ProjectSelector{}, err
 	}
-	return runtime.Service.ForHTTP(), contract.ProjectSelector{ProjectID: project.ID}, nil
+	svc := runtime.Service.ForHTTP()
+	svc.SetMaintenance(r.session.Maintenance(config.SurfaceGUI))
+	return svc, contract.ProjectSelector{ProjectID: project.ID}, nil
 }
 
 func (r runtimes) Knowledge(ctx context.Context, slug string) (domain.KnowledgeSnapshot, error) {

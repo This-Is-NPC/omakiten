@@ -46,6 +46,39 @@ func (s *Service) DeleteProject(ctx context.Context, input contract.ProjectDelet
 	return s.maintenance.DeleteProject(ctx, input)
 }
 
+// RemoveProject deletes the selected project once confirmed, after a
+// backup of the database; unconfirmed it only reports what would go.
+func (s *Service) RemoveProject(ctx context.Context, input contract.RemoveProjectInput) (contract.RemoveProjectResponse, error) {
+	if err := s.allow("project.delete"); err != nil {
+		return contract.RemoveProjectResponse{}, err
+	}
+	project, err := s.resolveProject(ctx, input.ProjectSelector)
+	if err != nil {
+		return contract.RemoveProjectResponse{}, err
+	}
+	counters, err := s.repo.ProjectDeleteCounts(ctx, project.ID)
+	if err != nil {
+		return contract.RemoveProjectResponse{}, err
+	}
+	out := contract.RemoveProjectResponse{Project: projectSummary(project), Counters: counters}
+	if !input.Confirmed {
+		out.Confirmation = contract.Confirmation{
+			RequiresConfirmation: true,
+			Reason:               "Deleting a project removes its tasks, comments, plans, tags, errors, and activity for good; a database backup is written first. Confirm with confirmed=true to proceed.",
+			Options:              []contract.ConfirmationOption{{Action: "confirm_delete", Label: "Retry projects.delete with confirmed=true to hard-delete"}},
+		}
+		return out, nil
+	}
+	result, err := s.DeleteProject(ctx, contract.ProjectDeleteInput{ProjectID: project.ID, Counters: counters})
+	if err != nil {
+		return contract.RemoveProjectResponse{}, err
+	}
+	out.Counters = result.Counters
+	out.BackupPath = result.BackupPath
+	out.PruneWarnings = result.PruneWarnings
+	return out, nil
+}
+
 func (s *Service) requireMaintenance() error {
 	if s.maintenance == nil {
 		return domain.NewError(domain.ErrValidation, "database maintenance is unavailable", nil)

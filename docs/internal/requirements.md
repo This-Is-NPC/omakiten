@@ -37,7 +37,7 @@ behavior and the owner of each rule, rather than a historical feature ledger.
 | Exported relationships must fit inside the document's task set. | Export validation |
 | Project knowledge is read from files without SQLite persistence; related projects are followed only when declared. | `internal/knowledgefile`, CLI and TUI knowledge ports |
 | Destructive database operations use verified live recovery images and protected directory identity. | SQLite and recovery adapters |
-| Database backup, search reindex, and project deletion are census operations; shipped surfaces keep them off HTTP. | `internal/operation`, `agentruntime.Maintenance`, surfaces table |
+| Database backup, search reindex, and project deletion are census operations; shipped surfaces keep backup and reindex off HTTP, and serve project deletion behind a confirmation. | `internal/operation`, `agentruntime.Maintenance`, surfaces table |
 | Search repair is transactional and verified against canonical records. | Search integrity adapter |
 | CLI data output is machine-readable, errors exit nonzero, and diagnostics preserve actionable context. | CLI execution and output |
 | CLI and TUI use common contracts and application policy while remaining independent delivery adapters. | Composition root and architecture tests |

@@ -1666,6 +1666,33 @@
         ],
         "type": "object"
       },
+      "contract.RemoveProjectResponse": {
+        "properties": {
+          "backup_path": {
+            "type": "string"
+          },
+          "confirmation": {
+            "$ref": "#/components/schemas/contract.Confirmation"
+          },
+          "counters": {
+            "$ref": "#/components/schemas/domain.ProjectDeleteCounters"
+          },
+          "project": {
+            "$ref": "#/components/schemas/contract.ProjectSummary"
+          },
+          "prune_warnings": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "counters",
+          "project"
+        ],
+        "type": "object"
+      },
       "contract.RemoveTagResponse": {
         "properties": {
           "confirmation": {
@@ -2805,6 +2832,38 @@
         ],
         "type": "object"
       },
+      "domain.ProjectDeleteCounters": {
+        "properties": {
+          "activity_log_entries": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "comments": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "plans": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "tags": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "tasks": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "activity_log_entries",
+          "comments",
+          "plans",
+          "tags",
+          "tasks"
+        ],
+        "type": "object"
+      },
       "domain.StuckInsight": {
         "properties": {
           "has_data": {
@@ -3840,6 +3899,65 @@
       }
     },
     "/api/v1/projects/{project}": {
+      "delete": {
+        "operationId": "deleteProject",
+        "parameters": [
+          {
+            "description": "Project slug.",
+            "in": "path",
+            "name": "project",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "`true` performs the change; otherwise the answer asks for confirmation.",
+            "in": "query",
+            "name": "confirmed",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/contract.RemoveProjectResponse"
+                    },
+                    "ok": {
+                      "const": true
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success."
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/output.Envelope"
+                }
+              }
+            },
+            "description": "Error envelope."
+          }
+        },
+        "summary": "Hard-delete a project after a database backup; without confirmation only what it removes and the confirmation are returned.",
+        "x-okt-surface": "project.delete"
+      },
       "get": {
         "operationId": "getProject",
         "parameters": [
