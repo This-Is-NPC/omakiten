@@ -1,6 +1,21 @@
 {
   "components": {
     "schemas": {
+      "contract.AddPlanWaveResponse": {
+        "properties": {
+          "project": {
+            "$ref": "#/components/schemas/contract.ProjectSummary"
+          },
+          "wave": {
+            "$ref": "#/components/schemas/contract.PlanWaveSummary"
+          }
+        },
+        "required": [
+          "project",
+          "wave"
+        ],
+        "type": "object"
+      },
       "contract.ArchiveTaskResponse": {
         "properties": {
           "project": {
@@ -1042,6 +1057,32 @@
         ],
         "type": "object"
       },
+      "contract.PlanWaveSummary": {
+        "properties": {
+          "id": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          },
+          "plan_id": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "position": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "plan_id",
+          "position"
+        ],
+        "type": "object"
+      },
       "contract.PlanWaveView": {
         "properties": {
           "done_count": {
@@ -1921,6 +1962,21 @@
         "required": [
           "buckets",
           "has_data"
+        ],
+        "type": "object"
+      },
+      "httpapi.AddPlanWaveBody": {
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "position": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "name"
         ],
         "type": "object"
       },
@@ -3660,6 +3716,77 @@
         },
         "summary": "A plan as a portable OKF Markdown document.",
         "x-okt-surface": "plan.export"
+      }
+    },
+    "/api/v1/projects/{project}/plans/{plan}/waves": {
+      "post": {
+        "operationId": "addPlanWave",
+        "parameters": [
+          {
+            "description": "Project slug.",
+            "in": "path",
+            "name": "project",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Plan slug.",
+            "in": "path",
+            "name": "plan",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/httpapi.AddPlanWaveBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/contract.AddPlanWaveResponse"
+                    },
+                    "ok": {
+                      "const": true
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success."
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/output.Envelope"
+                }
+              }
+            },
+            "description": "Error envelope."
+          }
+        },
+        "summary": "Append or insert a wave into a plan.",
+        "x-okt-surface": "plan.wave.add"
       }
     },
     "/api/v1/projects/{project}/resume": {

@@ -15,6 +15,7 @@ type PlanOperations interface {
 	EditPlan(ctx context.Context, input contract.EditPlanInput) (contract.EditPlanResponse, error)
 	DeletePlan(ctx context.Context, input contract.DeletePlanInput) (contract.DeletePlanResponse, error)
 	ContinuePlan(ctx context.Context, input contract.ContinuePlanInput) (contract.ContinuePlanResponse, error)
+	AddPlanWave(ctx context.Context, input contract.AddPlanWaveInput) (contract.AddPlanWaveResponse, error)
 }
 
 // CreatePlanBody is the createPlan request body.
@@ -32,6 +33,13 @@ type EditPlanBody struct {
 	GoalBody *string `json:"goal_body,omitempty"`
 }
 
+// AddPlanWaveBody is the addPlanWave request body. Position 0 appends;
+// a 1-based position inserts there.
+type AddPlanWaveBody struct {
+	Name     string `json:"name"`
+	Position int    `json:"position,omitempty"`
+}
+
 func (s *Server) planRoutes() []route {
 	return []route{
 		query("listPlans", http.MethodGet, projectPath+"/plans", "plan.list", "Plans of a project.", []param{projectParam}, s.listPlans),
@@ -40,6 +48,7 @@ func (s *Server) planRoutes() []route {
 		command("editPlan", http.MethodPatch, planPath, "plan.edit", "Edit plan name, slug, status, or goal.", []param{projectParam, planParam}, s.editPlan),
 		query("deletePlan", http.MethodDelete, planPath, "plan.delete", "Delete a plan and its waves; its tasks stay, detached.", []param{projectParam, planParam, confirmedParam}, s.deletePlan),
 		query("getPlanContinuation", http.MethodGet, planPath+"/continuation", "plan.continue", "A plan with a preview of the task a claim would take next.", []param{projectParam, planParam}, s.continuePlan),
+		command("addPlanWave", http.MethodPost, planPath+"/waves", "plan.wave.add", "Append or insert a wave into a plan.", []param{projectParam, planParam}, s.addPlanWave),
 	}
 }
 
@@ -105,4 +114,17 @@ func (s *Server) continuePlan(r *http.Request) (contract.ContinuePlanResponse, e
 		return contract.ContinuePlanResponse{}, err
 	}
 	return ops.ContinuePlan(r.Context(), contract.ContinuePlanInput{ProjectSelector: selector, Slug: r.PathValue("plan")})
+}
+
+func (s *Server) addPlanWave(r *http.Request, body AddPlanWaveBody) (contract.AddPlanWaveResponse, error) {
+	ops, selector, err := s.project(r)
+	if err != nil {
+		return contract.AddPlanWaveResponse{}, err
+	}
+	return ops.AddPlanWave(r.Context(), contract.AddPlanWaveInput{
+		ProjectSelector: selector,
+		Slug:            r.PathValue("plan"),
+		Name:            body.Name,
+		Position:        body.Position,
+	})
 }
