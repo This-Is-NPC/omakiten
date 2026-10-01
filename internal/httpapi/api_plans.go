@@ -25,6 +25,7 @@ type PlanOperations interface {
 	RemovePlanWave(ctx context.Context, input contract.RemovePlanWaveInput) (contract.RemovePlanWaveResponse, error)
 	RenamePlanWave(ctx context.Context, input contract.RenamePlanWaveInput) (contract.RenamePlanWaveResponse, error)
 	ReorderPlanWave(ctx context.Context, input contract.ReorderPlanWaveInput) (contract.ReorderPlanWaveResponse, error)
+	AssignPlanTask(ctx context.Context, input contract.AssignPlanTaskInput) (contract.AssignPlanTaskResponse, error)
 }
 
 // CreatePlanBody is the createPlan request body.
@@ -60,6 +61,11 @@ type WavePositionBody struct {
 	Position int `json:"position"`
 }
 
+// PlanTaskBody names the wave of the plan that a task joins.
+type PlanTaskBody struct {
+	WaveID int64 `json:"wave_id"`
+}
+
 func (s *Server) planRoutes() []route {
 	return []route{
 		query("listPlans", http.MethodGet, projectPath+"/plans", "plan.list", "Plans of a project.", []param{projectParam}, s.listPlans),
@@ -72,6 +78,7 @@ func (s *Server) planRoutes() []route {
 		query("removePlanWave", http.MethodDelete, wavePath, "plan.wave.remove", "Delete a wave; its tasks stay in the plan, unscheduled.", []param{projectParam, waveParam, confirmedParam}, s.removePlanWave),
 		command("renamePlanWave", http.MethodPut, wavePath+"/name", "plan.wave.rename", "Rename a wave.", []param{projectParam, waveParam}, s.renamePlanWave),
 		command("reorderPlanWave", http.MethodPut, wavePath+"/position", "plan.wave.reorder", "Move a wave to another position in its plan.", []param{projectParam, waveParam}, s.reorderPlanWave),
+		command("assignPlanTask", http.MethodPut, planPath+"/tasks/{task}", "plan.task.assign", "Put a task into a wave of a plan.", []param{projectParam, planParam, taskParam}, s.assignPlanTask),
 	}
 }
 
@@ -187,4 +194,17 @@ func (s *Server) reorderPlanWave(r *http.Request, body WavePositionBody) (contra
 		return contract.ReorderPlanWaveResponse{}, err
 	}
 	return ops.ReorderPlanWave(r.Context(), contract.ReorderPlanWaveInput{ProjectSelector: selector, WaveID: waveID, Position: body.Position})
+}
+
+func (s *Server) assignPlanTask(r *http.Request, body PlanTaskBody) (contract.AssignPlanTaskResponse, error) {
+	ops, selector, taskID, err := s.task(r)
+	if err != nil {
+		return contract.AssignPlanTaskResponse{}, err
+	}
+	return ops.AssignPlanTask(r.Context(), contract.AssignPlanTaskInput{
+		ProjectSelector: selector,
+		TaskID:          taskID,
+		Slug:            r.PathValue("plan"),
+		WaveID:          body.WaveID,
+	})
 }

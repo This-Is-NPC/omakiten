@@ -31,6 +31,32 @@
         ],
         "type": "object"
       },
+      "contract.AssignPlanTaskResponse": {
+        "properties": {
+          "plan_id": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "project": {
+            "$ref": "#/components/schemas/contract.ProjectSummary"
+          },
+          "task_id": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "wave_id": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "plan_id",
+          "project",
+          "task_id",
+          "wave_id"
+        ],
+        "type": "object"
+      },
       "contract.AssignTaskResponse": {
         "properties": {
           "event": {
@@ -2216,6 +2242,18 @@
         },
         "type": "object"
       },
+      "httpapi.PlanTaskBody": {
+        "properties": {
+          "wave_id": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "wave_id"
+        ],
+        "type": "object"
+      },
       "httpapi.StudioBucket": {
         "properties": {
           "final": {
@@ -3786,6 +3824,88 @@
         },
         "summary": "A plan as a portable OKF Markdown document.",
         "x-okt-surface": "plan.export"
+      }
+    },
+    "/api/v1/projects/{project}/plans/{plan}/tasks/{task}": {
+      "put": {
+        "operationId": "assignPlanTask",
+        "parameters": [
+          {
+            "description": "Project slug.",
+            "in": "path",
+            "name": "project",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Plan slug.",
+            "in": "path",
+            "name": "plan",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Task id.",
+            "in": "path",
+            "name": "task",
+            "required": true,
+            "schema": {
+              "format": "int64",
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/httpapi.PlanTaskBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/contract.AssignPlanTaskResponse"
+                    },
+                    "ok": {
+                      "const": true
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success."
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/output.Envelope"
+                }
+              }
+            },
+            "description": "Error envelope."
+          }
+        },
+        "summary": "Put a task into a wave of a plan.",
+        "x-okt-surface": "plan.task.assign"
       }
     },
     "/api/v1/projects/{project}/plans/{plan}/waves": {

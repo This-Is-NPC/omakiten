@@ -18,6 +18,7 @@ var _ = mapping([]mappingCase{
 	{"removePlanWave", http.MethodDelete, "/api/v1/projects/alpha/waves/3?confirmed=true", "", "RemovePlanWave", contract.RemovePlanWaveInput{ProjectSelector: alpha, WaveID: 3, Confirmed: true}},
 	{"renamePlanWave", http.MethodPut, "/api/v1/projects/alpha/waves/3/name", `{"name":"Ship"}`, "RenamePlanWave", contract.RenamePlanWaveInput{ProjectSelector: alpha, WaveID: 3, Name: "Ship"}},
 	{"reorderPlanWave", http.MethodPut, "/api/v1/projects/alpha/waves/3/position", `{"position":1}`, "ReorderPlanWave", contract.ReorderPlanWaveInput{ProjectSelector: alpha, WaveID: 3, Position: 1}},
+	{"assignPlanTask", http.MethodPut, "/api/v1/projects/alpha/plans/delivery/tasks/5", `{"wave_id":3}`, "AssignPlanTask", contract.AssignPlanTaskInput{ProjectSelector: alpha, TaskID: 5, Slug: "delivery", WaveID: 3}},
 })
 
 func (f *fakeOps) ListPlans(_ context.Context, in contract.ListPlansInput) (contract.ListPlansResponse, error) {
@@ -68,4 +69,9 @@ func (f *fakeOps) RenamePlanWave(_ context.Context, in contract.RenamePlanWaveIn
 func (f *fakeOps) ReorderPlanWave(_ context.Context, in contract.ReorderPlanWaveInput) (contract.ReorderPlanWaveResponse, error) {
 	f.record("ReorderPlanWave", in)
 	return contract.ReorderPlanWaveResponse{}, nil
+}
+
+func (f *fakeOps) AssignPlanTask(_ context.Context, in contract.AssignPlanTaskInput) (contract.AssignPlanTaskResponse, error) {
+	f.record("AssignPlanTask", in)
+	return contract.AssignPlanTaskResponse{}, nil
 }
