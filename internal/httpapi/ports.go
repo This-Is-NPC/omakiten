@@ -16,6 +16,7 @@ type Operations interface {
 	CommentOperations
 	DependencyOperations
 	PlanOperations
+	WorkDocumentOperations
 	InsightOperations
 	MaintenanceOperations
 }

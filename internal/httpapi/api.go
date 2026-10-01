@@ -43,6 +43,7 @@ func (s *Server) routes() []route {
 		s.commentRoutes(),
 		s.dependencyRoutes(),
 		s.planRoutes(),
+		s.workDocumentRoutes(),
 		s.insightRoutes(),
 		s.maintenanceRoutes(),
 		[]route{

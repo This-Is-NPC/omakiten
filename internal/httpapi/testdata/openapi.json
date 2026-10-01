@@ -2257,6 +2257,21 @@
         ],
         "type": "object"
       },
+      "httpapi.WorkDocumentResponse": {
+        "properties": {
+          "markdown": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "markdown",
+          "type"
+        ],
+        "type": "object"
+      },
       "output.Envelope": {
         "properties": {
           "code": {
@@ -3960,6 +3975,69 @@
         },
         "summary": "Add a human comment to a task.",
         "x-okt-surface": "comment.add"
+      }
+    },
+    "/api/v1/projects/{project}/tasks/{task}/export": {
+      "get": {
+        "operationId": "exportTask",
+        "parameters": [
+          {
+            "description": "Project slug.",
+            "in": "path",
+            "name": "project",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Task id.",
+            "in": "path",
+            "name": "task",
+            "required": true,
+            "schema": {
+              "format": "int64",
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/httpapi.WorkDocumentResponse"
+                    },
+                    "ok": {
+                      "const": true
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success."
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/output.Envelope"
+                }
+              }
+            },
+            "description": "Error envelope."
+          }
+        },
+        "summary": "A task as a portable OKF Markdown document.",
+        "x-okt-surface": "task.export"
       }
     },
     "/api/v1/projects/{project}/tasks/{task}/transitions": {
