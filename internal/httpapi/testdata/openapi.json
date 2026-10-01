@@ -1805,6 +1805,17 @@
         ],
         "type": "object"
       },
+      "contract.ShowTemplateResponse": {
+        "properties": {
+          "template": {
+            "$ref": "#/components/schemas/contract.TemplateSummary"
+          }
+        },
+        "required": [
+          "template"
+        ],
+        "type": "object"
+      },
       "contract.SkillSummary": {
         "properties": {
           "body": {
@@ -7365,6 +7376,67 @@
         },
         "summary": "Templates the project configuration loads.",
         "x-okt-surface": "template.list"
+      }
+    },
+    "/api/v1/projects/{project}/templates/{template}": {
+      "get": {
+        "operationId": "getTemplate",
+        "parameters": [
+          {
+            "description": "Project slug.",
+            "in": "path",
+            "name": "project",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Template slug.",
+            "in": "path",
+            "name": "template",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/contract.ShowTemplateResponse"
+                    },
+                    "ok": {
+                      "const": true
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success."
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/output.Envelope"
+                }
+              }
+            },
+            "description": "Error envelope."
+          }
+        },
+        "summary": "A template with its body; a global template the project overrides is rejected.",
+        "x-okt-surface": "template.show"
       }
     },
     "/api/v1/projects/{project}/waves/{wave}": {

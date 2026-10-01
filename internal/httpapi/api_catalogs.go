@@ -17,6 +17,7 @@ type CatalogOperations interface {
 	ListSkills(ctx context.Context, input contract.ListSkillsInput) (contract.ListSkillsResponse, error)
 	ShowSkill(ctx context.Context, input contract.ShowSkillInput) (contract.ShowSkillResponse, error)
 	ListTemplates(ctx context.Context, input contract.ListTemplatesInput) (contract.ListTemplatesResponse, error)
+	ShowTemplate(ctx context.Context, input contract.ShowTemplateInput) (contract.ShowTemplateResponse, error)
 }
 
 func (s *Server) catalogRoutes() []route {
@@ -38,7 +39,16 @@ func (s *Server) catalogRoutes() []route {
 			queryParam("scope_project", "Resolve each default kind for this project slug, preferring its own template over the global one.", stringSchema),
 			queryParam("include_body", "`true` includes template bodies.", boolSchema),
 		}, s.listTemplates),
+		query("getTemplate", http.MethodGet, projectPath+"/templates/{template}", "template.show", "A template with its body; a global template the project overrides is rejected.", []param{projectParam, pathParam("template", "Template slug.", stringSchema)}, s.showTemplate),
 	}
+}
+
+func (s *Server) showTemplate(r *http.Request) (contract.ShowTemplateResponse, error) {
+	ops, selector, err := s.project(r)
+	if err != nil {
+		return contract.ShowTemplateResponse{}, err
+	}
+	return ops.ShowTemplate(r.Context(), contract.ShowTemplateInput{ProjectSelector: selector, Slug: r.PathValue("template")})
 }
 
 func (s *Server) listTemplates(r *http.Request) (contract.ListTemplatesResponse, error) {
