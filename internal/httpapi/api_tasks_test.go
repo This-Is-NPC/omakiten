@@ -24,6 +24,7 @@ var _ = mapping([]mappingCase{
 	{"assignTask", http.MethodPut, "/api/v1/projects/alpha/tasks/5/assignee", `{"assignee":""}`, "AssignTask", contract.AssignTaskInput{ProjectSelector: alpha, TaskID: 5}},
 	{"listTaskActivity", http.MethodGet, "/api/v1/projects/alpha/tasks/5/activity?order=desc", "", "ListTaskActivity", contract.ListTaskActivityInput{ProjectSelector: alpha, TaskID: 5, Order: "desc"}},
 	{"deleteTask", http.MethodDelete, "/api/v1/projects/alpha/tasks/5?confirmed=true", "", "DeleteTask", contract.DeleteTaskInput{ProjectSelector: alpha, TaskID: 5, Confirmed: true}},
+	{"archiveTask", http.MethodPost, "/api/v1/projects/alpha/tasks/5/archive", "", "ArchiveTask", contract.ArchiveTaskInput{ProjectSelector: alpha, TaskID: 5}},
 })
 
 // TestMalformedBooleanQueryNeverReachesOperations: a flag that is not a
@@ -90,4 +91,9 @@ func (f *fakeOps) ListTaskActivity(_ context.Context, in contract.ListTaskActivi
 func (f *fakeOps) DeleteTask(_ context.Context, in contract.DeleteTaskInput) (contract.DeleteTaskResponse, error) {
 	f.record("DeleteTask", in)
 	return contract.DeleteTaskResponse{}, nil
+}
+
+func (f *fakeOps) ArchiveTask(_ context.Context, in contract.ArchiveTaskInput) (contract.ArchiveTaskResponse, error) {
+	f.record("ArchiveTask", in)
+	return contract.ArchiveTaskResponse{}, nil
 }

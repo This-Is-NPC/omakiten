@@ -1,6 +1,21 @@
 {
   "components": {
     "schemas": {
+      "contract.ArchiveTaskResponse": {
+        "properties": {
+          "project": {
+            "$ref": "#/components/schemas/contract.ProjectSummary"
+          },
+          "task": {
+            "$ref": "#/components/schemas/contract.TaskSummary"
+          }
+        },
+        "required": [
+          "project",
+          "task"
+        ],
+        "type": "object"
+      },
       "contract.AssignTaskResponse": {
         "properties": {
           "event": {
@@ -3565,6 +3580,69 @@
         },
         "summary": "Unified activity feed of a task.",
         "x-okt-surface": "task_activity.list"
+      }
+    },
+    "/api/v1/projects/{project}/tasks/{task}/archive": {
+      "post": {
+        "operationId": "archiveTask",
+        "parameters": [
+          {
+            "description": "Project slug.",
+            "in": "path",
+            "name": "project",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Task id.",
+            "in": "path",
+            "name": "task",
+            "required": true,
+            "schema": {
+              "format": "int64",
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/contract.ArchiveTaskResponse"
+                    },
+                    "ok": {
+                      "const": true
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success."
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/output.Envelope"
+                }
+              }
+            },
+            "description": "Error envelope."
+          }
+        },
+        "summary": "Archive a task.",
+        "x-okt-surface": "task.archive"
       }
     },
     "/api/v1/projects/{project}/tasks/{task}/assignee": {

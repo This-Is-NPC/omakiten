@@ -19,6 +19,7 @@ type TaskOperations interface {
 	AssignTask(ctx context.Context, input contract.AssignTaskInput) (contract.AssignTaskResponse, error)
 	ListTaskActivity(ctx context.Context, input contract.ListTaskActivityInput) (contract.ListTaskActivityResponse, error)
 	DeleteTask(ctx context.Context, input contract.DeleteTaskInput) (contract.DeleteTaskResponse, error)
+	ArchiveTask(ctx context.Context, input contract.ArchiveTaskInput) (contract.ArchiveTaskResponse, error)
 }
 
 // CreateTaskBody is the createTask request body.
@@ -68,6 +69,7 @@ func (s *Server) taskRoutes() []route {
 			projectParam, taskParam,
 			queryParam("confirmed", "`true` deletes; otherwise the confirmation is returned.", boolSchema),
 		}, s.deleteTask),
+		query("archiveTask", http.MethodPost, taskPath+"/archive", "task.archive", "Archive a task.", []param{projectParam, taskParam}, s.archiveTask),
 		query("listTaskActivity", http.MethodGet, taskPath+"/activity", "task_activity.list", "Unified activity feed of a task.", []param{
 			projectParam, taskParam,
 			queryParam("order", "`asc` (default) or `desc`.", stringSchema),
@@ -169,6 +171,14 @@ func (s *Server) deleteTask(r *http.Request) (contract.DeleteTaskResponse, error
 		return contract.DeleteTaskResponse{}, err
 	}
 	return ops.DeleteTask(r.Context(), contract.DeleteTaskInput{ProjectSelector: selector, TaskID: taskID, Confirmed: confirmed != nil && *confirmed})
+}
+
+func (s *Server) archiveTask(r *http.Request) (contract.ArchiveTaskResponse, error) {
+	ops, selector, taskID, err := s.task(r)
+	if err != nil {
+		return contract.ArchiveTaskResponse{}, err
+	}
+	return ops.ArchiveTask(r.Context(), contract.ArchiveTaskInput{ProjectSelector: selector, TaskID: taskID})
 }
 
 func (s *Server) taskActivity(r *http.Request) (contract.ListTaskActivityResponse, error) {
