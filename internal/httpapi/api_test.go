@@ -12,54 +12,33 @@ import (
 
 func ptr[T any](v T) *T { return &v }
 
-// TestRoutesMapRequestsOntoOperationInputs pins, for every JSON route, the
-// operation it calls and the input built from the path, query, and body.
-// The project always comes from the path.
-func TestRoutesMapRequestsOntoOperationInputs(t *testing.T) {
-	alpha := contract.ProjectSelector{ProjectID: 7}
-	cases := []struct {
-		id     string
-		method string
-		target string
-		body   string
-		call   string
-		input  any
-	}{
-		{"listProjects", http.MethodGet, "/api/v1/projects", "", "ListProjects", nil},
-		{"getProject", http.MethodGet, "/api/v1/projects/alpha", "", "Overview", contract.OverviewInput{ProjectSelector: alpha}},
-		{"resumeProject", http.MethodGet, "/api/v1/projects/alpha/resume", "", "ResumeProject", contract.ResumeProjectInput{ProjectSelector: alpha}},
-		{"getWorkflow", http.MethodGet, "/api/v1/projects/alpha/workflow", "", "ShowWorkflow", contract.WorkflowInput{ProjectSelector: alpha}},
-		{"getBoard", http.MethodGet, "/api/v1/projects/alpha/board", "", "TaskBoard", contract.TaskBoardInput{ProjectSelector: alpha}},
-		{"listTasks", http.MethodGet, "/api/v1/projects/alpha/tasks?parent=12", "", "ListTasks", contract.ListTasksInput{
-			ProjectSelector: alpha, ParentID: contract.OptionalInt64{Set: true, Value: ptr[int64](12)},
-		}},
-		{"createTask", http.MethodPost, "/api/v1/projects/alpha/tasks", `{"title":"T","description":"D","priority":"high","bucket_key":"dev","template_slug":"story","parent_id":3}`, "CreateTaskIntent", contract.CreateTaskInput{
-			ProjectSelector: alpha, Title: "T", Description: "D", Priority: "high", BucketKey: "dev", TemplateSlug: "story", ParentID: ptr[int64](3),
-		}},
-		{"getTask", http.MethodGet, "/api/v1/projects/alpha/tasks/5", "", "ShowTask", contract.ShowTaskInput{ProjectSelector: alpha, TaskID: 5}},
-		{"editTask", http.MethodPatch, "/api/v1/projects/alpha/tasks/5", `{"title":"New","parent_id":null}`, "EditTask", contract.EditTaskInput{
-			ProjectSelector: alpha, TaskID: 5, Title: ptr("New"), ParentID: contract.OptionalInt64{Set: true},
-		}},
-		{"moveTask", http.MethodPost, "/api/v1/projects/alpha/tasks/5/transitions", `{"bucket_key":"review"}`, "MoveTask", contract.MoveTaskInput{ProjectSelector: alpha, TaskID: 5, BucketKey: "review"}},
-		{"assignTask", http.MethodPut, "/api/v1/projects/alpha/tasks/5/assignee", `{"assignee":""}`, "AssignTask", contract.AssignTaskInput{ProjectSelector: alpha, TaskID: 5}},
-		{"listTaskComments", http.MethodGet, "/api/v1/projects/alpha/tasks/5/comments", "", "ListComments", contract.ListCommentsInput{ProjectSelector: alpha, TaskID: 5}},
-		{"addTaskComment", http.MethodPost, "/api/v1/projects/alpha/tasks/5/comments", `{"body":"B","title":"Ti","kind":"note","pinned":true,"tags":["a"],"template_slug":"tpl"}`, "AddComment", contract.AddCommentInput{
-			ProjectSelector: alpha, TaskID: 5, Body: "B", Title: "Ti", Kind: "note", Pinned: true, AuthorType: "human", Tags: []string{"a"}, TemplateSlug: "tpl",
-		}},
-		{"listTaskActivity", http.MethodGet, "/api/v1/projects/alpha/tasks/5/activity?order=desc", "", "ListTaskActivity", contract.ListTaskActivityInput{ProjectSelector: alpha, TaskID: 5, Order: "desc"}},
-		{"listDependencies", http.MethodGet, "/api/v1/projects/alpha/dependencies?task=5", "", "ListDependencies", contract.ListDependenciesInput{ProjectSelector: alpha, TaskID: 5}},
-		{"listPlans", http.MethodGet, "/api/v1/projects/alpha/plans", "", "ListPlans", contract.ListPlansInput{ProjectSelector: alpha}},
-		{"getPlan", http.MethodGet, "/api/v1/projects/alpha/plans/delivery", "", "ShowPlan", contract.ShowPlanInput{ProjectSelector: alpha, Slug: "delivery"}},
-		{"search", http.MethodGet, "/api/v1/projects/alpha/search?q=login+bug&type=task,comment", "", "Search", contract.SearchInput{ProjectSelector: alpha, Query: "login bug", EntityTypes: []string{"task", "comment"}}},
-		{"listLogs", http.MethodGet, "/api/v1/projects/alpha/logs?category=task&category=plan&since=7d&limit=10&order=asc", "", "ListLogs", contract.ListLogsInput{
-			ProjectSelector: alpha, Categories: []string{"task", "plan"}, Since: "7d", Limit: 10, Order: "asc",
-		}},
-		{"getInsights", http.MethodGet, "/api/v1/projects/alpha/insights?stuck_days=3", "", "InsightsSummary", contract.InsightsSummaryInput{ProjectSelector: alpha, StuckDays: 3}},
-		{"getMetrics", http.MethodGet, "/api/v1/projects/alpha/metrics?period=7d", "", "MetricsSummary", contract.MetricsSummaryInput{ProjectSelector: alpha, Period: "7d", ProjectID: 7}},
-	}
+// mappingCase pins, for one JSON route, the operation it calls and the
+// input built from the path, query, and body.
+type mappingCase struct {
+	id     string
+	method string
+	target string
+	body   string
+	call   string
+	input  any
+}
 
+// mappingCases collects the cases each api_*_test.go file registers.
+var mappingCases []mappingCase
+
+func mapping(cases []mappingCase) bool {
+	mappingCases = append(mappingCases, cases...)
+	return true
+}
+
+// alpha is the selector the test runtimes resolve for the "alpha" slug.
+var alpha = contract.ProjectSelector{ProjectID: 7}
+
+// TestRoutesMapRequestsOntoOperationInputs runs every registered mapping
+// case. The project always comes from the path.
+func TestRoutesMapRequestsOntoOperationInputs(t *testing.T) {
 	covered := map[string]bool{}
-	for _, tc := range cases {
+	for _, tc := range mappingCases {
 		covered[tc.id] = true
 		t.Run(tc.id, func(t *testing.T) {
 			ops := &fakeOps{}

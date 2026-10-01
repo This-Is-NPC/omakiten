@@ -11,27 +11,12 @@ import (
 // Operations is the operation facade the adapter drives, pinned to the
 // HTTP surface by the composition root.
 type Operations interface {
-	ListProjects(ctx context.Context) ([]domain.Project, error)
-	Overview(ctx context.Context, input contract.OverviewInput) (contract.OverviewResponse, error)
-	ResumeProject(ctx context.Context, input contract.ResumeProjectInput) (contract.ResumeProjectResponse, error)
-	ShowWorkflow(ctx context.Context, input contract.WorkflowInput) (contract.WorkflowResponse, error)
-	TaskBoard(ctx context.Context, input contract.TaskBoardInput) (contract.TaskBoardResponse, error)
-	ListTasks(ctx context.Context, input contract.ListTasksInput) (contract.ListTasksResponse, error)
-	ShowTask(ctx context.Context, input contract.ShowTaskInput) (contract.ShowTaskResponse, error)
-	CreateTaskIntent(ctx context.Context, input contract.CreateTaskInput) (contract.CreateTaskResponse, error)
-	EditTask(ctx context.Context, input contract.EditTaskInput) (contract.EditTaskResponse, error)
-	MoveTask(ctx context.Context, input contract.MoveTaskInput) (contract.MoveTaskResponse, error)
-	AssignTask(ctx context.Context, input contract.AssignTaskInput) (contract.AssignTaskResponse, error)
-	ListComments(ctx context.Context, input contract.ListCommentsInput) (contract.CommentsResponse, error)
-	AddComment(ctx context.Context, input contract.AddCommentInput) (contract.CommentResponse, error)
-	ListTaskActivity(ctx context.Context, input contract.ListTaskActivityInput) (contract.ListTaskActivityResponse, error)
-	ListDependencies(ctx context.Context, input contract.ListDependenciesInput) (contract.DependenciesResponse, error)
-	ListPlans(ctx context.Context, input contract.ListPlansInput) (contract.ListPlansResponse, error)
-	ShowPlan(ctx context.Context, input contract.ShowPlanInput) (contract.ShowPlanResponse, error)
-	Search(ctx context.Context, input contract.SearchInput) (contract.SearchResponse, error)
-	ListLogs(ctx context.Context, input contract.ListLogsInput) (contract.ListLogsResponse, error)
-	InsightsSummary(ctx context.Context, input contract.InsightsSummaryInput) (contract.InsightsSummaryResponse, error)
-	MetricsSummary(ctx context.Context, input contract.MetricsSummaryInput) (contract.MetricsSummaryResponse, error)
+	ProjectOperations
+	TaskOperations
+	CommentOperations
+	DependencyOperations
+	PlanOperations
+	InsightOperations
 }
 
 // Runtimes resolves the operation facade for each request.
