@@ -13,6 +13,7 @@ var _ = mapping([]mappingCase{
 	{"getPlan", http.MethodGet, "/api/v1/projects/alpha/plans/delivery", "", "ShowPlan", contract.ShowPlanInput{ProjectSelector: alpha, Slug: "delivery"}},
 	{"editPlan", http.MethodPatch, "/api/v1/projects/alpha/plans/delivery", `{"slug":"shipping","status":"done"}`, "EditPlan", contract.EditPlanInput{ProjectSelector: alpha, Slug: "delivery", NewSlug: ptr("shipping"), Status: ptr("done")}},
 	{"deletePlan", http.MethodDelete, "/api/v1/projects/alpha/plans/delivery?confirmed=true", "", "DeletePlan", contract.DeletePlanInput{ProjectSelector: alpha, Slug: "delivery", Confirmed: true}},
+	{"getPlanContinuation", http.MethodGet, "/api/v1/projects/alpha/plans/delivery/continuation", "", "ContinuePlan", contract.ContinuePlanInput{ProjectSelector: alpha, Slug: "delivery"}},
 })
 
 func (f *fakeOps) ListPlans(_ context.Context, in contract.ListPlansInput) (contract.ListPlansResponse, error) {
@@ -38,4 +39,9 @@ func (f *fakeOps) EditPlan(_ context.Context, in contract.EditPlanInput) (contra
 func (f *fakeOps) DeletePlan(_ context.Context, in contract.DeletePlanInput) (contract.DeletePlanResponse, error) {
 	f.record("DeletePlan", in)
 	return contract.DeletePlanResponse{}, nil
+}
+
+func (f *fakeOps) ContinuePlan(_ context.Context, in contract.ContinuePlanInput) (contract.ContinuePlanResponse, error) {
+	f.record("ContinuePlan", in)
+	return contract.ContinuePlanResponse{}, nil
 }

@@ -264,6 +264,50 @@
         ],
         "type": "object"
       },
+      "contract.ContinuePlanResponse": {
+        "properties": {
+          "active_wave_id": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "done_count": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "next_claimable": {
+            "$ref": "#/components/schemas/contract.PlanTaskRow"
+          },
+          "percent": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "plan": {
+            "$ref": "#/components/schemas/contract.PlanSummary"
+          },
+          "project": {
+            "$ref": "#/components/schemas/contract.ProjectSummary"
+          },
+          "total_count": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "waves": {
+            "items": {
+              "$ref": "#/components/schemas/contract.PlanWaveView"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "done_count",
+          "percent",
+          "plan",
+          "project",
+          "total_count",
+          "waves"
+        ],
+        "type": "object"
+      },
       "contract.ContinueTaskResponse": {
         "properties": {
           "agent_output_language": {
@@ -3494,6 +3538,67 @@
         },
         "summary": "Edit plan name, slug, status, or goal.",
         "x-okt-surface": "plan.edit"
+      }
+    },
+    "/api/v1/projects/{project}/plans/{plan}/continuation": {
+      "get": {
+        "operationId": "getPlanContinuation",
+        "parameters": [
+          {
+            "description": "Project slug.",
+            "in": "path",
+            "name": "project",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Plan slug.",
+            "in": "path",
+            "name": "plan",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/contract.ContinuePlanResponse"
+                    },
+                    "ok": {
+                      "const": true
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success."
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/output.Envelope"
+                }
+              }
+            },
+            "description": "Error envelope."
+          }
+        },
+        "summary": "A plan with a preview of the task a claim would take next.",
+        "x-okt-surface": "plan.continue"
       }
     },
     "/api/v1/projects/{project}/plans/{plan}/export": {

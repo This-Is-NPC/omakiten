@@ -14,6 +14,7 @@ type PlanOperations interface {
 	CreatePlan(ctx context.Context, input contract.CreatePlanInput) (contract.CreatePlanResponse, error)
 	EditPlan(ctx context.Context, input contract.EditPlanInput) (contract.EditPlanResponse, error)
 	DeletePlan(ctx context.Context, input contract.DeletePlanInput) (contract.DeletePlanResponse, error)
+	ContinuePlan(ctx context.Context, input contract.ContinuePlanInput) (contract.ContinuePlanResponse, error)
 }
 
 // CreatePlanBody is the createPlan request body.
@@ -38,6 +39,7 @@ func (s *Server) planRoutes() []route {
 		query("getPlan", http.MethodGet, planPath, "plan.show", "A plan with its waves and tasks.", []param{projectParam, planParam}, s.showPlan),
 		command("editPlan", http.MethodPatch, planPath, "plan.edit", "Edit plan name, slug, status, or goal.", []param{projectParam, planParam}, s.editPlan),
 		query("deletePlan", http.MethodDelete, planPath, "plan.delete", "Delete a plan and its waves; its tasks stay, detached.", []param{projectParam, planParam, confirmedParam}, s.deletePlan),
+		query("getPlanContinuation", http.MethodGet, planPath+"/continuation", "plan.continue", "A plan with a preview of the task a claim would take next.", []param{projectParam, planParam}, s.continuePlan),
 	}
 }
 
@@ -95,4 +97,12 @@ func (s *Server) deletePlan(r *http.Request) (contract.DeletePlanResponse, error
 		return contract.DeletePlanResponse{}, err
 	}
 	return ops.DeletePlan(r.Context(), contract.DeletePlanInput{ProjectSelector: selector, Slug: r.PathValue("plan"), Confirmed: ok})
+}
+
+func (s *Server) continuePlan(r *http.Request) (contract.ContinuePlanResponse, error) {
+	ops, selector, err := s.project(r)
+	if err != nil {
+		return contract.ContinuePlanResponse{}, err
+	}
+	return ops.ContinuePlan(r.Context(), contract.ContinuePlanInput{ProjectSelector: selector, Slug: r.PathValue("plan")})
 }
