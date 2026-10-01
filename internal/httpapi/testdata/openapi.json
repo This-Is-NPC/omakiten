@@ -860,6 +860,49 @@
         ],
         "type": "object"
       },
+      "contract.LawSummary": {
+        "properties": {
+          "body": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "persona": {
+            "type": "string"
+          },
+          "project": {
+            "type": "string"
+          },
+          "scope": {
+            "type": "string"
+          },
+          "severity": {
+            "type": "string"
+          },
+          "slug": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "slug"
+        ],
+        "type": "object"
+      },
+      "contract.ListLawsResponse": {
+        "properties": {
+          "laws": {
+            "items": {
+              "$ref": "#/components/schemas/contract.LawSummary"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "laws"
+        ],
+        "type": "object"
+      },
       "contract.ListLogsResponse": {
         "properties": {
           "order": {
@@ -3901,6 +3944,85 @@
           }
         },
         "summary": "File-backed knowledge of a project and its related projects."
+      }
+    },
+    "/api/v1/projects/{project}/laws": {
+      "get": {
+        "operationId": "listLaws",
+        "parameters": [
+          {
+            "description": "Project slug.",
+            "in": "path",
+            "name": "project",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Law scope filter.",
+            "in": "query",
+            "name": "scope",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Owner project slug filter.",
+            "in": "query",
+            "name": "scope_project",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Owner persona slug filter.",
+            "in": "query",
+            "name": "persona",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/contract.ListLawsResponse"
+                    },
+                    "ok": {
+                      "const": true
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success."
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/output.Envelope"
+                }
+              }
+            },
+            "description": "Error envelope."
+          }
+        },
+        "summary": "Laws the project configuration loads, without bodies.",
+        "x-okt-surface": "law.list"
       }
     },
     "/api/v1/projects/{project}/logs": {

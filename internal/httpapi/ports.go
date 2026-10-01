@@ -21,6 +21,7 @@ type Operations interface {
 	MaintenanceOperations
 	RecordOperations
 	TagOperations
+	CatalogOperations
 }
 
 // Runtimes resolves the operation facade for each request.
