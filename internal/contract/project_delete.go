@@ -24,3 +24,21 @@ type ProjectDeleteResult struct {
 }
 
 type ProjectDeleter func(context.Context, ProjectDeleteInput) (ProjectDeleteResult, error)
+
+// RemoveProjectInput asks to delete the selected project. Without
+// Confirmed nothing is removed and the answer asks for confirmation.
+type RemoveProjectInput struct {
+	ProjectSelector
+	Confirmed bool `json:"confirmed,omitempty"`
+}
+
+// RemoveProjectResponse is what deleting a project removes, or would: the
+// counters always, the confirmation it needs before, and the backup
+// written and its prune warnings after.
+type RemoveProjectResponse struct {
+	Project       ProjectSummary               `json:"project"`
+	Counters      domain.ProjectDeleteCounters `json:"counters"`
+	Confirmation  Confirmation                 `json:"confirmation,omitempty"`
+	BackupPath    string                       `json:"backup_path,omitempty"`
+	PruneWarnings []string                     `json:"prune_warnings,omitempty"`
+}

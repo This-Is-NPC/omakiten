@@ -61,6 +61,32 @@ Every route lives under `/api/v1`. Project routes take the project slug:
 `GET /api/v1/openapi.json` returns the complete contract; it is generated from
 the routes and the delivery types, so it always matches the running binary.
 
+The API serves every operation the CLI runs on a project's work:
+
+| Resource | Routes under `/api/v1/projects/{project}` |
+|---|---|
+| Project | the project itself (`GET`, `PATCH`, `DELETE`), `resume`, `workflow`, `workflow/orphans` |
+| Tasks | `tasks`, `tasks/{task}` and its `transitions`, `assignee`, `archive`, `unarchive`, `checkpoint`, `activity`, `progress`, `dependencies`, `comments` |
+| Comments | `comments/{comment}` |
+| Plans | `plans`, `plans/{plan}` and its `continuation`, `waves`, `tasks/{task}`, `claims`; `waves/{wave}`; `tasks/{task}/plan` |
+| Errors and solutions | `errors`, `errors/{error}/solutions`, `solutions`, `solutions/{solution}/confirmations` |
+| Tags | `tags`, `tags/{tag}`; across projects, `/api/v1/tags` and `/api/v1/tags/{tag}/merge` |
+| Catalogs | `laws`, `personas`, `skills`, `templates`, each with a `/{key}` read; `commands` and `commands/{command}/resolve` |
+| Reads | `board`, `dependencies`, `search`, `logs`, `insights`, `metrics` |
+
+A route that deletes or removes asks first, as the CLI does without
+`--confirm`: it answers with the confirmation it needs and changes nothing
+until you repeat the request with `?confirmed=true`. Creating a task that
+resembles existing work works the same way, through `"confirmed": true` in the
+body.
+
+Tasks and plans travel as the same OKF Markdown file `okt task export` and
+`okt plan export` write. `GET .../tasks/{task}/export` and
+`GET .../plans/{plan}/export` answer `{"type": ..., "markdown": ...}`;
+`POST .../tasks/import` and `POST .../plans/import` take
+`{"markdown": ..., "dry_run": ..., "confirmed": ...}`. A request body is capped
+at 1 MiB, so import a larger file with the CLI.
+
 Responses use the CLI envelope. Success is `{"ok": true, "data": ...}`.
 Failure is `{"ok": false, "code": ..., "msg": ..., "details": ...}` with an HTTP
 status: 400 invalid input, 401 missing token, 403 operation off the HTTP
@@ -72,9 +98,24 @@ Messages come from the language selected with `okt config language set --gui`.
 the same words as the CLI and TUI. A key without translation comes back as the
 key itself.
 
+The API acts for the person at the GUI, as the TUI does. Errors and solutions
+recorded through it carry source `http` and the route's operation id as their
+entry point, and workflow guards judge its calls as made by a user, not an
+agent.
+
 The workflow's `surfaces.yaml` decides what the API may do: each operation has
-an `http` column. Database backup, search reindex, and project deletion ship
-with `http: false`.
+an `http` column. Database backup and search reindex ship with `http: false`.
+Deleting a project is served: unconfirmed, `DELETE /api/v1/projects/{project}`
+answers what it would remove; confirmed, it writes a database backup first and
+answers its path.
+
+Two reads sit outside that table because they run no operation.
+`GET /api/v1/projects/example/knowledge` returns the project's file-backed
+knowledge, as `okt knowledge list --include-related` reads it: resources,
+relations, and diagnostics. `GET /api/v1/projects/example/studio` returns what
+the TUI Studio and Settings show: buckets, transitions with their guards (and
+the sub-task workflow when its guards differ), commands, personas, laws,
+skills, templates, hooks, and the effective settings.
 
 ## 4. Follow changes live
 

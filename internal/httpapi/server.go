@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"omakiten/internal/activity"
 	"omakiten/internal/output"
 )
 
@@ -76,6 +77,8 @@ func (s *Server) handler(rt route) http.Handler {
 		return rt.stream
 	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Operations record the GUI user behind the HTTP surface as their actor.
+		r = r.WithContext(activity.WithAgent(r.Context(), "http", rt.id, "human", ""))
 		data, err := rt.serve(w, r)
 		if err != nil {
 			s.writeError(w, err)

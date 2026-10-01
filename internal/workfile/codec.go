@@ -39,6 +39,16 @@ func Decode(reader io.Reader) (domain.WorkDocument, error) {
 	return doc, nil
 }
 
+// Parse decodes one document and reports every syntax failure as a
+// validation error.
+func Parse(reader io.Reader) (domain.WorkDocument, error) {
+	doc, err := Decode(reader)
+	if err != nil {
+		return doc, domain.NewError(domain.ErrValidation, err.Error(), nil)
+	}
+	return doc, nil
+}
+
 // Read bounds document input and rejects invalid UTF-8.
 func Read(reader io.Reader) ([]byte, error) {
 	data, err := io.ReadAll(io.LimitReader(reader, MaxBytes+1))

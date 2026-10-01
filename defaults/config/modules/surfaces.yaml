@@ -44,7 +44,7 @@ plan.wave.remove: { cli: true, tui: true, http: true }
 plan.wave.rename: { cli: true, tui: true, http: true }
 plan.wave.reorder: { cli: true, tui: true, http: true }
 progress.record: { cli: true, tui: true, http: true }
-project.delete: { cli: true, tui: true, http: false, reason: "${{intl:operations.denied.destructive_http}}" }
+project.delete: { cli: true, tui: true, http: true }
 project.edit: { cli: true, tui: true, http: true }
 project.overview: { cli: true, tui: true, http: true }
 project.list: { cli: true, tui: true, http: true }

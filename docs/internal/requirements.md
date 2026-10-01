@@ -37,11 +37,12 @@ behavior and the owner of each rule, rather than a historical feature ledger.
 | Exported relationships must fit inside the document's task set. | Export validation |
 | Project knowledge is read from files without SQLite persistence; related projects are followed only when declared. | `internal/knowledgefile`, CLI and TUI knowledge ports |
 | Destructive database operations use verified live recovery images and protected directory identity. | SQLite and recovery adapters |
-| Database backup, search reindex, and project deletion are census operations; shipped surfaces keep them off HTTP. | `internal/operation`, `agentruntime.Maintenance`, surfaces table |
+| Database backup, search reindex, and project deletion are census operations; shipped surfaces keep backup and reindex off HTTP, and serve project deletion behind a confirmation. | `internal/operation`, `agentruntime.Maintenance`, surfaces table |
 | Search repair is transactional and verified against canonical records. | Search integrity adapter |
 | CLI data output is machine-readable, errors exit nonzero, and diagnostics preserve actionable context. | CLI execution and output |
 | CLI and TUI use common contracts and application policy while remaining independent delivery adapters. | Composition root and architecture tests |
 | The HTTP API listens on loopback only, authenticates with a per-run token, and gates each route by its surface slug. | `internal/httpapi`, `internal/daemon`, surfaces table |
+| Every operation the shipped surfaces table enables on HTTP has a route, so the API keeps parity with the CLI. | `internal/httpapi` route coverage test |
 | The HTTP API's OpenAPI document is generated from its routes and delivery types and reviewed as a golden file. | `internal/httpapi` |
 | The event stream delivers events committed by any process, resumes from Last-Event-ID, and asks slow clients to resync. | `internal/daemon` feed and `internal/httpapi` hub |
 | TUI screens receive business projections; shared components own geometry, cursor, scroll, and framing. | Screen assembly contract |

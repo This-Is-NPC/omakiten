@@ -67,7 +67,7 @@ var CanonicalSurfaceCensus = []SurfaceCensusEntry{
 	{Slug: "plan.wave.rename", Kind: SurfaceKindProduct},
 	{Slug: "plan.wave.reorder", Kind: SurfaceKindProduct},
 	{Slug: "progress.record", Kind: SurfaceKindProduct},
-	{Slug: "project.delete", Kind: SurfaceKindDestructive},
+	{Slug: "project.delete", Kind: SurfaceKindProduct},
 	{Slug: "project.edit", Kind: SurfaceKindProduct},
 	{Slug: "project.overview", Kind: SurfaceKindProduct},
 	{Slug: "project.list", Kind: SurfaceKindProduct},

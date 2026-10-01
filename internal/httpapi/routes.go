@@ -42,6 +42,7 @@ var (
 	stringSchema = map[string]any{"type": "string"}
 	idSchema     = map[string]any{"type": "integer", "format": "int64", "minimum": 1}
 	intSchema    = map[string]any{"type": "integer", "format": "int32"}
+	boolSchema   = map[string]any{"type": "boolean"}
 	listSchema   = map[string]any{"type": "array", "items": map[string]any{"type": "string"}}
 )
 
