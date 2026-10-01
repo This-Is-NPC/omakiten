@@ -15,6 +15,7 @@ var _ = mapping([]mappingCase{
 		ProjectSelector: alpha, ErrorID: 3, Description: "D", Steps: "S", TaskID: 5,
 	}},
 	{"confirmSolution", http.MethodPost, "/api/v1/projects/alpha/solutions/4/confirmations", `{"success":true}`, "ConfirmSolution", contract.ConfirmSolutionInput{ProjectSelector: alpha, SolutionID: 4, Success: true}},
+	{"listTopSolutions", http.MethodGet, "/api/v1/projects/alpha/solutions?limit=3", "", "ListTopSolutions", contract.ListTopSolutionsInput{ProjectSelector: alpha, Limit: 3}},
 })
 
 func (f *fakeOps) RecordError(_ context.Context, in contract.RecordErrorInput) (contract.ErrorRecordResponse, error) {
@@ -30,4 +31,9 @@ func (f *fakeOps) AddSolution(_ context.Context, in contract.AddSolutionInput) (
 func (f *fakeOps) ConfirmSolution(_ context.Context, in contract.ConfirmSolutionInput) (contract.SolutionResponse, error) {
 	f.record("ConfirmSolution", in)
 	return contract.SolutionResponse{}, nil
+}
+
+func (f *fakeOps) ListTopSolutions(_ context.Context, in contract.ListTopSolutionsInput) (contract.TopSolutionsResponse, error) {
+	f.record("ListTopSolutions", in)
+	return contract.TopSolutionsResponse{}, nil
 }

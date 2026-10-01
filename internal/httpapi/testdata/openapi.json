@@ -1671,6 +1671,24 @@
         ],
         "type": "object"
       },
+      "contract.TopSolutionsResponse": {
+        "properties": {
+          "project": {
+            "$ref": "#/components/schemas/contract.ProjectSummary"
+          },
+          "solutions": {
+            "items": {
+              "$ref": "#/components/schemas/contract.SolutionSummary"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "project",
+          "solutions"
+        ],
+        "type": "object"
+      },
       "contract.TransitionSummary": {
         "properties": {
           "from": {
@@ -4736,6 +4754,68 @@
         },
         "summary": "Full-text search within a project.",
         "x-okt-surface": "search"
+      }
+    },
+    "/api/v1/projects/{project}/solutions": {
+      "get": {
+        "operationId": "listTopSolutions",
+        "parameters": [
+          {
+            "description": "Project slug.",
+            "in": "path",
+            "name": "project",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Row cap; the configured default applies when absent.",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "format": "int32",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/contract.TopSolutionsResponse"
+                    },
+                    "ok": {
+                      "const": true
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success."
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/output.Envelope"
+                }
+              }
+            },
+            "description": "Error envelope."
+          }
+        },
+        "summary": "Best-ranked solutions of a project.",
+        "x-okt-surface": "solution.list_top"
       }
     },
     "/api/v1/projects/{project}/solutions/{solution}/confirmations": {

@@ -12,6 +12,7 @@ type RecordOperations interface {
 	RecordError(ctx context.Context, input contract.RecordErrorInput) (contract.ErrorRecordResponse, error)
 	AddSolution(ctx context.Context, input contract.AddSolutionInput) (contract.SolutionResponse, error)
 	ConfirmSolution(ctx context.Context, input contract.ConfirmSolutionInput) (contract.SolutionResponse, error)
+	ListTopSolutions(ctx context.Context, input contract.ListTopSolutionsInput) (contract.TopSolutionsResponse, error)
 }
 
 // ErrorBody is the recordError request body.
@@ -45,6 +46,10 @@ func (s *Server) recordRoutes() []route {
 			projectParam,
 			pathParam("solution", "Solution id.", idSchema),
 		}, s.confirmSolution),
+		query("listTopSolutions", http.MethodGet, projectPath+"/solutions", "solution.list_top", "Best-ranked solutions of a project.", []param{
+			projectParam,
+			queryParam("limit", "Row cap; the configured default applies when absent.", intSchema),
+		}, s.listTopSolutions),
 	}
 }
 
@@ -78,4 +83,16 @@ func (s *Server) confirmSolution(r *http.Request, body ConfirmationBody) (contra
 		return contract.SolutionResponse{}, err
 	}
 	return ops.ConfirmSolution(r.Context(), contract.ConfirmSolutionInput{ProjectSelector: selector, SolutionID: solutionID, Success: body.Success})
+}
+
+func (s *Server) listTopSolutions(r *http.Request) (contract.TopSolutionsResponse, error) {
+	limit, err := optionalInt(r, "limit")
+	if err != nil {
+		return contract.TopSolutionsResponse{}, err
+	}
+	ops, selector, err := s.project(r)
+	if err != nil {
+		return contract.TopSolutionsResponse{}, err
+	}
+	return ops.ListTopSolutions(r.Context(), contract.ListTopSolutionsInput{ProjectSelector: selector, Limit: limit})
 }
