@@ -15,6 +15,7 @@ var _ = mapping([]mappingCase{
 	{"editComment", http.MethodPatch, "/api/v1/projects/alpha/comments/9", `{"title":"Ti","pinned":false,"tags":[]}`, "EditComment", contract.EditCommentInput{
 		ProjectSelector: alpha, CommentID: 9, Title: ptr("Ti"), Pinned: ptr(false), Tags: []string{},
 	}},
+	{"deleteComment", http.MethodDelete, "/api/v1/projects/alpha/comments/9?confirmed=true", "", "DeleteComment", contract.DeleteCommentInput{ProjectSelector: alpha, CommentID: 9, Confirmed: true}},
 })
 
 func (f *fakeOps) ListComments(_ context.Context, in contract.ListCommentsInput) (contract.CommentsResponse, error) {
@@ -30,4 +31,9 @@ func (f *fakeOps) AddComment(_ context.Context, in contract.AddCommentInput) (co
 func (f *fakeOps) EditComment(_ context.Context, in contract.EditCommentInput) (contract.CommentResponse, error) {
 	f.record("EditComment", in)
 	return contract.CommentResponse{}, nil
+}
+
+func (f *fakeOps) DeleteComment(_ context.Context, in contract.DeleteCommentInput) (contract.DeleteCommentResponse, error) {
+	f.record("DeleteComment", in)
+	return contract.DeleteCommentResponse{}, nil
 }

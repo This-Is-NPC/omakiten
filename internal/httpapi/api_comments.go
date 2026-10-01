@@ -12,6 +12,7 @@ type CommentOperations interface {
 	ListComments(ctx context.Context, input contract.ListCommentsInput) (contract.CommentsResponse, error)
 	AddComment(ctx context.Context, input contract.AddCommentInput) (contract.CommentResponse, error)
 	EditComment(ctx context.Context, input contract.EditCommentInput) (contract.CommentResponse, error)
+	DeleteComment(ctx context.Context, input contract.DeleteCommentInput) (contract.DeleteCommentResponse, error)
 }
 
 // CommentBody is the addTaskComment request body.
@@ -41,6 +42,7 @@ func (s *Server) commentRoutes() []route {
 		query("listTaskComments", http.MethodGet, taskPath+"/comments", "comment.list", "Comments of a task.", []param{projectParam, taskParam}, s.listComments),
 		command("addTaskComment", http.MethodPost, taskPath+"/comments", "comment.add", "Add a human comment to a task.", []param{projectParam, taskParam}, s.addComment),
 		command("editComment", http.MethodPatch, projectPath+"/comments/{comment}", "comment.edit", "Edit comment fields.", []param{projectParam, commentParam}, s.editComment),
+		query("deleteComment", http.MethodDelete, projectPath+"/comments/{comment}", "comment.delete", "Delete a comment; requires confirmation.", []param{projectParam, commentParam, confirmedParam}, s.deleteComment),
 	}
 }
 
@@ -93,4 +95,16 @@ func (s *Server) editComment(r *http.Request, body EditCommentBody) (contract.Co
 		Pinned:          body.Pinned,
 		Tags:            body.Tags,
 	})
+}
+
+func (s *Server) deleteComment(r *http.Request) (contract.DeleteCommentResponse, error) {
+	ops, selector, commentID, err := s.comment(r)
+	if err != nil {
+		return contract.DeleteCommentResponse{}, err
+	}
+	ok, err := confirmed(r)
+	if err != nil {
+		return contract.DeleteCommentResponse{}, err
+	}
+	return ops.DeleteComment(r.Context(), contract.DeleteCommentInput{ProjectSelector: selector, CommentID: commentID, Confirmed: ok})
 }

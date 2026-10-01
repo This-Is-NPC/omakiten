@@ -83,6 +83,7 @@ func TestInvalidParametersNeverReachOperations(t *testing.T) {
 		{http.MethodDelete, "/api/v1/projects/alpha/plans/delivery?confirmed=maybe", ""},
 		{http.MethodDelete, "/api/v1/projects/alpha/waves/x", ""},
 		{http.MethodPatch, "/api/v1/projects/alpha/comments/x", "{}"},
+		{http.MethodDelete, "/api/v1/projects/alpha/comments/9?confirmed=maybe", ""},
 	} {
 		t.Run(tc.method+" "+tc.target, func(t *testing.T) {
 			ops := &fakeOps{}
