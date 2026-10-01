@@ -95,6 +95,30 @@ func TestRouteSurfacesExistInCensus(t *testing.T) {
 	}
 }
 
+// TestEveryHTTPOperationHasARoute keeps the API at parity with the CLI:
+// each census operation the shipped table enables on HTTP is served.
+func TestEveryHTTPOperationHasARoute(t *testing.T) {
+	// task.create is CreateTaskIntent with the similarity check skipped,
+	// which createTask serves through its confirmed flag.
+	servedBy := map[string]string{"task.create": "task.create_intent"}
+	server, _ := newTestServer(t, &fakeOps{}, fakeLog{})
+	routed := map[string]bool{}
+	for _, rt := range server.routes() {
+		routed[rt.slug] = true
+	}
+	for slug, policy := range config.CanonicalSurfaceTable() {
+		if policy.HTTP == nil || !*policy.HTTP {
+			continue
+		}
+		if alias, ok := servedBy[slug]; ok {
+			slug = alias
+		}
+		if !routed[slug] {
+			t.Errorf("operation %s is on the HTTP surface but has no route", slug)
+		}
+	}
+}
+
 func TestAuthenticationAndHostChecks(t *testing.T) {
 	server, _ := newTestServer(t, &fakeOps{}, fakeLog{})
 
