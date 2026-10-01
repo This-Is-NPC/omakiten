@@ -16,6 +16,9 @@ var _ = mapping([]mappingCase{
 	}},
 	{"confirmSolution", http.MethodPost, "/api/v1/projects/alpha/solutions/4/confirmations", `{"success":true}`, "ConfirmSolution", contract.ConfirmSolutionInput{ProjectSelector: alpha, SolutionID: 4, Success: true}},
 	{"listTopSolutions", http.MethodGet, "/api/v1/projects/alpha/solutions?limit=3", "", "ListTopSolutions", contract.ListTopSolutionsInput{ProjectSelector: alpha, Limit: 3}},
+	{"recordProgress", http.MethodPost, "/api/v1/projects/alpha/tasks/5/progress", `{"title":"T","priority":"high","move_to_bucket":"done","comment":"C"}`, "RecordProgress", contract.RecordProgressInput{
+		ProjectSelector: alpha, TaskID: 5, Title: ptr("T"), Priority: ptr("high"), MoveToBucket: "done", Comment: "C", AuthorType: "human",
+	}},
 })
 
 func (f *fakeOps) RecordError(_ context.Context, in contract.RecordErrorInput) (contract.ErrorRecordResponse, error) {
@@ -36,4 +39,9 @@ func (f *fakeOps) ConfirmSolution(_ context.Context, in contract.ConfirmSolution
 func (f *fakeOps) ListTopSolutions(_ context.Context, in contract.ListTopSolutionsInput) (contract.TopSolutionsResponse, error) {
 	f.record("ListTopSolutions", in)
 	return contract.TopSolutionsResponse{}, nil
+}
+
+func (f *fakeOps) RecordProgress(_ context.Context, in contract.RecordProgressInput) (contract.RecordProgressResponse, error) {
+	f.record("RecordProgress", in)
+	return contract.RecordProgressResponse{}, nil
 }

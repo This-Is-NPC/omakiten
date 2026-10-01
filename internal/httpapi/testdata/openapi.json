@@ -1276,6 +1276,23 @@
         ],
         "type": "object"
       },
+      "contract.RecordProgressResponse": {
+        "properties": {
+          "comment": {
+            "$ref": "#/components/schemas/contract.CommentSummary"
+          },
+          "project": {
+            "$ref": "#/components/schemas/contract.ProjectSummary"
+          },
+          "task": {
+            "$ref": "#/components/schemas/contract.TaskSummary"
+          }
+        },
+        "required": [
+          "project"
+        ],
+        "type": "object"
+      },
       "contract.RemoveDependencyResponse": {
         "properties": {
           "confirmation": {
@@ -2547,6 +2564,26 @@
         "required": [
           "wave_id"
         ],
+        "type": "object"
+      },
+      "httpapi.ProgressBody": {
+        "properties": {
+          "comment": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "move_to_bucket": {
+            "type": "string"
+          },
+          "priority": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
         "type": "object"
       },
       "httpapi.SolutionBody": {
@@ -6032,6 +6069,79 @@
         },
         "summary": "Detach a task from its plan and wave.",
         "x-okt-surface": "plan.task.unassign"
+      }
+    },
+    "/api/v1/projects/{project}/tasks/{task}/progress": {
+      "post": {
+        "operationId": "recordProgress",
+        "parameters": [
+          {
+            "description": "Project slug.",
+            "in": "path",
+            "name": "project",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Task id.",
+            "in": "path",
+            "name": "task",
+            "required": true,
+            "schema": {
+              "format": "int64",
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/httpapi.ProgressBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/contract.RecordProgressResponse"
+                    },
+                    "ok": {
+                      "const": true
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success."
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/output.Envelope"
+                }
+              }
+            },
+            "description": "Error envelope."
+          }
+        },
+        "summary": "Edit, move, and comment on a task in one step.",
+        "x-okt-surface": "progress.record"
       }
     },
     "/api/v1/projects/{project}/tasks/{task}/transitions": {

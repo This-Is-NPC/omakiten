@@ -13,6 +13,7 @@ type RecordOperations interface {
 	AddSolution(ctx context.Context, input contract.AddSolutionInput) (contract.SolutionResponse, error)
 	ConfirmSolution(ctx context.Context, input contract.ConfirmSolutionInput) (contract.SolutionResponse, error)
 	ListTopSolutions(ctx context.Context, input contract.ListTopSolutionsInput) (contract.TopSolutionsResponse, error)
+	RecordProgress(ctx context.Context, input contract.RecordProgressInput) (contract.RecordProgressResponse, error)
 }
 
 // ErrorBody is the recordError request body.
@@ -35,6 +36,16 @@ type ConfirmationBody struct {
 	Success bool `json:"success"`
 }
 
+// ProgressBody is the recordProgress request body; absent task fields
+// stay unchanged and an empty comment adds none.
+type ProgressBody struct {
+	Title        *string `json:"title,omitempty"`
+	Description  *string `json:"description,omitempty"`
+	Priority     *string `json:"priority,omitempty"`
+	MoveToBucket string  `json:"move_to_bucket,omitempty"`
+	Comment      string  `json:"comment,omitempty"`
+}
+
 func (s *Server) recordRoutes() []route {
 	return []route{
 		command("recordError", http.MethodPost, projectPath+"/errors", "error.record", "Record an error met while working.", []param{projectParam}, s.recordError),
@@ -50,6 +61,7 @@ func (s *Server) recordRoutes() []route {
 			projectParam,
 			queryParam("limit", "Row cap; the configured default applies when absent.", intSchema),
 		}, s.listTopSolutions),
+		command("recordProgress", http.MethodPost, taskPath+"/progress", "progress.record", "Edit, move, and comment on a task in one step.", []param{projectParam, taskParam}, s.recordProgress),
 	}
 }
 
@@ -95,4 +107,21 @@ func (s *Server) listTopSolutions(r *http.Request) (contract.TopSolutionsRespons
 		return contract.TopSolutionsResponse{}, err
 	}
 	return ops.ListTopSolutions(r.Context(), contract.ListTopSolutionsInput{ProjectSelector: selector, Limit: limit})
+}
+
+func (s *Server) recordProgress(r *http.Request, body ProgressBody) (contract.RecordProgressResponse, error) {
+	ops, selector, taskID, err := s.task(r)
+	if err != nil {
+		return contract.RecordProgressResponse{}, err
+	}
+	return ops.RecordProgress(r.Context(), contract.RecordProgressInput{
+		ProjectSelector: selector,
+		TaskID:          taskID,
+		Title:           body.Title,
+		Description:     body.Description,
+		Priority:        body.Priority,
+		MoveToBucket:    body.MoveToBucket,
+		Comment:         body.Comment,
+		AuthorType:      "human",
+	})
 }
