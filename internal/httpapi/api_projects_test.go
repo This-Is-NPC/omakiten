@@ -11,6 +11,7 @@ import (
 var _ = mapping([]mappingCase{
 	{"listProjects", http.MethodGet, "/api/v1/projects", "", "ListProjects", nil},
 	{"getProject", http.MethodGet, "/api/v1/projects/alpha", "", "Overview", contract.OverviewInput{ProjectSelector: alpha}},
+	{"editProject", http.MethodPatch, "/api/v1/projects/alpha", `{"description":"Board for agents"}`, "EditProject", contract.EditProjectInput{ProjectSelector: alpha, Description: "Board for agents"}},
 	{"resumeProject", http.MethodGet, "/api/v1/projects/alpha/resume", "", "ResumeProject", contract.ResumeProjectInput{ProjectSelector: alpha}},
 	{"getWorkflow", http.MethodGet, "/api/v1/projects/alpha/workflow", "", "ShowWorkflow", contract.WorkflowInput{ProjectSelector: alpha}},
 })
@@ -23,6 +24,11 @@ func (f *fakeOps) ListProjects(context.Context) ([]domain.Project, error) {
 func (f *fakeOps) Overview(_ context.Context, in contract.OverviewInput) (contract.OverviewResponse, error) {
 	f.record("Overview", in)
 	return contract.OverviewResponse{}, nil
+}
+
+func (f *fakeOps) EditProject(_ context.Context, in contract.EditProjectInput) (contract.EditProjectResponse, error) {
+	f.record("EditProject", in)
+	return contract.EditProjectResponse{}, nil
 }
 
 func (f *fakeOps) ResumeProject(_ context.Context, in contract.ResumeProjectInput) (contract.ResumeProjectResponse, error) {

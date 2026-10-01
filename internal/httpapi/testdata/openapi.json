@@ -310,6 +310,25 @@
         ],
         "type": "object"
       },
+      "contract.EditProjectResponse": {
+        "properties": {
+          "description": {
+            "type": "string"
+          },
+          "next_step_prompt": {
+            "type": "string"
+          },
+          "project": {
+            "$ref": "#/components/schemas/contract.ProjectSummary"
+          }
+        },
+        "required": [
+          "description",
+          "next_step_prompt",
+          "project"
+        ],
+        "type": "object"
+      },
       "contract.EditTaskResponse": {
         "properties": {
           "project": {
@@ -1645,6 +1664,17 @@
         ],
         "type": "object"
       },
+      "httpapi.EditProjectBody": {
+        "properties": {
+          "description": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "description"
+        ],
+        "type": "object"
+      },
       "httpapi.EditTaskBody": {
         "properties": {
           "description": {
@@ -2272,6 +2302,66 @@
         },
         "summary": "Project overview with bucket counts.",
         "x-okt-surface": "project.overview"
+      },
+      "patch": {
+        "operationId": "editProject",
+        "parameters": [
+          {
+            "description": "Project slug.",
+            "in": "path",
+            "name": "project",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/httpapi.EditProjectBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/contract.EditProjectResponse"
+                    },
+                    "ok": {
+                      "const": true
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success."
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/output.Envelope"
+                }
+              }
+            },
+            "description": "Error envelope."
+          }
+        },
+        "summary": "Change a project's description.",
+        "x-okt-surface": "project.edit"
       }
     },
     "/api/v1/projects/{project}/board": {
