@@ -2322,6 +2322,17 @@
         ],
         "type": "object"
       },
+      "httpapi.ConfirmationBody": {
+        "properties": {
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success"
+        ],
+        "type": "object"
+      },
       "httpapi.CreatePlanBody": {
         "properties": {
           "goal_body": {
@@ -4725,6 +4736,79 @@
         },
         "summary": "Full-text search within a project.",
         "x-okt-surface": "search"
+      }
+    },
+    "/api/v1/projects/{project}/solutions/{solution}/confirmations": {
+      "post": {
+        "operationId": "confirmSolution",
+        "parameters": [
+          {
+            "description": "Project slug.",
+            "in": "path",
+            "name": "project",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Solution id.",
+            "in": "path",
+            "name": "solution",
+            "required": true,
+            "schema": {
+              "format": "int64",
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/httpapi.ConfirmationBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/contract.SolutionResponse"
+                    },
+                    "ok": {
+                      "const": true
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success."
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/output.Envelope"
+                }
+              }
+            },
+            "description": "Error envelope."
+          }
+        },
+        "summary": "Report whether a solution worked.",
+        "x-okt-surface": "solution.confirm"
       }
     },
     "/api/v1/projects/{project}/studio": {

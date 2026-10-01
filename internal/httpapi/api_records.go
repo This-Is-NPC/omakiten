@@ -11,6 +11,7 @@ import (
 type RecordOperations interface {
 	RecordError(ctx context.Context, input contract.RecordErrorInput) (contract.ErrorRecordResponse, error)
 	AddSolution(ctx context.Context, input contract.AddSolutionInput) (contract.SolutionResponse, error)
+	ConfirmSolution(ctx context.Context, input contract.ConfirmSolutionInput) (contract.SolutionResponse, error)
 }
 
 // ErrorBody is the recordError request body.
@@ -28,6 +29,11 @@ type SolutionBody struct {
 	TaskID int64 `json:"task_id,omitempty"`
 }
 
+// ConfirmationBody reports whether applying a solution worked.
+type ConfirmationBody struct {
+	Success bool `json:"success"`
+}
+
 func (s *Server) recordRoutes() []route {
 	return []route{
 		command("recordError", http.MethodPost, projectPath+"/errors", "error.record", "Record an error met while working.", []param{projectParam}, s.recordError),
@@ -35,6 +41,10 @@ func (s *Server) recordRoutes() []route {
 			projectParam,
 			pathParam("error", "Error id.", idSchema),
 		}, s.addSolution),
+		command("confirmSolution", http.MethodPost, projectPath+"/solutions/{solution}/confirmations", "solution.confirm", "Report whether a solution worked.", []param{
+			projectParam,
+			pathParam("solution", "Solution id.", idSchema),
+		}, s.confirmSolution),
 	}
 }
 
@@ -56,4 +66,16 @@ func (s *Server) addSolution(r *http.Request, body SolutionBody) (contract.Solut
 		return contract.SolutionResponse{}, err
 	}
 	return ops.AddSolution(r.Context(), contract.AddSolutionInput{ProjectSelector: selector, ErrorID: errorID, Description: body.Description, Steps: body.Steps, TaskID: body.TaskID})
+}
+
+func (s *Server) confirmSolution(r *http.Request, body ConfirmationBody) (contract.SolutionResponse, error) {
+	solutionID, err := parseID(r.PathValue("solution"), "solution")
+	if err != nil {
+		return contract.SolutionResponse{}, err
+	}
+	ops, selector, err := s.project(r)
+	if err != nil {
+		return contract.SolutionResponse{}, err
+	}
+	return ops.ConfirmSolution(r.Context(), contract.ConfirmSolutionInput{ProjectSelector: selector, SolutionID: solutionID, Success: body.Success})
 }

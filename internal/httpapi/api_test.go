@@ -86,6 +86,7 @@ func TestInvalidParametersNeverReachOperations(t *testing.T) {
 		{http.MethodDelete, "/api/v1/projects/alpha/comments/9?confirmed=maybe", ""},
 		{http.MethodDelete, "/api/v1/projects/alpha/tasks/5/dependencies/zero", ""},
 		{http.MethodPost, "/api/v1/projects/alpha/errors/0/solutions", "{}"},
+		{http.MethodPost, "/api/v1/projects/alpha/solutions/s/confirmations", "{}"},
 	} {
 		t.Run(tc.method+" "+tc.target, func(t *testing.T) {
 			ops := &fakeOps{}
@@ -106,7 +107,7 @@ func TestInvalidParametersNeverReachOperations(t *testing.T) {
 // unknown slug with project_not_found before any operation runs.
 func TestProjectRoutesResolveTheProjectFirst(t *testing.T) {
 	server, _ := newTestServer(t, &fakeOps{}, fakeLog{})
-	fill := strings.NewReplacer("{project}", "ghost", "{task}", "5", "{plan}", "delivery", "{wave}", "3", "{comment}", "9", "{depends_on}", "6", "{error}", "3")
+	fill := strings.NewReplacer("{project}", "ghost", "{task}", "5", "{plan}", "delivery", "{wave}", "3", "{comment}", "9", "{depends_on}", "6", "{error}", "3", "{solution}", "4")
 	for _, rt := range server.routes() {
 		if !strings.Contains(rt.path, "{project}") {
 			continue
