@@ -13,6 +13,7 @@ type PlanOperations interface {
 	ShowPlan(ctx context.Context, input contract.ShowPlanInput) (contract.ShowPlanResponse, error)
 	CreatePlan(ctx context.Context, input contract.CreatePlanInput) (contract.CreatePlanResponse, error)
 	EditPlan(ctx context.Context, input contract.EditPlanInput) (contract.EditPlanResponse, error)
+	DeletePlan(ctx context.Context, input contract.DeletePlanInput) (contract.DeletePlanResponse, error)
 }
 
 // CreatePlanBody is the createPlan request body.
@@ -36,6 +37,7 @@ func (s *Server) planRoutes() []route {
 		command("createPlan", http.MethodPost, projectPath+"/plans", "plan.create", "Create a plan.", []param{projectParam}, s.createPlan),
 		query("getPlan", http.MethodGet, planPath, "plan.show", "A plan with its waves and tasks.", []param{projectParam, planParam}, s.showPlan),
 		command("editPlan", http.MethodPatch, planPath, "plan.edit", "Edit plan name, slug, status, or goal.", []param{projectParam, planParam}, s.editPlan),
+		query("deletePlan", http.MethodDelete, planPath, "plan.delete", "Delete a plan and its waves; its tasks stay, detached.", []param{projectParam, planParam, confirmedParam}, s.deletePlan),
 	}
 }
 
@@ -81,4 +83,16 @@ func (s *Server) editPlan(r *http.Request, body EditPlanBody) (contract.EditPlan
 		Status:          body.Status,
 		GoalBody:        body.GoalBody,
 	})
+}
+
+func (s *Server) deletePlan(r *http.Request) (contract.DeletePlanResponse, error) {
+	ok, err := confirmed(r)
+	if err != nil {
+		return contract.DeletePlanResponse{}, err
+	}
+	ops, selector, err := s.project(r)
+	if err != nil {
+		return contract.DeletePlanResponse{}, err
+	}
+	return ops.DeletePlan(r.Context(), contract.DeletePlanInput{ProjectSelector: selector, Slug: r.PathValue("plan"), Confirmed: ok})
 }

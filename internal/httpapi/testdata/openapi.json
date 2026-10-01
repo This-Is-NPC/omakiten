@@ -343,6 +343,23 @@
         ],
         "type": "object"
       },
+      "contract.DeletePlanResponse": {
+        "properties": {
+          "confirmation": {
+            "$ref": "#/components/schemas/contract.Confirmation"
+          },
+          "project": {
+            "$ref": "#/components/schemas/contract.ProjectSummary"
+          },
+          "snapshot": {
+            "$ref": "#/components/schemas/contract.EventSummary"
+          }
+        },
+        "required": [
+          "project"
+        ],
+        "type": "object"
+      },
       "contract.DeleteTaskResponse": {
         "properties": {
           "confirmation": {
@@ -3282,6 +3299,74 @@
       }
     },
     "/api/v1/projects/{project}/plans/{plan}": {
+      "delete": {
+        "operationId": "deletePlan",
+        "parameters": [
+          {
+            "description": "Project slug.",
+            "in": "path",
+            "name": "project",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Plan slug.",
+            "in": "path",
+            "name": "plan",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "`true` performs the change; otherwise the answer asks for confirmation.",
+            "in": "query",
+            "name": "confirmed",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/contract.DeletePlanResponse"
+                    },
+                    "ok": {
+                      "const": true
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success."
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/output.Envelope"
+                }
+              }
+            },
+            "description": "Error envelope."
+          }
+        },
+        "summary": "Delete a plan and its waves; its tasks stay, detached.",
+        "x-okt-surface": "plan.delete"
+      },
       "get": {
         "operationId": "getPlan",
         "parameters": [

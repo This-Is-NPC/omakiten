@@ -12,6 +12,7 @@ var _ = mapping([]mappingCase{
 	{"createPlan", http.MethodPost, "/api/v1/projects/alpha/plans", `{"slug":"delivery","name":"Delivery","goal_body":"Ship it."}`, "CreatePlan", contract.CreatePlanInput{ProjectSelector: alpha, Slug: "delivery", Name: "Delivery", GoalBody: "Ship it."}},
 	{"getPlan", http.MethodGet, "/api/v1/projects/alpha/plans/delivery", "", "ShowPlan", contract.ShowPlanInput{ProjectSelector: alpha, Slug: "delivery"}},
 	{"editPlan", http.MethodPatch, "/api/v1/projects/alpha/plans/delivery", `{"slug":"shipping","status":"done"}`, "EditPlan", contract.EditPlanInput{ProjectSelector: alpha, Slug: "delivery", NewSlug: ptr("shipping"), Status: ptr("done")}},
+	{"deletePlan", http.MethodDelete, "/api/v1/projects/alpha/plans/delivery?confirmed=true", "", "DeletePlan", contract.DeletePlanInput{ProjectSelector: alpha, Slug: "delivery", Confirmed: true}},
 })
 
 func (f *fakeOps) ListPlans(_ context.Context, in contract.ListPlansInput) (contract.ListPlansResponse, error) {
@@ -32,4 +33,9 @@ func (f *fakeOps) CreatePlan(_ context.Context, in contract.CreatePlanInput) (co
 func (f *fakeOps) EditPlan(_ context.Context, in contract.EditPlanInput) (contract.EditPlanResponse, error) {
 	f.record("EditPlan", in)
 	return contract.EditPlanResponse{}, nil
+}
+
+func (f *fakeOps) DeletePlan(_ context.Context, in contract.DeletePlanInput) (contract.DeletePlanResponse, error) {
+	f.record("DeletePlan", in)
+	return contract.DeletePlanResponse{}, nil
 }

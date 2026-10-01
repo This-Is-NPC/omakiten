@@ -71,20 +71,21 @@ func assertEveryJSONRouteCovered(t *testing.T, covered map[string]bool) {
 }
 
 // TestInvalidParametersNeverReachOperations covers every parser the routes
-// share: a malformed id or number is a 400 and no operation runs.
+// share: a malformed id, number, or flag is a 400 and no operation runs.
 func TestInvalidParametersNeverReachOperations(t *testing.T) {
-	for _, target := range []string{
-		"/api/v1/projects/alpha/tasks/abc",
-		"/api/v1/projects/alpha/tasks/0",
-		"/api/v1/projects/alpha/tasks/-4/comments",
-		"/api/v1/projects/alpha/dependencies?task=x",
-		"/api/v1/projects/alpha/logs?limit=ten",
-		"/api/v1/projects/alpha/insights?stuck_days=1.5",
+	for _, tc := range []struct{ method, target string }{
+		{http.MethodGet, "/api/v1/projects/alpha/tasks/abc"},
+		{http.MethodGet, "/api/v1/projects/alpha/tasks/0"},
+		{http.MethodGet, "/api/v1/projects/alpha/tasks/-4/comments"},
+		{http.MethodGet, "/api/v1/projects/alpha/dependencies?task=x"},
+		{http.MethodGet, "/api/v1/projects/alpha/logs?limit=ten"},
+		{http.MethodGet, "/api/v1/projects/alpha/insights?stuck_days=1.5"},
+		{http.MethodDelete, "/api/v1/projects/alpha/plans/delivery?confirmed=maybe"},
 	} {
-		t.Run(target, func(t *testing.T) {
+		t.Run(tc.method+" "+tc.target, func(t *testing.T) {
 			ops := &fakeOps{}
 			server, _ := newTestServer(t, ops, fakeLog{})
-			rec := do(t, server, http.MethodGet, target, "", nil)
+			rec := do(t, server, tc.method, tc.target, "", nil)
 			env := decode(t, rec)
 			if rec.Code != http.StatusBadRequest || env.Code != "invalid_parameter" || env.Details["parameter"] == nil {
 				t.Fatalf("got %d %+v, want invalid_parameter naming the parameter", rec.Code, env)
