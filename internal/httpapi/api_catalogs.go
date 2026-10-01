@@ -15,6 +15,7 @@ type CatalogOperations interface {
 	ListPersonas(ctx context.Context, input contract.ListPersonasInput) (contract.ListPersonasResponse, error)
 	ShowPersona(ctx context.Context, input contract.ShowPersonaInput) (contract.ShowPersonaResponse, error)
 	ListSkills(ctx context.Context, input contract.ListSkillsInput) (contract.ListSkillsResponse, error)
+	ShowSkill(ctx context.Context, input contract.ShowSkillInput) (contract.ShowSkillResponse, error)
 }
 
 func (s *Server) catalogRoutes() []route {
@@ -29,7 +30,16 @@ func (s *Server) catalogRoutes() []route {
 		query("listPersonas", http.MethodGet, projectPath+"/personas", "persona.list", "Personas the project configuration loads, without bodies.", []param{projectParam}, s.listPersonas),
 		query("getPersona", http.MethodGet, projectPath+"/personas/{persona}", "persona.get", "A persona with its body and expanded laws and skills.", []param{projectParam, pathParam("persona", "Persona slug.", stringSchema)}, s.showPersona),
 		query("listSkills", http.MethodGet, projectPath+"/skills", "skill.list", "Skills the project configuration loads, without bodies.", []param{projectParam}, s.listSkills),
+		query("getSkill", http.MethodGet, projectPath+"/skills/{skill}", "skill.get", "A skill with its body.", []param{projectParam, pathParam("skill", "Skill slug.", stringSchema)}, s.showSkill),
 	}
+}
+
+func (s *Server) showSkill(r *http.Request) (contract.ShowSkillResponse, error) {
+	ops, _, err := s.project(r)
+	if err != nil {
+		return contract.ShowSkillResponse{}, err
+	}
+	return ops.ShowSkill(r.Context(), contract.ShowSkillInput{Slug: r.PathValue("skill")})
 }
 
 func (s *Server) listSkills(r *http.Request) (contract.ListSkillsResponse, error) {
