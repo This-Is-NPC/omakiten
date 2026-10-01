@@ -264,6 +264,44 @@
         ],
         "type": "object"
       },
+      "contract.ContinueTaskResponse": {
+        "properties": {
+          "agent_output_language": {
+            "type": "string"
+          },
+          "comments": {
+            "items": {
+              "$ref": "#/components/schemas/contract.CommentSummary"
+            },
+            "type": "array"
+          },
+          "dependencies": {
+            "items": {
+              "$ref": "#/components/schemas/contract.DependencySummary"
+            },
+            "type": "array"
+          },
+          "next_step_prompt": {
+            "type": "string"
+          },
+          "project": {
+            "$ref": "#/components/schemas/contract.ProjectSummary"
+          },
+          "task": {
+            "$ref": "#/components/schemas/contract.TaskSummary"
+          },
+          "workflow": {
+            "$ref": "#/components/schemas/contract.WorkflowSummary"
+          }
+        },
+        "required": [
+          "next_step_prompt",
+          "project",
+          "task",
+          "workflow"
+        ],
+        "type": "object"
+      },
       "contract.CreateTaskResponse": {
         "properties": {
           "confirmation": {
@@ -3716,6 +3754,78 @@
         },
         "summary": "Set or clear the task assignee.",
         "x-okt-surface": "task.assign"
+      }
+    },
+    "/api/v1/projects/{project}/tasks/{task}/checkpoint": {
+      "get": {
+        "operationId": "getTaskCheckpoint",
+        "parameters": [
+          {
+            "description": "Project slug.",
+            "in": "path",
+            "name": "project",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Task id.",
+            "in": "path",
+            "name": "task",
+            "required": true,
+            "schema": {
+              "format": "int64",
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Overrides whether the workflow shape is included.",
+            "in": "query",
+            "name": "include_workflow",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/contract.ContinueTaskResponse"
+                    },
+                    "ok": {
+                      "const": true
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success."
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/output.Envelope"
+                }
+              }
+            },
+            "description": "Error envelope."
+          }
+        },
+        "summary": "Checkpoint to resume a task: workflow, dependencies and recent comments.",
+        "x-okt-surface": "task.continue"
       }
     },
     "/api/v1/projects/{project}/tasks/{task}/comments": {

@@ -26,6 +26,9 @@ var _ = mapping([]mappingCase{
 	{"deleteTask", http.MethodDelete, "/api/v1/projects/alpha/tasks/5?confirmed=true", "", "DeleteTask", contract.DeleteTaskInput{ProjectSelector: alpha, TaskID: 5, Confirmed: true}},
 	{"archiveTask", http.MethodPost, "/api/v1/projects/alpha/tasks/5/archive", "", "ArchiveTask", contract.ArchiveTaskInput{ProjectSelector: alpha, TaskID: 5}},
 	{"unarchiveTask", http.MethodPost, "/api/v1/projects/alpha/tasks/5/unarchive", "", "UnarchiveTask", contract.ArchiveTaskInput{ProjectSelector: alpha, TaskID: 5}},
+	{"getTaskCheckpoint", http.MethodGet, "/api/v1/projects/alpha/tasks/5/checkpoint?include_workflow=false", "", "ContinueTask", contract.ContinueTaskInput{
+		ProjectSelector: alpha, TaskID: 5, IncludeWorkflow: ptr(false),
+	}},
 })
 
 // TestMalformedBooleanQueryNeverReachesOperations: a flag that is not a
@@ -102,4 +105,9 @@ func (f *fakeOps) ArchiveTask(_ context.Context, in contract.ArchiveTaskInput) (
 func (f *fakeOps) UnarchiveTask(_ context.Context, in contract.ArchiveTaskInput) (contract.ArchiveTaskResponse, error) {
 	f.record("UnarchiveTask", in)
 	return contract.ArchiveTaskResponse{}, nil
+}
+
+func (f *fakeOps) ContinueTask(_ context.Context, in contract.ContinueTaskInput) (contract.ContinueTaskResponse, error) {
+	f.record("ContinueTask", in)
+	return contract.ContinueTaskResponse{}, nil
 }

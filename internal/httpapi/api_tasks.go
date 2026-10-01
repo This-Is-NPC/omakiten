@@ -21,6 +21,7 @@ type TaskOperations interface {
 	DeleteTask(ctx context.Context, input contract.DeleteTaskInput) (contract.DeleteTaskResponse, error)
 	ArchiveTask(ctx context.Context, input contract.ArchiveTaskInput) (contract.ArchiveTaskResponse, error)
 	UnarchiveTask(ctx context.Context, input contract.ArchiveTaskInput) (contract.ArchiveTaskResponse, error)
+	ContinueTask(ctx context.Context, input contract.ContinueTaskInput) (contract.ContinueTaskResponse, error)
 }
 
 // CreateTaskBody is the createTask request body.
@@ -72,6 +73,10 @@ func (s *Server) taskRoutes() []route {
 		}, s.deleteTask),
 		query("archiveTask", http.MethodPost, taskPath+"/archive", "task.archive", "Archive a task.", []param{projectParam, taskParam}, s.archiveTask),
 		query("unarchiveTask", http.MethodPost, taskPath+"/unarchive", "task.unarchive", "Restore an archived task.", []param{projectParam, taskParam}, s.unarchiveTask),
+		query("getTaskCheckpoint", http.MethodGet, taskPath+"/checkpoint", "task.continue", "Checkpoint to resume a task: workflow, dependencies and recent comments.", []param{
+			projectParam, taskParam,
+			queryParam("include_workflow", "Overrides whether the workflow shape is included.", boolSchema),
+		}, s.taskCheckpoint),
 		query("listTaskActivity", http.MethodGet, taskPath+"/activity", "task_activity.list", "Unified activity feed of a task.", []param{
 			projectParam, taskParam,
 			queryParam("order", "`asc` (default) or `desc`.", stringSchema),
@@ -189,6 +194,18 @@ func (s *Server) unarchiveTask(r *http.Request) (contract.ArchiveTaskResponse, e
 		return contract.ArchiveTaskResponse{}, err
 	}
 	return ops.UnarchiveTask(r.Context(), contract.ArchiveTaskInput{ProjectSelector: selector, TaskID: taskID})
+}
+
+func (s *Server) taskCheckpoint(r *http.Request) (contract.ContinueTaskResponse, error) {
+	ops, selector, taskID, err := s.task(r)
+	if err != nil {
+		return contract.ContinueTaskResponse{}, err
+	}
+	includeWorkflow, err := optionalBool(r, "include_workflow")
+	if err != nil {
+		return contract.ContinueTaskResponse{}, err
+	}
+	return ops.ContinueTask(r.Context(), contract.ContinueTaskInput{ProjectSelector: selector, TaskID: taskID, IncludeWorkflow: includeWorkflow})
 }
 
 func (s *Server) taskActivity(r *http.Request) (contract.ListTaskActivityResponse, error) {
