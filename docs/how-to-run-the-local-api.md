@@ -72,6 +72,11 @@ Messages come from the language selected with `okt config language set --gui`.
 the same words as the CLI and TUI. A key without translation comes back as the
 key itself.
 
+The API acts for the person at the GUI, as the TUI does. Errors and solutions
+recorded through it carry source `http` and the route's operation id as their
+entry point, and workflow guards judge its calls as made by a user, not an
+agent.
+
 The workflow's `surfaces.yaml` decides what the API may do: each operation has
 an `http` column. Database backup, search reindex, and project deletion ship
 with `http: false`.

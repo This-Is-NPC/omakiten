@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"omakiten/internal/activity"
 	"omakiten/internal/config"
 	"omakiten/internal/contract"
 	"omakiten/internal/domain"
@@ -199,5 +200,18 @@ func TestListValuesAcceptsRepeatedAndCommaSeparated(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/x?category=task,comment&category=plan&category=", nil)
 	if got := listValues(req, "category"); !slices.Equal(got, []string{"task", "comment", "plan"}) {
 		t.Fatalf("listValues = %v", got)
+	}
+}
+
+func TestHandlersAttributeOperationsToTheHTTPSurface(t *testing.T) {
+	server, _ := newTestServer(t, &fakeOps{}, fakeLog{})
+	var source, entrypoint, model string
+	probe := query("probe", http.MethodGet, "/probe", "", "", nil, func(r *http.Request) (struct{}, error) {
+		source, entrypoint, model, _, _ = activity.FromContext(r.Context())
+		return struct{}{}, nil
+	})
+	server.handler(probe).ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/probe", nil))
+	if source != "http" || entrypoint != "probe" || model != "human" {
+		t.Fatalf("activity = %q %q %q, want http probe human", source, entrypoint, model)
 	}
 }
