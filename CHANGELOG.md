@@ -28,6 +28,13 @@
 * **config:** unified `config.events.retention` policy for every row in the `events` table — category defaults, per-type overrides, generic SQLite prune on insert and at `ApplyConfig`, and a TUI Logs footer that contrasts storage retention with `views.logs.window_days`.
 * **cli:** rewrite `okt logs` as the unified event inspector with `--category`, `--since`, and `--limit` flags. Default scope is the last `views.logs.window_days` for the active project; `--category` is repeatable and comma-separated and accepts the same chips as the TUI (`task`, `comment`, `plan`, `tag-dep`, `guard`, `audit`, `hook`, `tool_call`, `trick`, `domain`, plus the `all` shortcut).
 
+## [0.34.0](https://github.com/This-Is-NPC/omakiten/compare/v0.33.0...v0.34.0) (2026-10-01)
+
+
+### Features
+
+* **httpapi:** serve the cli over the local api ([#141](https://github.com/This-Is-NPC/omakiten/issues/141)) ([13e8120](https://github.com/This-Is-NPC/omakiten/commit/13e8120f36956098702ab34bf592baf1946a5471))
+
 ## [0.33.0](https://github.com/This-Is-NPC/omakiten/compare/v0.32.0...v0.33.0) (2026-09-30)
 
 
