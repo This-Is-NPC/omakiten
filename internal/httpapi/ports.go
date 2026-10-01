@@ -20,6 +20,7 @@ type Operations interface {
 	InsightOperations
 	MaintenanceOperations
 	RecordOperations
+	TagOperations
 }
 
 // Runtimes resolves the operation facade for each request.

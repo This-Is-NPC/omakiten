@@ -1583,6 +1583,24 @@
         ],
         "type": "object"
       },
+      "contract.TagListResponse": {
+        "properties": {
+          "project": {
+            "$ref": "#/components/schemas/contract.ProjectSummary"
+          },
+          "tags": {
+            "items": {
+              "$ref": "#/components/schemas/contract.TagSummary"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "project",
+          "tags"
+        ],
+        "type": "object"
+      },
       "contract.TagSummary": {
         "properties": {
           "id": {
@@ -4977,6 +4995,78 @@
           }
         },
         "summary": "Workflow guards, agent wiring, hooks, and effective settings."
+      }
+    },
+    "/api/v1/projects/{project}/tags": {
+      "get": {
+        "operationId": "listTags",
+        "parameters": [
+          {
+            "description": "Project slug.",
+            "in": "path",
+            "name": "project",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "`task`, `error`, or `project`.",
+            "in": "query",
+            "name": "entity_type",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Task or error id; omitted for `project`.",
+            "in": "query",
+            "name": "entity_id",
+            "required": false,
+            "schema": {
+              "format": "int64",
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/contract.TagListResponse"
+                    },
+                    "ok": {
+                      "const": true
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success."
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/output.Envelope"
+                }
+              }
+            },
+            "description": "Error envelope."
+          }
+        },
+        "summary": "Tags of a task, an error, or the project.",
+        "x-okt-surface": "tag.list"
       }
     },
     "/api/v1/projects/{project}/tasks": {
