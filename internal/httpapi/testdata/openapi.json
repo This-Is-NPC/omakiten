@@ -16,6 +16,20 @@
         ],
         "type": "object"
       },
+      "contract.AllTagsResponse": {
+        "properties": {
+          "tags": {
+            "items": {
+              "$ref": "#/components/schemas/contract.TagSummary"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "tags"
+        ],
+        "type": "object"
+      },
       "contract.ArchiveTaskResponse": {
         "properties": {
           "project": {
@@ -6700,6 +6714,47 @@
         },
         "summary": "Preview or apply the rebind of tasks left on removed buckets.",
         "x-okt-surface": "orphans.migrate"
+      }
+    },
+    "/api/v1/tags": {
+      "get": {
+        "operationId": "listAllTags",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/contract.AllTagsResponse"
+                    },
+                    "ok": {
+                      "const": true
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success."
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/output.Envelope"
+                }
+              }
+            },
+            "description": "Error envelope."
+          }
+        },
+        "summary": "Every tag across all projects.",
+        "x-okt-surface": "tag.list_all"
       }
     },
     "/health": {
