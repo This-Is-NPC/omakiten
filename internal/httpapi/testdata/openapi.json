@@ -1050,6 +1050,20 @@
         ],
         "type": "object"
       },
+      "contract.ListSkillsResponse": {
+        "properties": {
+          "skills": {
+            "items": {
+              "$ref": "#/components/schemas/contract.SkillSummary"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "skills"
+        ],
+        "type": "object"
+      },
       "contract.ListTaskActivityResponse": {
         "properties": {
           "events": {
@@ -5381,6 +5395,58 @@
         },
         "summary": "Full-text search within a project.",
         "x-okt-surface": "search"
+      }
+    },
+    "/api/v1/projects/{project}/skills": {
+      "get": {
+        "operationId": "listSkills",
+        "parameters": [
+          {
+            "description": "Project slug.",
+            "in": "path",
+            "name": "project",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/contract.ListSkillsResponse"
+                    },
+                    "ok": {
+                      "const": true
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success."
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/output.Envelope"
+                }
+              }
+            },
+            "description": "Error envelope."
+          }
+        },
+        "summary": "Skills the project configuration loads, without bodies.",
+        "x-okt-surface": "skill.list"
       }
     },
     "/api/v1/projects/{project}/solutions": {
