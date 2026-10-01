@@ -933,6 +933,21 @@
         ],
         "type": "object"
       },
+      "contract.InvocationArg": {
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "value": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "value"
+        ],
+        "type": "object"
+      },
       "contract.LawInfo": {
         "properties": {
           "body": {
@@ -1328,6 +1343,39 @@
         ],
         "type": "object"
       },
+      "contract.PersonaInfo": {
+        "properties": {
+          "body": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "laws": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "name": {
+            "type": "string"
+          },
+          "skill_repertoire": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "slug": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "slug"
+        ],
+        "type": "object"
+      },
       "contract.PersonaSummary": {
         "properties": {
           "description": {
@@ -1559,6 +1607,30 @@
         ],
         "type": "object"
       },
+      "contract.RelatedCommand": {
+        "properties": {
+          "context": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "markdown": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "when": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "context",
+          "name"
+        ],
+        "type": "object"
+      },
       "contract.RemoveDependencyResponse": {
         "properties": {
           "confirmation": {
@@ -1639,6 +1711,60 @@
         "required": [
           "project",
           "wave"
+        ],
+        "type": "object"
+      },
+      "contract.ResolveCommandResponse": {
+        "properties": {
+          "agent_output_language": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "invocation_args": {
+            "items": {
+              "$ref": "#/components/schemas/contract.InvocationArg"
+            },
+            "type": "array"
+          },
+          "laws": {
+            "items": {
+              "$ref": "#/components/schemas/contract.LawInfo"
+            },
+            "type": "array"
+          },
+          "markdown": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "persona": {
+            "$ref": "#/components/schemas/contract.PersonaInfo"
+          },
+          "related": {
+            "items": {
+              "$ref": "#/components/schemas/contract.RelatedCommand"
+            },
+            "type": "array"
+          },
+          "skills": {
+            "items": {
+              "$ref": "#/components/schemas/contract.SkillInfo"
+            },
+            "type": "array"
+          },
+          "templates": {
+            "items": {
+              "$ref": "#/components/schemas/contract.TemplateInfo"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "markdown",
+          "name"
         ],
         "type": "object"
       },
@@ -1841,6 +1967,30 @@
         },
         "required": [
           "template"
+        ],
+        "type": "object"
+      },
+      "contract.SkillInfo": {
+        "properties": {
+          "body": {
+            "type": "string"
+          },
+          "command": {
+            "$ref": "#/components/schemas/contract.CommandDefinition"
+          },
+          "description": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "slug": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "slug"
         ],
         "type": "object"
       },
@@ -2068,6 +2218,40 @@
         },
         "required": [
           "body",
+          "slug"
+        ],
+        "type": "object"
+      },
+      "contract.TemplateInfo": {
+        "properties": {
+          "body": {
+            "type": "string"
+          },
+          "default": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "laws": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "name": {
+            "type": "string"
+          },
+          "project": {
+            "type": "string"
+          },
+          "slug": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "body",
+          "name",
           "slug"
         ],
         "type": "object"
@@ -3024,6 +3208,15 @@
         },
         "type": "object"
       },
+      "httpapi.ResolveCommandBody": {
+        "properties": {
+          "arguments": {
+            "additionalProperties": {},
+            "type": "object"
+          }
+        },
+        "type": "object"
+      },
       "httpapi.SolutionBody": {
         "properties": {
           "description": {
@@ -3860,6 +4053,77 @@
         },
         "summary": "Agent commands the project configuration binds.",
         "x-okt-surface": "command.list"
+      }
+    },
+    "/api/v1/projects/{project}/commands/{command}/resolve": {
+      "post": {
+        "operationId": "resolveCommand",
+        "parameters": [
+          {
+            "description": "Project slug.",
+            "in": "path",
+            "name": "project",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Command name.",
+            "in": "path",
+            "name": "command",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/httpapi.ResolveCommandBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/contract.ResolveCommandResponse"
+                    },
+                    "ok": {
+                      "const": true
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success."
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/output.Envelope"
+                }
+              }
+            },
+            "description": "Error envelope."
+          }
+        },
+        "summary": "Compose an agent command's persona, skills, laws, and templates.",
+        "x-okt-surface": "command.resolve"
       }
     },
     "/api/v1/projects/{project}/comments/{comment}": {

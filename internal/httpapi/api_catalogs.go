@@ -19,6 +19,12 @@ type CatalogOperations interface {
 	ListTemplates(ctx context.Context, input contract.ListTemplatesInput) (contract.ListTemplatesResponse, error)
 	ShowTemplate(ctx context.Context, input contract.ShowTemplateInput) (contract.ShowTemplateResponse, error)
 	ListCommands(ctx context.Context) (contract.ListCommandsResponse, error)
+	ResolveCommand(ctx context.Context, input contract.ResolveCommandInput) (contract.ResolveCommandResponse, error)
+}
+
+// ResolveCommandBody carries the invocation arguments of resolveCommand.
+type ResolveCommandBody struct {
+	Arguments map[string]any `json:"arguments,omitempty"`
 }
 
 func (s *Server) catalogRoutes() []route {
@@ -42,7 +48,16 @@ func (s *Server) catalogRoutes() []route {
 		}, s.listTemplates),
 		query("getTemplate", http.MethodGet, projectPath+"/templates/{template}", "template.show", "A template with its body; a global template the project overrides is rejected.", []param{projectParam, pathParam("template", "Template slug.", stringSchema)}, s.showTemplate),
 		query("listCommands", http.MethodGet, projectPath+"/commands", "command.list", "Agent commands the project configuration binds.", []param{projectParam}, s.listCommands),
+		command("resolveCommand", http.MethodPost, projectPath+"/commands/{command}/resolve", "command.resolve", "Compose an agent command's persona, skills, laws, and templates.", []param{projectParam, pathParam("command", "Command name.", stringSchema)}, s.resolveCommand),
 	}
+}
+
+func (s *Server) resolveCommand(r *http.Request, body ResolveCommandBody) (contract.ResolveCommandResponse, error) {
+	ops, _, err := s.project(r)
+	if err != nil {
+		return contract.ResolveCommandResponse{}, err
+	}
+	return ops.ResolveCommand(r.Context(), contract.ResolveCommandInput{Name: r.PathValue("command"), Arguments: body.Arguments})
 }
 
 func (s *Server) listCommands(r *http.Request) (contract.ListCommandsResponse, error) {
