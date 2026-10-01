@@ -3094,6 +3094,68 @@
         "x-okt-surface": "plan.list"
       }
     },
+    "/api/v1/projects/{project}/plans/import": {
+      "post": {
+        "operationId": "importPlan",
+        "parameters": [
+          {
+            "description": "Project slug.",
+            "in": "path",
+            "name": "project",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/httpapi.ImportWorkBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/contract.ImportWorkResponse"
+                    },
+                    "ok": {
+                      "const": true
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success."
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/output.Envelope"
+                }
+              }
+            },
+            "description": "Error envelope."
+          }
+        },
+        "summary": "Import a plan from an OKF Markdown document.",
+        "x-okt-surface": "plan.import"
+      }
+    },
     "/api/v1/projects/{project}/plans/{plan}": {
       "get": {
         "operationId": "getPlan",

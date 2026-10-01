@@ -19,10 +19,18 @@ var exportedTask = domain.WorkDocument{Type: "Omakiten Task", Spec: domain.WorkS
 // import of it hands the operation.
 var taskMarkdown, parsedTask = okf(exportedTask)
 
+// planMarkdown is a two-task plan as OKF Markdown; parsedPlan is what an
+// import of it hands the operation.
+var planMarkdown, parsedPlan = okf(domain.WorkDocument{
+	Type: "Omakiten Plan", Title: "Delivery", Body: "Ship the board.",
+	Spec: domain.WorkSpec{Version: 1, Slug: "delivery", Tasks: []domain.WorkTask{{Key: "api", Title: "API"}, {Key: "ui", Title: "UI"}}},
+})
+
 var _ = mapping([]mappingCase{
 	{"exportTask", http.MethodGet, "/api/v1/projects/alpha/tasks/5/export", "", "ExportTask", contract.ExportWorkInput{ProjectSelector: alpha, TaskID: 5}},
 	{"exportPlan", http.MethodGet, "/api/v1/projects/alpha/plans/delivery/export", "", "ExportPlan", contract.ExportWorkInput{ProjectSelector: alpha, Slug: "delivery"}},
 	{"importTask", http.MethodPost, "/api/v1/projects/alpha/tasks/import", `{"markdown":` + taskMarkdown + `,"dry_run":true,"confirmed":true}`, "ImportTask", contract.ImportWorkInput{ProjectSelector: alpha, Document: parsedTask, DryRun: true, Confirmed: true}},
+	{"importPlan", http.MethodPost, "/api/v1/projects/alpha/plans/import", `{"markdown":` + planMarkdown + `}`, "ImportPlan", contract.ImportWorkInput{ProjectSelector: alpha, Document: parsedPlan}},
 })
 
 // okf encodes doc and returns it as a JSON string together with the
@@ -70,6 +78,7 @@ func TestExportAnswersTheEncodedDocument(t *testing.T) {
 func TestImportRejectsMalformedMarkdown(t *testing.T) {
 	for _, target := range []string{
 		"/api/v1/projects/alpha/tasks/import",
+		"/api/v1/projects/alpha/plans/import",
 	} {
 		t.Run(target, func(t *testing.T) {
 			ops := &fakeOps{}
@@ -98,4 +107,9 @@ func (f *fakeOps) ImportTask(_ context.Context, in contract.ImportWorkInput) (co
 func (f *fakeOps) ExportPlan(_ context.Context, in contract.ExportWorkInput) (domain.WorkDocument, error) {
 	f.record("ExportPlan", in)
 	return domain.WorkDocument{}, nil
+}
+
+func (f *fakeOps) ImportPlan(_ context.Context, in contract.ImportWorkInput) (contract.ImportWorkResponse, error) {
+	f.record("ImportPlan", in)
+	return contract.ImportWorkResponse{}, nil
 }
