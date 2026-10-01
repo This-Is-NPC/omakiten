@@ -42,6 +42,7 @@ behavior and the owner of each rule, rather than a historical feature ledger.
 | CLI data output is machine-readable, errors exit nonzero, and diagnostics preserve actionable context. | CLI execution and output |
 | CLI and TUI use common contracts and application policy while remaining independent delivery adapters. | Composition root and architecture tests |
 | The HTTP API listens on loopback only, authenticates with a per-run token, and gates each route by its surface slug. | `internal/httpapi`, `internal/daemon`, surfaces table |
+| Every operation the shipped surfaces table enables on HTTP has a route, so the API keeps parity with the CLI. | `internal/httpapi` route coverage test |
 | The HTTP API's OpenAPI document is generated from its routes and delivery types and reviewed as a golden file. | `internal/httpapi` |
 | The event stream delivers events committed by any process, resumes from Last-Event-ID, and asks slow clients to resync. | `internal/daemon` feed and `internal/httpapi` hub |
 | TUI screens receive business projections; shared components own geometry, cursor, scroll, and framing. | Screen assembly contract |
