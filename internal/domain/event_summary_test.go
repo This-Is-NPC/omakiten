@@ -256,6 +256,11 @@ func TestSummarizeEventPerTypeRendering(t *testing.T) {
 			row:  EventRow{EventType: EventTypeHookExecuted, Payload: `{"action":"shell","event_type":"task.created","success":false}`},
 			want: "hook shell on task.created [fail]",
 		},
+		// External.
+		"external event with fields": {
+			row:  EventRow{EventType: EventTypeExternalPrefix + "ci_failed", Payload: `{"url":"https://ci/1","branch":"main"}`},
+			want: "ci_failed branch=main url=https://ci/1",
+		},
 
 		// Subtask kit.
 		"subtask_kit.notice_emitted": {

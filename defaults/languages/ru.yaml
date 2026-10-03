@@ -66,7 +66,7 @@ keys:
     дней для активного project, все категории включены.
     
     Категории (как чипы фильтра TUI): task, comment, plan, tag-dep,
-    guard, audit, hook, tool_call, trick, domain. Передайте `all`, чтобы
+    guard, audit, hook, tool_call, trick, domain, external. Передайте `all`, чтобы
     явно сбросить фильтр.
     
     Вывод — JSON-конверт; каждая строка несёт форму из 5 полей
@@ -89,6 +89,8 @@ keys:
   cli.config.surfaces.flag.scaffold: "emit the complete facade table as YAML"
   cli.config.surfaces.flag.check: "list extras and missing slugs versus the canonical census"
   cli.progress.short: "Record material agent progress on a task"
+  cli.emit.short: "Отправляет внешнее событие, объявленное в ките проекта"
+  cli.emit.flag.field: "поле события в виде ключ=значение (можно повторять)"
   cli.progress.record.short: "Edit a task, optionally comment, and optionally move buckets"
   cli.progress.record.flag.task-id: "task id for edits, comments, or moves"
   cli.progress.record.flag.title: "optional updated title"
@@ -353,6 +355,7 @@ keys:
   cli.err.config_invalid: "config недействителен"
   cli.err.runtime_not_initialised: "config ещё не загружен; перезапустите с --config или `okt init`"
   cli.err.operation_denied: "operation denied on this surface"
+  cli.err.emit_field: "поле %q не в формате ключ=значение"
   cli.editor.not_configured: "редактор не настроен; задайте $VISUAL или $EDITOR"
   cli.editor.not_found: "настроенный редактор не найден в PATH"
   cli.err.config_unreadable: "файл config не читается"

@@ -34,6 +34,7 @@ const (
 	ErrConfigTooLarge            ErrorCode = "config_too_large"
 	ErrSearchIndexInvalid        ErrorCode = "search_index_invalid"
 	ErrOperationDenied           ErrorCode = "operation_denied"
+	ErrRateLimited               ErrorCode = "rate_limited"
 )
 
 type CodedError struct {

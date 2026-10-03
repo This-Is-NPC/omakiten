@@ -1,7 +1,8 @@
 # How to run an action when work changes
 
-**The question:** can completing work run a command, or can a failed guard
-show a notification with the next action?
+**The question:** can completing work run a command, can a failed guard
+show a notification with the next action, or can a CI job tell Omakiten
+that a build failed?
 
 Hooks belong to the active preset under `config.hooks`. An event selects the
 hook; an action handles it. The runtime dispatches actions asynchronously.
@@ -64,7 +65,43 @@ too. `detail_message_field` selects an event payload field for the detail text.
 Notifications are shown by the interactive runtime; an executable hook can
 also run for CLI operations.
 
-## 4. Read what happened
+## 4. React to an outside event
+
+A script, a CI job, or another app can tell Omakiten something happened. The
+preset declares each event it accepts under `config.events.definitions`, named
+`external.<name>` in the `external` category:
+
+```yaml
+events:
+  definitions:
+    external.ci_failed:
+      category: external
+      display: "CI failed"
+      entity_type: project
+      formatter: external
+hooks:
+  - on: external.ci_failed
+    notification: kitten_blocked
+    message: "CI failed"
+    detail_message_field: branch
+```
+
+The caller emits it with the CLI or the local API:
+
+```bash
+okt --project example emit ci_failed --field branch=main --field url=https://ci.example/1
+curl -X POST -H "Authorization: Bearer $token" \
+  -d '{"name":"ci_failed","payload":{"branch":"main"}}' \
+  "$url/api/v1/projects/example/events"
+```
+
+The fields are a flat map of strings: at most 32, each named in lower snake
+case, each value up to 4 KiB. A name the preset does not declare is refused,
+and a project takes at most 60 outside events a minute. The event's hooks run
+in the process that recorded it, `when` filters its fields, and
+`okt logs --category external` lists them.
+
+## 5. Read what happened
 
 ```bash
 okt --project example logs --help

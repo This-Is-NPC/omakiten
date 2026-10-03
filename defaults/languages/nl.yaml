@@ -66,7 +66,7 @@ keys:
     dagen voor het actieve project, alle categorieën inbegrepen.
     
     Categorieën (gelijk aan TUI-filterchips): task, comment, plan, tag-dep,
-    guard, audit, hook, tool_call, trick, domain. Geef `all` door om het
+    guard, audit, hook, tool_call, trick, domain, external. Geef `all` door om het
     filter expliciet te wissen.
     
     Uitvoer is een JSON-envelope; elke rij heeft de 5-veldvorm
@@ -89,6 +89,8 @@ keys:
   cli.config.surfaces.flag.scaffold: "emit the complete facade table as YAML"
   cli.config.surfaces.flag.check: "list extras and missing slugs versus the canonical census"
   cli.progress.short: "Record material agent progress on a task"
+  cli.emit.short: "Verstuurt een extern event dat de kit van het project declareert"
+  cli.emit.flag.field: "een veld van het event als sleutel=waarde (herhaalbaar)"
   cli.progress.record.short: "Edit a task, optionally comment, and optionally move buckets"
   cli.progress.record.flag.task-id: "task id for edits, comments, or moves"
   cli.progress.record.flag.title: "optional updated title"
@@ -352,6 +354,7 @@ keys:
   cli.err.config_invalid: "config is ongeldig"
   cli.err.runtime_not_initialised: "config nog niet geladen; opnieuw uitvoeren met --config of `okt init`"
   cli.err.operation_denied: "operation denied on this surface"
+  cli.err.emit_field: "veld %q heeft niet de vorm sleutel=waarde"
   cli.editor.not_configured: "geen editor geconfigureerd; stel $VISUAL of $EDITOR in"
   cli.editor.not_found: "geconfigureerde editor niet gevonden op PATH"
   cli.err.config_unreadable: "config-bestand niet leesbaar"

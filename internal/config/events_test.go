@@ -66,3 +66,34 @@ func TestEventsSettingsResolveLog(t *testing.T) {
 		})
 	}
 }
+
+func TestValidateEventsSettingsExternalNaming(t *testing.T) {
+	settings, err := LoadKitConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	cases := map[string]struct {
+		key      string
+		category string
+		ok       bool
+	}{
+		"declared external event":       {"external.ci_failed", "external", true},
+		"external name, other category": {"external.ci_failed", "audit", false},
+		"external category, other name": {"ci.failed", "external", false},
+		"malformed external name":       {"external.CI-Failed", "external", false},
+	}
+	for label, tc := range cases {
+		t.Run(label, func(t *testing.T) {
+			events := settings.Events
+			events.Definitions = map[string]EventDefinitionSettings{}
+			for key, def := range settings.Events.Definitions {
+				events.Definitions[key] = def
+			}
+			events.Definitions[tc.key] = EventDefinitionSettings{Category: tc.category, Display: "d", Formatter: "external"}
+			err := validateEventsSettings(events)
+			if (err == nil) != tc.ok {
+				t.Fatalf("validateEventsSettings(%s, %s) = %v, want ok=%v", tc.key, tc.category, err, tc.ok)
+			}
+		})
+	}
+}

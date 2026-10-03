@@ -66,7 +66,7 @@ keys:
     日間で、全カテゴリを含みます。
     
     カテゴリ (TUI フィルタチップに対応): task, comment, plan, tag-dep,
-    guard, audit, hook, tool_call, trick, domain。フィルタを明示的に
+    guard, audit, hook, tool_call, trick, domain, external。フィルタを明示的に
     クリアするには `all` を渡します。
     
     出力は JSON エンベロープです。各行は 5 フィールド形式
@@ -89,6 +89,8 @@ keys:
   cli.config.surfaces.flag.scaffold: "emit the complete facade table as YAML"
   cli.config.surfaces.flag.check: "list extras and missing slugs versus the canonical census"
   cli.progress.short: "Record material agent progress on a task"
+  cli.emit.short: "プロジェクトのキットが宣言した外部イベントを発行する"
+  cli.emit.flag.field: "イベントのフィールドを key=value で指定 (繰り返し可)"
   cli.progress.record.short: "Edit a task, optionally comment, and optionally move buckets"
   cli.progress.record.flag.task-id: "task id for edits, comments, or moves"
   cli.progress.record.flag.title: "optional updated title"
@@ -349,6 +351,7 @@ keys:
   cli.err.config_invalid: "config が不正です"
   cli.err.runtime_not_initialised: "config 未読み込み; --config または `okt init` で再実行"
   cli.err.operation_denied: "operation denied on this surface"
+  cli.err.emit_field: "フィールド %q が key=value 形式ではありません"
   cli.editor.not_configured: "エディタ未設定; $VISUAL または $EDITOR を設定"
   cli.editor.not_found: "設定されたエディタが PATH にありません"
   cli.err.config_unreadable: "config ファイルが読み取れません"

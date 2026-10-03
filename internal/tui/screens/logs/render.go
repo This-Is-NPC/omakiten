@@ -297,7 +297,7 @@ func FormatWho(row domain.EventRow) string {
 // through the neutral hint tone rather than a default-black glyph.
 func CategoryAccent(cat domain.EventCategory) screenkit.Accent {
 	switch cat {
-	case domain.EventCategoryTask, domain.EventCategoryTagDep:
+	case domain.EventCategoryTask, domain.EventCategoryTagDep, domain.EventCategoryExternal:
 		return screenkit.AccentTask
 	case domain.EventCategoryComment:
 		return screenkit.AccentComment

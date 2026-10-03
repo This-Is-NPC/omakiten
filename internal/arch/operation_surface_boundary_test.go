@@ -37,7 +37,7 @@ func TestOperationSurfaceMatchesItsGolden(t *testing.T) {
 // so shrinking the census without updating the constant still fails.
 func assertOperationSurfaceListingNotVacuous(t *testing.T, listing string) {
 	t.Helper()
-	if got, want := config.CanonicalSurfaceCount, 78; got != want {
+	if got, want := config.CanonicalSurfaceCount, 79; got != want {
 		t.Fatalf("CanonicalSurfaceCount = %d, want %d — the census floor moved without a reviewable golden", got, want)
 	}
 	if got, want := len(config.CanonicalSurfaceCensus), config.CanonicalSurfaceCount; got != want {

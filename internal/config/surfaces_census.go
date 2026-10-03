@@ -12,7 +12,7 @@ const (
 	SurfaceKindWiring      SurfaceKind = "wiring"
 
 	// CanonicalSurfaceCount is the closed size of operation.Service.
-	CanonicalSurfaceCount = 78
+	CanonicalSurfaceCount = 79
 
 	// DeniedWiringReason is the default reason token for wiring rows.
 	// Stored as an intl token; not resolved at load.
@@ -43,6 +43,7 @@ var CanonicalSurfaceCensus = []SurfaceCensusEntry{
 	{Slug: "dependency.list", Kind: SurfaceKindProduct},
 	{Slug: "dependency.remove", Kind: SurfaceKindProduct},
 	{Slug: "error.record", Kind: SurfaceKindProduct},
+	{Slug: "event.emit", Kind: SurfaceKindProduct},
 	{Slug: "insights.summary", Kind: SurfaceKindProduct},
 	{Slug: "law.get", Kind: SurfaceKindProduct},
 	{Slug: "law.list", Kind: SurfaceKindProduct},

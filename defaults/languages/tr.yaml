@@ -66,7 +66,7 @@ keys:
     günüdür; tüm kategoriler dahildir.
     
     Kategoriler (TUI filtre çipleriyle eşleşir): task, comment, plan, tag-dep,
-    guard, audit, hook, tool_call, trick, domain. Filtreyi açıkça
+    guard, audit, hook, tool_call, trick, domain, external. Filtreyi açıkça
     temizlemek için `all` geçin.
     
     Çıktı bir JSON zarfıdır; her satır 5 alanlı biçimi taşır
@@ -89,6 +89,8 @@ keys:
   cli.config.surfaces.flag.scaffold: "emit the complete facade table as YAML"
   cli.config.surfaces.flag.check: "list extras and missing slugs versus the canonical census"
   cli.progress.short: "Record material agent progress on a task"
+  cli.emit.short: "Projenin kitinde tanımlı harici bir olay yayar"
+  cli.emit.flag.field: "olayın bir alanı, anahtar=değer biçiminde (tekrarlanabilir)"
   cli.progress.record.short: "Edit a task, optionally comment, and optionally move buckets"
   cli.progress.record.flag.task-id: "task id for edits, comments, or moves"
   cli.progress.record.flag.title: "optional updated title"
@@ -351,6 +353,7 @@ keys:
   cli.err.config_invalid: "config geçersiz"
   cli.err.runtime_not_initialised: "config henüz yüklenmedi; --config veya `okt init` ile yeniden çalıştırın"
   cli.err.operation_denied: "operation denied on this surface"
+  cli.err.emit_field: "%q alanı anahtar=değer biçiminde değil"
   cli.editor.not_configured: "düzenleyici yapılandırılmadı; $VISUAL veya $EDITOR ayarlayın"
   cli.editor.not_found: "yapılandırılmış düzenleyici PATH'te bulunamadı"
   cli.err.config_unreadable: "config dosyası okunamıyor"

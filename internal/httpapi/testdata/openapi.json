@@ -683,6 +683,25 @@
         ],
         "type": "object"
       },
+      "contract.EmitEventResponse": {
+        "properties": {
+          "event_type": {
+            "type": "string"
+          },
+          "next_step_prompt": {
+            "type": "string"
+          },
+          "project": {
+            "$ref": "#/components/schemas/contract.ProjectSummary"
+          }
+        },
+        "required": [
+          "event_type",
+          "next_step_prompt",
+          "project"
+        ],
+        "type": "object"
+      },
       "contract.ErrorRecordResponse": {
         "properties": {
           "error": {
@@ -3183,6 +3202,23 @@
         ],
         "type": "object"
       },
+      "httpapi.EventBody": {
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "payload": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "type": "object"
+      },
       "httpapi.HealthResponse": {
         "properties": {
           "status": {
@@ -4583,6 +4619,68 @@
         },
         "summary": "Add a solution to a recorded error.",
         "x-okt-surface": "solution.add"
+      }
+    },
+    "/api/v1/projects/{project}/events": {
+      "post": {
+        "operationId": "emitEvent",
+        "parameters": [
+          {
+            "description": "Project slug.",
+            "in": "path",
+            "name": "project",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/httpapi.EventBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/contract.EmitEventResponse"
+                    },
+                    "ok": {
+                      "const": true
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success."
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/output.Envelope"
+                }
+              }
+            },
+            "description": "Error envelope."
+          }
+        },
+        "summary": "Emit an external event the project's kit declares; the hooks on it run.",
+        "x-okt-surface": "event.emit"
       }
     },
     "/api/v1/projects/{project}/insights": {

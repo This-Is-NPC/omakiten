@@ -52,6 +52,11 @@ const (
 	// exists so future TUI audit events have a home without growing
 	// the catalogue per-event.
 	EventCategoryTUI EventCategory = "tui"
+	// EventCategoryExternal groups the events an outside caller emits
+	// through event.emit. Each is declared as external.<name> in the
+	// kit's event definitions; the category marks the ones a caller may
+	// emit.
+	EventCategoryExternal EventCategory = "external"
 	// EventCategoryUnknown is returned by EventCategoryOf when the
 	// event_type is not in KnownEventTypes. The Logs inspector renders
 	// such rows under a generic "other" group and never panics.
@@ -75,4 +80,5 @@ var KnownEventCategories = []EventCategory{
 	EventCategoryDomain,
 	EventCategoryUpdate,
 	EventCategoryTUI,
+	EventCategoryExternal,
 }

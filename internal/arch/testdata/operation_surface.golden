@@ -10,6 +10,7 @@ dependency.add product
 dependency.list product
 dependency.remove product
 error.record product
+event.emit product
 insights.summary product
 law.get product
 law.list product

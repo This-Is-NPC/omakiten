@@ -172,6 +172,11 @@ definitions:
     category: hook
     display: "hook executed"
     formatter: hook.executed
+  external.ci_failed:
+    category: external
+    display: "CI failed"
+    entity_type: project
+    formatter: external
   subtask_kit.notice_emitted:
     category: domain
     display: "subtask kit notice emitted"

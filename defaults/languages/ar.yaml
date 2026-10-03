@@ -66,7 +66,7 @@ keys:
     أيام للمشروع النشط، وجميع الفئات مضمّنة.
     
     الفئات (تطابق رقائق فلتر TUI): task، comment، plan، tag-dep،
-    guard، audit، hook، tool_call، trick، domain. مرّر `all` لمسح
+    guard، audit، hook، tool_call، trick، domain، external. مرّر `all` لمسح
     الفلتر صراحةً.
     
     المخرجات غلاف JSON؛ كل صف يحمل شكل الحقول الخمسة
@@ -89,6 +89,8 @@ keys:
   cli.config.surfaces.flag.scaffold: "emit the complete facade table as YAML"
   cli.config.surfaces.flag.check: "list extras and missing slugs versus the canonical census"
   cli.progress.short: "Record material agent progress on a task"
+  cli.emit.short: "يُطلق حدثًا خارجيًا يعلنه كيت المشروع"
+  cli.emit.flag.field: "حقل من الحدث بصيغة مفتاح=قيمة (قابل للتكرار)"
   cli.progress.record.short: "Edit a task, optionally comment, and optionally move buckets"
   cli.progress.record.flag.task-id: "task id for edits, comments, or moves"
   cli.progress.record.flag.title: "optional updated title"
@@ -350,6 +352,7 @@ keys:
   cli.err.config_invalid: "الإعدادات غير صالحة"
   cli.err.runtime_not_initialised: "لم يُحمّل config بعد؛ أعد التشغيل مع --config أو `okt init`"
   cli.err.operation_denied: "operation denied on this surface"
+  cli.err.emit_field: "الحقل %q ليس بصيغة مفتاح=قيمة"
   cli.editor.not_configured: "لا محرّر مضبوط؛ اضبط $VISUAL أو $EDITOR"
   cli.editor.not_found: "المحرّر المضبوط غير موجود على PATH"
   cli.err.config_unreadable: "ملف الإعدادات غير قابل للقراءة"

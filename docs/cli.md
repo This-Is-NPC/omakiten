@@ -55,6 +55,7 @@ working directory. Configuration discovery is described in
 | `error record` | Reusable development failures. |
 | `solution add`, `confirm`, `list-top` | Fixes, observed outcomes, and ranked reuse. |
 | `progress` | Material progress on a task. |
+| `emit` | An outside event the workflow declares, from a script or CI job; its hooks run. |
 | `insights summary`, `metrics summary` | Project signals and agent behavior metrics. |
 | `logs` | Inspect the unified event history. |
 | `workflow show`, `workflow orphans` | Read policy and inspect or rebind stranded bucket identities. |

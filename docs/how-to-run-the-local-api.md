@@ -70,6 +70,7 @@ The API serves every operation the CLI runs on a project's work:
 | Comments | `comments/{comment}` |
 | Plans | `plans`, `plans/{plan}` and its `continuation`, `waves`, `tasks/{task}`, `claims`; `waves/{wave}`; `tasks/{task}/plan` |
 | Errors and solutions | `errors`, `errors/{error}/solutions`, `solutions`, `solutions/{solution}/confirmations` |
+| Outside events | `events` (`POST`): an `external.<name>` event the workflow declares, which runs its hooks |
 | Tags | `tags`, `tags/{tag}`; across projects, `/api/v1/tags` and `/api/v1/tags/{tag}/merge` |
 | Catalogs | `laws`, `personas`, `skills`, `templates`, each with a `/{key}` read; `commands` and `commands/{command}/resolve` |
 | Reads | `board`, `dependencies`, `search`, `logs`, `insights`, `metrics` |
@@ -91,7 +92,7 @@ Responses use the CLI envelope. Success is `{"ok": true, "data": ...}`.
 Failure is `{"ok": false, "code": ..., "msg": ..., "details": ...}` with an HTTP
 status: 400 invalid input, 401 missing token, 403 operation off the HTTP
 surface, 404 unknown project or task, 409 conflicting state, 422 a workflow
-guard refused.
+guard refused, 429 too many outside events in the last minute.
 
 Messages come from the language selected with `okt config language set --gui`.
 `GET /api/v1/catalog` returns every text of that language, so a client shows

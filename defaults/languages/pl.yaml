@@ -66,7 +66,7 @@ keys:
     dni aktywnego projektu, wszystkie kategorie włączone.
     
     Kategorie (jak chipy filtra TUI): task, comment, plan, tag-dep,
-    guard, audit, hook, tool_call, trick, domain. Podaj `all`, aby
+    guard, audit, hook, tool_call, trick, domain, external. Podaj `all`, aby
     jawnie wyczyścić filtr.
     
     Wyjście to koperta JSON; każdy wiersz ma postać 5 pól
@@ -89,6 +89,8 @@ keys:
   cli.config.surfaces.flag.scaffold: "emit the complete facade table as YAML"
   cli.config.surfaces.flag.check: "list extras and missing slugs versus the canonical census"
   cli.progress.short: "Record material agent progress on a task"
+  cli.emit.short: "Emituje zdarzenie zewnętrzne zadeklarowane w kicie projektu"
+  cli.emit.flag.field: "pole zdarzenia jako klucz=wartość (powtarzalne)"
   cli.progress.record.short: "Edit a task, optionally comment, and optionally move buckets"
   cli.progress.record.flag.task-id: "task id for edits, comments, or moves"
   cli.progress.record.flag.title: "optional updated title"
@@ -352,6 +354,7 @@ keys:
   cli.err.config_invalid: "config jest niepoprawny"
   cli.err.runtime_not_initialised: "config jeszcze nie załadowany; uruchom ponownie z --config lub `okt init`"
   cli.err.operation_denied: "operation denied on this surface"
+  cli.err.emit_field: "pole %q nie ma postaci klucz=wartość"
   cli.editor.not_configured: "brak skonfigurowanego edytora; ustaw $VISUAL lub $EDITOR"
   cli.editor.not_found: "skonfigurowany edytor nie znaleziony w PATH"
   cli.err.config_unreadable: "plik config nie jest czytelny"

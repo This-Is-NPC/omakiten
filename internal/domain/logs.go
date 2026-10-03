@@ -36,6 +36,7 @@ var logsFilterPartition = map[LogsFilterMode][]EventCategory{
 		EventCategoryPlan,
 		EventCategoryTrick,
 		EventCategoryTagDep,
+		EventCategoryExternal,
 	},
 	LogsFilterSystem: {
 		EventCategoryAudit,

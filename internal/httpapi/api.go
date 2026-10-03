@@ -52,6 +52,7 @@ func (s *Server) routes() []route {
 		s.insightRoutes(),
 		s.maintenanceRoutes(),
 		s.recordRoutes(),
+		s.eventRoutes(),
 		s.tagRoutes(),
 		s.catalogRoutes(),
 		[]route{
