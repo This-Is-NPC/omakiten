@@ -10,6 +10,7 @@ import (
 
 	"omakiten/internal/config"
 	"omakiten/internal/domain"
+	"omakiten/internal/hooks"
 )
 
 // NotificationActionName is the canonical hook action name for TUI notifications.
@@ -69,9 +70,13 @@ type NotificationBundleSnapshot struct {
 
 // NotificationShowAction resolves a configured notification and emits the
 // rendered message payload through a sender supplied by the TUI runtime.
+// With no sender, as in the CLI and the daemon, it records the rendered
+// notification as notification.shown so the clients following the event
+// stream show it.
 type NotificationShowAction struct {
 	mu       sync.RWMutex
 	sender   NotificationSender
+	recorder hooks.EventRecorder
 	snapshot NotificationBundleSnapshot
 }
 
@@ -87,6 +92,13 @@ func (a *NotificationShowAction) SetSender(sender NotificationSender) {
 	a.mu.Unlock()
 }
 
+// SetRecorder installs where a notification with no sender is recorded.
+func (a *NotificationShowAction) SetRecorder(recorder hooks.EventRecorder) {
+	a.mu.Lock()
+	a.recorder = recorder
+	a.mu.Unlock()
+}
+
 func (a *NotificationShowAction) SetBundle(snapshot NotificationBundleSnapshot) {
 	a.mu.Lock()
 	a.snapshot = snapshot
@@ -99,19 +111,16 @@ func (a *NotificationShowAction) Execute(ctx context.Context, ev domain.Event, a
 	}
 	a.mu.RLock()
 	sender := a.sender
+	recorder := a.recorder
 	snapshot := a.snapshot
 	a.mu.RUnlock()
-	if sender == nil {
+	if sender == nil && recorder == nil {
 		return nil
 	}
 
-	slugRaw, ok := args[NotificationArgSlug]
-	if !ok {
-		return fmt.Errorf("notification.show: %s missing — composition root must rewrite HookSpec.Notification", NotificationArgSlug)
-	}
-	slug, ok := slugRaw.(string)
-	if !ok || slug == "" {
-		return fmt.Errorf("notification.show: %s must be a non-empty string, got %T", NotificationArgSlug, slugRaw)
+	slug, err := notificationSlug(args)
+	if err != nil {
+		return err
 	}
 
 	resolvedKit, _ := args[NotificationArgResolvedKit].(string)
@@ -150,8 +159,40 @@ func (a *NotificationShowAction) Execute(ctx context.Context, ev domain.Event, a
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	sender.SendNotification(NotificationShowMsg{Notification: notification, Text: text, DetailText: detailText})
+	msg := NotificationShowMsg{Notification: notification, Text: text, DetailText: detailText}
+	if sender == nil {
+		return recordShown(ctx, recorder, ev, resolvedKit, msg)
+	}
+	sender.SendNotification(msg)
 	return nil
+}
+
+// notificationSlug reads the slug the composition root staged in args.
+func notificationSlug(args map[string]any) (string, error) {
+	slugRaw, ok := args[NotificationArgSlug]
+	if !ok {
+		return "", fmt.Errorf("notification.show: %s missing — composition root must rewrite HookSpec.Notification", NotificationArgSlug)
+	}
+	slug, ok := slugRaw.(string)
+	if !ok || slug == "" {
+		return "", fmt.Errorf("notification.show: %s must be a non-empty string, got %T", NotificationArgSlug, slugRaw)
+	}
+	return slug, nil
+}
+
+// recordShown writes notification.shown for the event that fired the hook.
+func recordShown(ctx context.Context, recorder hooks.EventRecorder, ev domain.Event, resolvedKit string, msg NotificationShowMsg) error {
+	payload, err := json.Marshal(map[string]string{
+		"notification": msg.Notification.Name,
+		"text":         msg.Text,
+		"detail":       msg.DetailText,
+		"event_type":   ev.EventType,
+		"resolved_kit": resolvedKit,
+	})
+	if err != nil {
+		return err
+	}
+	return recorder.RecordEntityEvent(ctx, domain.EventEntitySystem, 0, ev.ProjectID, domain.EventTypeNotificationShown, string(payload))
 }
 
 // resolveNotification picks the notification entry for slug, preferring

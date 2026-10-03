@@ -499,7 +499,7 @@ func (c *BundleCache) Close() error {
 			continue
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), hooks.DefaultShutdownTimeout)
-		err := entry.HooksEngine.Shutdown(ctx)
+		err := entry.HooksEngine.Drain(ctx)
 		cancel()
 		errs = append(errs, err)
 	}
@@ -629,6 +629,7 @@ func buildProjectRuntime(ctx context.Context, store *sqlite.Store, cs *configsto
 	registry := hooks.NewActionRegistry()
 	actions.RegisterBuiltins(registry)
 	notificationAction := actions.NewNotificationShowAction(notifSnapshot)
+	notificationAction.SetRecorder(store)
 	registry.Register(notificationAction)
 
 	knownEvents := config.KnownEventsFromDefinitions(bundle.Config.Events.Definitions)

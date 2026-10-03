@@ -54,6 +54,8 @@ type engineState uint8
 const (
 	engineStopped engineState = iota
 	engineRunning
+	// engineDraining admits no action and lets the admitted ones finish.
+	engineDraining
 	engineStopping
 )
 
@@ -109,6 +111,34 @@ func (e *Engine) Start(bus events.Bus) {
 func (e *Engine) Stop() error {
 	ctx, cancel := context.WithTimeout(context.Background(), DefaultShutdownTimeout)
 	defer cancel()
+	return e.Shutdown(ctx)
+}
+
+// Drain closes action admission and unsubscribes, lets the admitted actions
+// finish on their own until ctx ends, then shuts the engine down,
+// cancelling what is left. A process that exits drains, so the hooks of
+// its last write still run; a reload shuts down at once.
+func (e *Engine) Drain(ctx context.Context) error {
+	e.mu.Lock()
+	var sub events.Subscription
+	if e.state == engineRunning {
+		e.state = engineDraining
+		sub = e.sub
+		e.sub = nil
+	}
+	e.mu.Unlock()
+	if sub != nil {
+		sub.Unsubscribe()
+	}
+	idle := make(chan struct{})
+	go func() {
+		e.wg.Wait()
+		close(idle)
+	}()
+	select {
+	case <-idle:
+	case <-ctx.Done():
+	}
 	return e.Shutdown(ctx)
 }
 
@@ -204,10 +234,11 @@ func (e *Engine) dispatch(ctx context.Context, ev domain.Event) {
 
 func (e *Engine) run(lifecycle, parent context.Context, idx int, hook Hook, action Action, ev domain.Event) {
 	defer e.wg.Done()
-	// Detach from the parent's deadline so the hook gets the timeout
-	// each action chooses (exec defaults to 30s). We keep cancellation
-	// linked and also bind the action to this Engine run's owned context.
-	ctx, cancel := context.WithCancel(detachDeadline(parent))
+	// The action keeps the publisher's values (its attribution) but not its
+	// deadline or cancellation: an HTTP request ends as soon as its write
+	// answers, and the action takes the timeout it chooses (exec defaults
+	// to 30s). Only this Engine run's owned context cancels it.
+	ctx, cancel := context.WithCancel(context.WithoutCancel(parent))
 	stopLifecycle := context.AfterFunc(lifecycle, cancel)
 	if lifecycle.Err() != nil {
 		cancel()
@@ -357,14 +388,3 @@ type panicValue struct{ value any }
 func (p panicValue) Error() string {
 	return "action panicked"
 }
-
-// detachDeadline returns a context that inherits parent's cancellation
-// but drops its deadline so the action's own timeout can take effect
-// without being clipped by an unrelated request deadline.
-func detachDeadline(parent context.Context) context.Context {
-	return noDeadlineCtx{Context: parent}
-}
-
-type noDeadlineCtx struct{ context.Context }
-
-func (noDeadlineCtx) Deadline() (time.Time, bool) { return time.Time{}, false }

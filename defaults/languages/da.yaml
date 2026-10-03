@@ -67,7 +67,7 @@ keys:
     dage for det aktive projekt, alle kategorier inkluderet.
     
     Kategorier (matcher TUI-filterchips): task, comment, plan, tag-dep,
-    guard, audit, hook, tool_call, trick, domain. Giv `all` for eksplicit at rydde
+    guard, audit, hook, tool_call, trick, domain, external. Giv `all` for eksplicit at rydde
     filtret.
     
     Output er en JSON-konvolut; hver række har 5-felts-formen
@@ -90,6 +90,8 @@ keys:
   cli.config.surfaces.flag.scaffold: "emit the complete facade table as YAML"
   cli.config.surfaces.flag.check: "list extras and missing slugs versus the canonical census"
   cli.progress.short: "Record material agent progress on a task"
+  cli.emit.short: "Udsender en ekstern hændelse, som projektets kit erklærer"
+  cli.emit.flag.field: "et felt i hændelsen som nøgle=værdi (kan gentages)"
   cli.progress.record.short: "Edit a task, optionally comment, and optionally move buckets"
   cli.progress.record.flag.task-id: "task id for edits, comments, or moves"
   cli.progress.record.flag.title: "optional updated title"
@@ -353,6 +355,7 @@ keys:
   cli.err.config_invalid: "config er ugyldig"
   cli.err.runtime_not_initialised: "config endnu ikke indlæst; kør igen med --config eller `okt init`"
   cli.err.operation_denied: "operation denied on this surface"
+  cli.err.emit_field: "feltet %q er ikke på formen nøgle=værdi"
   cli.editor.not_configured: "ingen editor konfigureret; sæt $VISUAL eller $EDITOR"
   cli.editor.not_found: "konfigureret editor ikke fundet på PATH"
   cli.err.config_unreadable: "config-fil ikke læsbar"

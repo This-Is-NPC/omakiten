@@ -66,7 +66,7 @@ keys:
     天，包含所有类别。
     
     类别（与 TUI 筛选芯片一致）：task、comment、plan、tag-dep、
-    guard、audit、hook、tool_call、trick、domain。传入 `all` 可显式
+    guard、audit、hook、tool_call、trick、domain、external。传入 `all` 可显式
     清除筛选。
     
     输出为 JSON 信封；每行采用 5 字段形态
@@ -89,6 +89,8 @@ keys:
   cli.config.surfaces.flag.scaffold: "emit the complete facade table as YAML"
   cli.config.surfaces.flag.check: "list extras and missing slugs versus the canonical census"
   cli.progress.short: "Record material agent progress on a task"
+  cli.emit.short: "发出项目套件声明的外部事件"
+  cli.emit.flag.field: "事件字段，格式为 key=value（可重复）"
   cli.progress.record.short: "Edit a task, optionally comment, and optionally move buckets"
   cli.progress.record.flag.task-id: "task id for edits, comments, or moves"
   cli.progress.record.flag.title: "optional updated title"
@@ -349,6 +351,7 @@ keys:
   cli.err.config_invalid: "config 无效"
   cli.err.runtime_not_initialised: "config 尚未加载；请用 --config 或 `okt init` 重新运行"
   cli.err.operation_denied: "operation denied on this surface"
+  cli.err.emit_field: "字段 %q 不是 key=value 格式"
   cli.editor.not_configured: "未配置编辑器；请设置 $VISUAL 或 $EDITOR"
   cli.editor.not_found: "配置的编辑器在 PATH 中未找到"
   cli.err.config_unreadable: "config 文件不可读"

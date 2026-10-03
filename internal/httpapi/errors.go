@@ -86,6 +86,8 @@ func statusFor(code domain.ErrorCode) int {
 		return http.StatusConflict
 	case domain.ErrGuardViolation:
 		return http.StatusUnprocessableEntity
+	case domain.ErrRateLimited:
+		return http.StatusTooManyRequests
 	default:
 		return http.StatusInternalServerError
 	}

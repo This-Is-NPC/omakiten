@@ -66,7 +66,7 @@ keys:
     दिवस आहेत, सर्व श्रेणी समाविष्ट.
     
     श्रेणी (TUI फिल्टर चिप्सशी जुळणारे): task, comment, plan, tag-dep,
-    guard, audit, hook, tool_call, trick, domain. फिल्टर स्पष्टपणे
+    guard, audit, hook, tool_call, trick, domain, external. फिल्टर स्पष्टपणे
     साफ करण्यासाठी `all` द्या.
     
     आउटपुट JSON लिफाफा आहे; प्रत्येक ओळ 5-फील्ड आकार घेते
@@ -89,6 +89,8 @@ keys:
   cli.config.surfaces.flag.scaffold: "emit the complete facade table as YAML"
   cli.config.surfaces.flag.check: "list extras and missing slugs versus the canonical census"
   cli.progress.short: "Record material agent progress on a task"
+  cli.emit.short: "प्रोजेक्टच्या किटमध्ये घोषित बाह्य इव्हेंट पाठवते"
+  cli.emit.flag.field: "इव्हेंटचे एक फील्ड key=value स्वरूपात (पुन्हा वापरता येते)"
   cli.progress.record.short: "Edit a task, optionally comment, and optionally move buckets"
   cli.progress.record.flag.task-id: "task id for edits, comments, or moves"
   cli.progress.record.flag.title: "optional updated title"
@@ -350,6 +352,7 @@ keys:
   cli.err.config_invalid: "config अवैध आहे"
   cli.err.runtime_not_initialised: "config अजून लोड नाही; --config किंवा `okt init` ने पुन्हा चालवा"
   cli.err.operation_denied: "operation denied on this surface"
+  cli.err.emit_field: "फील्ड %q key=value स्वरूपात नाही"
   cli.editor.not_configured: "संपादक कॉन्फिग नाही; $VISUAL किंवा $EDITOR सेट करा"
   cli.editor.not_found: "कॉन्फिग संपादक PATH वर सापडला नाही"
   cli.err.config_unreadable: "config फाइल वाचण्यायोग्य नाही"

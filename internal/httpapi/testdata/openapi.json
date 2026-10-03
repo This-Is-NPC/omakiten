@@ -1,6 +1,254 @@
 {
   "components": {
     "schemas": {
+      "config.Notification": {
+        "properties": {
+          "actions": {
+            "items": {
+              "$ref": "#/components/schemas/config.NotificationAction"
+            },
+            "type": "array"
+          },
+          "animation": {
+            "items": {
+              "$ref": "#/components/schemas/config.NotificationFrame"
+            },
+            "type": "array"
+          },
+          "auto_height": {
+            "type": "boolean"
+          },
+          "background": {
+            "type": "string"
+          },
+          "border": {
+            "$ref": "#/components/schemas/config.NotificationBorder"
+          },
+          "bubble": {
+            "$ref": "#/components/schemas/config.NotificationBubble"
+          },
+          "custom_border": {
+            "$ref": "#/components/schemas/config.NotificationCustomBorder"
+          },
+          "description": {
+            "type": "string"
+          },
+          "dismiss": {
+            "$ref": "#/components/schemas/config.NotificationDismiss"
+          },
+          "footer_position": {
+            "type": "string"
+          },
+          "footer_visible": {
+            "type": "boolean"
+          },
+          "frame_interval_ms": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "message": {
+            "type": "string"
+          },
+          "message_field": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "padding": {
+            "$ref": "#/components/schemas/config.NotificationPadding"
+          },
+          "padding_inside": {
+            "type": "boolean"
+          },
+          "position": {
+            "type": "string"
+          },
+          "size": {
+            "$ref": "#/components/schemas/config.NotificationSize"
+          },
+          "style": {
+            "type": "string"
+          },
+          "typing_ms_per_char": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "animation",
+          "background",
+          "border",
+          "bubble",
+          "description",
+          "dismiss",
+          "frame_interval_ms",
+          "name",
+          "position",
+          "size",
+          "style"
+        ],
+        "type": "object"
+      },
+      "config.NotificationAction": {
+        "properties": {
+          "arguments": {
+            "additionalProperties": {},
+            "type": "object"
+          },
+          "id": {
+            "type": "string"
+          },
+          "key": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "operation": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "key",
+          "label"
+        ],
+        "type": "object"
+      },
+      "config.NotificationBorder": {
+        "properties": {
+          "background": {
+            "type": "string"
+          },
+          "color": {
+            "type": "string"
+          },
+          "visible": {
+            "type": "boolean"
+          },
+          "width": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "config.NotificationBubble": {
+        "properties": {
+          "tail_side": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "tail_side"
+        ],
+        "type": "object"
+      },
+      "config.NotificationCustomBorder": {
+        "properties": {
+          "bottom": {
+            "type": "string"
+          },
+          "bottom_left": {
+            "type": "string"
+          },
+          "bottom_right": {
+            "type": "string"
+          },
+          "left": {
+            "type": "string"
+          },
+          "right": {
+            "type": "string"
+          },
+          "top": {
+            "type": "string"
+          },
+          "top_left": {
+            "type": "string"
+          },
+          "top_right": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "config.NotificationDismiss": {
+        "properties": {
+          "after_ms": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "keys": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "mode": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "mode"
+        ],
+        "type": "object"
+      },
+      "config.NotificationFrame": {
+        "properties": {
+          "frame": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "value": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "frame",
+          "value"
+        ],
+        "type": "object"
+      },
+      "config.NotificationPadding": {
+        "properties": {
+          "bottom": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "left": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "right": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "top": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "config.NotificationSize": {
+        "properties": {
+          "height": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "width": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "height",
+          "width"
+        ],
+        "type": "object"
+      },
       "contract.AddPlanWaveResponse": {
         "properties": {
           "project": {
@@ -680,6 +928,25 @@
         "required": [
           "project",
           "task"
+        ],
+        "type": "object"
+      },
+      "contract.EmitEventResponse": {
+        "properties": {
+          "event_type": {
+            "type": "string"
+          },
+          "next_step_prompt": {
+            "type": "string"
+          },
+          "project": {
+            "$ref": "#/components/schemas/contract.ProjectSummary"
+          }
+        },
+        "required": [
+          "event_type",
+          "next_step_prompt",
+          "project"
         ],
         "type": "object"
       },
@@ -3183,6 +3450,23 @@
         ],
         "type": "object"
       },
+      "httpapi.EventBody": {
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "payload": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "type": "object"
+      },
       "httpapi.HealthResponse": {
         "properties": {
           "status": {
@@ -3233,6 +3517,23 @@
             "type": "boolean"
           }
         },
+        "type": "object"
+      },
+      "httpapi.NotificationsResponse": {
+        "properties": {
+          "kits": {
+            "additionalProperties": {
+              "items": {
+                "$ref": "#/components/schemas/config.Notification"
+              },
+              "type": "array"
+            },
+            "type": "object"
+          }
+        },
+        "required": [
+          "kits"
+        ],
         "type": "object"
       },
       "httpapi.PlanTaskBody": {
@@ -4585,6 +4886,68 @@
         "x-okt-surface": "solution.add"
       }
     },
+    "/api/v1/projects/{project}/events": {
+      "post": {
+        "operationId": "emitEvent",
+        "parameters": [
+          {
+            "description": "Project slug.",
+            "in": "path",
+            "name": "project",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/httpapi.EventBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/contract.EmitEventResponse"
+                    },
+                    "ok": {
+                      "const": true
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success."
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/output.Envelope"
+                }
+              }
+            },
+            "description": "Error envelope."
+          }
+        },
+        "summary": "Emit an external event the project's kit declares; the hooks on it run.",
+        "x-okt-surface": "event.emit"
+      }
+    },
     "/api/v1/projects/{project}/insights": {
       "get": {
         "operationId": "getInsights",
@@ -4989,6 +5352,57 @@
         },
         "summary": "Task and event metrics for a project.",
         "x-okt-surface": "metrics.summary"
+      }
+    },
+    "/api/v1/projects/{project}/notifications": {
+      "get": {
+        "operationId": "getNotifications",
+        "parameters": [
+          {
+            "description": "Project slug.",
+            "in": "path",
+            "name": "project",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/httpapi.NotificationsResponse"
+                    },
+                    "ok": {
+                      "const": true
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success."
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/output.Envelope"
+                }
+              }
+            },
+            "description": "Error envelope."
+          }
+        },
+        "summary": "Notification cards of a project's kits: frames, size, colours, placement, and dismissal."
       }
     },
     "/api/v1/projects/{project}/personas": {

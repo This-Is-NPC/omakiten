@@ -66,7 +66,7 @@ keys:
     दिन हैं, सभी श्रेणियाँ शामिल।
     
     श्रेणियाँ (TUI फ़िल्टर चिप्स से मेल): task, comment, plan, tag-dep,
-    guard, audit, hook, tool_call, trick, domain. फ़िल्टर स्पष्ट रूप से
+    guard, audit, hook, tool_call, trick, domain, external. फ़िल्टर स्पष्ट रूप से
     हटाने के लिए `all` दें।
     
     आउटपुट JSON लिफ़ाफ़ा है; प्रत्येक पंक्ति 5-फ़ील्ड आकार लेती है
@@ -89,6 +89,8 @@ keys:
   cli.config.surfaces.flag.scaffold: "emit the complete facade table as YAML"
   cli.config.surfaces.flag.check: "list extras and missing slugs versus the canonical census"
   cli.progress.short: "Record material agent progress on a task"
+  cli.emit.short: "प्रोजेक्ट के किट में घोषित बाहरी इवेंट भेजता है"
+  cli.emit.flag.field: "इवेंट का एक फ़ील्ड key=value रूप में (दोहराया जा सकता है)"
   cli.progress.record.short: "Edit a task, optionally comment, and optionally move buckets"
   cli.progress.record.flag.task-id: "task id for edits, comments, or moves"
   cli.progress.record.flag.title: "optional updated title"
@@ -352,6 +354,7 @@ keys:
   cli.err.config_invalid: "config अमान्य है"
   cli.err.runtime_not_initialised: "config अभी लोड नहीं; --config या `okt init` से फिर चलाएँ"
   cli.err.operation_denied: "operation denied on this surface"
+  cli.err.emit_field: "फ़ील्ड %q key=value रूप में नहीं है"
   cli.editor.not_configured: "कोई संपादक कॉन्फ़िग नहीं; $VISUAL या $EDITOR सेट करें"
   cli.editor.not_found: "कॉन्फ़िग संपादक PATH पर नहीं मिला"
   cli.err.config_unreadable: "config फ़ाइल पठनीय नहीं"

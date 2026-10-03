@@ -581,6 +581,9 @@ func validateEventsSettings(e EventsSettings) error {
 	if e.Defaults.Hook == nil {
 		return fmt.Errorf("config.events.defaults.hook: required (see defaults/omakiten.yaml)")
 	}
+	if err := validateExternalDefinitions(e.Definitions); err != nil {
+		return err
+	}
 	for key := range e.Overrides {
 		if _, ok := e.Definitions[key]; !ok {
 			return fmt.Errorf("config.events.overrides: unknown event_type %q (declare it under config.events.definitions in the active kit)", key)
@@ -594,6 +597,23 @@ func validateEventsSettings(e EventsSettings) error {
 	}
 	if err := validateEventsOrphanSweep(e.OrphanSweep); err != nil {
 		return err
+	}
+	return nil
+}
+
+// validateExternalDefinitions holds the external category to the events
+// named external.<name>, each name one an outside caller can send.
+func validateExternalDefinitions(definitions map[string]EventDefinitionSettings) error {
+	for key, def := range definitions {
+		name, external := strings.CutPrefix(key, domain.EventTypeExternalPrefix)
+		if external != (def.Category == string(domain.EventCategoryExternal)) {
+			return fmt.Errorf("config.events.definitions.%s: an event an outside caller emits is named %s<name> and has category %q, and only such an event", key, domain.EventTypeExternalPrefix, domain.EventCategoryExternal)
+		}
+		if external {
+			if err := domain.ValidateExternalName(name); err != nil {
+				return fmt.Errorf("config.events.definitions.%s: %w", key, err)
+			}
+		}
 	}
 	return nil
 }

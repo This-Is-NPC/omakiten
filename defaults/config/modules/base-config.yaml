@@ -269,6 +269,10 @@ events:
       category: hook
       display: "hook executed"
       formatter: hook.executed
+    notification.shown:
+      category: hook
+      display: "notification shown"
+      formatter: notification.shown
     subtask_kit.notice_emitted:
       category: domain
       display: "subtask kit notice emitted"

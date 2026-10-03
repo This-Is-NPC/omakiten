@@ -20,6 +20,7 @@ type Operations interface {
 	InsightOperations
 	MaintenanceOperations
 	RecordOperations
+	EventOperations
 	TagOperations
 	CatalogOperations
 }

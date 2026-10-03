@@ -54,7 +54,7 @@ keys:
     days for the active project, all categories included.
 
     Categories (match the TUI filter chips): task, comment, plan, tag-dep,
-    guard, audit, hook, tool_call, trick, domain. Pass `all` to clear the
+    guard, audit, hook, tool_call, trick, domain, external. Pass `all` to clear the
     filter explicitly.
 
     Output is a JSON envelope; each row carries the 5-field shape
@@ -77,6 +77,8 @@ keys:
   cli.config.surfaces.flag.scaffold: "emit the complete facade table as YAML"
   cli.config.surfaces.flag.check: "list extras and missing slugs versus the canonical census"
   cli.progress.short: "Record material agent progress on a task"
+  cli.emit.short: "Emit an external event the project's kit declares"
+  cli.emit.flag.field: "a field of the event as key=value (repeatable)"
   cli.progress.record.short: "Edit a task, optionally comment, and optionally move buckets"
   cli.progress.record.flag.task-id: "task id for edits, comments, or moves"
   cli.progress.record.flag.title: "optional updated title"
@@ -343,6 +345,7 @@ keys:
   cli.err.config_invalid: "config is invalid"
   cli.err.runtime_not_initialised: "config not yet loaded; rerun with --config or `okt init`"
   cli.err.operation_denied: "operation denied on this surface"
+  cli.err.emit_field: "field %q is not key=value"
   cli.editor.not_configured: "no editor configured; set $VISUAL or $EDITOR"
   cli.editor.not_found: "configured editor not found on PATH"
   cli.err.config_unreadable: "config file not readable"

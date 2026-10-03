@@ -66,7 +66,7 @@ keys:
     일이며 모든 카테고리가 포함됩니다.
     
     카테고리(TUI 필터 칩과 일치): task, comment, plan, tag-dep,
-    guard, audit, hook, tool_call, trick, domain. 필터를 명시적으로
+    guard, audit, hook, tool_call, trick, domain, external. 필터를 명시적으로
     지우려면 `all`을 전달하세요.
     
     출력은 JSON 봉투이며, 각 행은 5필드 형태
@@ -89,6 +89,8 @@ keys:
   cli.config.surfaces.flag.scaffold: "emit the complete facade table as YAML"
   cli.config.surfaces.flag.check: "list extras and missing slugs versus the canonical census"
   cli.progress.short: "Record material agent progress on a task"
+  cli.emit.short: "프로젝트 킷이 선언한 외부 이벤트를 발생시킵니다"
+  cli.emit.flag.field: "이벤트 필드를 key=value 형식으로 지정 (반복 가능)"
   cli.progress.record.short: "Edit a task, optionally comment, and optionally move buckets"
   cli.progress.record.flag.task-id: "task id for edits, comments, or moves"
   cli.progress.record.flag.title: "optional updated title"
@@ -349,6 +351,7 @@ keys:
   cli.err.config_invalid: "config 가 유효하지 않음"
   cli.err.runtime_not_initialised: "config 아직 로드 안 됨; --config 또는 `okt init`으로 다시 실행"
   cli.err.operation_denied: "operation denied on this surface"
+  cli.err.emit_field: "필드 %q 가 key=value 형식이 아닙니다"
   cli.editor.not_configured: "편집기 미설정; $VISUAL 또는 $EDITOR 설정"
   cli.editor.not_found: "설정된 편집기가 PATH에 없음"
   cli.err.config_unreadable: "config 파일을 읽을 수 없음"

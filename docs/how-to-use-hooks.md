@@ -1,7 +1,8 @@
 # How to run an action when work changes
 
-**The question:** can completing work run a command, or can a failed guard
-show a notification with the next action?
+**The question:** can completing work run a command, can a failed guard
+show a notification with the next action, or can a CI job tell Omakiten
+that a build failed?
 
 Hooks belong to the active preset under `config.hooks`. An event selects the
 hook; an action handles it. The runtime dispatches actions asynchronously.
@@ -61,10 +62,49 @@ and dispatches through its operation port.
 
 `${{intl:KEY}}` uses Omakiten's bundled translations. A literal message works
 too. `detail_message_field` selects an event payload field for the detail text.
-Notifications are shown by the interactive runtime; an executable hook can
-also run for CLI operations.
+The TUI shows the notification when the hook runs inside it. Elsewhere, as in
+an agent's CLI call or the daemon, the rendered notification is recorded as a
+`notification.shown` event: an open TUI shows it, and any client following the
+event stream can too. A notification cannot fire on `notification.shown`
+itself.
 
-## 4. Read what happened
+## 4. React to an outside event
+
+A script, a CI job, or another app can tell Omakiten something happened. The
+preset declares each event it accepts under `config.events.definitions`, named
+`external.<name>` in the `external` category:
+
+```yaml
+events:
+  definitions:
+    external.ci_failed:
+      category: external
+      display: "CI failed"
+      entity_type: project
+      formatter: external
+hooks:
+  - on: external.ci_failed
+    notification: kitten_blocked
+    message: "CI failed"
+    detail_message_field: branch
+```
+
+The caller emits it with the CLI or the local API:
+
+```bash
+okt --project example emit ci_failed --field branch=main --field url=https://ci.example/1
+curl -X POST -H "Authorization: Bearer $token" \
+  -d '{"name":"ci_failed","payload":{"branch":"main"}}' \
+  "$url/api/v1/projects/example/events"
+```
+
+The fields are a flat map of strings: at most 32, each named in lower snake
+case, each value up to 4 KiB. A name the preset does not declare is refused,
+and a project takes at most 60 outside events a minute. The event's hooks run
+in the process that recorded it, `when` filters its fields, and
+`okt logs --category external` lists them.
+
+## 5. Read what happened
 
 ```bash
 okt --project example logs --help
@@ -75,9 +115,11 @@ Look for the triggering event and `hook.executed`. A matching admitted action
 records its result; a hook that did not match has no execution record. Check
 the event policy's logging, broadcast, and hook gates if the action never ran.
 
-Reload and shutdown stop admission, cancel active work, and drain the engine.
-A one-shot CLI process has a bounded lifecycle; hooks are not a persistent
-background scheduler. Keep actions short and observe their recorded result.
+A reload stops admission and cancels active work. A process that exits, a
+one-shot CLI call included, stops admission and lets the admitted actions
+finish for up to five seconds, then cancels what is left. Hooks are not a
+persistent background scheduler. Keep actions short and observe their
+recorded result.
 
 ## What installation checks
 

@@ -52,6 +52,10 @@ There is one event log. Comments are event records with their content and
 scope; task, project, and universal scope are explicit. Event policy controls
 logging, broadcast, hook dispatch, visibility, and retention. Cross-project
 readers use each originating project's immutable event registry.
+An outside caller writes only `external.<name>` events its kit declares in the
+`external` category, as flat string fields. A hook notification raised where
+no screen shows it is recorded as `notification.shown` with its slug, text,
+detail, and the event that fired it.
 
 Errors and solutions can be reused across projects. A successful confirmation
 increments a solution's reuse count. Agent model and session fields preserve

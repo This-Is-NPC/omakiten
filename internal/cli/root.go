@@ -171,6 +171,7 @@ func addRootCommands(cmd *cobra.Command, opts *runtimeOptions, version string, r
 	cmd.AddCommand(newDBCommand(opts))
 	cmd.AddCommand(newInsightsCommand(opts))
 	cmd.AddCommand(newProgressCommand(opts))
+	cmd.AddCommand(newEmitCommand(opts))
 	cmd.AddCommand(newTaskCommand(opts))
 	cmd.AddCommand(newMetricsCommand(opts))
 	cmd.AddCommand(newErrorCommand(opts))
