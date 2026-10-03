@@ -128,9 +128,11 @@ event category, display, summary, and visibility before delivery. Cross-project
 log and metric queries interpret events against their originating policy.
 
 The event bus dispatches hooks; each runtime owns an engine and action registry.
-Admission, cancellation, and bounded drain belong to the engine. Notification
-actions contain structured operation arguments; terminal bindings execute
-them without invoking Cobra or parsing CLI output.
+Admission, cancellation, and bounded drain belong to the engine: a reload
+cancels admitted actions, and an exiting process lets them finish within the
+drain bound first, so a one-shot CLI call still runs the hooks of its writes.
+Notification actions contain structured operation arguments; terminal
+bindings execute them without invoking Cobra or parsing CLI output.
 
 The bus is in-process, so the daemon streams from the events table instead.
 It polls `PRAGMA data_version`, which moves when any connection commits, and

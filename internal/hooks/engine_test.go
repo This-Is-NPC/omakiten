@@ -693,3 +693,117 @@ func TestEngineStartAndShutdownAreIdempotentUnderConcurrency(t *testing.T) {
 		cancel()
 	}
 }
+
+// releaseAction waits for release and reports whether its context was
+// still live when it finished.
+type releaseAction struct {
+	name    string
+	started chan<- struct{}
+	release <-chan struct{}
+	live    chan<- bool
+}
+
+func (a releaseAction) Name() string { return a.name }
+
+func (a releaseAction) Execute(ctx context.Context, _ domain.Event, _ map[string]any) error {
+	a.started <- struct{}{}
+	<-a.release
+	a.live <- ctx.Err() == nil
+	return nil
+}
+
+// stateOf reads the engine's state under its lock.
+func (e *Engine) stateOf() engineState {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return e.state
+}
+
+func TestEngineDrainLetsAdmittedActionFinish(t *testing.T) {
+	started := make(chan struct{}, 2)
+	release := make(chan struct{})
+	live := make(chan bool, 2)
+	registry := NewActionRegistry()
+	registry.Register(releaseAction{name: "wait", started: started, release: release, live: live})
+	recorder := &fakeRecorder{}
+	engine := NewEngine([]Hook{{On: domain.EventTypeTaskCreated, Do: "wait"}}, registry, defaultSettings(), recorder)
+	bus := events.NewInProcessBus(defaultSettings())
+	engine.Start(bus)
+
+	if err := bus.Publish(context.Background(), domain.Event{EventType: domain.EventTypeTaskCreated}); err != nil {
+		t.Fatalf("Publish: %v", err)
+	}
+	<-started
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	drained := make(chan error, 1)
+	go func() { drained <- engine.Drain(ctx) }()
+	// Draining admits nothing new.
+	for engine.stateOf() == engineRunning {
+		runtime.Gosched()
+	}
+	if err := bus.Publish(context.Background(), domain.Event{EventType: domain.EventTypeTaskCreated}); err != nil {
+		t.Fatalf("Publish while draining: %v", err)
+	}
+	close(release)
+	if err := <-drained; err != nil {
+		t.Fatalf("Drain: %v", err)
+	}
+	if !<-live {
+		t.Fatal("Drain canceled the admitted action before it finished")
+	}
+	if len(started) != 0 {
+		t.Fatal("Drain admitted an action for an event published while draining")
+	}
+	if got := recorder.get(); len(got) != 1 || got[0].eventType != domain.EventTypeHookExecuted {
+		t.Fatalf("recorded %+v, want one hook.executed", got)
+	}
+}
+
+func TestEngineDrainCancelsWhatOutlastsIt(t *testing.T) {
+	started := make(chan struct{}, 1)
+	finished := make(chan struct{}, 1)
+	registry := NewActionRegistry()
+	registry.Register(cancelBlockingAction{name: "block", started: started, finished: finished})
+	engine := NewEngine([]Hook{{On: domain.EventTypeTaskCreated, Do: "block"}}, registry, defaultSettings(), nil)
+	bus := events.NewInProcessBus(defaultSettings())
+	engine.Start(bus)
+
+	if err := bus.Publish(context.Background(), domain.Event{EventType: domain.EventTypeTaskCreated}); err != nil {
+		t.Fatalf("Publish: %v", err)
+	}
+	<-started
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	defer cancel()
+	_ = engine.Drain(ctx)
+	select {
+	case <-finished:
+	case <-time.After(time.Second):
+		t.Fatal("an action outlasting the drain was not canceled")
+	}
+}
+
+func TestEngineActionOutlivesThePublisherContext(t *testing.T) {
+	started := make(chan struct{}, 1)
+	release := make(chan struct{})
+	live := make(chan bool, 1)
+	registry := NewActionRegistry()
+	registry.Register(releaseAction{name: "wait", started: started, release: release, live: live})
+	engine := NewEngine([]Hook{{On: domain.EventTypeTaskCreated, Do: "wait"}}, registry, defaultSettings(), nil)
+	bus := events.NewInProcessBus(defaultSettings())
+	engine.Start(bus)
+	defer func() { _ = engine.Stop() }()
+
+	// An HTTP request's context ends as soon as its write answers.
+	request, cancel := context.WithCancel(context.Background())
+	if err := bus.Publish(request, domain.Event{EventType: domain.EventTypeTaskCreated}); err != nil {
+		t.Fatalf("Publish: %v", err)
+	}
+	<-started
+	cancel()
+	close(release)
+	if !<-live {
+		t.Fatal("the action was canceled with the publisher's context")
+	}
+}

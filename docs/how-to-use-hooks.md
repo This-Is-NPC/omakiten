@@ -75,9 +75,11 @@ Look for the triggering event and `hook.executed`. A matching admitted action
 records its result; a hook that did not match has no execution record. Check
 the event policy's logging, broadcast, and hook gates if the action never ran.
 
-Reload and shutdown stop admission, cancel active work, and drain the engine.
-A one-shot CLI process has a bounded lifecycle; hooks are not a persistent
-background scheduler. Keep actions short and observe their recorded result.
+A reload stops admission and cancels active work. A process that exits, a
+one-shot CLI call included, stops admission and lets the admitted actions
+finish for up to five seconds, then cancels what is left. Hooks are not a
+persistent background scheduler. Keep actions short and observe their
+recorded result.
 
 ## What installation checks
 

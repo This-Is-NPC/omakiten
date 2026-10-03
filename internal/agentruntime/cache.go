@@ -499,7 +499,7 @@ func (c *BundleCache) Close() error {
 			continue
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), hooks.DefaultShutdownTimeout)
-		err := entry.HooksEngine.Shutdown(ctx)
+		err := entry.HooksEngine.Drain(ctx)
 		cancel()
 		errs = append(errs, err)
 	}
