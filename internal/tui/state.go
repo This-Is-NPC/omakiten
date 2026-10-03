@@ -444,6 +444,10 @@ type Model struct {
 	// one is on screen; nil otherwise.
 	notifications map[string]config.Notification
 	notification  *notificationModel
+	// noticeCursor is the newest hook row the notification tail has read;
+	// noticeStarted is set once its first read placed the cursor.
+	noticeCursor  int64
+	noticeStarted bool
 
 	// pendingSwapRevertPath stores the previous config yaml path when the
 	// active swap produced orphaned tasks. The hooks engine paints an

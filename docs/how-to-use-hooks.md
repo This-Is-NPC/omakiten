@@ -64,8 +64,9 @@ and dispatches through its operation port.
 too. `detail_message_field` selects an event payload field for the detail text.
 The TUI shows the notification when the hook runs inside it. Elsewhere, as in
 an agent's CLI call or the daemon, the rendered notification is recorded as a
-`notification.shown` event, which any client following the event stream can
-show. A notification cannot fire on `notification.shown` itself.
+`notification.shown` event: an open TUI shows it, and any client following the
+event stream can too. A notification cannot fire on `notification.shown`
+itself.
 
 ## 4. React to an outside event
 

@@ -145,7 +145,7 @@ func (m Model) LastProjectRoot() string {
 }
 
 func (m Model) Init() tea.Cmd {
-	return scheduleRefreshTick()
+	return tea.Batch(scheduleRefreshTick(), scheduleNoticeTick())
 }
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -182,6 +182,11 @@ func updateLifecycleMessage(m Model, msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 		m.applyWindowSize(msg)
 	case refreshTickMsg:
 		return m, m.updateRefreshTick(), true
+	case noticeTickMsg:
+		return m, m.noticeTailCmd(), true
+	case noticeRowsMsg:
+		next, cmd := m.applyNoticeRows(msg)
+		return next, cmd, true
 	case realtimeReloadMsg:
 		m.applyRealtimeReload(msg)
 	case editorFinishedMsg:
