@@ -6,6 +6,7 @@ import (
 
 func init() {
 	registerFormatter(EventTypeHookExecuted, summarizeHookExecuted)
+	registerFormatter(EventTypeNotificationShown, summarizeNotificationShown)
 	registerFormatter(EventTypeSubtaskKitNoticeEmitted, summarizeSubtaskKitNoticeEmitted)
 	registerFormatter(EventTypeBundleSwapped, summarizeBundleSwapped)
 	registerFormatter(EventTypeBundleImported, summarizeBundleImported)
@@ -35,6 +36,15 @@ func summarizeHookExecuted(row EventRow) string {
 		return "hook on " + ev
 	}
 	return "hook executed"
+}
+
+func summarizeNotificationShown(row EventRow) string {
+	payload := decodePayload(row.Payload)
+	text := condenseLine(readString(payload, "text"))
+	if slug := readString(payload, "notification"); slug != "" && text != "" {
+		return slug + ": " + text
+	}
+	return fallback(text, "notification shown")
 }
 
 func summarizeSubtaskKitNoticeEmitted(row EventRow) string {

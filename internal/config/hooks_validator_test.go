@@ -104,3 +104,13 @@ func TestValidateHooks_notificationHookExclusiveDetailMessage(t *testing.T) {
 		t.Fatalf("expected detail exclusivity error, got %v", err)
 	}
 }
+
+func TestValidateHooks_notificationCannotFireOnNotificationShown(t *testing.T) {
+	specs := []HookSpec{{On: domain.EventTypeNotificationShown, Notification: "kit", Message: "again"}}
+	known := map[string]struct{}{domain.EventTypeNotificationShown: {}}
+	notifications := map[string]Notification{"kit": {Name: "kit"}}
+	err := ValidateHooks(specs, known, func(string) bool { return true }, notifications)
+	if err == nil || !strings.Contains(err.Error(), domain.EventTypeNotificationShown) {
+		t.Fatalf("expected a notification on notification.shown to be refused, got %v", err)
+	}
+}

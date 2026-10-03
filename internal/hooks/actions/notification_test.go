@@ -2,6 +2,7 @@ package actions
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
@@ -46,12 +47,67 @@ func TestNotificationShowAction_Name(t *testing.T) {
 	}
 }
 
-func TestNotificationShowAction_NoSenderIsNoop(t *testing.T) {
+func TestNotificationShowAction_NoSenderNorRecorderIsNoop(t *testing.T) {
 	a := NewNotificationShowAction(sampleNotificationBundleSnapshot())
 	err := a.Execute(context.Background(), domain.Event{Body: "hi"}, map[string]any{NotificationArgSlug: "kit"})
 	if err != nil {
 		t.Fatalf("Execute with nil sender returned error: %v", err)
 	}
+}
+
+func TestNotificationShowAction_NoSenderRecordsShown(t *testing.T) {
+	a := NewNotificationShowAction(sampleNotificationBundleSnapshot())
+	recorder := &shownRecorder{}
+	a.SetRecorder(recorder)
+	ev := domain.Event{ProjectID: 7, EventType: domain.EventTypeGuardViolated, Payload: `{"hint":"tag the branch"}`}
+	if err := a.Execute(context.Background(), ev, map[string]any{NotificationArgSlug: "kit", NotificationArgResolvedKit: "omakase"}); err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	if len(recorder.rows) != 1 {
+		t.Fatalf("recorded %d rows, want 1", len(recorder.rows))
+	}
+	row := recorder.rows[0]
+	if row.eventType != domain.EventTypeNotificationShown || row.projectID != 7 || row.entityType != domain.EventEntitySystem {
+		t.Fatalf("recorded %+v, want notification.shown on project 7", row)
+	}
+	var payload map[string]string
+	if err := json.Unmarshal([]byte(row.payload), &payload); err != nil {
+		t.Fatalf("payload %q: %v", row.payload, err)
+	}
+	want := map[string]string{"notification": "kit", "text": "tag the branch", "detail": "", "event_type": domain.EventTypeGuardViolated, "resolved_kit": "omakase"}
+	for key, value := range want {
+		if payload[key] != value {
+			t.Fatalf("payload[%s] = %q, want %q (payload %v)", key, payload[key], value, payload)
+		}
+	}
+}
+
+func TestNotificationShowAction_SenderShowsWithoutRecording(t *testing.T) {
+	a := NewNotificationShowAction(sampleNotificationBundleSnapshot())
+	recorder := &shownRecorder{}
+	sender := &recordingSender{msgs: make(chan NotificationShowMsg, 1)}
+	a.SetRecorder(recorder)
+	a.SetSender(sender)
+	if err := a.Execute(context.Background(), domain.Event{Payload: `{"hint":"h"}`}, map[string]any{NotificationArgSlug: "kit"}); err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	if len(sender.msgs) != 1 || len(recorder.rows) != 0 {
+		t.Fatalf("sent %d, recorded %d; want 1 sent and none recorded", len(sender.msgs), len(recorder.rows))
+	}
+}
+
+type shownRow struct {
+	entityType string
+	projectID  int64
+	eventType  string
+	payload    string
+}
+
+type shownRecorder struct{ rows []shownRow }
+
+func (r *shownRecorder) RecordEntityEvent(_ context.Context, entityType string, _ int64, projectID int64, eventType, payload string) error {
+	r.rows = append(r.rows, shownRow{entityType: entityType, projectID: projectID, eventType: eventType, payload: payload})
+	return nil
 }
 
 func TestNotificationShowAction_HonorsCancellationBeforeSend(t *testing.T) {

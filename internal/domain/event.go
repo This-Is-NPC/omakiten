@@ -187,6 +187,14 @@ const (
 	// success, error, duration_ms}.
 	EventTypeHookExecuted = "hook.executed"
 
+	// EventTypeNotificationShown fires when a hook's notification runs in
+	// a process with no screen to show it on, so the clients that follow
+	// the event stream show it instead. EntityType=system,
+	// Payload={notification, text, detail, event_type, resolved_kit}:
+	// the notification's slug, its resolved text and detail, and the
+	// event that fired the hook.
+	EventTypeNotificationShown = "notification.shown"
+
 	// EventTypeExternalPrefix starts every event an outside caller emits:
 	// external.<name>, declared in the kit's event definitions under the
 	// external category. EntityType=project, Payload is the caller's flat

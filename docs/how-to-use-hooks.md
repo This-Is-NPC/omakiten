@@ -62,8 +62,10 @@ and dispatches through its operation port.
 
 `${{intl:KEY}}` uses Omakiten's bundled translations. A literal message works
 too. `detail_message_field` selects an event payload field for the detail text.
-Notifications are shown by the interactive runtime; an executable hook can
-also run for CLI operations.
+The TUI shows the notification when the hook runs inside it. Elsewhere, as in
+an agent's CLI call or the daemon, the rendered notification is recorded as a
+`notification.shown` event, which any client following the event stream can
+show. A notification cannot fire on `notification.shown` itself.
 
 ## 4. React to an outside event
 

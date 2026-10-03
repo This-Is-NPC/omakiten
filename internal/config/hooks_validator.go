@@ -3,6 +3,8 @@ package config
 import (
 	"fmt"
 	"strings"
+
+	"omakiten/internal/domain"
 )
 
 // HookActionResolver reports whether a `do:` name is a registered
@@ -53,6 +55,11 @@ func validateHook(i int, h HookSpec, knownEvents map[string]struct{}, isAction H
 		return fmt.Errorf("config.hooks[%d]: do and notification are mutually exclusive — pick one", i)
 	}
 	if notificationSlug != "" {
+		// A notification with no screen records notification.shown, which
+		// would fire the same hook again.
+		if on == domain.EventTypeNotificationShown {
+			return fmt.Errorf("config.hooks[%d]: a notification cannot fire on %s, which a notification records", i, domain.EventTypeNotificationShown)
+		}
 		return validateHookNotification(i, h, notificationSlug, notifications)
 	}
 	if isAction != nil && !isAction(do) {

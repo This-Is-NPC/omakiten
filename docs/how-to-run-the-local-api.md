@@ -110,13 +110,17 @@ Deleting a project is served: unconfirmed, `DELETE /api/v1/projects/{project}`
 answers what it would remove; confirmed, it writes a database backup first and
 answers its path.
 
-Two reads sit outside that table because they run no operation.
+Three reads sit outside that table because they run no operation.
 `GET /api/v1/projects/example/knowledge` returns the project's file-backed
 knowledge, as `okt knowledge list --include-related` reads it: resources,
 relations, and diagnostics. `GET /api/v1/projects/example/studio` returns what
 the TUI Studio and Settings show: buckets, transitions with their guards (and
 the sub-task workflow when its guards differ), commands, personas, laws,
 skills, templates, hooks, and the effective settings.
+`GET /api/v1/projects/example/notifications` returns the notification cards of
+the project's kits, by kit key: frames, size, colours, placement, and
+dismissal, so a client shows a `notification.shown` event as the TUI shows a
+notification it raises.
 
 ## 4. Follow changes live
 

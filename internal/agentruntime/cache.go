@@ -629,6 +629,7 @@ func buildProjectRuntime(ctx context.Context, store *sqlite.Store, cs *configsto
 	registry := hooks.NewActionRegistry()
 	actions.RegisterBuiltins(registry)
 	notificationAction := actions.NewNotificationShowAction(notifSnapshot)
+	notificationAction.SetRecorder(store)
 	registry.Register(notificationAction)
 
 	knownEvents := config.KnownEventsFromDefinitions(bundle.Config.Events.Definitions)

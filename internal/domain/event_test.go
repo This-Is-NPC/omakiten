@@ -45,6 +45,7 @@ func TestKnownEventTypesCoversCatalog(t *testing.T) {
 		EventTypeSolutionFailed:               {},
 		EventTypeSolutionViewedTop:            {},
 		EventTypeHookExecuted:                 {},
+		EventTypeNotificationShown:            {},
 		EventTypeExternalPrefix + "ci_failed": {},
 		EventTypeBundleSwapped:                {},
 		EventTypeBundleImported:               {},

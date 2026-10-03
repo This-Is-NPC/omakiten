@@ -172,6 +172,10 @@ definitions:
     category: hook
     display: "hook executed"
     formatter: hook.executed
+  notification.shown:
+    category: hook
+    display: "notification shown"
+    formatter: notification.shown
   external.ci_failed:
     category: external
     display: "CI failed"
