@@ -131,6 +131,8 @@ keys:
   cli.project.short: "Overview, resume e edição da description do projeto"
   cli.project.overview.short: "Mostra identidade, workflow, pending e next-step prompt"
   cli.project.resume.short: "Mostra distribuição, próximo trabalho, bloqueios e dependências"
+  cli.project.relocate.short: "Repair the registered project directory"
+  cli.project.relocate.flag.root: "absolute path of the existing project directory"
   cli.project.edit.short: "Atualiza a description do projeto ativo"
   cli.project.edit.flag.description: "nova description do projeto"
   cli.projects.short: "Utilitários do ciclo de vida do projeto"

@@ -34,6 +34,14 @@ type fakeRuntimes struct {
 	snapshot  *config.Snapshot
 }
 
+func (f fakeRuntimes) RegisteredProject(_ context.Context, slug string) (contract.ProjectSelector, error) {
+	id, ok := f.projects[slug]
+	if !ok {
+		return contract.ProjectSelector{}, errProjectNotFound()
+	}
+	return contract.ProjectSelector{ProjectID: id}, nil
+}
+
 func (f fakeRuntimes) Project(_ context.Context, slug string) (Operations, contract.ProjectSelector, error) {
 	id, ok := f.projects[slug]
 	if !ok {

@@ -27,6 +27,8 @@ type Operations interface {
 
 // Runtimes resolves the operation facade for each request.
 type Runtimes interface {
+	// RegisteredProject selects an identity without loading its filesystem configuration.
+	RegisteredProject(context.Context, string) (contract.ProjectSelector, error)
 	// Project returns the facade and selector of the project with slug.
 	Project(ctx context.Context, slug string) (Operations, contract.ProjectSelector, error)
 	// Global returns the facade for project-independent operations.

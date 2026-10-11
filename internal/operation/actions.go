@@ -101,6 +101,7 @@ func (s *Service) actionHandlers() map[string]actionHandler {
 		"plan.wave.reorder":    bindAction(s.ReorderPlanWave),
 		"progress.record":      bindAction(s.RecordProgress),
 		"project.edit":         bindAction(s.EditProject),
+		"project.relocate":     bindAction(s.RelocateProject),
 		"project.overview":     bindAction(s.Overview),
 		"project.resume":       bindAction(s.ResumeProject),
 		"search":               bindAction(s.Search),

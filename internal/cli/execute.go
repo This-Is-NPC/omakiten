@@ -54,7 +54,7 @@ func failureGuidance(cmd *cobra.Command, code string, original map[string]any) m
 
 func recoveryCommand(code domain.ErrorCode) string {
 	switch code {
-	case domain.ErrProjectNotFound, domain.ErrProjectAmbiguous:
+	case domain.ErrProjectNotFound, domain.ErrProjectAmbiguous, domain.ErrProjectPathConflict:
 		return "projects list"
 	case domain.ErrTaskNotFound:
 		return "list"

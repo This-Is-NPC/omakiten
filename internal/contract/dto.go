@@ -69,9 +69,7 @@ type ResumeProjectResponse struct {
 }
 
 // EditProjectInput carries the project selector plus the new
-// description. Only the description is mutable today — the write path
-// for the projects.description column (schema-only)
-// is restored here.
+// description.
 type EditProjectInput struct {
 	ProjectSelector
 	Description string `json:"description"`

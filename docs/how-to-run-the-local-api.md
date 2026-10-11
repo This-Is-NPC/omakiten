@@ -65,7 +65,7 @@ The API serves every operation the CLI runs on a project's work:
 
 | Resource | Routes under `/api/v1/projects/{project}` |
 |---|---|
-| Project | the project itself (`GET`, `PATCH`, `DELETE`), `resume`, `workflow`, `workflow/orphans` |
+| Project | the project itself (`GET`, `PATCH`, `DELETE`), `relocate` (`POST`), `resume`, `workflow`, `workflow/orphans` |
 | Tasks | `tasks`, `tasks/{task}` and its `transitions`, `assignee`, `archive`, `unarchive`, `checkpoint`, `activity`, `progress`, `dependencies`, `comments` |
 | Comments | `comments/{comment}` |
 | Plans | `plans`, `plans/{plan}` and its `continuation`, `waves`, `tasks/{task}`, `claims`; `waves/{wave}`; `tasks/{task}/plan` |

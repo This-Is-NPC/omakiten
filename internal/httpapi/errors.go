@@ -81,7 +81,7 @@ func statusFor(code domain.ErrorCode) int {
 		domain.ErrTagNotFound, domain.ErrErrorNotFound, domain.ErrSolutionNotFound,
 		domain.ErrPlanNotFound, domain.ErrPlanWaveNotFound:
 		return http.StatusNotFound
-	case domain.ErrProjectAmbiguous, domain.ErrWorkflowInvalidTransition,
+	case domain.ErrProjectAmbiguous, domain.ErrProjectPathConflict, domain.ErrWorkflowInvalidTransition,
 		domain.ErrTagConflict, domain.ErrPlanSlugConflict:
 		return http.StatusConflict
 	case domain.ErrGuardViolation:

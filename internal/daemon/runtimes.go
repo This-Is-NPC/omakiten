@@ -18,6 +18,14 @@ type runtimes struct {
 	session agentruntime.Session
 }
 
+func (r runtimes) RegisteredProject(ctx context.Context, slug string) (contract.ProjectSelector, error) {
+	project, err := r.session.Store.FindProjectBySlug(ctx, slug)
+	if err != nil {
+		return contract.ProjectSelector{}, err
+	}
+	return contract.ProjectSelector{ProjectID: project.ID}, nil
+}
+
 func (r runtimes) Project(ctx context.Context, slug string) (httpapi.Operations, contract.ProjectSelector, error) {
 	runtime, project, err := r.resolve(ctx, slug)
 	if err != nil {
@@ -49,9 +57,13 @@ func (r runtimes) resolve(ctx context.Context, slug string) (*agentruntime.Proje
 	if err != nil {
 		return nil, domain.Project{}, err
 	}
+	cacheProjectID := project.ID
 	if project.ID == r.session.Project.ID {
-		runtime, err := r.session.Cache.Resolve(ctx, r.session.CacheProjectID, r.session.ConfigPath)
-		return runtime, project, err
+		cacheProjectID = r.session.CacheProjectID
+		if project.RootPath == r.session.Project.RootPath {
+			runtime, err := r.session.Cache.Resolve(ctx, cacheProjectID, "")
+			return runtime, project, err
+		}
 	}
 	path, found, err := config.RepoLocalConfigFile(project.RootPath)
 	if err != nil {
@@ -63,13 +75,13 @@ func (r runtimes) resolve(ctx context.Context, slug string) (*agentruntime.Proje
 		}
 		path = r.session.ConfigPath
 	}
-	runtime, err := r.session.Cache.Resolve(ctx, project.ID, path)
+	runtime, err := r.session.Cache.Resolve(ctx, cacheProjectID, path)
 	return runtime, project, err
 }
 
 // Global returns the session runtime's facade.
 func (r runtimes) Global(ctx context.Context) (httpapi.Operations, error) {
-	runtime, err := r.session.Cache.Resolve(ctx, r.session.CacheProjectID, r.session.ConfigPath)
+	runtime, err := r.session.Cache.Resolve(ctx, r.session.CacheProjectID, "")
 	if err != nil {
 		return nil, err
 	}
@@ -77,7 +89,7 @@ func (r runtimes) Global(ctx context.Context) (httpapi.Operations, error) {
 }
 
 func (r runtimes) Catalog() *config.Catalog {
-	runtime, err := r.session.Cache.Resolve(context.Background(), r.session.CacheProjectID, r.session.ConfigPath)
+	runtime, err := r.session.Cache.Resolve(context.Background(), r.session.CacheProjectID, "")
 	if err != nil || runtime.Snapshot == nil {
 		return r.session.Snapshot.Catalog(config.SurfaceGUI)
 	}

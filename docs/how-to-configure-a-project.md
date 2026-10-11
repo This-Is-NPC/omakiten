@@ -92,3 +92,40 @@ Commit the project installation when its selected package should travel with
 the repository, or export the preset as one file and let each user install it.
 Tasks and plans are shared through their own
 [work documents](how-to-import-and-export-work.md), rather than preset files.
+
+## Repair a moved project
+
+After moving the directory, update its registration using its existing slug or id:
+
+```bash
+okt --project example project relocate --root /absolute/new/project
+okt --project example project overview
+```
+
+The operation updates only the registered root. It preserves the project's id,
+slug, name, description, tasks, plans, comments, and history. It does not move or
+create files, change the slug, or relocate other registered projects nested in
+the old directory. Move the repository and its `.omakiten/` directory yourself
+before calling it. The old directory may already be missing.
+
+The target must be an existing directory with an absolute path and no symlink
+components. A root already registered to another project, including an archived
+one, is rejected with `project_path_conflict`. A concurrent root change produces
+the same error; read `projects list` before retrying. Repeating the current path
+succeeds without another audit event.
+
+The root change and its `project.updated` event commit together. The event
+contains `root_path.from` and `root_path.to`; an audit-write failure rolls back
+the change. The response includes `previous_root_path` and the updated project.
+
+Recovery uses the application workflow's `project.relocate` surface permission
+instead of loading policy through the old root. An explicit CLI `--config`
+overrides that application workflow. HTTP uses the daemon session's permission
+and exposes `POST /api/v1/projects/{project}/relocate` with a JSON body such as
+`{"root_path":"/absolute/new/project"}`. The API path is on the server's filesystem.
+
+Subsequent requests discover configuration at the new root and replace a cached
+runtime when its configuration path changes. An invalid configuration at the new
+location is reported on those requests; relocation itself does not validate or
+modify that configuration. Update the workflow source and install a compatible
+preset containing the `project.relocate` surface entry before using this operation.
