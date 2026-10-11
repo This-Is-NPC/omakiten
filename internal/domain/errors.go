@@ -7,6 +7,7 @@ import (
 type ErrorCode string
 
 const (
+	ErrProjectPathConflict       ErrorCode = "project_path_conflict"
 	ErrConfigInvalid             ErrorCode = "config_invalid"
 	ErrProjectNotFound           ErrorCode = "project_not_found"
 	ErrProjectAmbiguous          ErrorCode = "project_ambiguous"

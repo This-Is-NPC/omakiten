@@ -1898,6 +1898,21 @@
         ],
         "type": "object"
       },
+      "contract.RelocateProjectResponse": {
+        "properties": {
+          "previous_root_path": {
+            "type": "string"
+          },
+          "project": {
+            "$ref": "#/components/schemas/contract.ProjectSummary"
+          }
+        },
+        "required": [
+          "previous_root_path",
+          "project"
+        ],
+        "type": "object"
+      },
       "contract.RemoveDependencyResponse": {
         "properties": {
           "confirmation": {
@@ -3566,6 +3581,17 @@
             "type": "string"
           }
         },
+        "type": "object"
+      },
+      "httpapi.RelocateProjectBody": {
+        "properties": {
+          "root_path": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "root_path"
+        ],
         "type": "object"
       },
       "httpapi.ResolveCommandBody": {
@@ -6224,6 +6250,68 @@
         },
         "summary": "Append or insert a wave into a plan.",
         "x-okt-surface": "plan.wave.add"
+      }
+    },
+    "/api/v1/projects/{project}/relocate": {
+      "post": {
+        "operationId": "relocateProject",
+        "parameters": [
+          {
+            "description": "Project slug.",
+            "in": "path",
+            "name": "project",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/httpapi.RelocateProjectBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/contract.RelocateProjectResponse"
+                    },
+                    "ok": {
+                      "const": true
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success."
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/output.Envelope"
+                }
+              }
+            },
+            "description": "Error envelope."
+          }
+        },
+        "summary": "Repair a project's registered root after its directory moves.",
+        "x-okt-surface": "project.relocate"
       }
     },
     "/api/v1/projects/{project}/resume": {

@@ -42,28 +42,12 @@ func pumpAsync(t *testing.T, m Model, cmd tea.Cmd) Model {
 	return m
 }
 
-// projectDeleteStore is the agentruntime.ProjectStore method set without
-// sqlite.DeleteProjectWithBackup, so wrapping it hides the atomic delete
-// path and ProjectService.Delete uses checkpoint + BackupService.Run.
-type projectDeleteStore interface {
-	UpsertProject(ctx context.Context, name, slug, rootPath string) (domain.Project, error)
-	FindProjectByID(ctx context.Context, id int64) (domain.Project, error)
-	FindProjectBySlug(ctx context.Context, slug string) (domain.Project, error)
-	FindProjectsContainingPath(ctx context.Context, path string) ([]domain.Project, error)
-	ListProjects(ctx context.Context) ([]domain.Project, error)
-	ProjectDeleteCounts(ctx context.Context, projectID int64) (domain.ProjectDeleteCounters, error)
-	DeleteProject(ctx context.Context, projectID int64) error
-	UpdateProjectDescription(ctx context.Context, id int64, description string) (domain.Project, error)
-	RecordEntityEvent(ctx context.Context, entityType string, entityID, projectID int64, eventType, payload string) error
-	DeleteProjectWithBackup(context.Context, int64, func(context.Context, func(string) error) (string, error), func(string) error, func() error) (string, error)
-}
-
 // firstCountsFailRepo wraps a project store and fails the first
 // ProjectDeleteCounts call (mirroring a transient SQLite hiccup at
 // arm-time); subsequent calls delegate so the re-query path lands
 // the actual counts.
 type firstCountsFailRepo struct {
-	projectDeleteStore
+	*snapstore.Store
 	calls int
 }
 
@@ -72,7 +56,7 @@ func (r *firstCountsFailRepo) ProjectDeleteCounts(ctx context.Context, projectID
 	if r.calls == 1 {
 		return domain.ProjectDeleteCounters{}, errors.New("transient sqlite hiccup")
 	}
-	return r.projectDeleteStore.ProjectDeleteCounts(ctx, projectID)
+	return r.Store.ProjectDeleteCounts(ctx, projectID)
 }
 
 // recordingEvents captures every RecordEntityEvent payload so tests
@@ -575,7 +559,7 @@ func TestHomeProjectDeleteRequeriesZeroCountersForAuditTruth(t *testing.T) {
 		}
 	}
 
-	wrappedRepo := &firstCountsFailRepo{projectDeleteStore: store}
+	wrappedRepo := &firstCountsFailRepo{Store: store}
 	recorder := &recordingEvents{EventStore: store}
 
 	model, err := newHomeModel(ctx, domain.ProjectContext{}, Repositories{

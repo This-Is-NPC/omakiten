@@ -37,6 +37,7 @@ plan.wave.reorder product
 progress.record product
 project.delete product
 project.edit product
+project.relocate product
 project.overview product
 project.list product
 project.resume product

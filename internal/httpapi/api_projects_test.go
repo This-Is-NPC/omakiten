@@ -12,6 +12,7 @@ var _ = mapping([]mappingCase{
 	{"listProjects", http.MethodGet, "/api/v1/projects", "", "ListProjects", nil},
 	{"getProject", http.MethodGet, "/api/v1/projects/alpha", "", "Overview", contract.OverviewInput{ProjectSelector: alpha}},
 	{"editProject", http.MethodPatch, "/api/v1/projects/alpha", `{"description":"Board for agents"}`, "EditProject", contract.EditProjectInput{ProjectSelector: alpha, Description: "Board for agents"}},
+	{"relocateProject", http.MethodPost, "/api/v1/projects/alpha/relocate", `{"root_path":"/work/alpha"}`, "RelocateProject", contract.RelocateProjectInput{ProjectSelector: alpha, RootPath: "/work/alpha"}},
 	{"deleteProject", http.MethodDelete, "/api/v1/projects/alpha?confirmed=true", "", "RemoveProject", contract.RemoveProjectInput{ProjectSelector: alpha, Confirmed: true}},
 	{"resumeProject", http.MethodGet, "/api/v1/projects/alpha/resume", "", "ResumeProject", contract.ResumeProjectInput{ProjectSelector: alpha}},
 	{"getWorkflow", http.MethodGet, "/api/v1/projects/alpha/workflow", "", "ShowWorkflow", contract.WorkflowInput{ProjectSelector: alpha}},
@@ -30,6 +31,11 @@ func (f *fakeOps) Overview(_ context.Context, in contract.OverviewInput) (contra
 func (f *fakeOps) EditProject(_ context.Context, in contract.EditProjectInput) (contract.EditProjectResponse, error) {
 	f.record("EditProject", in)
 	return contract.EditProjectResponse{}, nil
+}
+
+func (f *fakeOps) RelocateProject(_ context.Context, in contract.RelocateProjectInput) (contract.RelocateProjectResponse, error) {
+	f.record("RelocateProject", in)
+	return contract.RelocateProjectResponse{}, nil
 }
 
 func (f *fakeOps) ResumeProject(_ context.Context, in contract.ResumeProjectInput) (contract.ResumeProjectResponse, error) {

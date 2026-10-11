@@ -48,6 +48,8 @@ type ProjectRepository interface {
 	// had no write path until this restored it. An unknown or archived
 	// id matches no row and surfaces ErrProjectNotFound.
 	UpdateProjectDescription(ctx context.Context, id int64, description string) (domain.Project, error)
+	// UpdateProjectRootPath compares the previous root and commits the path and audit event together.
+	UpdateProjectRootPath(ctx context.Context, id int64, previousRoot, root string) (domain.Project, error)
 }
 
 // AtomicProjectDeleteRepository combines an exact-generation backup with the

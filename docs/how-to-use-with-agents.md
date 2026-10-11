@@ -7,6 +7,13 @@ The integration is one skill, `omakiten`, teaching the installed `okt` CLI.
 It is embedded in the binary. The agent needs shell access to `okt` and the
 project's database and workflow.
 
+The skill covers both board work and configuration. It routes the agent to the
+installed CLI's help, teaches scope and preset-source updates, and includes a
+hook recipe with delivery verification. A hook notification intended for an
+agent needs that agent's receiver; an Omakiten notification card alone does not
+interrupt an agent session. See [hooks](how-to-use-hooks.md) for event and action
+contracts and [preset management](how-to-manage-presets.md) for package updates.
+
 ## Install the skill
 
 ```bash

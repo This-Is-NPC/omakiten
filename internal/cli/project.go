@@ -16,6 +16,7 @@ func newProjectCommand(opts *runtimeOptions) *cobra.Command {
 	cmd.AddCommand(newProjectOverviewCommand(opts))
 	cmd.AddCommand(newProjectResumeCommand(opts))
 	cmd.AddCommand(newProjectEditCommand(opts))
+	cmd.AddCommand(newProjectRelocateCommand(opts))
 	return cmd
 }
 

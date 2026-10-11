@@ -36,7 +36,7 @@ func TestTaskServiceAdd(t *testing.T) {
 		t.Fatalf("Add().BucketKey = %q, want %q", task.BucketKey, "backlog")
 	}
 	if task.Priority != domain.Priority(2) {
-		t.Fatalf("Add().Priority = %q, want %q", task.Priority, domain.Priority(2))
+		t.Fatalf("Add().Priority = %d, want %d", task.Priority, domain.Priority(2))
 	}
 
 	highTask, err := service.Add(ctx, project.Context(), "High", "", "high", "backlog")
@@ -44,7 +44,7 @@ func TestTaskServiceAdd(t *testing.T) {
 		t.Fatalf("Add(high priority) error = %v", err)
 	}
 	if highTask.Priority != domain.Priority(3) {
-		t.Fatalf("Add(high).Priority = %q, want %q", highTask.Priority, domain.Priority(3))
+		t.Fatalf("Add(high).Priority = %d, want %d", highTask.Priority, domain.Priority(3))
 	}
 
 	_, err = service.Add(ctx, project.Context(), "Invalid", "", "urgent", "backlog")
@@ -176,7 +176,7 @@ func TestTaskServiceEdit(t *testing.T) {
 		t.Fatalf("Edit().Description = %q, want %q", edited.Description, "Desc")
 	}
 	if edited.Priority != domain.Priority(2) {
-		t.Fatalf("Edit().Priority = %q, want %q", edited.Priority, domain.Priority(2))
+		t.Fatalf("Edit().Priority = %d, want %d", edited.Priority, domain.Priority(2))
 	}
 	if edited.BucketKey != "dev" {
 		t.Fatalf("Edit().BucketKey = %q, want %q", edited.BucketKey, "dev")

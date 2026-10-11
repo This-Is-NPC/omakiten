@@ -237,6 +237,9 @@ func (o *runtimeOptions) open(ctx context.Context, materializeConfig bool) (*run
 }
 
 func (o *runtimeOptions) resolveRepoLocalDir(ctx context.Context, store *sqlite.Store) (string, error) {
+	if o.configPath != "" {
+		return "", nil
+	}
 	var err error
 	o.discoveryStart, err = o.resolveDiscoveryStart(ctx, store)
 	if err != nil {
@@ -245,10 +248,6 @@ func (o *runtimeOptions) resolveRepoLocalDir(ctx context.Context, store *sqlite.
 	repoLocalDir, err := o.discoverRepoLocalRoot()
 	if err != nil {
 		return "", err
-	}
-	if o.configPath != "" {
-		// --config overrides discovery, including the runtime's local badge.
-		repoLocalDir = ""
 	}
 	return repoLocalDir, nil
 }

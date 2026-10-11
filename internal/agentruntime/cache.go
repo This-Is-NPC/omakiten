@@ -155,12 +155,8 @@ func (c *BundleCache) Get(projectID int64) *ProjectRuntime {
 
 // Resolve returns the runtime for projectID, building one on cache
 // miss or rebuilding when the source bundle's mtime has changed. The
-// configPath argument is honoured only on the first build for a given
-// id (a cached entry remembers its own SourcePath); subsequent calls
-// pass "" to skip the path argument when they only want the cached
-// pointer. The projectID flows into the constructed engine so its
-// dispatch filter accepts only events scoped to this project (Phase
-// 3d).
+// configPath replaces the remembered source when a project moves.
+// An empty path keeps the cached source.
 func (c *BundleCache) Resolve(ctx context.Context, projectID int64, configPath string) (*ProjectRuntime, error) {
 	if c.closed.Load() {
 		return nil, fmt.Errorf("bundle cache: closed")
@@ -170,6 +166,9 @@ func (c *BundleCache) Resolve(ctx context.Context, projectID int64, configPath s
 	c.mu.RUnlock()
 
 	if entry != nil {
+		if configPath != "" && configPath != entry.SourcePath {
+			return c.rebuild(ctx, projectID, configPath)
+		}
 		path := entry.SourcePath
 		if path == "" {
 			path = configPath
@@ -222,6 +221,10 @@ func (c *BundleCache) ResolveApplyWithCommit(ctx context.Context, projectID int6
 		return runtime, err == nil, err
 	}
 	path := entry.SourcePath
+	if configPath != "" && configPath != path {
+		runtime, err := c.applyLocked(ctx, projectID, configPath, accept)
+		return runtime, err == nil, err
+	}
 	if path == "" {
 		path = configPath
 	}

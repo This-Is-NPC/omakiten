@@ -82,3 +82,7 @@ func (f fakeProjectRepo) DeleteProject(context.Context, int64) error {
 func (f fakeProjectRepo) UpdateProjectDescription(context.Context, int64, string) (domain.Project, error) {
 	return domain.Project{}, nil
 }
+
+func (f fakeProjectRepo) UpdateProjectRootPath(context.Context, int64, string, string) (domain.Project, error) {
+	panic("unexpected project path update")
+}

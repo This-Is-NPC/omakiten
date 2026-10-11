@@ -37,6 +37,9 @@ func summarizeProjectUpdated(row EventRow) string {
 	payload := decodePayload(row.Payload)
 	desc, ok := payload["description"].(map[string]any)
 	if !ok {
+		if root, ok := payload["root_path"].(map[string]any); ok {
+			return "updated project root: " + condenseLine(readString(root, "from")) + " → " + condenseLine(readString(root, "to"))
+		}
 		return "project updated"
 	}
 	to := readString(desc, "to")

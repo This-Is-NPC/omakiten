@@ -7,6 +7,15 @@ that a build failed?
 Hooks belong to the active preset under `config.hooks`. An event selects the
 hook; an action handles it. The runtime dispatches actions asynchronously.
 
+Before editing, check `okt --version` and inspect the project's selection with
+`okt --project example config why config.hooks` and
+`okt --project example config why config.events`. The `config.` prefix is part
+of each key. Follow the selected package's imports to its source modules.
+Change the source package, validate its config entry, then install and select
+the candidate in the intended scope as described in
+[preset management](how-to-manage-presets.md). Preserve the other hooks; avoid
+editing an installed content-id snapshot directly.
+
 ## 1. Choose the event and action
 
 This settings fragment runs a literal executable for a task move:
@@ -67,6 +76,10 @@ an agent's CLI call or the daemon, the rendered notification is recorded as a
 `notification.shown` event: an open TUI shows it, and any client following the
 event stream can too. A notification cannot fire on `notification.shown`
 itself.
+
+This records or displays an Omakiten notification; it does not interrupt another
+agent's session. Use `exec` with the intended receiver's supported command when
+the goal is to notify an agent, and check receipt at that receiver.
 
 ## 4. React to an outside event
 

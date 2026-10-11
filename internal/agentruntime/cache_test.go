@@ -579,6 +579,24 @@ func TestBundleCacheResolveEmptyPathRebuildOnMtimeChange(t *testing.T) {
 	}
 }
 
+func TestBundleCacheResolveUsesRelocatedConfigPath(t *testing.T) {
+	ctx := context.Background()
+	rt := openTestRuntime(t)
+	defer func() { _ = rt.Close() }()
+	first, err := rt.Cache().Resolve(ctx, rt.defaultProjectID, rt.configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := copyRuntimeFixture(t, rt.configPath, "relocated-config.yaml")
+	second, err := rt.Cache().Resolve(ctx, rt.defaultProjectID, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first == second || second.SourcePath != path {
+		t.Fatalf("configuration path was not replaced: %s", second.SourcePath)
+	}
+}
+
 // TestBundleCachePerProjectNotificationActionIsolation pins the Phase
 // 3d invariant: two ProjectRuntime entries (different project ids)
 // hold distinct ActionRegistry and NotificationShowAction instances.
