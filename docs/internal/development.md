@@ -16,6 +16,26 @@ git config core.hooksPath scripts/hooks
 implement the jobs; mise, hooks, and CI consume those jobs. Use
 `mise tasks ls` and `mise tasks info NAME` to inspect the current tasks.
 
+The development and release toolchains use Go 1.26.9. This version fixes the
+October 2026 advisories affecting HTTP, TLS, MIME header parsing, HTML template
+escaping, and Windows root-directory operations. `golang.org/x/net` v0.60.0
+fixes the corresponding HTTP/2 implementation used by dependencies. Keep the
+Go pin in `.mise.toml` and both release workflow jobs aligned; run
+`mise run vuln` after changing either the toolchain or dependency versions.
+See the [Go release notes](https://go.dev/doc/devel/release#go1.26.9) and
+[HTTP/2 advisory](https://pkg.go.dev/vuln/GO-2026-6617).
+
+After upgrading from Go 1.25, rebuild an existing scanner installation with
+`mise exec -- mise install --force go:golang.org/x/vuln/cmd/govulncheck@1.7.0`
+if it reports a Go version mismatch while loading packages.
+
+The indirect gRPC dependency is pinned to at least v1.83.2 to fix a server panic
+on missing authority headers. The scanner also reports the unmaintained
+`golang.org/x/crypto/openpgp` package at module level. Sigstore test fixtures
+bring it into the test dependency graph; the production CLI does not import
+it. Check symbol and package reachability before interpreting a module-only
+finding as an application vulnerability.
+
 Read [CONTRIBUTING.md](../../CONTRIBUTING.md), [design](design.md), and the
 [requirements](requirements.md) before changing behavior. For TUI work,
 [screen assembly](tui-screen-assembly.md) is normative.
