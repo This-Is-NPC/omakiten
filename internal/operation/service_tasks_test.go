@@ -187,3 +187,63 @@ func newAgentFixtureEditLockedToBacklog(t *testing.T) editLockedFixture {
 
 	return editLockedFixture{ctx: ctx, service: svc, taskID: task.ID}
 }
+
+// TestContinueTaskShowsSubtaskKitWorkflow verifies a sub-task's continue
+// response carries the workflow of the kit that governs it, not the root's.
+func TestContinueTaskShowsSubtaskKitWorkflow(t *testing.T) {
+	ctx := context.Background()
+	bundle := agentTestBundle(t)
+	bundle.SubtaskKit = "sub.yaml"
+	bundle.SubtaskBundle = &config.Bundle{
+		Kit: config.Kit{ID: 200, Key: "sub", Name: "Sub"},
+		Workflows: []config.Workflow{{
+			ID:   200,
+			Key:  "sub",
+			Name: "Sub",
+			Buckets: []config.Bucket{
+				{ID: 901, Key: "todo", Name: "Todo", Position: 1},
+				{ID: 902, Key: "finished", Name: "Finished", Position: 2},
+			},
+			Transitions: []config.Transition{{From: 901, To: 902}},
+		}},
+		Config: config.Settings{Workflow: config.WorkflowSettings{Active: "sub"}},
+	}
+	store := snapstore.Open(t, filepath.Join(t.TempDir(), "omakiten.db"))
+	if err := store.ImportBundle(ctx, bundle, "test.yaml", "hash"); err != nil {
+		t.Fatalf("ImportBundle() error = %v", err)
+	}
+	root := filepath.Join(t.TempDir(), "project")
+	if err := os.MkdirAll(root, 0o755); err != nil {
+		t.Fatalf("MkdirAll(root) error = %v", err)
+	}
+	project, err := store.UpsertProject(ctx, "Kits", "kits", root)
+	if err != nil {
+		t.Fatalf("UpsertProject() error = %v", err)
+	}
+	snap := store.Snapshot()
+	parent, err := store.CreateTask(ctx, project.ID, "Parent", "Root task", domain.Priority(2), "backlog", nil, snap)
+	if err != nil {
+		t.Fatalf("CreateTask(parent) error = %v", err)
+	}
+	subSnap, _ := snap.SubtaskKit()
+	child, err := store.CreateTask(ctx, project.ID, "Child", "Sub-task", domain.Priority(2), "todo", &parent.ID, subSnap)
+	if err != nil {
+		t.Fatalf("CreateTask(child) error = %v", err)
+	}
+	svc := NewService(store, contract.ProjectSelector{CWD: root})
+	svc.SetSnapshot(snap)
+	svc.SetSettings(ServiceSettings{RecentCommentLimit: 5, IncludeWorkflow: true, NextWorkLimit: 5, SimilarTaskLimit: 5})
+
+	for _, tc := range []struct {
+		task domain.Task
+		want string
+	}{{parent, snap.Workflow().Key}, {child, "sub"}} {
+		resp, err := svc.ContinueTask(ctx, contract.ContinueTaskInput{TaskID: tc.task.ID})
+		if err != nil {
+			t.Fatalf("ContinueTask(%d) error = %v", tc.task.ID, err)
+		}
+		if resp.Workflow.Key != tc.want {
+			t.Fatalf("ContinueTask(%d).Workflow.Key = %q, want %q", tc.task.ID, resp.Workflow.Key, tc.want)
+		}
+	}
+}

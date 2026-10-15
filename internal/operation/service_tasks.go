@@ -29,7 +29,7 @@ func (s *Service) ContinueTask(ctx context.Context, input contract.ContinueTaskI
 	}
 	var workflowSum contract.WorkflowSummary
 	if includeWorkflow {
-		workflowSum = workflowSummary(s.snapshot.Workflow())
+		workflowSum = workflowSummary(s.snapshot.For(detail.task).Workflow())
 	}
 
 	var agentOutputLang string
