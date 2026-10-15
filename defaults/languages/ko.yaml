@@ -1622,6 +1622,7 @@ keys:
   cli.work.flag.force: "Replace an existing export file"
   cli.preset.short: "Install and select portable workflow packages"
   cli.preset.add.short: "Install a preset repository snapshot"
+  cli.preset.local_scope_warn_fmt: "%s의 새 로컬 범위에 설치합니다. 사용자 설치에는 --scope global을 지정하세요"
   cli.preset.use.short: "Activate an installed preset by name or id"
   cli.preset.list.short: "List installed presets and modification status"
   cli.preset.import.short: "Install a preset from one Markdown file"

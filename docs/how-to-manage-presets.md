@@ -38,7 +38,10 @@ without activating. `use` selects an installed name or complete content id;
 use the id when several revisions have the same name.
 
 The default scope is local to the project. `--scope global` on scoped preset
-commands operates on the user installation. Global setup can select a preset
+commands operates on the user installation. Without `--project`, the local
+scope is `.omakiten/` in the current directory; `add` and `import` without an
+explicit `--scope` warn on stderr when they would create it, because that
+directory may not be a project root. Global setup can select a preset
 with `okt setup --preset omakase`.
 
 Fetching a repository needs Git and access to that source. Runtime use and

@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"fmt"
+	"os"
 
 	"github.com/spf13/cobra"
 	"omakiten/internal/config"
@@ -49,12 +50,26 @@ func newPresetScopeCommand(opts *runtimeOptions, use, action string, run func(*c
 			if err != nil {
 				return nil, err
 			}
+			if action == "add" || action == "import" {
+				warnNewLocalScope(cmd, opts, root)
+			}
 			result, err := run(cmd, root, args)
 			return result, presetPackageCLIError(err)
 		})
 	}
 	cmd.Flags().StringVar(&scope, "scope", "local", opts.t("cli.config.init.flag.scope"))
 	return cmd
+}
+
+// warnNewLocalScope tells the user on stderr that an install without
+// --scope is about to create the local scope at root.
+func warnNewLocalScope(cmd *cobra.Command, opts *runtimeOptions, root string) {
+	if cmd.Flags().Changed("scope") {
+		return
+	}
+	if _, err := os.Stat(root); os.IsNotExist(err) {
+		fmt.Fprintf(cmd.ErrOrStderr(), opts.t("cli.preset.local_scope_warn_fmt")+"\n", root)
+	}
 }
 
 func newPresetImportCommand(opts *runtimeOptions) *cobra.Command {

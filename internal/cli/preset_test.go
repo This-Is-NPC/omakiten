@@ -138,3 +138,35 @@ func setPresetCommentLimit(t *testing.T, path string, limit int) {
 		t.Fatal(err)
 	}
 }
+
+// TestPresetAddWarnsWhenCreatingLocalScope verifies an add without --scope
+// warns on stderr before creating <cwd>/.omakiten, and stays quiet once the
+// scope exists or when the scope is explicit.
+func TestPresetAddWarnsWhenCreatingLocalScope(t *testing.T) {
+	root := t.TempDir()
+	t.Chdir(root)
+	seed, _, repo := createPresetRepository(t, root)
+	db := filepath.Join(root, "state.db")
+	add := func(args ...string) string {
+		t.Helper()
+		cmd := NewRootCommand("test", Runners{})
+		var out, stderr bytes.Buffer
+		cmd.SetOut(&out)
+		cmd.SetErr(&stderr)
+		cmd.SetArgs(cliArguments(db, seed.Path, append([]string{"preset", "add", repo}, args...)))
+		if code := Execute(cmd); code != 0 {
+			t.Fatalf("preset add %v exit = %d, output = %s", args, code, out.String())
+		}
+		return stderr.String()
+	}
+	local := filepath.Join(root, ".omakiten")
+	if got := add(); !strings.Contains(got, local) || !strings.Contains(got, "--scope global") {
+		t.Fatalf("first local add stderr = %q, want a warning naming %s", got, local)
+	}
+	if got := add(); got != "" {
+		t.Fatalf("add into an existing local scope stderr = %q, want none", got)
+	}
+	if got := add("--scope", "global"); strings.Contains(got, "--scope global") {
+		t.Fatalf("explicit global add stderr = %q, want no local-scope warning", got)
+	}
+}
