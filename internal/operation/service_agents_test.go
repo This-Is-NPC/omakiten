@@ -1,0 +1,173 @@
+package operation
+
+import (
+	"context"
+	"errors"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	"omakiten/internal/agentlaunch"
+	"omakiten/internal/config"
+	"omakiten/internal/contract"
+	"omakiten/internal/domain"
+	"omakiten/internal/testfixtures/snapstore"
+)
+
+type agentFixtureSet struct {
+	ctx     context.Context
+	store   *snapstore.Store
+	service *Service
+	project domain.Project
+	task    domain.Task
+	opens   *int
+	fail    *bool
+}
+
+func agentArgs(values ...string) []domain.AgentArg {
+	out := make([]domain.AgentArg, len(values))
+	for i, v := range values {
+		out[i] = domain.AgentArg{Values: []string{v}}
+	}
+	return out
+}
+
+// newAgentSpawnFixture seeds a backlog task whose bucket declares a lead and
+// one member, with a fake launcher that counts opens and can fail them.
+func newAgentSpawnFixture(t *testing.T) agentFixtureSet {
+	t.Helper()
+	t.Setenv("OMAKITEN_HOME", t.TempDir())
+	ctx := context.Background()
+	bundle := agentTestBundle(t)
+	bundle.AgentAdapters = domain.AgentAdapters{
+		Defaults:  domain.AgentDefaults{Harness: "fake", Launcher: "fake"},
+		Harnesses: map[string]domain.HarnessSpec{"fake": {Argv: agentArgs("fake-agent", "{prompt}")}},
+		Launchers: map[string]domain.LauncherSpec{"fake": {Open: agentArgs("fake-term", "{command}"), Send: agentArgs("fake-term", "{pane}", "{text}")}},
+	}
+	for i := range bundle.Workflows[0].Buckets {
+		if bundle.Workflows[0].Buckets[i].Key == "backlog" {
+			bundle.Workflows[0].Buckets[i].Agents = &config.BucketAgentsConfig{
+				Trigger: domain.AgentTriggerManual,
+				Lead:    config.AgentRoleConfig{Command: "okt-start"},
+				Members: []config.AgentRoleConfig{{Key: "security", Command: "okt-start", Brief: "security only"}},
+			}
+		}
+	}
+	store := snapstore.Open(t, filepath.Join(t.TempDir(), "omakiten.db"))
+	if err := store.ImportBundle(ctx, bundle, "test.yaml", "hash"); err != nil {
+		t.Fatalf("ImportBundle() error = %v", err)
+	}
+	root := t.TempDir()
+	project, err := store.UpsertProject(ctx, "Agents", "agents", root)
+	if err != nil {
+		t.Fatalf("UpsertProject() error = %v", err)
+	}
+	task, err := store.CreateTask(ctx, project.ID, "Review me", "Needs a team", domain.Priority(2), "backlog", nil, store.Snapshot())
+	if err != nil {
+		t.Fatalf("CreateTask() error = %v", err)
+	}
+	svc := NewService(store, contract.ProjectSelector{CWD: root})
+	svc.SetSnapshot(store.Snapshot())
+	svc.SetSettings(ServiceSettings{RecentCommentLimit: 5, IncludeWorkflow: true, NextWorkLimit: 5, SimilarTaskLimit: 5})
+	opens, fail := 0, false
+	svc.SetAgentLauncher(agentlaunch.Launcher{
+		LookPath: func(name string) (string, error) { return "/bin/" + name, nil },
+		Run: func(_ context.Context, argv []string) ([]byte, error) {
+			if fail {
+				return nil, errors.New("no terminal")
+			}
+			opens++
+			return []byte("%" + string(rune('0'+opens))), nil
+		},
+	})
+	return agentFixtureSet{ctx: ctx, store: store, service: svc, project: project, task: task, opens: &opens, fail: &fail}
+}
+
+// TestSpawnAgentsOpensTheBucketTeamOnce verifies a spawn opens the bucket's
+// lead and members with prompts and events, and a repeat returns the team.
+func TestSpawnAgentsOpensTheBucketTeamOnce(t *testing.T) {
+	f := newAgentSpawnFixture(t)
+	resp, err := f.service.SpawnAgents(f.ctx, contract.SpawnAgentsInput{TaskID: f.task.ID})
+	if err != nil {
+		t.Fatalf("SpawnAgents() error = %v", err)
+	}
+	team := resp.Team
+	if team.Status != domain.TeamSpawned || team.Lead.Status != domain.SessionSpawned || len(team.Members) != 1 || team.Members[0].Status != domain.SessionSpawned {
+		t.Fatalf("team = %+v, want lead and member spawned", team)
+	}
+	assertPromptContains(t, team.Members[0].SessionID, "security only", "-T review-security", "okt team show "+team.TeamID)
+
+	again, err := f.service.SpawnAgents(f.ctx, contract.SpawnAgentsInput{TaskID: f.task.ID})
+	if err != nil || again.Team.Status != domain.TeamRunning || again.Team.TeamID != team.TeamID || *f.opens != 2 {
+		t.Fatalf("second spawn = %+v, %v (opens %d), want the running team and no new panes", again.Team, err, *f.opens)
+	}
+
+	shown, err := f.service.ShowTeam(f.ctx, contract.ShowTeamInput{TeamID: team.TeamID})
+	if err != nil || len(shown.Team.Sessions) != 2 || shown.Team.TaskID != f.task.ID {
+		t.Fatalf("ShowTeam() = %+v, %v", shown, err)
+	}
+	agent, err := f.service.ShowAgent(f.ctx, contract.ShowAgentInput{SessionID: team.Lead.SessionID})
+	if err != nil || agent.Session.Member != domain.AgentLeadKey || agent.Bucket != "backlog" {
+		t.Fatalf("ShowAgent() = %+v, %v", agent, err)
+	}
+	if started := countEvents(t, f, domain.EventTypeAgentSessionStarted); started != 2 {
+		t.Fatalf("recorded %d agent.session_started events, want 2", started)
+	}
+}
+
+// assertPromptContains reads a session's prompt file and checks each want.
+func assertPromptContains(t *testing.T, sessionID string, wants ...string) {
+	t.Helper()
+	prompt, err := os.ReadFile(filepath.Join(os.Getenv("OMAKITEN_HOME"), "state", "agents", sessionID+".md"))
+	if err != nil {
+		t.Fatalf("prompt of %s missing: %v", sessionID, err)
+	}
+	for _, want := range wants {
+		if !strings.Contains(string(prompt), want) {
+			t.Fatalf("prompt of %s lacks %q:\n%s", sessionID, want, prompt)
+		}
+	}
+}
+
+func countEvents(t *testing.T, f agentFixtureSet, eventType string) int {
+	t.Helper()
+	events, err := f.store.ListEvents(f.ctx, domain.EventFilter{ProjectID: f.project.ID})
+	if err != nil {
+		t.Fatalf("ListEvents() error = %v", err)
+	}
+	n := 0
+	for _, event := range events {
+		if event.EventType == eventType {
+			n++
+		}
+	}
+	return n
+}
+
+// TestSpawnAgentsFailedLeadFreesTheTask verifies a lead that cannot open
+// fails the spawn and leaves the task free for the next attempt.
+func TestSpawnAgentsFailedLeadFreesTheTask(t *testing.T) {
+	f := newAgentSpawnFixture(t)
+	*f.fail = true
+	_, err := f.service.SpawnAgents(f.ctx, contract.SpawnAgentsInput{TaskID: f.task.ID, Command: "okt-start"})
+	var coded *domain.CodedError
+	if !errors.As(err, &coded) || coded.Code != domain.ErrAgentSpawnFailed {
+		t.Fatalf("SpawnAgents() error = %v, want agent_spawn_failed", err)
+	}
+	*f.fail = false
+	resp, err := f.service.SpawnAgents(f.ctx, contract.SpawnAgentsInput{TaskID: f.task.ID, Command: "okt-start"})
+	if err != nil || resp.Team.Status != domain.TeamSpawned || len(resp.Team.Members) != 0 {
+		t.Fatalf("retry = %+v, %v, want a team of one spawned", resp.Team, err)
+	}
+}
+
+// TestSpawnAgentsBlockedStoreOpensNothing verifies an uninheritable store
+// stops a spawn before any pane opens.
+func TestSpawnAgentsBlockedStoreOpensNothing(t *testing.T) {
+	f := newAgentSpawnFixture(t)
+	f.service.BlockAgentSpawn("use OMAKITEN_HOME")
+	if _, err := f.service.SpawnAgents(f.ctx, contract.SpawnAgentsInput{TaskID: f.task.ID}); err == nil || *f.opens != 0 {
+		t.Fatalf("blocked spawn error = %v, opens %d; want a failure and no panes", err, *f.opens)
+	}
+}

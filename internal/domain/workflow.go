@@ -66,6 +66,7 @@ type Bucket struct {
 	Name        string             `json:"name"`
 	Position    int                `json:"position"`
 	Permissions *BucketPermissions `json:"permissions,omitempty"`
+	Agents      *BucketAgents      `json:"agents,omitempty"`
 }
 
 // BucketPermissions wires task/comment CRUD policy at the bucket level.

@@ -76,6 +76,7 @@ func toDomainWorkflow(wf Workflow) domain.Workflow {
 			Name:        b.Name,
 			Position:    b.Position,
 			Permissions: toDomainBucketPerms(b.Permissions),
+			Agents:      toDomainBucketAgents(b.Agents),
 		})
 	}
 
@@ -255,6 +256,8 @@ type Snapshot struct {
 	themeErr        error
 
 	warnings []SourceWarning
+
+	agentAdapters domain.AgentAdapters
 }
 
 // BuildSnapshot inflates a Bundle into the immutable Snapshot. Construct
@@ -277,6 +280,7 @@ func newSnapshot(bundle Bundle) *Snapshot {
 	return &Snapshot{
 		kit:                bundle.Kit,
 		subtaskKitPath:     bundle.SubtaskKit,
+		agentAdapters:      bundle.AgentAdapters,
 		bucketByID:         map[int64]domain.Bucket{},
 		bucketByKey:        map[string]domain.Bucket{},
 		transitionsByPair:  map[transitionKey]transitionEntry{},
@@ -737,6 +741,14 @@ func (s *Snapshot) Catalog(surface Surface) *Catalog {
 // not the discovered catalog.
 func (s *Snapshot) AgentOutputLanguage() string {
 	return s.agentOutputLang
+}
+
+// AgentAdapters returns the effective agent adapters, defaults, and limits.
+func (s *Snapshot) AgentAdapters() domain.AgentAdapters {
+	if s == nil {
+		return domain.AgentAdapters{}
+	}
+	return s.agentAdapters
 }
 
 // ResolveGuardHint expands `${{intl:KEY}}` tokens inside a guard hint

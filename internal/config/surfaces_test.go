@@ -128,8 +128,8 @@ func TestCanonicalSurfaceCensusIsClosed(t *testing.T) {
 			t.Fatalf("slug %q: unknown kind %q", e.Slug, e.Kind)
 		}
 	}
-	if product != 70 || destructive != 2 || wiring != 9 {
-		t.Fatalf("census split product=%d destructive=%d wiring=%d, want 70/2/9", product, destructive, wiring)
+	if product != 73 || destructive != 2 || wiring != 9 {
+		t.Fatalf("census split product=%d destructive=%d wiring=%d, want 73/2/9", product, destructive, wiring)
 	}
 }
 

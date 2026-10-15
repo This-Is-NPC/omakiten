@@ -34,7 +34,8 @@ func (s LanguageSettings) Effective() LanguageSettings {
 
 // Preferences contains user-wide Omakiten settings independent of workflows.
 type Preferences struct {
-	Languages LanguageSettings `yaml:"languages"`
+	Languages LanguageSettings  `yaml:"languages"`
+	Agents    *AgentPreferences `yaml:"agents,omitempty"`
 }
 
 // PreferencesPath locates application preferences under the user's config root.
@@ -73,7 +74,16 @@ func ValidatePreferences(p Preferences) error {
 	if bundledLanguageError != nil {
 		return bundledLanguageError
 	}
-	return validateLanguageSettings(p.Languages, bundledLanguages)
+	if err := validateLanguageSettings(p.Languages, bundledLanguages); err != nil {
+		return err
+	}
+	if p.Agents == nil {
+		return nil
+	}
+	if p.Agents.MaxSessions < 0 || p.Agents.MaxMembers < 0 {
+		return fmt.Errorf("agents.max_sessions and agents.max_members must be >= 1 when set")
+	}
+	return validateAgentAdapters("agents", p.Agents.AgentsSettings)
 }
 
 // SavePreferences validates and atomically publishes application preferences.

@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 
+	"omakiten/internal/agentlaunch"
 	"omakiten/internal/app"
 	"omakiten/internal/config"
 	"omakiten/internal/contract"
@@ -79,6 +80,7 @@ type Repository interface {
 	app.OrphanRepository
 	app.SearchRepository
 	app.PlanRepository
+	app.AgentRepository
 }
 
 // TaskTemplateLookup returns the active task template scaffold to embed in
@@ -96,6 +98,8 @@ type TemplateCatalog func() []contract.TemplateSummary
 
 type Service struct {
 	repo               Repository
+	launcher           AgentLauncher
+	spawnBlocked       string
 	selector           contract.ProjectSelector
 	taskTemplateLookup TaskTemplateLookup
 	templateCatalog    TemplateCatalog
@@ -164,6 +168,7 @@ type entityRepos struct {
 func NewService(repo Repository, selector contract.ProjectSelector) *Service {
 	return &Service{
 		repo:     repo,
+		launcher: agentlaunch.New(),
 		selector: selector,
 		now:      time.Now,
 		// settings are zero-valued; SetSettings wires the actual knobs.

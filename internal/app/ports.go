@@ -228,6 +228,20 @@ type TagRepository interface {
 	ListErrorTags(ctx context.Context, errorID int64) ([]domain.Tag, error)
 }
 
+// AgentRepository stores agent teams and their sessions. At most one team
+// per task and bucket is active.
+type AgentRepository interface {
+	OpenAgentTeam(ctx context.Context, team domain.AgentTeam) (domain.AgentTeam, bool, error)
+	FailAgentTeam(ctx context.Context, teamID string) error
+	AddAgentSession(ctx context.Context, session domain.AgentSession) error
+	FinishAgentSession(ctx context.Context, sessionID string) (bool, error)
+	GetAgentTeam(ctx context.Context, teamID string) (domain.AgentTeam, error)
+	GetAgentSession(ctx context.Context, sessionID string) (domain.AgentSession, error)
+	ActiveAgentTeamIDs(ctx context.Context, projectID, taskID int64) ([]string, error)
+	CountSpawnedAgentSessions(ctx context.Context, projectID int64) (int, error)
+	LastAgentActivity(ctx context.Context, sessionID string) (domain.EventRow, error)
+}
+
 type ErrorRepository interface {
 	RecordError(ctx context.Context, projectID int64, description, context string, tags []domain.Tag) (domain.ErrorRecord, error)
 	AddSolution(ctx context.Context, errorID int64, description, steps string, taskID *int64) (domain.Solution, error)

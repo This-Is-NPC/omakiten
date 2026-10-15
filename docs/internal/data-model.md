@@ -72,6 +72,18 @@ in the business tables.
 Import writes both in one transaction. Export combines the current business
 state with retained metadata under one consistent read snapshot.
 
+## Agent teams
+
+`agent_teams` records the agents opened for one task in one bucket. A partial
+unique index keeps at most one `active` team per project, task, and bucket; a
+team whose lead could not open is `failed` and frees that slot. Task deletion
+cascades teams.
+
+`agent_sessions` holds one row per team seat: its member key (`lead` or a
+declared key), command, persona, the resolved harness, model, and launcher,
+the pane id, and `spawned`, `failed`, or `done`. A session's own `okt` calls
+carry its id in `events.agent_session_id`, indexed for per-session reads.
+
 ## Search and recovery
 
 `search_index` is an FTS5 virtual table populated from canonical operational
@@ -81,8 +93,9 @@ post-checks in one transaction. Readers do not see an empty intermediate index.
 
 SQLite enables foreign keys and uses WAL. A live snapshot includes committed
 WAL data. Filesystem-backed opens validate paths and file identity before
-schema or WAL mutation. Supported schema changes are applied transactionally;
-an unsupported database returns a validation error.
+schema or WAL mutation. `PRAGMA user_version` names the schema version. A
+database that exactly matches an earlier version receives every later step in
+one transaction; an unsupported database returns a validation error.
 
 [Backup and recovery](../how-to-back-up-and-recover.md) explains using the
 snapshot commands. [Design](design.md) explains transaction and adapter ownership.

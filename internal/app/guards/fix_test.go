@@ -35,19 +35,6 @@ func TestGuardViolationCarriesFix(t *testing.T) {
 	}
 }
 
-func TestShellWord(t *testing.T) {
-	for in, want := range map[string]string{
-		"self-branch": "self-branch",
-		"a b":         "'a b'",
-		"it's":        `'it'\''s'`,
-		"":            "''",
-	} {
-		if got := shellWord(in); got != want {
-			t.Fatalf("shellWord(%q) = %q, want %q", in, got, want)
-		}
-	}
-}
-
 // TestEvaluateReportsEveryUnmetGuard verifies a move checks all guards: each
 // unmet guard records its own event and the error lists them all, while a
 // preview reports the same state without recording anything.

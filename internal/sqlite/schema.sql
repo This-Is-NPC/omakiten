@@ -1,4 +1,4 @@
-PRAGMA user_version = 2;
+PRAGMA user_version = 3;
 
 CREATE TABLE projects (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -367,3 +367,34 @@ CREATE TABLE document_metadata (
   metadata TEXT NOT NULL,
   CHECK ((task_id IS NULL) != (plan_id IS NULL))
 );
+
+CREATE TABLE agent_teams (
+  id TEXT PRIMARY KEY,
+  project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  task_id INTEGER NOT NULL,
+  bucket_key TEXT NOT NULL,
+  status TEXT NOT NULL CHECK (status IN ('active', 'failed')),
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (project_id, task_id) REFERENCES tasks(project_id, id) ON DELETE CASCADE
+);
+
+CREATE UNIQUE INDEX idx_agent_teams_active ON agent_teams(project_id, task_id, bucket_key) WHERE status = 'active';
+
+CREATE TABLE agent_sessions (
+  id TEXT PRIMARY KEY,
+  team_id TEXT NOT NULL REFERENCES agent_teams(id) ON DELETE CASCADE,
+  member TEXT NOT NULL,
+  command TEXT NOT NULL,
+  persona TEXT NOT NULL DEFAULT '',
+  harness TEXT NOT NULL,
+  model TEXT NOT NULL DEFAULT '',
+  launcher TEXT NOT NULL,
+  pane TEXT NOT NULL DEFAULT '',
+  status TEXT NOT NULL CHECK (status IN ('spawned', 'failed', 'done')),
+  error TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  finished_at TEXT,
+  UNIQUE (team_id, member)
+);
+
+CREATE INDEX idx_events_agent_session ON events(agent_session_id, id) WHERE agent_session_id IS NOT NULL;

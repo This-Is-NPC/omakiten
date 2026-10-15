@@ -4,6 +4,8 @@ import (
 	"fmt"
 
 	"gopkg.in/yaml.v3"
+
+	"omakiten/internal/domain"
 )
 
 // Bundle is the in-memory representation of an omakiten config directory.
@@ -12,15 +14,18 @@ import (
 // authoring content. The loader merges them into Bundle; the saver splits them
 // back out.
 type Bundle struct {
-	Version       int            `yaml:"version" json:"version"`
-	Kit           Kit            `yaml:"kit" json:"kit"`
-	Config        Settings       `yaml:"config" json:"config"`
-	SubtaskKit    string         `yaml:"-" json:"subtask_kit,omitempty"`
-	SubtaskBundle *Bundle        `yaml:"-" json:"subtask_bundle,omitempty"`
-	Skills        []Skill        `yaml:"-" json:"skills,omitempty"`
-	Personas      []Persona      `yaml:"-" json:"personas,omitempty"`
-	Laws          []Law          `yaml:"-" json:"laws,omitempty"`
-	Templates     []TaskTemplate `yaml:"-" json:"templates,omitempty"`
+	Version       int      `yaml:"version" json:"version"`
+	Kit           Kit      `yaml:"kit" json:"kit"`
+	Config        Settings `yaml:"config" json:"config"`
+	SubtaskKit    string   `yaml:"-" json:"subtask_kit,omitempty"`
+	SubtaskBundle *Bundle  `yaml:"-" json:"subtask_bundle,omitempty"`
+	// AgentAdapters is the effective agent configuration: Omakiten defaults,
+	// then preferences, then this bundle's config.agents.
+	AgentAdapters domain.AgentAdapters `yaml:"-" json:"-"`
+	Skills        []Skill              `yaml:"-" json:"skills,omitempty"`
+	Personas      []Persona            `yaml:"-" json:"personas,omitempty"`
+	Laws          []Law                `yaml:"-" json:"laws,omitempty"`
+	Templates     []TaskTemplate       `yaml:"-" json:"templates,omitempty"`
 	// All* hold the full on-disk catalog (every preset's entity files),
 	// each entry stamped with Active=true when wired into this bundle.
 	// Runtime resolution uses the picked Skills/Personas/Laws/Templates
@@ -184,6 +189,9 @@ type Settings struct {
 	// frontmatter parsers resolve labels via lookup, renamer edits a
 	// single line in YAML. Required — see Priorities.
 	Severities []SeverityDefinition `yaml:"severities,omitempty" json:"severities,omitempty"`
+	// Agents declares agent adapters and defaults that override the user's
+	// preferences for this workflow.
+	Agents *AgentsSettings `yaml:"agents,omitempty" json:"agents,omitempty"`
 }
 
 // SeverityDefinition is one row of the configurable law-severity table.
@@ -773,6 +781,8 @@ type Bucket struct {
 	Name        string             `yaml:"name" json:"name"`
 	Position    int                `yaml:"position" json:"position"`
 	Permissions *BucketPermissions `yaml:"permissions,omitempty" json:"permissions,omitempty"`
+	// Agents is the team a task entering this bucket opens.
+	Agents *BucketAgentsConfig `yaml:"agents,omitempty" json:"agents,omitempty"`
 }
 
 // BucketPermissions wires task/comment CRUD policy per bucket. nil pointers

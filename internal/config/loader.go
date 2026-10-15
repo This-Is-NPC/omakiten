@@ -182,6 +182,15 @@ func finishBundleLoad(path, rootDir string, wired wiring, importSources []string
 	if err != nil {
 		return Bundle{}, err
 	}
+	if wired.Config.Agents != nil {
+		if err := validateAgentAdapters("config.agents", *wired.Config.Agents); err != nil {
+			return Bundle{}, err
+		}
+	}
+	adapters, err := mergeAgentAdapters(preferences.Agents, wired.Config.Agents)
+	if err != nil {
+		return Bundle{}, err
+	}
 	bundle := Bundle{
 		Version:          wired.Version,
 		Kit:              wired.Kit,
@@ -192,6 +201,7 @@ func finishBundleLoad(path, rootDir string, wired wiring, importSources []string
 		Notifications:    entities.notifications,
 		Languages:        entities.languages,
 		LanguageSettings: preferences.Languages,
+		AgentAdapters:    adapters,
 		ActiveTheme:      theme,
 		ActiveThemePath:  themePath,
 		ActiveThemeErr:   themeErr,

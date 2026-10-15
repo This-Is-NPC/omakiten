@@ -1,3 +1,5 @@
+agent.spawn product
+agent.show product
 command.list product
 command.resolve product
 comment.add product
@@ -67,6 +69,7 @@ task.show product
 task.transition product
 task.unarchive product
 task_activity.list product
+team.show product
 template.list product
 template.show product
 workflow.show product

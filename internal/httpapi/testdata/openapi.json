@@ -264,6 +264,26 @@
         ],
         "type": "object"
       },
+      "contract.AgentActivity": {
+        "properties": {
+          "created_at": {
+            "type": "string"
+          },
+          "event_id": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "event_type": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "created_at",
+          "event_id",
+          "event_type"
+        ],
+        "type": "object"
+      },
       "contract.AllTagsResponse": {
         "properties": {
           "tags": {
@@ -2197,6 +2217,40 @@
         ],
         "type": "object"
       },
+      "contract.ShowAgentResponse": {
+        "properties": {
+          "bucket": {
+            "type": "string"
+          },
+          "follow": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "last_activity": {
+            "$ref": "#/components/schemas/contract.AgentActivity"
+          },
+          "project": {
+            "$ref": "#/components/schemas/contract.ProjectSummary"
+          },
+          "session": {
+            "$ref": "#/components/schemas/domain.AgentSession"
+          },
+          "task_id": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "bucket",
+          "follow",
+          "project",
+          "session",
+          "task_id"
+        ],
+        "type": "object"
+      },
       "contract.ShowLawResponse": {
         "properties": {
           "law": {
@@ -2295,6 +2349,35 @@
         "required": [
           "project",
           "task"
+        ],
+        "type": "object"
+      },
+      "contract.ShowTeamResponse": {
+        "properties": {
+          "follow": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "project": {
+            "$ref": "#/components/schemas/contract.ProjectSummary"
+          },
+          "results": {
+            "items": {
+              "$ref": "#/components/schemas/contract.TeamResult"
+            },
+            "type": "array"
+          },
+          "team": {
+            "$ref": "#/components/schemas/domain.AgentTeam"
+          }
+        },
+        "required": [
+          "follow",
+          "project",
+          "results",
+          "team"
         ],
         "type": "object"
       },
@@ -2420,6 +2503,21 @@
           "error_id",
           "id",
           "likes"
+        ],
+        "type": "object"
+      },
+      "contract.SpawnAgentsResponse": {
+        "properties": {
+          "project": {
+            "$ref": "#/components/schemas/contract.ProjectSummary"
+          },
+          "team": {
+            "$ref": "#/components/schemas/domain.TeamOutcome"
+          }
+        },
+        "required": [
+          "project",
+          "team"
         ],
         "type": "object"
       },
@@ -2558,6 +2656,26 @@
         "required": [
           "body",
           "slug"
+        ],
+        "type": "object"
+      },
+      "contract.TeamResult": {
+        "properties": {
+          "comment_id": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "created_at": {
+            "type": "string"
+          },
+          "member": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "comment_id",
+          "created_at",
+          "member"
         ],
         "type": "object"
       },
@@ -2741,6 +2859,38 @@
         ],
         "type": "object"
       },
+      "domain.AgentError": {
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "message"
+        ],
+        "type": "object"
+      },
+      "domain.AgentFallback": {
+        "properties": {
+          "harness": {
+            "type": "string"
+          },
+          "launcher": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "reason"
+        ],
+        "type": "object"
+      },
       "domain.AgentMetrics": {
         "properties": {
           "agent_model": {
@@ -2770,6 +2920,99 @@
           "like_rate",
           "search_before_record_ratio",
           "session_correlated_sample"
+        ],
+        "type": "object"
+      },
+      "domain.AgentSession": {
+        "properties": {
+          "command": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string"
+          },
+          "error": {
+            "type": "string"
+          },
+          "finished_at": {
+            "type": "string"
+          },
+          "harness": {
+            "type": "string"
+          },
+          "launcher": {
+            "type": "string"
+          },
+          "member": {
+            "type": "string"
+          },
+          "model": {
+            "type": "string"
+          },
+          "pane": {
+            "type": "string"
+          },
+          "persona": {
+            "type": "string"
+          },
+          "session_id": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "team_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "command",
+          "created_at",
+          "harness",
+          "launcher",
+          "member",
+          "session_id",
+          "status",
+          "team_id"
+        ],
+        "type": "object"
+      },
+      "domain.AgentTeam": {
+        "properties": {
+          "bucket": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string"
+          },
+          "project_id": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "sessions": {
+            "items": {
+              "$ref": "#/components/schemas/domain.AgentSession"
+            },
+            "type": "array"
+          },
+          "status": {
+            "type": "string"
+          },
+          "task_id": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "team_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "bucket",
+          "created_at",
+          "project_id",
+          "status",
+          "task_id",
+          "team_id"
         ],
         "type": "object"
       },
@@ -3001,6 +3244,49 @@
         "required": [
           "relations",
           "resources"
+        ],
+        "type": "object"
+      },
+      "domain.MemberOutcome": {
+        "properties": {
+          "command": {
+            "type": "string"
+          },
+          "error": {
+            "$ref": "#/components/schemas/domain.AgentError"
+          },
+          "fallback": {
+            "$ref": "#/components/schemas/domain.AgentFallback"
+          },
+          "harness": {
+            "type": "string"
+          },
+          "key": {
+            "type": "string"
+          },
+          "launcher": {
+            "type": "string"
+          },
+          "model": {
+            "type": "string"
+          },
+          "pane": {
+            "type": "string"
+          },
+          "persona": {
+            "type": "string"
+          },
+          "session_id": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "command",
+          "key",
+          "status"
         ],
         "type": "object"
       },
@@ -3251,6 +3537,51 @@
           "days_stuck",
           "task_id",
           "title"
+        ],
+        "type": "object"
+      },
+      "domain.TeamOutcome": {
+        "properties": {
+          "bucket": {
+            "type": "string"
+          },
+          "error": {
+            "$ref": "#/components/schemas/domain.AgentError"
+          },
+          "follow": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "lead": {
+            "$ref": "#/components/schemas/domain.MemberOutcome"
+          },
+          "members": {
+            "items": {
+              "$ref": "#/components/schemas/domain.MemberOutcome"
+            },
+            "type": "array"
+          },
+          "spawn": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "task_id": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "team_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "bucket",
+          "lead",
+          "status",
+          "task_id"
         ],
         "type": "object"
       },
@@ -3683,6 +4014,23 @@
         "required": [
           "description"
         ],
+        "type": "object"
+      },
+      "httpapi.SpawnBody": {
+        "properties": {
+          "command": {
+            "type": "string"
+          },
+          "harness": {
+            "type": "string"
+          },
+          "launcher": {
+            "type": "string"
+          },
+          "model": {
+            "type": "string"
+          }
+        },
         "type": "object"
       },
       "httpapi.StudioBucket": {
@@ -4458,6 +4806,67 @@
         },
         "summary": "Change a project's description.",
         "x-okt-surface": "project.edit"
+      }
+    },
+    "/api/v1/projects/{project}/agents/{session}": {
+      "get": {
+        "operationId": "getAgent",
+        "parameters": [
+          {
+            "description": "Project slug.",
+            "in": "path",
+            "name": "project",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Agent session id.",
+            "in": "path",
+            "name": "session",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/contract.ShowAgentResponse"
+                    },
+                    "ok": {
+                      "const": true
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success."
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/output.Envelope"
+                }
+              }
+            },
+            "description": "Error envelope."
+          }
+        },
+        "summary": "An agent session and its last activity.",
+        "x-okt-surface": "agent.show"
       }
     },
     "/api/v1/projects/{project}/board": {
@@ -7553,6 +7962,79 @@
         "x-okt-surface": "task_activity.list"
       }
     },
+    "/api/v1/projects/{project}/tasks/{task}/agents": {
+      "post": {
+        "operationId": "spawnAgents",
+        "parameters": [
+          {
+            "description": "Project slug.",
+            "in": "path",
+            "name": "project",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Task id.",
+            "in": "path",
+            "name": "task",
+            "required": true,
+            "schema": {
+              "format": "int64",
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/httpapi.SpawnBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/contract.SpawnAgentsResponse"
+                    },
+                    "ok": {
+                      "const": true
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success."
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/output.Envelope"
+                }
+              }
+            },
+            "description": "Error envelope."
+          }
+        },
+        "summary": "Open the bucket's agent team, or one agent running a command, for a task.",
+        "x-okt-surface": "agent.spawn"
+      }
+    },
     "/api/v1/projects/{project}/tasks/{task}/archive": {
       "post": {
         "operationId": "archiveTask",
@@ -8384,6 +8866,67 @@
         },
         "summary": "Restore an archived task.",
         "x-okt-surface": "task.unarchive"
+      }
+    },
+    "/api/v1/projects/{project}/teams/{team}": {
+      "get": {
+        "operationId": "getTeam",
+        "parameters": [
+          {
+            "description": "Project slug.",
+            "in": "path",
+            "name": "project",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Agent team id.",
+            "in": "path",
+            "name": "team",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/contract.ShowTeamResponse"
+                    },
+                    "ok": {
+                      "const": true
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success."
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/output.Envelope"
+                }
+              }
+            },
+            "description": "Error envelope."
+          }
+        },
+        "summary": "An agent team, its sessions, and the results they published.",
+        "x-okt-surface": "team.show"
       }
     },
     "/api/v1/projects/{project}/templates": {

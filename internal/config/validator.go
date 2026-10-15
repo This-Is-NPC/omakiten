@@ -218,6 +218,9 @@ func validateBundleSettings(bundle Bundle) error {
 	if err := validateAgentSettings(bundle.Config.Agent); err != nil {
 		return err
 	}
+	if err := validateBucketAgents(bundle); err != nil {
+		return err
+	}
 	if err := validateTUISettings(bundle.Config.TUI); err != nil {
 		return err
 	}

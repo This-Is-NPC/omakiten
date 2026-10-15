@@ -8,6 +8,8 @@
 # Wiring rows: all false + reason token.
 # Tokens are stored as-is; the catalog resolves them at display time.
 
+agent.spawn: { cli: true, tui: true, http: true }
+agent.show: { cli: true, tui: true, http: true }
 command.list: { cli: true, tui: true, http: true }
 command.resolve: { cli: true, tui: true, http: true }
 comment.add: { cli: true, tui: true, http: true }
@@ -77,6 +79,7 @@ task.show: { cli: true, tui: true, http: true }
 task.transition: { cli: true, tui: true, http: true }
 task.unarchive: { cli: true, tui: true, http: true }
 task_activity.list: { cli: true, tui: true, http: true }
+team.show: { cli: true, tui: true, http: true }
 template.list: { cli: true, tui: true, http: true }
 template.show: { cli: true, tui: true, http: true }
 workflow.show: { cli: true, tui: true, http: true }

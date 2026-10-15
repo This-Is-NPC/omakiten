@@ -154,7 +154,7 @@ func seedExactV030DatabaseForCLI(t *testing.T, path string) {
 		t.Fatalf("sql.Open(): %v", err)
 	}
 	defer func() { _ = db.Close() }()
-	if _, err := db.Exec(`DROP TABLE document_metadata; PRAGMA user_version = 0`); err != nil {
+	if _, err := db.Exec(`DROP TABLE agent_sessions; DROP TABLE agent_teams; DROP INDEX idx_events_agent_session; DROP TABLE document_metadata; PRAGMA user_version = 0`); err != nil {
 		t.Fatalf("user_version: %v", err)
 	}
 	if _, err := db.Exec(`CREATE TABLE schema_migrations (

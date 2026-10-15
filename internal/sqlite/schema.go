@@ -193,11 +193,8 @@ func bridgeV030ReleaseDatabaseWithHooks(ctx context.Context, db *sql.DB, hooks v
 	if _, err := conn.ExecContext(ctx, "DROP TABLE schema_migrations"); err != nil {
 		return fmt.Errorf("remove v0.30.0 migration marker: %w", err)
 	}
-	if _, err := conn.ExecContext(ctx, documentMetadataSQL()); err != nil {
+	if err := applySchemaSteps(ctx, conn, 1); err != nil {
 		return err
-	}
-	if _, err := conn.ExecContext(ctx, "PRAGMA user_version = 2"); err != nil {
-		return fmt.Errorf("set current schema marker: %w", err)
 	}
 	if err := verifyCurrentOmakitenSchema(ctx, conn); err != nil {
 		return fmt.Errorf("verify v0.30.0 bridge before commit: %w", err)
@@ -486,10 +483,7 @@ func releaseSchemaSemanticFingerprint(ctx context.Context) (string, error) {
 	}
 	defer func() { _ = db.Close() }()
 	db.SetMaxOpenConns(1)
-	if _, err := db.ExecContext(ctx, schemaSQL); err != nil {
-		return "", err
-	}
-	if _, err := db.ExecContext(ctx, "DROP TABLE document_metadata"); err != nil {
+	if _, err := db.ExecContext(ctx, schemaThrough(1)); err != nil {
 		return "", err
 	}
 	return semanticSchemaFingerprint(ctx, db)
