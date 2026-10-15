@@ -29,7 +29,11 @@ func (s *Service) ContinueTask(ctx context.Context, input contract.ContinueTaskI
 	}
 	var workflowSum contract.WorkflowSummary
 	if includeWorkflow {
-		workflowSum = workflowSummary(s.snapshot.For(detail.task).Workflow())
+		guards, err := app.NewTaskServiceFromStore(s.repo, s.registry, s.snapshot).OutgoingGuards(ctx, detail.project, detail.task)
+		if err != nil {
+			return contract.ContinueTaskResponse{}, err
+		}
+		workflowSum = withOutgoingGuards(workflowSummary(s.snapshot.For(detail.task).Workflow()), detail.task.BucketKey, guards)
 	}
 
 	var agentOutputLang string
@@ -291,7 +295,16 @@ func (s *Service) MoveTask(ctx context.Context, input contract.MoveTaskInput) (c
 	if err != nil {
 		return contract.MoveTaskResponse{}, err
 	}
-	task, err := app.NewTaskServiceFromStore(s.repo, s.registry, s.snapshot).Move(ctx, project, input.TaskID, input.BucketKey)
+	tasks := app.NewTaskServiceFromStore(s.repo, s.registry, s.snapshot)
+	if input.DryRun {
+		task, statuses, err := tasks.PreviewMove(ctx, project, input.TaskID, input.BucketKey)
+		if err != nil {
+			return contract.MoveTaskResponse{}, err
+		}
+		ready := guardsSatisfied(statuses)
+		return contract.MoveTaskResponse{Project: projectSummary(project), Task: taskSummary(task, s.registry), DryRun: true, Ready: &ready, Guards: statuses}, nil
+	}
+	task, err := tasks.Move(ctx, project, input.TaskID, input.BucketKey)
 	if err != nil {
 		return contract.MoveTaskResponse{}, err
 	}

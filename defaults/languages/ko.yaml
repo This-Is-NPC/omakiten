@@ -256,6 +256,7 @@ keys:
   cli.task.list.flag.bucket: "bucket 키"
   cli.task.list.flag.parent: "선택 parent 필터; 생략 시 필터 없음, 0 은 roots 만 (parent_id IS NULL), 양수 id 는 해당 parent 의 직접 자식"
   cli.task.move.flag.to: "대상 bucket 키"
+  cli.task.move.flag.dry-run: "이동하거나 이벤트를 기록하지 않고 move가 마주할 guard를 표시"
   cli.task.delete.flag.confirm: "필수: 파괴적 삭제 확인"
   cli.comment.add.flag.body: "댓글 본문"
   cli.comment.add.flag.author: "작성자 유형: human 또는 agent"

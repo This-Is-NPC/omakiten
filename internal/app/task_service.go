@@ -187,6 +187,21 @@ func (s *TaskService) Move(ctx context.Context, project domain.ProjectContext, t
 	return s.workflow.MoveTask(ctx, project, taskID, targetBucketKey)
 }
 
+// PreviewMove reports the guards a move would face without moving the task.
+func (s *TaskService) PreviewMove(ctx context.Context, project domain.ProjectContext, taskID int64, targetBucketKey string) (domain.Task, []domain.GuardStatus, error) {
+	task, statuses, err := s.workflow.PreviewMove(ctx, project, taskID, targetBucketKey)
+	if err != nil {
+		return domain.Task{}, nil, err
+	}
+	return s.withResolvedBucketKey(task), statuses, nil
+}
+
+// OutgoingGuards reports the guard state of every transition leaving the
+// task's current bucket, keyed by destination bucket key.
+func (s *TaskService) OutgoingGuards(ctx context.Context, project domain.ProjectContext, task domain.Task) (map[string][]domain.GuardStatus, error) {
+	return s.workflow.OutgoingGuards(ctx, project, task)
+}
+
 func (s *TaskService) Edit(ctx context.Context, project domain.ProjectContext, taskID int64, update domain.TaskUpdate) (task domain.Task, err error) {
 	finish := activity.Track(ctx, "app.TaskService.Edit", project, map[string]any{"task_id": taskID})
 	defer func() {

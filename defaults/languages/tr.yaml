@@ -258,6 +258,7 @@ keys:
   cli.task.list.flag.bucket: "bucket key"
   cli.task.list.flag.parent: "isteğe bağlı parent filtresi; filtre yok için atla, 0 yalnızca roots (parent_id IS NULL), pozitif id o parent'ın doğrudan çocukları"
   cli.task.move.flag.to: "hedef bucket key"
+  cli.task.move.flag.dry-run: "taşımadan ve olay kaydetmeden move işleminin karşılaşacağı guard'ları göster"
   cli.task.delete.flag.confirm: "gerekli: yıkıcı silmeyi onayla"
   cli.comment.add.flag.body: "comment gövdesi"
   cli.comment.add.flag.author: "yazar tipi: human veya agent"

@@ -2,6 +2,8 @@ package contract
 
 import (
 	"encoding/json"
+
+	"omakiten/internal/domain"
 )
 
 // OptionalInt64 is a tri-state JSON input value for an integer field.
@@ -146,11 +148,19 @@ type MoveTaskInput struct {
 	ProjectSelector
 	TaskID    int64  `json:"task_id"`
 	BucketKey string `json:"bucket_key"`
+	// DryRun reports the guards the move would face without moving the
+	// task or recording events.
+	DryRun bool `json:"dry_run,omitempty"`
 }
 
+// MoveTaskResponse carries the moved task, or on a dry run the unchanged
+// task with Ready and the state of every guard on the transition.
 type MoveTaskResponse struct {
-	Project ProjectSummary `json:"project"`
-	Task    TaskSummary    `json:"task"`
+	Project ProjectSummary       `json:"project"`
+	Task    TaskSummary          `json:"task"`
+	DryRun  bool                 `json:"dry_run,omitempty"`
+	Ready   *bool                `json:"ready,omitempty"`
+	Guards  []domain.GuardStatus `json:"guards,omitempty"`
 }
 
 type DeleteTaskInput struct {

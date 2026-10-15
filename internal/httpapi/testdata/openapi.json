@@ -1535,8 +1535,20 @@
       },
       "contract.MoveTaskResponse": {
         "properties": {
+          "dry_run": {
+            "type": "boolean"
+          },
+          "guards": {
+            "items": {
+              "$ref": "#/components/schemas/domain.GuardStatus"
+            },
+            "type": "array"
+          },
           "project": {
             "$ref": "#/components/schemas/contract.ProjectSummary"
+          },
+          "ready": {
+            "type": "boolean"
           },
           "task": {
             "$ref": "#/components/schemas/contract.TaskSummary"
@@ -2630,6 +2642,15 @@
           "from": {
             "type": "string"
           },
+          "guards": {
+            "items": {
+              "$ref": "#/components/schemas/domain.GuardStatus"
+            },
+            "type": "array"
+          },
+          "ready": {
+            "type": "boolean"
+          },
           "to": {
             "type": "string"
           }
@@ -2858,6 +2879,31 @@
         "required": [
           "has_data",
           "hotspots"
+        ],
+        "type": "object"
+      },
+      "domain.GuardStatus": {
+        "properties": {
+          "details": {
+            "additionalProperties": {},
+            "type": "object"
+          },
+          "fix": {
+            "type": "string"
+          },
+          "hint": {
+            "type": "string"
+          },
+          "satisfied": {
+            "type": "boolean"
+          },
+          "type": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "satisfied",
+          "type"
         ],
         "type": "object"
       },

@@ -10,9 +10,10 @@ import (
 
 func newMoveCommand(opts *runtimeOptions) *cobra.Command {
 	var to string
+	var dryRun bool
 
 	cmd := &cobra.Command{
-		Use:   "move TASK_ID --to BUCKET",
+		Use:   "move TASK_ID --to BUCKET [--dry-run]",
 		Short: opts.t("cli.task.move.short"),
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -32,12 +33,14 @@ func newMoveCommand(opts *runtimeOptions) *cobra.Command {
 					ProjectSelector: opts.projectSelector(),
 					TaskID:          taskID,
 					BucketKey:       to,
+					DryRun:          dryRun,
 				})
 			})
 		},
 	}
 
 	cmd.Flags().StringVarP(&to, "to", "t", "", opts.t("cli.task.move.flag.to"))
+	cmd.Flags().BoolVar(&dryRun, "dry-run", false, opts.t("cli.task.move.flag.dry-run"))
 	_ = cmd.MarkFlagRequired("to")
 	return cmd
 }

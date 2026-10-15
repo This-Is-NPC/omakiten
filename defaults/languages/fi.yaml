@@ -261,6 +261,7 @@ keys:
   cli.task.list.flag.bucket: "bucket-avain"
   cli.task.list.flag.parent: "valinnainen parent-suodatin; jätä pois ei-suodatukseen, 0 vain juuret (parent_id IS NULL), positiivinen id kyseisen parentin suorille lapsille"
   cli.task.move.flag.to: "kohde-bucket-avain"
+  cli.task.move.flag.dry-run: "näytä guardit, jotka siirto kohtaisi, siirtämättä tai tallentamatta tapahtumia"
   cli.task.delete.flag.confirm: "vaaditaan: vahvista tuhoava poisto"
   cli.comment.add.flag.body: "commentin sisältö"
   cli.comment.add.flag.author: "tekijätyyppi: human tai agent"

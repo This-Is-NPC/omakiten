@@ -260,6 +260,7 @@ keys:
   cli.task.list.flag.bucket: "bucket-nøkkel"
   cli.task.list.flag.parent: "valgfritt parent-filter; utelat for intet filter, 0 kun roots (parent_id IS NULL), positiv id for direkte barn av den parent"
   cli.task.move.flag.to: "mål bucket-nøkkel"
+  cli.task.move.flag.dry-run: "vis guardene flyttingen ville møte, uten å flytte eller registrere hendelser"
   cli.task.delete.flag.confirm: "påkrevd: bekreft den destruktive slettingen"
   cli.comment.add.flag.body: "comment-tekst"
   cli.comment.add.flag.author: "forfattertype: human eller agent"

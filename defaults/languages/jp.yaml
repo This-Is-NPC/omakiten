@@ -256,6 +256,7 @@ keys:
   cli.task.list.flag.bucket: "bucket キー"
   cli.task.list.flag.parent: "任意の parent フィルタ; 省略でフィルタなし、0 で roots のみ (parent_id IS NULL)、正の id でその parent の直接の子"
   cli.task.move.flag.to: "移動先 bucket のキー"
+  cli.task.move.flag.dry-run: "移動もイベント記録もせずに、move が直面する guard を表示"
   cli.task.delete.flag.confirm: "必須: 破壊的削除を確認"
   cli.comment.add.flag.body: "comment の本文"
   cli.comment.add.flag.author: "著者タイプ: human または agent"

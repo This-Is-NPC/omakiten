@@ -259,6 +259,7 @@ keys:
   cli.task.list.flag.bucket: "bucket key"
   cli.task.list.flag.parent: "optioneel parent-filter; weglaten voor geen filter, 0 alleen roots (parent_id IS NULL), positief id voor directe kinderen van die parent"
   cli.task.move.flag.to: "target bucket key"
+  cli.task.move.flag.dry-run: "toon de guards die de move zou tegenkomen, zonder te verplaatsen of events vast te leggen"
   cli.task.delete.flag.confirm: "verplicht: bevestig het destructieve delete"
   cli.comment.add.flag.body: "comment-body"
   cli.comment.add.flag.author: "auteur-type: human of agent"

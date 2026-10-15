@@ -257,6 +257,7 @@ keys:
   cli.task.list.flag.bucket: "bucket की"
   cli.task.list.flag.parent: "पर्यायी parent filter; filter नाही म्हणून omit, roots only साठी 0 (parent_id IS NULL), positive id त्या parent चे direct children"
   cli.task.move.flag.to: "लक्ष्य bucket की"
+  cli.task.move.flag.dry-run: "move कोणत्या guards ना सामोरे जाईल ते move न करता किंवा event न नोंदवता दाखवा"
   cli.task.delete.flag.confirm: "आवश्यक: विनाशकारी डिलीटची पुष्टी करा"
   cli.comment.add.flag.body: "comment चा मजकूर"
   cli.comment.add.flag.author: "author प्रकार: human किंवा agent"

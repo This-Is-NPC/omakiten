@@ -388,17 +388,12 @@ func (s *WorkflowService) MoveTask(ctx context.Context, project domain.ProjectCo
 		finish(status, errMsg)
 	}()
 
-	if taskID <= 0 {
-		err = domain.NewError(domain.ErrValidation, "task id must be positive", nil)
-		return
-	}
-	targetBucketKey = strings.TrimSpace(targetBucketKey)
-	if targetBucketKey == "" {
-		err = domain.NewError(domain.ErrValidation, "target bucket is required", nil)
+	targetBucketKey, err = validateMoveInput(taskID, targetBucketKey)
+	if err != nil {
 		return
 	}
 
-	_, taskSnap, currentBucketID, target, err := s.resolveMove(ctx, project, taskID, targetBucketKey)
+	_, taskSnap, currentBucketID, target, err := s.resolveMove(ctx, project, taskID, targetBucketKey, false)
 	if err != nil {
 		return
 	}
@@ -416,7 +411,60 @@ func (s *WorkflowService) MoveTask(ctx context.Context, project domain.ProjectCo
 	return
 }
 
-func (s *WorkflowService) resolveMove(ctx context.Context, project domain.ProjectContext, taskID int64, targetBucketKey string) (domain.Task, *config.Snapshot, int64, domain.Bucket, error) {
+// PreviewMove reports the guards a move of taskID to targetBucketKey would
+// face, without moving the task or recording events. A move that fails before
+// the guards (unknown bucket, archived task, undeclared transition) returns the
+// same error MoveTask would. A move to the current bucket has no guards.
+func (s *WorkflowService) PreviewMove(ctx context.Context, project domain.ProjectContext, taskID int64, targetBucketKey string) (domain.Task, []domain.GuardStatus, error) {
+	targetBucketKey, err := validateMoveInput(taskID, targetBucketKey)
+	if err != nil {
+		return domain.Task{}, nil, err
+	}
+	task, taskSnap, current, target, err := s.resolveMove(ctx, project, taskID, targetBucketKey, true)
+	if err != nil || current == target.ID {
+		return task, nil, err
+	}
+	statuses, err := s.guards.PreviewTransitionForTask(ctx, project.ID, task, current, target.ID, taskSnap)
+	return task, statuses, err
+}
+
+// OutgoingGuards reports, for each transition leaving task's current bucket,
+// the state of its guards keyed by destination bucket key. A transition
+// without guards maps to an empty slice. It records nothing.
+func (s *WorkflowService) OutgoingGuards(ctx context.Context, project domain.ProjectContext, task domain.Task) (map[string][]domain.GuardStatus, error) {
+	taskSnap := s.snap.For(task)
+	if taskSnap == nil {
+		return nil, nil
+	}
+	out := map[string][]domain.GuardStatus{}
+	for _, transition := range taskSnap.Workflow().Transitions {
+		if transition.FromBucketID != task.BucketID {
+			continue
+		}
+		statuses, err := s.guards.PreviewTransitionForTask(ctx, project.ID, task, transition.FromBucketID, transition.ToBucketID, taskSnap)
+		if err != nil {
+			return nil, err
+		}
+		out[transition.ToBucketKey] = append([]domain.GuardStatus{}, statuses...)
+	}
+	return out, nil
+}
+
+func validateMoveInput(taskID int64, targetBucketKey string) (string, error) {
+	if taskID <= 0 {
+		return "", domain.NewError(domain.ErrValidation, "task id must be positive", nil)
+	}
+	targetBucketKey = strings.TrimSpace(targetBucketKey)
+	if targetBucketKey == "" {
+		return "", domain.NewError(domain.ErrValidation, "target bucket is required", nil)
+	}
+	return targetBucketKey, nil
+}
+
+// resolveMove locates the task and target bucket and enforces the declared
+// transition. A preview records no guard.violated event and leaves guard
+// evaluation to the caller.
+func (s *WorkflowService) resolveMove(ctx context.Context, project domain.ProjectContext, taskID int64, targetBucketKey string, preview bool) (domain.Task, *config.Snapshot, int64, domain.Bucket, error) {
 	task, err := s.tasks.GetTaskByID(ctx, project.ID, taskID, s.snap)
 	if err != nil {
 		return domain.Task{}, nil, 0, domain.Bucket{}, err
@@ -439,8 +487,13 @@ func (s *WorkflowService) resolveMove(ctx context.Context, project domain.Projec
 	}
 	if current != target.ID {
 		if !taskSnap.TransitionAllowed(current, target.ID) {
-			s.guards.EmitViolatedForTask(ctx, project.ID, task, taskSnap, GuardOperationTaskTransition, GuardRuleTransition, "transition not allowed", map[string]any{"task_id": taskID, "from_bucket_id": current, "to_bucket_id": target.ID, "to_bucket": targetBucketKey})
+			if !preview {
+				s.guards.EmitViolatedForTask(ctx, project.ID, task, taskSnap, GuardOperationTaskTransition, GuardRuleTransition, "transition not allowed", map[string]any{"task_id": taskID, "from_bucket_id": current, "to_bucket_id": target.ID, "to_bucket": targetBucketKey})
+			}
 			return domain.Task{}, nil, 0, domain.Bucket{}, domain.NewError(domain.ErrWorkflowInvalidTransition, "transition not allowed", map[string]any{"task_id": taskID, "from": current, "to": target.ID})
+		}
+		if preview {
+			return task, taskSnap, current, target, nil
 		}
 		if err := s.guards.EvaluateTransitionForTask(ctx, project.ID, task, current, target.ID, targetBucketKey, taskSnap); err != nil {
 			return domain.Task{}, nil, 0, domain.Bucket{}, err
