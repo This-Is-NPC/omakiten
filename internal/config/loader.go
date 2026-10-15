@@ -63,9 +63,14 @@ func loadBundlePlanSources(path string) (Bundle, *planSourceReader, error) {
 	if err != nil {
 		return Bundle{}, nil, err
 	}
-	physical, _, err := resolvePresetSelectionRaw(path, selection)
+	physical, selected, err := resolvePresetSelectionRaw(path, selection)
 	if err != nil {
 		return Bundle{}, nil, err
+	}
+	if selected {
+		if err := checkSelectedPresetRequirements(physical); err != nil {
+			return Bundle{}, nil, err
+		}
 	}
 
 	raw, err := reader.readFile(physical, MaxWiringFileBytes)
@@ -122,9 +127,14 @@ func (r *planSourceReader) listFiles(dir string, suffixes []string, isCustom boo
 }
 
 func loadBundle(path string, opts loadBundleOptions) (Bundle, error) {
-	physical, _, err := ResolvePresetSelection(path)
+	physical, selected, err := ResolvePresetSelection(path)
 	if err != nil {
 		return Bundle{}, err
+	}
+	if selected {
+		if err := checkSelectedPresetRequirements(physical); err != nil {
+			return Bundle{}, err
+		}
 	}
 	raw, err := readFileBounded(physical, MaxWiringFileBytes)
 	if err != nil {

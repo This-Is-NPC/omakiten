@@ -127,6 +127,7 @@ type Runners struct {
 
 func NewRootCommand(version string, runners Runners) *cobra.Command {
 	ensurePkgCatalog()
+	config.SetRunningVersion(version)
 	opts := &runtimeOptions{catalog: pkgCatalog}
 	cmd := &cobra.Command{
 		Use:           "okt",

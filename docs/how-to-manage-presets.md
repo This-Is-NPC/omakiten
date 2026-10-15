@@ -72,7 +72,16 @@ schema_version: 1
 name: example
 version: 0.1.0
 config: config/preset.yaml
+requires:
+  okt: 0.37.0
 ```
+
+`requires.okt` is optional and names the oldest okt release, as `X.Y.Z`,
+that understands the package. A release executable older than it refuses to
+install, select, or load the package with
+`preset "example" requires okt >= 0.37.0 (running 0.36.0)`; update okt first.
+Development and untagged builds skip the check. Executables released before
+the field existed reject it as an unknown manifest field.
 
 Additional files, including scripts for hooks, can belong to the package.
 Paths must be canonical relative paths and files must be regular files.

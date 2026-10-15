@@ -55,6 +55,9 @@ func InstallPreset(root string, p PresetPackage) (PresetInstallation, error) {
 	if err := p.validate(); err != nil {
 		return installed, err
 	}
+	if err := checkPresetRequirements(p.Manifest); err != nil {
+		return installed, err
+	}
 	if p.Manifest.Origin.Hash == "" {
 		hash, err := p.contentHash()
 		if err != nil {
@@ -145,6 +148,9 @@ func ActivatePreset(root, selector string) (PresetInstallation, error) {
 	}
 	if selected == nil {
 		return PresetInstallation{}, fmt.Errorf("preset %q is not installed", selector)
+	}
+	if err := checkPresetRequirements(selected.Manifest); err != nil {
+		return PresetInstallation{}, err
 	}
 	path := filepath.Join(selected.Path, filepath.FromSlash(selected.Manifest.Config))
 	if _, err := LoadBundle(path); err != nil {
