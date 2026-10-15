@@ -36,6 +36,10 @@ type ServiceSettings struct {
 
 	NextWorkLimit int
 
+	// NextStep is the next_step_prompt per operation. Sourced from
+	// config.agent.next_step (validator-required non-empty).
+	NextStep NextStepPrompts
+
 	// SimilarTaskLimit caps how many similar-task hints flow into
 	// tasks.create_intent / tasks.continue. Sourced from
 	// config.agent.similar_task_limit (validator-required > 0).
@@ -48,6 +52,16 @@ type ServiceSettings struct {
 	// per call and writes these values via SetSolutionsDefaults.
 	SolutionsTopLimitDefault int
 	SolutionsTopLimitMax     int
+}
+
+// NextStepPrompts mirrors config.NextStepPrompts. TaskContinue expands
+// `{task_id}` and `{bucket}`.
+type NextStepPrompts struct {
+	TaskContinue    string
+	ProjectOverview string
+	ProjectResume   string
+	ProjectEdit     string
+	EventEmit       string
 }
 
 type Repository interface {

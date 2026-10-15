@@ -38,7 +38,7 @@ func (s *Service) EditProject(ctx context.Context, input contract.EditProjectInp
 	return contract.EditProjectResponse{
 		Project:        projectSummary(updated.Context()),
 		Description:    updated.Description,
-		NextStepPrompt: "Project description updated. Ask for the overview, resume the project, or continue a task.",
+		NextStepPrompt: s.settings.NextStep.ProjectEdit,
 	}, nil
 }
 

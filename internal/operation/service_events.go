@@ -63,6 +63,6 @@ func (s *Service) EmitEvent(ctx context.Context, input contract.EmitEventInput) 
 	return contract.EmitEventResponse{
 		Project:        projectSummary(project),
 		EventType:      eventType,
-		NextStepPrompt: "Event recorded; the hooks declared on it run now. Read it back with logs.list.",
+		NextStepPrompt: s.settings.NextStep.EventEmit,
 	}, nil
 }

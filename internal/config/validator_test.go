@@ -251,6 +251,7 @@ func validTestBundle() Bundle {
 				IncludeWorkflowInContinue: &tru,
 				NextWorkLimit:             5,
 				SimilarTaskLimit:          5,
+				NextStep:                  NextStepPrompts{TaskContinue: "Continue task #{task_id}.", ProjectOverview: "Continue a task.", ProjectResume: "Choose a task.", ProjectEdit: "Resume the project.", EventEmit: "Read the event back."},
 			},
 			TUI:              TUISettings{TokenBadge: TokenBadgeThresholds{YellowAt: 150, RedAt: 400}},
 			TemplateDefaults: []string{"task"},
@@ -298,5 +299,19 @@ func validTestBundle() Bundle {
 				{ID: 1, Key: "backlog", Name: "Backlog", Position: 1},
 			},
 		}},
+	}
+}
+
+// TestValidateAgentSettingsRequiresNextStep verifies every next_step prompt
+// is required and the error names the missing key.
+func TestValidateAgentSettingsRequiresNextStep(t *testing.T) {
+	agent := MustLoadKitConfig().Agent
+	if err := validateAgentSettings(agent); err != nil {
+		t.Fatalf("kit agent settings rejected: %v", err)
+	}
+	agent.NextStep.ProjectResume = "  "
+	err := validateAgentSettings(agent)
+	if err == nil || !strings.Contains(err.Error(), "config.agent.next_step.project.resume") {
+		t.Fatalf("validateAgentSettings() error = %v, want missing project.resume", err)
 	}
 }

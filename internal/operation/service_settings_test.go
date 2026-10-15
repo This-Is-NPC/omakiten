@@ -1,6 +1,7 @@
 package operation
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -144,5 +145,24 @@ func TestContinueTaskTruncatesCommentBodies(t *testing.T) {
 		if runeLen > 51 {
 			t.Fatalf("comment body length = %d, want <=51 (cap 50 + ellipsis), body = %q", runeLen, c.Body)
 		}
+	}
+}
+
+// TestContinueTaskExpandsNextStepPlaceholders verifies the configured
+// task.continue prompt expands {task_id} and {bucket} for the task.
+func TestContinueTaskExpandsNextStepPlaceholders(t *testing.T) {
+	fixture := newAgentFixture(t)
+	fixture.service.SetSettings(ServiceSettings{
+		RecentCommentLimit: 5,
+		NextStep:           NextStepPrompts{TaskContinue: "Run /okt-task-continue #{task_id} from {bucket}."},
+	})
+
+	resp, err := fixture.service.ContinueTask(fixture.ctx, contract.ContinueTaskInput{TaskID: fixture.taskA1.ID})
+	if err != nil {
+		t.Fatalf("ContinueTask() error = %v", err)
+	}
+	want := fmt.Sprintf("Run /okt-task-continue #%d from backlog.", fixture.taskA1.ID)
+	if resp.NextStepPrompt != want {
+		t.Fatalf("NextStepPrompt = %q, want %q", resp.NextStepPrompt, want)
 	}
 }

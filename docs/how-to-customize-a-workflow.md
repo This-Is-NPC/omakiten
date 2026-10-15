@@ -52,6 +52,27 @@ and `persona` edit through the shared package editor. `template list` and
 Application translations and language preferences are configured through
 Omakiten itself. They do not go in these settings.
 
+### What an agent is told to do next
+
+`agent.next_step` in `settings.yaml` sets the `next_step_prompt` that
+`task continue`, `project overview`, `project resume`, `project edit`, and
+`emit` return. Every key is required:
+
+```yaml
+agent:
+  next_step:
+    task.continue: "Run /example-continue #{task_id}; the task is in {bucket}."
+    project.overview: "Pick a task and continue it."
+    project.resume: "Choose a likely next task or inspect blocked work."
+    project.edit: "Resume the project or continue a task."
+    event.emit: "Read the event back with logs."
+```
+
+In `task.continue`, `{task_id}` and `{bucket}` expand to the task's id and
+current bucket key; the other prompts are returned as written. Use the prompts
+to name the package's own commands, so every agent reading an Omakiten
+response gets the workflow's guidance.
+
 ## 3. Keep the state machine explicit
 
 This is a workflow fragment, to place in an otherwise complete package:

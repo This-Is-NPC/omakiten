@@ -312,6 +312,21 @@ type AgentSettings struct {
 	// SimilarTaskLimit caps how many similar-task hints are surfaced by
 	// `tasks.create_intent`. Required; validator demands > 0.
 	SimilarTaskLimit int `yaml:"similar_task_limit" json:"similar_task_limit"`
+
+	// NextStep holds the next_step_prompt each operation returns. Required;
+	// validator demands every prompt be non-empty.
+	NextStep NextStepPrompts `yaml:"next_step" json:"next_step"`
+}
+
+// NextStepPrompts is the next_step_prompt text per operation. In
+// TaskContinue, `{task_id}` and `{bucket}` expand to the task's id and
+// current bucket key.
+type NextStepPrompts struct {
+	TaskContinue    string `yaml:"task.continue" json:"task.continue"`
+	ProjectOverview string `yaml:"project.overview" json:"project.overview"`
+	ProjectResume   string `yaml:"project.resume" json:"project.resume"`
+	ProjectEdit     string `yaml:"project.edit" json:"project.edit"`
+	EventEmit       string `yaml:"event.emit" json:"event.emit"`
 }
 
 // SQLiteSettings tunes the connection-level SQLite knobs the Store applies

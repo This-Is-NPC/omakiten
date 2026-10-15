@@ -2,7 +2,7 @@ package operation
 
 import (
 	"context"
-	"fmt"
+	"strconv"
 	"strings"
 
 	"omakiten/internal/app"
@@ -46,7 +46,7 @@ func (s *Service) ContinueTask(ctx context.Context, input contract.ContinueTaskI
 		Workflow:            workflowSum,
 		Dependencies:        dependencySummaries(detail.dependencies),
 		Comments:            s.shapedRecentComments(detail.comments),
-		NextStepPrompt:      fmt.Sprintf("Continue task #%d from this checkpoint, then record material progress with `progress.record`.", detail.task.ID),
+		NextStepPrompt:      strings.NewReplacer("{task_id}", strconv.FormatInt(detail.task.ID, 10), "{bucket}", detail.task.BucketKey).Replace(s.settings.NextStep.TaskContinue),
 		AgentOutputLanguage: agentOutputLang,
 	}, nil
 }

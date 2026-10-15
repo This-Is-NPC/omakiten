@@ -513,6 +513,17 @@ func validateAgentSettings(m AgentSettings) error {
 	if m.SimilarTaskLimit <= 0 {
 		return fmt.Errorf("config.agent.similar_task_limit: must be > 0 (see defaults/omakiten.yaml)")
 	}
+	for _, prompt := range []struct{ key, text string }{
+		{"task.continue", m.NextStep.TaskContinue},
+		{"project.overview", m.NextStep.ProjectOverview},
+		{"project.resume", m.NextStep.ProjectResume},
+		{"project.edit", m.NextStep.ProjectEdit},
+		{"event.emit", m.NextStep.EventEmit},
+	} {
+		if strings.TrimSpace(prompt.text) == "" {
+			return fmt.Errorf("config.agent.next_step.%s: required non-empty prompt (see defaults/config/modules/base-config.yaml)", prompt.key)
+		}
+	}
 	return nil
 }
 

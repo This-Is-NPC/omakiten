@@ -35,7 +35,7 @@ func (s *Service) Overview(ctx context.Context, input contract.OverviewInput) (c
 		Workflow:       workflowSummary(workflow),
 		PendingCount:   pendingCount(workflow, tasks),
 		TaskBuckets:    bucketCounts(workflow, tasks),
-		NextStepPrompt: "Omakiten is ready. Ask for task details, continue the latest checkpoint, or create a new task intent.",
+		NextStepPrompt: s.settings.NextStep.ProjectOverview,
 	}, nil
 }
 
@@ -64,6 +64,6 @@ func (s *Service) ResumeProject(ctx context.Context, input contract.ResumeProjec
 		LikelyNextWork: likelyNextWork(workflow, tasks, s.settings.NextWorkLimit, s.registry),
 		BlockedWork:    blockedWork(tasks, dependencies, s.registry),
 		Dependencies:   dependencySummaries(dependencies),
-		NextStepPrompt: "Choose a likely next task, inspect blocked work, or ask for `/okt-task-continue #<id>` context.",
+		NextStepPrompt: s.settings.NextStep.ProjectResume,
 	}, nil
 }

@@ -698,6 +698,7 @@ func buildProjectRuntime(ctx context.Context, store *sqlite.Store, cs *configsto
 		IncludeWorkflow:          *bundle.Config.Agent.IncludeWorkflowInContinue,
 		NextWorkLimit:            bundle.Config.Agent.NextWorkLimit,
 		SimilarTaskLimit:         bundle.Config.Agent.SimilarTaskLimit,
+		NextStep:                 operation.NextStepPrompts(bundle.Config.Agent.NextStep),
 		SolutionsTopLimitDefault: bundle.Config.Solutions.DefaultTopLimit,
 		SolutionsTopLimitMax:     bundle.Config.Solutions.MaxTopLimit,
 	})
