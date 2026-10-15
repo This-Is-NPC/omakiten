@@ -81,6 +81,7 @@ type Repository interface {
 	app.SearchRepository
 	app.PlanRepository
 	app.AgentRepository
+	app.ChangeFeed
 }
 
 // TaskTemplateLookup returns the active task template scaffold to embed in

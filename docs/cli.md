@@ -57,6 +57,7 @@ working directory. Configuration discovery is described in
 | `solution add`, `confirm`, `list-top` | Fixes, observed outcomes, and ranked reuse. |
 | `progress` | Material progress on a task. |
 | `agent spawn`, `agent show`, `team show` | Open a task's agent team in terminal panes and inspect its sessions. See [agents](how-to-run-agent-teams.md). |
+| `wait` | Block until a task comment carries a tag matching a glob, such as an agent's `review-*` result. |
 | `emit` | An outside event the workflow declares, from a script or CI job; its hooks run. |
 | `insights summary`, `metrics summary` | Project signals and agent behavior metrics. |
 | `logs` | Inspect the unified event history; `--session` keeps one agent session's rows. |

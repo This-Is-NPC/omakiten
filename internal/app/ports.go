@@ -242,6 +242,13 @@ type AgentRepository interface {
 	LastAgentActivity(ctx context.Context, sessionID string) (domain.EventRow, error)
 }
 
+// ChangeFeed detects committed writes: DataVersion moves on every external
+// commit and LatestEventID is the newest event id.
+type ChangeFeed interface {
+	DataVersion(ctx context.Context) (int64, error)
+	LatestEventID(ctx context.Context) (int64, error)
+}
+
 type ErrorRepository interface {
 	RecordError(ctx context.Context, projectID int64, description, context string, tags []domain.Tag) (domain.ErrorRecord, error)
 	AddSolution(ctx context.Context, errorID int64, description, steps string, taskID *int64) (domain.Solution, error)

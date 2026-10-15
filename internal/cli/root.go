@@ -183,7 +183,7 @@ func addRootCommands(cmd *cobra.Command, opts *runtimeOptions, version string, r
 	cmd.AddCommand(newTaskCommand(opts))
 	cmd.AddCommand(newMetricsCommand(opts))
 	cmd.AddCommand(newErrorCommand(opts))
-	cmd.AddCommand(newAgentCommand(opts), newTeamCommand(opts))
+	cmd.AddCommand(newAgentCommand(opts), newTeamCommand(opts), newWaitCommand(opts))
 	cmd.AddCommand(newSolutionCommand(opts))
 	cmd.AddCommand(newProjectCommand(opts))
 	cmd.AddCommand(newProjectsCommand(opts))

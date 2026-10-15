@@ -55,7 +55,24 @@ cannot open is reported as `failed` while the others keep working; a lead that
 cannot open fails the whole spawn. `command` must be bound in `bindings.yaml`;
 the persona comes from that binding.
 
-## 3. Choose harnesses and launchers
+## 3. Let the team talk through the task
+
+Teammates communicate with tagged comments on the task, never by typing into
+each other's panes:
+
+| To | Run |
+| --- | --- |
+| Publish a member's result | `okt comment add 42 -a agent -T review-security -b "…"` |
+| Ask the lead or a member | `okt comment add 42 -a agent -T to-lead -b "…"` |
+| Read messages for a key | `okt comment list 42 --tag to-security` |
+| Wait for results | `okt wait --task 42 --tag 'review-*' --timeout 10m` |
+
+`wait` returns the first comment newer than its start, or than `--after`,
+whose tag matches the glob, plus the cursor for the next wait. On timeout it
+succeeds with `timed_out: true`. Each seat's prompt explains its key, its
+lead, and these commands.
+
+## 4. Choose harnesses and launchers
 
 Adapters come from three layers, each replacing the one below by name:
 Omakiten's defaults, `agents` in `preferences.yaml`, and `agents` in the

@@ -2817,6 +2817,38 @@
         ],
         "type": "object"
       },
+      "contract.WaitResponse": {
+        "properties": {
+          "after_id": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "matched": {
+            "items": {
+              "$ref": "#/components/schemas/contract.CommentSummary"
+            },
+            "type": "array"
+          },
+          "project": {
+            "$ref": "#/components/schemas/contract.ProjectSummary"
+          },
+          "task_id": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "timed_out": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "after_id",
+          "matched",
+          "project",
+          "task_id",
+          "timed_out"
+        ],
+        "type": "object"
+      },
       "contract.WorkflowResponse": {
         "properties": {
           "project": {
@@ -8875,6 +8907,97 @@
         },
         "summary": "Restore an archived task.",
         "x-okt-surface": "task.unarchive"
+      }
+    },
+    "/api/v1/projects/{project}/tasks/{task}/wait": {
+      "get": {
+        "operationId": "waitTaskComment",
+        "parameters": [
+          {
+            "description": "Project slug.",
+            "in": "path",
+            "name": "project",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Task id.",
+            "in": "path",
+            "name": "task",
+            "required": true,
+            "schema": {
+              "format": "int64",
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Tag glob such as `review-*`.",
+            "in": "query",
+            "name": "tag",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Go duration up to `1h`; default `10m`.",
+            "in": "query",
+            "name": "timeout",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Event id to wait after; default now.",
+            "in": "query",
+            "name": "after",
+            "required": false,
+            "schema": {
+              "format": "int32",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/contract.WaitResponse"
+                    },
+                    "ok": {
+                      "const": true
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success."
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/output.Envelope"
+                }
+              }
+            },
+            "description": "Error envelope."
+          }
+        },
+        "summary": "Block until a comment of the task carries a matching tag.",
+        "x-okt-surface": "wait"
       }
     },
     "/api/v1/projects/{project}/teams/{team}": {

@@ -72,6 +72,7 @@ task_activity.list product
 team.show product
 template.list product
 template.show product
+wait product
 workflow.show product
 wiring.command_description wiring
 wiring.selector wiring

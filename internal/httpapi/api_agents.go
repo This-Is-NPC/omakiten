@@ -12,6 +12,7 @@ type AgentOperations interface {
 	SpawnAgents(ctx context.Context, input contract.SpawnAgentsInput) (contract.SpawnAgentsResponse, error)
 	ShowAgent(ctx context.Context, input contract.ShowAgentInput) (contract.ShowAgentResponse, error)
 	ShowTeam(ctx context.Context, input contract.ShowTeamInput) (contract.ShowTeamResponse, error)
+	Wait(ctx context.Context, input contract.WaitInput) (contract.WaitResponse, error)
 }
 
 // SpawnBody is the spawnAgents request body; empty fields keep the
@@ -34,7 +35,26 @@ func (s *Server) agentRoutes() []route {
 			projectParam,
 			pathParam("team", "Agent team id.", stringSchema),
 		}, s.showTeam),
+		query("waitTaskComment", http.MethodGet, taskPath+"/wait", "wait", "Block until a comment of the task carries a matching tag.", []param{
+			projectParam,
+			taskParam,
+			queryParam("tag", "Tag glob such as `review-*`.", stringSchema),
+			queryParam("timeout", "Go duration up to `1h`; default `10m`.", stringSchema),
+			queryParam("after", "Event id to wait after; default now.", intSchema),
+		}, s.wait),
 	}
+}
+
+func (s *Server) wait(r *http.Request) (contract.WaitResponse, error) {
+	after, err := optionalInt(r, "after")
+	if err != nil {
+		return contract.WaitResponse{}, err
+	}
+	ops, selector, taskID, err := s.task(r)
+	if err != nil {
+		return contract.WaitResponse{}, err
+	}
+	return ops.Wait(r.Context(), contract.WaitInput{ProjectSelector: selector, TaskID: taskID, Tag: r.URL.Query().Get("tag"), Timeout: r.URL.Query().Get("timeout"), AfterID: int64(after)})
 }
 
 func (s *Server) spawnAgents(r *http.Request, body SpawnBody) (contract.SpawnAgentsResponse, error) {

@@ -82,6 +82,7 @@ task_activity.list: { cli: true, tui: true, http: true }
 team.show: { cli: true, tui: true, http: true }
 template.list: { cli: true, tui: true, http: true }
 template.show: { cli: true, tui: true, http: true }
+wait: { cli: true, tui: true, http: true }
 workflow.show: { cli: true, tui: true, http: true }
 wiring.command_description: { cli: false, tui: false, http: false, reason: "${{intl:operations.denied.wiring}}" }
 wiring.selector: { cli: false, tui: false, http: false, reason: "${{intl:operations.denied.wiring}}" }

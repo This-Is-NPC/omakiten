@@ -134,6 +134,7 @@ func (s *Service) actionHandlers() map[string]actionHandler {
 		"team.show":          bindAction(s.ShowTeam),
 		"template.list":      bindAction(s.ListTemplates),
 		"template.show":      bindAction(s.ShowTemplate),
+		"wait":               bindAction(s.Wait),
 		"workflow.show":      bindAction(s.ShowWorkflow),
 	}
 }
