@@ -376,6 +376,24 @@ func (e *Evaluator) resolveHintFrom(snap *config.Snapshot, hint string) string {
 	return snap.ResolveGuardHint(hint)
 }
 
+// violation records guard.violated for an unmet guard and returns the
+// guard_violation error. details gains guard_type, task_id, and the hint and
+// fix when they are non-empty; both are appended to msg.
+func (e *Evaluator) violation(ctx context.Context, projectID int64, task domain.Task, snap *config.Snapshot, operation string, target map[string]any, guardType, msg, hint, fix string, details map[string]any) error {
+	details["guard_type"] = guardType
+	details["task_id"] = task.ID
+	if hint != "" {
+		msg += ". Hint: " + hint
+		details["hint"] = hint
+	}
+	if fix != "" {
+		msg += ". Fix: " + fix
+		details["fix"] = fix
+	}
+	e.EmitViolatedForTask(ctx, projectID, task, snap, operation, guardType, msg, target)
+	return domain.NewError(domain.ErrGuardViolation, msg, details)
+}
+
 func (e *Evaluator) checkWaveGate(ctx context.Context, projectID int64, task domain.Task, hint, operation string, target map[string]any, snap *config.Snapshot) error {
 	pending, err := e.repo.CountPriorWavesPending(ctx, projectID, task.ID, snap)
 	if err != nil {
@@ -386,12 +404,7 @@ func (e *Evaluator) checkWaveGate(ctx context.Context, projectID int64, task dom
 	}
 	msg := fmt.Sprintf("wave_gate guard: %d task(s) pending in prior waves of the same plan", pending)
 	details := map[string]any{"pending": pending}
-	if hint != "" {
-		msg += ". Hint: " + hint
-		details["hint"] = hint
-	}
-	e.EmitViolatedForTask(ctx, projectID, task, snap, operation, "wave_gate", msg, target)
-	return domain.NewError(domain.ErrGuardViolation, msg, details)
+	return e.violation(ctx, projectID, task, snap, operation, target, "wave_gate", msg, hint, "", details)
 }
 
 func (e *Evaluator) checkSubtasksComplete(ctx context.Context, projectID int64, task domain.Task, hint, operation string, target map[string]any, snap *config.Snapshot) error {
@@ -423,12 +436,7 @@ func (e *Evaluator) checkSubtasksComplete(ctx context.Context, projectID int64, 
 		"open_subtask_bucket": open.BucketKey,
 		"final_bucket":        finalKey,
 	}
-	if hint != "" {
-		msg += ". Hint: " + hint
-		details["hint"] = hint
-	}
-	e.EmitViolatedForTask(ctx, projectID, task, snap, operation, "subtasks_complete", msg, target)
-	return domain.NewError(domain.ErrGuardViolation, msg, details)
+	return e.violation(ctx, projectID, task, snap, operation, target, "subtasks_complete", msg, hint, continueFix(open.ID), details)
 }
 
 func (e *Evaluator) checkBlockersIn(ctx context.Context, projectID int64, task domain.Task, allowedKeys []string, hint, operation string, target map[string]any, snap *config.Snapshot) error {
@@ -441,8 +449,12 @@ func (e *Evaluator) checkBlockersIn(ctx context.Context, projectID int64, task d
 		allowed[k] = struct{}{}
 	}
 	var pending []string
+	var firstPending int64
 	for _, b := range blockers {
 		if _, ok := allowed[b.BucketKey]; !ok {
+			if firstPending == 0 {
+				firstPending = b.TaskID
+			}
 			pending = append(pending, fmt.Sprintf("#%d %q (in %q)", b.TaskID, b.Title, b.BucketKey))
 		}
 	}
@@ -451,12 +463,7 @@ func (e *Evaluator) checkBlockersIn(ctx context.Context, projectID int64, task d
 	}
 	msg := "blockers_in guard: pending blockers: " + strings.Join(pending, ", ")
 	details := map[string]any{"pending_blockers": pending}
-	if hint != "" {
-		msg += ". Hint: " + hint
-		details["hint"] = hint
-	}
-	e.EmitViolatedForTask(ctx, projectID, task, snap, operation, "blockers_in", msg, target)
-	return domain.NewError(domain.ErrGuardViolation, msg, details)
+	return e.violation(ctx, projectID, task, snap, operation, target, "blockers_in", msg, hint, continueFix(firstPending), details)
 }
 
 func (e *Evaluator) checkCommentsMin(ctx context.Context, projectID int64, task domain.Task, minCount int, hint, operation string, target map[string]any, snap *config.Snapshot) error {
@@ -469,12 +476,7 @@ func (e *Evaluator) checkCommentsMin(ctx context.Context, projectID int64, task 
 	}
 	msg := fmt.Sprintf("comments_min guard: task has %d comment(s); transition requires at least %d", count, minCount)
 	details := map[string]any{"count": count, "required": minCount}
-	if hint != "" {
-		msg += ". Hint: " + hint
-		details["hint"] = hint
-	}
-	e.EmitViolatedForTask(ctx, projectID, task, snap, operation, "comments_min", msg, target)
-	return domain.NewError(domain.ErrGuardViolation, msg, details)
+	return e.violation(ctx, projectID, task, snap, operation, target, "comments_min", msg, hint, commentFix(ctx, task.ID, "", "<note>"), details)
 }
 
 func (e *Evaluator) checkCommentsTagged(ctx context.Context, projectID int64, task domain.Task, tag string, minCount int, hint, operation string, target map[string]any, snap *config.Snapshot) error {
@@ -490,10 +492,5 @@ func (e *Evaluator) checkCommentsTagged(ctx context.Context, projectID int64, ta
 	}
 	msg := fmt.Sprintf("comments_tagged guard: task has %d comment(s) tagged %q; transition requires at least %d", count, tag, minCount)
 	details := map[string]any{"count": count, "required": minCount, "tag": tag}
-	if hint != "" {
-		msg += ". Hint: " + hint
-		details["hint"] = hint
-	}
-	e.EmitViolatedForTask(ctx, projectID, task, snap, operation, "comments_tagged", msg, target)
-	return domain.NewError(domain.ErrGuardViolation, msg, details)
+	return e.violation(ctx, projectID, task, snap, operation, target, "comments_tagged", msg, hint, commentFix(ctx, task.ID, tag, "<evidence>"), details)
 }

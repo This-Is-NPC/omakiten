@@ -50,6 +50,12 @@ Read the failing guard and its hint. It may require review evidence, completed
 children, a dependency in a permitted bucket, or completion of an earlier wave.
 Record the real evidence or resolve the blocker, then repeat the move.
 
+The failure details name the guard in `guard_type` and the task in `task_id`.
+When one command addresses the gap, `fix` carries it: `okt comment add` with
+the required tag for comment guards, or `okt task continue` on the open
+sub-task or pending blocker. Replace the placeholder body with real evidence.
+`wave_gate` has no `fix`; finish the earlier waves.
+
 An operation permission failure is different: the workflow can forbid editing
 or deleting in a particular bucket. Changing the request's surface does not
 make that permission disappear.
