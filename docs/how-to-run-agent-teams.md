@@ -22,8 +22,11 @@ team, the session, the pane, and the commands to follow it:
 ```bash
 okt --project example agent show s-1a2b3c4d5e6f
 okt --project example team show t-1a2b3c4d5e6f
+okt --project example logs --session s-1a2b3c4d5e6f
 okt --project example task continue 42
 ```
+
+`logs --session` lists everything the agent's own `okt` calls recorded.
 
 `--harness`, `--model`, and `--launcher` override the adapters for this spawn.
 Spawning again for the same task and bucket returns the running team instead

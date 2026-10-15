@@ -160,6 +160,10 @@ func eventFilterConditions(filter domain.EventFilter, registry *domain.EventRegi
 		conds = append(conds, "id > ?")
 		args = append(args, filter.AfterID)
 	}
+	if filter.AgentSessionID != "" {
+		conds = append(conds, "agent_session_id = ?")
+		args = append(args, filter.AgentSessionID)
+	}
 	return conds, args, false
 }
 

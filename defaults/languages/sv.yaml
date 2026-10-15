@@ -76,6 +76,7 @@ keys:
   cli.logs.flag.category: "begränsa till en eller flera händelsekategorier (upprepningsbar, kommaseparerad; `all` rensar filtret)"
   cli.logs.flag.since: "åsidosätt standardfönstret (t.ex. 24h, 30m, 7d)"
   cli.logs.flag.limit: "begränsa antal returnerade rader (0 = ingen gräns)"
+  cli.logs.flag.session: "behåll bara händelser från denna agentsession"
   cli.err.logs_invalid_category: "okänd händelsekategori"
   cli.err.logs_invalid_since: "ogiltig --since-varaktighet; förväntade former som 24h, 30m, 7d"
   cli.depend.short: "Hantera task-dependencies"

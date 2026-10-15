@@ -75,6 +75,7 @@ keys:
   cli.logs.flag.category: "एक या अधिक इवेंट श्रेणियों तक सीमित करें (दोहराने योग्य, अल्पविराम से अलग; `all` फ़िल्टर साफ़ करता है)"
   cli.logs.flag.since: "डिफ़ॉल्ट विंडो बदलें (जैसे 24h, 30m, 7d)"
   cli.logs.flag.limit: "लौटाई गई पंक्तियों की सीमा (0 = कोई सीमा नहीं)"
+  cli.logs.flag.session: "केवल इस agent session द्वारा दर्ज events रखें"
   cli.err.logs_invalid_category: "अज्ञात इवेंट श्रेणी"
   cli.err.logs_invalid_since: "अमान्य --since अवधि; अपेक्षित रूप जैसे 24h, 30m, 7d"
   cli.depend.short: "task निर्भरताएँ प्रबंधित करें"

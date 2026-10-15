@@ -76,6 +76,7 @@ keys:
   cli.logs.flag.category: "begrens til én eller flere hendelseskategorier (gjentakbar, kommaseparert; `all` tømmer filteret)"
   cli.logs.flag.since: "overstyr standardvinduet (f.eks. 24h, 30m, 7d)"
   cli.logs.flag.limit: "begrens antall returnerte rader (0 = ingen grense)"
+  cli.logs.flag.session: "behold bare hendelser registrert av denne agentøkten"
   cli.err.logs_invalid_category: "ukjent hendelseskategori"
   cli.err.logs_invalid_since: "ugyldig --since-varighet; forventede former som 24h, 30m, 7d"
   cli.depend.short: "Administrer task-avhengigheter"

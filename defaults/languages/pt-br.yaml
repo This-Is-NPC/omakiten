@@ -75,6 +75,7 @@ keys:
   cli.logs.flag.category: "restringir a uma ou mais categorias de eventos (repetível, separadas por vírgula; `all` limpa o filtro)"
   cli.logs.flag.since: "substituir a janela padrão (ex.: 24h, 30m, 7d)"
   cli.logs.flag.limit: "limitar linhas retornadas (0 = sem teto)"
+  cli.logs.flag.session: "mantém só os eventos gravados por esta sessão de agente"
   cli.err.logs_invalid_category: "categoria de evento desconhecida"
   cli.err.logs_invalid_since: "duração --since inválida; formas esperadas como 24h, 30m, 7d"
   cli.depend.short: "Gerencia dependências de tasks"

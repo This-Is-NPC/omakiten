@@ -20,6 +20,7 @@ func newLogsCommand(opts *runtimeOptions) *cobra.Command {
 		categoryFlags []string
 		sinceFlag     string
 		limitFlag     int
+		sessionFlag   string
 	)
 
 	cmd := &cobra.Command{
@@ -51,10 +52,11 @@ func newLogsCommand(opts *runtimeOptions) *cobra.Command {
 				}
 
 				filter := domain.EventFilter{
-					ProjectID:  project.ID,
-					Categories: categories,
-					Since:      since,
-					Limit:      limitFlag,
+					ProjectID:      project.ID,
+					Categories:     categories,
+					Since:          since,
+					Limit:          limitFlag,
+					AgentSessionID: strings.TrimSpace(sessionFlag),
 				}
 
 				rows, err := rt.store.ListEvents(ctx, filter)
@@ -73,6 +75,7 @@ func newLogsCommand(opts *runtimeOptions) *cobra.Command {
 	cmd.Flags().StringSliceVarP(&categoryFlags, "category", "c", nil, opts.t("cli.logs.flag.category"))
 	cmd.Flags().StringVar(&sinceFlag, "since", "", opts.t("cli.logs.flag.since"))
 	cmd.Flags().IntVarP(&limitFlag, "limit", "n", 0, opts.t("cli.logs.flag.limit"))
+	cmd.Flags().StringVar(&sessionFlag, "session", "", opts.t("cli.logs.flag.session"))
 	return cmd
 }
 

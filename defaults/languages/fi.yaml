@@ -76,6 +76,7 @@ keys:
   cli.logs.flag.category: "rajoita yhteen tai useampaan tapahtumaluokkaan (toistettava, pilkuin erotettu; `all` tyhjentää suodattimen)"
   cli.logs.flag.since: "ohita oletusikkuna (esim. 24h, 30m, 7d)"
   cli.logs.flag.limit: "rajoita palautettavien rivien määrää (0 = ei rajaa)"
+  cli.logs.flag.session: "säilytä vain tämän agenttiistunnon tallentamat tapahtumat"
   cli.err.logs_invalid_category: "tuntematon tapahtumaluokka"
   cli.err.logs_invalid_since: "virheellinen --since-kesto; odotetut muodot kuten 24h, 30m, 7d"
   cli.depend.short: "Hallinnoi taskien riippuvuuksia"

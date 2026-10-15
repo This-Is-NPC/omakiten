@@ -75,6 +75,7 @@ keys:
   cli.logs.flag.category: "обмежити однією або кількома категоріями подій (повторювано, через кому; `all` скидає фільтр)"
   cli.logs.flag.since: "замінити вікно за замовчуванням (напр. 24h, 30m, 7d)"
   cli.logs.flag.limit: "обмежити кількість рядків (0 = без ліміту)"
+  cli.logs.flag.session: "залишити лише події цієї сесії агента"
   cli.err.logs_invalid_category: "невідома категорія події"
   cli.err.logs_invalid_since: "недійсна тривалість --since; очікуються форми на кшталт 24h, 30m, 7d"
   cli.depend.short: "Керувати залежностями tasks"

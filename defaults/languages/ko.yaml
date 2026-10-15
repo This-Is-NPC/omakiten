@@ -75,6 +75,7 @@ keys:
   cli.logs.flag.category: "하나 이상의 이벤트 카테고리로 제한 (반복 가능, 쉼표 구분; `all`은 필터 해제)"
   cli.logs.flag.since: "기본 창 덮어쓰기 (예: 24h, 30m, 7d)"
   cli.logs.flag.limit: "반환 행 수 제한 (0 = 제한 없음)"
+  cli.logs.flag.session: "이 에이전트 세션이 기록한 이벤트만 유지"
   cli.err.logs_invalid_category: "알 수 없는 이벤트 카테고리"
   cli.err.logs_invalid_since: "잘못된 --since 기간; 24h, 30m, 7d 형식 예상"
   cli.depend.short: "task 의존성 관리"

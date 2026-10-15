@@ -75,6 +75,7 @@ keys:
   cli.logs.flag.category: "auf eine oder mehrere Ereigniskategorien beschränken (wiederholbar, kommagetrennt; `all` löscht den Filter)"
   cli.logs.flag.since: "Standardfenster überschreiben (z. B. 24h, 30m, 7d)"
   cli.logs.flag.limit: "Anzahl zurückgegebener Zeilen begrenzen (0 = kein Limit)"
+  cli.logs.flag.session: "nur Ereignisse dieser Agentensitzung behalten"
   cli.err.logs_invalid_category: "unbekannte Ereigniskategorie"
   cli.err.logs_invalid_since: "ungültige --since-Dauer; erwartete Formen wie 24h, 30m, 7d"
   cli.depend.short: "Verwaltet task-Abhängigkeiten"

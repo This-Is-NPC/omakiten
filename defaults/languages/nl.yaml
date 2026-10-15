@@ -75,6 +75,7 @@ keys:
   cli.logs.flag.category: "beperken tot een of meer gebeurteniscategorieën (herhaalbaar, komma-gescheiden; `all` wist filter)"
   cli.logs.flag.since: "standaardvenster overschrijven (bijv. 24h, 30m, 7d)"
   cli.logs.flag.limit: "aantal teruggegeven rijen begrenzen (0 = geen limiet)"
+  cli.logs.flag.session: "behoud alleen events van deze agentsessie"
   cli.err.logs_invalid_category: "onbekende gebeurteniscategorie"
   cli.err.logs_invalid_since: "ongeldige --since-duur; verwachte vormen zoals 24h, 30m, 7d"
   cli.depend.short: "Beheer task-dependencies"

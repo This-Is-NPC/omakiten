@@ -66,6 +66,8 @@ type EventFilter struct {
 	// ignoring Order. Zero disables the cursor; stream consumers pass the
 	// last id they delivered.
 	AfterID int64
+	// AgentSessionID keeps only rows recorded by that agent session.
+	AgentSessionID string
 	// Order is the sort direction key understood by the adapter.
 	// Empty means adapter default. Conventional values: "desc"
 	// (newest first) and "asc" (oldest first).

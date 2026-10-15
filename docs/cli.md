@@ -59,7 +59,7 @@ working directory. Configuration discovery is described in
 | `agent spawn`, `agent show`, `team show` | Open a task's agent team in terminal panes and inspect its sessions. See [agents](how-to-run-agent-teams.md). |
 | `emit` | An outside event the workflow declares, from a script or CI job; its hooks run. |
 | `insights summary`, `metrics summary` | Project signals and agent behavior metrics. |
-| `logs` | Inspect the unified event history. |
+| `logs` | Inspect the unified event history; `--session` keeps one agent session's rows. |
 | `workflow show`, `workflow orphans` | Read policy and inspect or rebind stranded bucket identities. |
 | `preset catalog`, `add`, `list`, `use`, `import`, `export` | Discover, capture, select, and share workflow packages. |
 | `config init`, `path`, `show`, `why`, `diff`, `validate` | Initialize and inspect configuration. |

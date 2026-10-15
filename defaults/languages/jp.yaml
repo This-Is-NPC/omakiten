@@ -75,6 +75,7 @@ keys:
   cli.logs.flag.category: "1つ以上のイベントカテゴリに限定 (繰り返し可、カンマ区切り; `all` でフィルタ解除)"
   cli.logs.flag.since: "既定ウィンドウを上書き (例: 24h, 30m, 7d)"
   cli.logs.flag.limit: "返却行数の上限 (0 = 上限なし)"
+  cli.logs.flag.session: "このエージェントセッションが記録したイベントのみ表示"
   cli.err.logs_invalid_category: "不明なイベントカテゴリ"
   cli.err.logs_invalid_since: "無効な --since 期間; 24h, 30m, 7d などの形式を想定"
   cli.depend.short: "task の依存関係を管理"

@@ -75,6 +75,7 @@ keys:
   cli.logs.flag.category: "bir veya daha fazla olay kategorisiyle sınırla (tekrarlanabilir, virgülle ayrılmış; `all` filtreyi temizler)"
   cli.logs.flag.since: "varsayılan pencereyi geçersiz kıl (örn. 24h, 30m, 7d)"
   cli.logs.flag.limit: "dönen satır sayısını sınırla (0 = sınır yok)"
+  cli.logs.flag.session: "yalnızca bu ajan oturumunun kaydettiği olayları tut"
   cli.err.logs_invalid_category: "bilinmeyen olay kategorisi"
   cli.err.logs_invalid_since: "geçersiz --since süresi; 24h, 30m, 7d gibi biçimler beklenir"
   cli.depend.short: "Task bağımlılıklarını yönet"

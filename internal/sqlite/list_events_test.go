@@ -81,6 +81,23 @@ func TestListEventsAfterIDCursor(t *testing.T) {
 	}
 }
 
+// TestListEventsAgentSessionFilter verifies the session filter keeps only
+// rows the session recorded.
+func TestListEventsAgentSessionFilter(t *testing.T) {
+	ctx := context.Background()
+	store := openStoreFixture(t, t.TempDir()+"/omakiten.db")
+	now := time.Now().UTC()
+	mine := seedEvent(ctx, t, store, 1, domain.EventTypeTaskCreated, now.Add(-2*time.Hour))
+	seedEvent(ctx, t, store, 1, domain.EventTypeTaskMoved, now.Add(-1*time.Hour))
+	if _, err := store.db.ExecContext(ctx, `UPDATE events SET agent_session_id = 's-1' WHERE id = ?`, mine); err != nil {
+		t.Fatal(err)
+	}
+	got, err := store.ListEvents(ctx, domain.EventFilter{ProjectID: 1, AgentSessionID: "s-1"})
+	if err != nil || len(got) != 1 || got[0].ID != mine {
+		t.Fatalf("ListEvents(session) = %+v, %v; want only event %d", got, err, mine)
+	}
+}
+
 // TestListEventsSingleCategoryFilter locks AC#2 — a single category
 // only returns rows whose event_type belongs to that category.
 func TestListEventsSingleCategoryFilter(t *testing.T) {

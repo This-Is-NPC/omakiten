@@ -75,6 +75,7 @@ keys:
   cli.logs.flag.category: "ogranicz do jednej lub więcej kategorii zdarzeń (powtarzalne, po przecinku; `all` czyści filtr)"
   cli.logs.flag.since: "nadpisz domyślne okno (np. 24h, 30m, 7d)"
   cli.logs.flag.limit: "ogranicz liczbę zwracanych wierszy (0 = bez limitu)"
+  cli.logs.flag.session: "zostaw tylko zdarzenia zapisane przez tę sesję agenta"
   cli.err.logs_invalid_category: "nieznana kategoria zdarzenia"
   cli.err.logs_invalid_since: "nieprawidłowy czas --since; oczekiwane formy jak 24h, 30m, 7d"
   cli.depend.short: "Zarządzaj zależnościami task"

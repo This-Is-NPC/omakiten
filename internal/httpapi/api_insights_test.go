@@ -9,8 +9,8 @@ import (
 
 var _ = mapping([]mappingCase{
 	{"search", http.MethodGet, "/api/v1/projects/alpha/search?q=login+bug&type=task,comment", "", "Search", contract.SearchInput{ProjectSelector: alpha, Query: "login bug", EntityTypes: []string{"task", "comment"}}},
-	{"listLogs", http.MethodGet, "/api/v1/projects/alpha/logs?category=task&category=plan&since=7d&limit=10&order=asc", "", "ListLogs", contract.ListLogsInput{
-		ProjectSelector: alpha, Categories: []string{"task", "plan"}, Since: "7d", Limit: 10, Order: "asc",
+	{"listLogs", http.MethodGet, "/api/v1/projects/alpha/logs?category=task&category=plan&since=7d&limit=10&order=asc&session=s-1", "", "ListLogs", contract.ListLogsInput{
+		ProjectSelector: alpha, Categories: []string{"task", "plan"}, Since: "7d", Limit: 10, Order: "asc", Session: "s-1",
 	}},
 	{"getInsights", http.MethodGet, "/api/v1/projects/alpha/insights?stuck_days=3", "", "InsightsSummary", contract.InsightsSummaryInput{ProjectSelector: alpha, StuckDays: 3}},
 	{"getMetrics", http.MethodGet, "/api/v1/projects/alpha/metrics?period=7d", "", "MetricsSummary", contract.MetricsSummaryInput{ProjectSelector: alpha, Period: "7d", ProjectID: 7}},

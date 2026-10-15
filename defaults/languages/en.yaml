@@ -63,6 +63,7 @@ keys:
   cli.logs.flag.category: "restrict to one or more event categories (repeatable, comma-separated; `all` clears the filter)"
   cli.logs.flag.since: "override the default window (e.g. 24h, 30m, 7d)"
   cli.logs.flag.limit: "cap the number of rows returned (0 = no cap)"
+  cli.logs.flag.session: "keep only events recorded by this agent session"
   cli.err.logs_invalid_category: "unknown event category"
   cli.err.logs_invalid_since: "invalid --since duration; expected forms like 24h, 30m, 7d"
   cli.depend.short: "Manage task dependencies"

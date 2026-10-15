@@ -75,6 +75,7 @@ keys:
   cli.logs.flag.category: "限制为一个或多个事件类别（可重复，逗号分隔；`all` 清除筛选）"
   cli.logs.flag.since: "覆盖默认时间窗口（如 24h、30m、7d）"
   cli.logs.flag.limit: "限制返回行数（0 = 无上限）"
+  cli.logs.flag.session: "仅保留此代理会话记录的事件"
   cli.err.logs_invalid_category: "未知事件类别"
   cli.err.logs_invalid_since: "无效的 --since 时长；预期形式如 24h、30m、7d"
   cli.depend.short: "管理 task 依赖"

@@ -5811,6 +5811,15 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "description": "Agent session whose rows to keep.",
+            "in": "query",
+            "name": "session",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "responses": {

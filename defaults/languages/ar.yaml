@@ -75,6 +75,7 @@ keys:
   cli.logs.flag.category: "تقييد لفئة أو أكثر من فئات الأحداث (قابل للتكرار، مفصولة بفاصلة؛ `all` يمسح الفلتر)"
   cli.logs.flag.since: "تجاوز النافذة الافتراضية (مثلاً 24h، 30m، 7d)"
   cli.logs.flag.limit: "تحديد عدد الصفوف المُرجعة (0 = بلا حد)"
+  cli.logs.flag.session: "الإبقاء فقط على الأحداث التي سجّلتها جلسة الوكيل هذه"
   cli.err.logs_invalid_category: "فئة حدث غير معروفة"
   cli.err.logs_invalid_since: "مدة --since غير صالحة؛ الصيغ المتوقعة مثل 24h، 30m، 7d"
   cli.depend.short: "إدارة تبعيات tasks"
