@@ -28,6 +28,7 @@ instructions; do not assume that an older binary has a newer operation.
 | Tasks, comments, plans, assignment, dependencies | `task`, `comment`, `plan`, `assign`, `depend` |
 | Failures, reusable fixes, progress | `error`, `solution`, `progress` |
 | Active policy, configuration, events | `workflow show`, `config`, `preset`, `logs` |
+| Agents opened for a task | `agent spawn`, `agent show`, `team show`, `wait`, `logs --session` |
 | A moved project directory | `project relocate --help`; preserve the existing project id |
 | Local HTTP access or outside events | `serve --help`, `emit --help` |
 | Documentation attached to a project | `knowledge list`, `knowledge search`, `knowledge show` |
@@ -114,6 +115,15 @@ A denied move emits `guard.violated`, so it cannot test a `task.moved` hook.
 Check event logging, broadcast, hook gates, and filters if no action appears.
 Keep actions short: one-shot CLI calls wait up to five seconds for hooks.
 Use an isolated `OMAKITEN_HOME` or the repository's `dev_env` for experiments.
+
+## Work beside agent teams
+
+A move into a bucket that declares an agent team returns it in `data.team`.
+`spawned` means agents are already working: keep talking with the user and
+follow them with the `follow` commands. `suggested` lists the `spawn` command
+to run if the user wants the team. Opened as a seat yourself, follow the team
+section of your prompt: publish once with `-T review-<key>`, address
+teammates with `-T to-<key>`, and wait with `okt wait`.
 
 ## Read results
 
