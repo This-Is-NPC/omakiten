@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bytes"
+	"fmt"
 	"maps"
 	"os"
 	"path/filepath"
@@ -169,4 +170,27 @@ func TestPresetAddWarnsWhenCreatingLocalScope(t *testing.T) {
 	if got := add("--scope", "global"); strings.Contains(got, "--scope global") {
 		t.Fatalf("explicit global add stderr = %q, want no local-scope warning", got)
 	}
+}
+
+// TestPresetUseRequiresConfirmForExecutables verifies `preset use` refuses
+// a package with exec hooks until --confirm, naming what would run.
+func TestPresetUseRequiresConfirmForExecutables(t *testing.T) {
+	root := t.TempDir()
+	t.Chdir(root)
+	seed, p, _ := createPresetRepository(t, root)
+	hooks := p.Files["config/hooks.yaml"]
+	hooks.Content += "- on: task.moved\n  do: exec\n  args: {argv: [sh, -c, \"true\"]}\n"
+	p.Files["config/hooks.yaml"] = hooks
+	repo := filepath.Join(root, "risky")
+	if err := config.WritePresetDirectory(repo, p); err != nil {
+		t.Fatal(err)
+	}
+	db := filepath.Join(root, "state.db")
+	runCLI(t, db, seed.Path, "preset", "add", repo)
+	selection := filepath.Join(root, ".omakiten", "config.yaml")
+	refusal := runCLIExpectError(t, db, selection, "confirmation_required", "preset", "use", "omakase")
+	if details, _ := refusal["details"].(map[string]any); !strings.Contains(fmt.Sprint(details["executables"]), "hook task.moved: sh -c true") {
+		t.Fatalf("refusal details = %v, want the exec hook listed", refusal["details"])
+	}
+	runCLI(t, db, selection, "preset", "use", "omakase", "--confirm")
 }

@@ -37,6 +37,12 @@ okt --project example config validate
 without activating. `use` selects an installed name or complete content id;
 use the id when several revisions have the same name.
 
+A package that declares `exec` hooks, agent adapters, or bucket agent teams
+runs programs on your machine. `use` then refuses with
+`confirmation_required` and lists them in `details.executables`; review the
+list and repeat with `--confirm`. `okt setup --preset` is the explicit choice
+of a catalog package and does not ask again.
+
 The default scope is local to the project. `--scope global` on scoped preset
 commands operates on the user installation. Without `--project`, the local
 scope is `.omakiten/` in the current directory; `add` and `import` without an

@@ -1641,6 +1641,8 @@ keys:
   cli.work.flag.force: "Replace an existing export file"
   cli.preset.short: "Install and select portable workflow packages"
   cli.preset.add.short: "Install a preset repository snapshot"
+  cli.preset.use.flag.confirm: "vælg en pakke der erklærer programmer, efter at have gennemgået dem"
+  cli.preset.use.confirm_executables: "pakken kører disse programmer på maskinen; gennemgå dem og gentag med --confirm"
   cli.preset.local_scope_warn_fmt: "installerer i et nyt lokalt scope i %s; brug --scope global til brugerinstallationen"
   cli.preset.use.short: "Activate an installed preset by name or id"
   cli.preset.list.short: "List installed presets and modification status"

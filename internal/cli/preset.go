@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 
@@ -20,9 +21,17 @@ func newPresetCommand(opts *runtimeOptions) *cobra.Command {
 		}
 		return config.InstallPreset(root, p)
 	}))
-	cmd.AddCommand(newPresetScopeCommand(opts, "use NAME_OR_ID", "use", func(_ *cobra.Command, root string, args []string) (any, error) {
-		return config.ActivatePreset(root, args[0])
-	}))
+	use := newPresetScopeCommand(opts, "use NAME_OR_ID", "use", func(cmd *cobra.Command, root string, args []string) (any, error) {
+		confirmed, _ := cmd.Flags().GetBool("confirm")
+		return config.ActivatePresetApproved(root, args[0], func(p config.PresetInstallation, executables []string) error {
+			if len(executables) == 0 || confirmed {
+				return nil
+			}
+			return domain.NewError(domain.ErrConfirmationRequired, opts.t("cli.preset.use.confirm_executables"), map[string]any{"preset": p.Manifest.Name, "executables": executables})
+		})
+	})
+	use.Flags().Bool("confirm", false, opts.t("cli.preset.use.flag.confirm"))
+	cmd.AddCommand(use)
 	cmd.AddCommand(newPresetScopeCommand(opts, "list", "list", func(_ *cobra.Command, root string, _ []string) (any, error) {
 		return config.InstalledPresets(root)
 	}))
@@ -142,6 +151,10 @@ func exportPresetPackage(path, name, version string) (config.PresetPackage, erro
 func presetPackageCLIError(err error) error {
 	if err == nil {
 		return nil
+	}
+	var coded *domain.CodedError
+	if errors.As(err, &coded) {
+		return err
 	}
 	return domain.NewError(domain.ErrValidation, fmt.Sprint(err), nil)
 }
