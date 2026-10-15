@@ -15,7 +15,8 @@ permissions, and guards. Follow the user's request and repository rules.
 
 Start with `okt projects list`, then use `--project <slug>` consistently.
 Read `okt --project <slug> project resume`; for an existing task, also read
-`okt --project <slug> task continue <id>`. Use `okt search` for prior solutions.
+`okt --project <slug> task continue <id>`. Use `okt search` for prior solutions
+and `okt error list --tag <tag>` for recorded failures carrying a tag.
 Register a project with `okt init` when the user asks to track it.
 
 Use `okt --help` and `okt <command> --help` to discover installed capabilities
@@ -45,8 +46,11 @@ sequence, or parameters from another project.
 
 Use `okt task` to create and inspect work, `okt plan` to organize tasks into
 waves, `okt comment add` to record evidence, and `okt move` to advance work.
-Respect guards and record a handoff with the state, validation, blocker, and
-next action before leaving active work. Use project comments for shared state.
+Respect guards: `okt move <id> --to <bucket> --dry-run` and the `workflow`
+block of `task continue` show each guard's state, and an unmet guard carries a
+`fix` command; replace its placeholder body with real evidence. Record a
+handoff with the state, validation, blocker, and next action before leaving
+active work. Use project comments for shared state.
 
 Tasks and plans can be imported or exported as OKF Markdown with `okt task`
 and `okt plan`; inspect each command's help for file, preview, and overwrite
