@@ -26,6 +26,16 @@ type ListTopSolutionsInput struct {
 	Limit int `json:"limit,omitempty"`
 }
 
+type ListErrorsInput struct {
+	ProjectSelector
+	Tag string `json:"tag,omitempty"`
+}
+
+type ErrorsResponse struct {
+	Project ProjectSummary `json:"project"`
+	Errors  []ErrorSummary `json:"errors"`
+}
+
 type ErrorSummary struct {
 	ID          int64             `json:"id"`
 	Description string            `json:"description"`

@@ -19,6 +19,7 @@ db.reindex: { cli: true, tui: true, http: false, reason: "${{intl:operations.den
 dependency.add: { cli: true, tui: true, http: true }
 dependency.list: { cli: true, tui: true, http: true }
 dependency.remove: { cli: true, tui: true, http: true }
+error.list: { cli: true, tui: true, http: true }
 error.record: { cli: true, tui: true, http: true }
 event.emit: { cli: true, tui: true, http: true }
 insights.summary: { cli: true, tui: true, http: true }

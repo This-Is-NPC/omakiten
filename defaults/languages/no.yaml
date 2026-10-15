@@ -117,6 +117,8 @@ keys:
   cli.error.record.flag.description: "one-line error description"
   cli.error.record.flag.context: "optional context, stack, or symptoms"
   cli.error.record.flag.tag: "tag name (repeatable; normalized to kebab-case)"
+  cli.error.list.short: "List prosjektets feil, nyeste først"
+  cli.error.list.flag.tag: "behold bare feil med denne taggen (normalisert som lagrede tagger)"
   cli.solution.short: "Attach and confirm solutions for recorded errors"
   cli.solution.add.short: "Attach a candidate solution to an error"
   cli.solution.add.flag.error-id: "error id to attach the solution to"

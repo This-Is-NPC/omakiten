@@ -9,6 +9,7 @@ db.reindex destructive
 dependency.add product
 dependency.list product
 dependency.remove product
+error.list product
 error.record product
 event.emit product
 insights.summary product

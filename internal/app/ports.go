@@ -233,6 +233,9 @@ type ErrorRepository interface {
 	AddSolution(ctx context.Context, errorID int64, description, steps string, taskID *int64) (domain.Solution, error)
 	ConfirmSolution(ctx context.Context, solutionID int64, success bool) (domain.Solution, error)
 	ListTopSolutions(ctx context.Context, limit int) ([]domain.Solution, error)
+	// ListErrors returns a project's errors newest first with their tags;
+	// a non-empty tagName keeps only errors carrying it.
+	ListErrors(ctx context.Context, projectID int64, tagName string) ([]domain.ErrorRecord, error)
 	// RecordEntityEvent persists a domain event tied to an entity (error,
 	// solution, system) with the agent attribution carried in ctx. ErrorService
 	// calls it after each successful canonical write so /metrics.summary can

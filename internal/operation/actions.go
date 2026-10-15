@@ -77,6 +77,7 @@ func (s *Service) actionHandlers() map[string]actionHandler {
 		"dependency.add":       bindAction(s.AddDependency),
 		"dependency.list":      bindAction(s.ListDependencies),
 		"dependency.remove":    bindAction(s.RemoveDependency),
+		"error.list":           bindAction(s.ListErrors),
 		"error.record":         bindAction(s.RecordError),
 		"insights.summary":     bindAction(s.InsightsSummary),
 		"law.get":              bindAction(s.ShowLaw),

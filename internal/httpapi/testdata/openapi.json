@@ -1006,6 +1006,24 @@
         ],
         "type": "object"
       },
+      "contract.ErrorsResponse": {
+        "properties": {
+          "errors": {
+            "items": {
+              "$ref": "#/components/schemas/contract.ErrorSummary"
+            },
+            "type": "array"
+          },
+          "project": {
+            "$ref": "#/components/schemas/contract.ProjectSummary"
+          }
+        },
+        "required": [
+          "errors",
+          "project"
+        ],
+        "type": "object"
+      },
       "contract.EventSummary": {
         "properties": {
           "author_type": {
@@ -4824,6 +4842,65 @@
       }
     },
     "/api/v1/projects/{project}/errors": {
+      "get": {
+        "operationId": "listErrors",
+        "parameters": [
+          {
+            "description": "Project slug.",
+            "in": "path",
+            "name": "project",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Keep only errors carrying this tag.",
+            "in": "query",
+            "name": "tag",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/contract.ErrorsResponse"
+                    },
+                    "ok": {
+                      "const": true
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success."
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/output.Envelope"
+                }
+              }
+            },
+            "description": "Error envelope."
+          }
+        },
+        "summary": "A project's errors, newest first.",
+        "x-okt-surface": "error.list"
+      },
       "post": {
         "operationId": "recordError",
         "parameters": [

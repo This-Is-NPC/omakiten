@@ -15,6 +15,31 @@ func newErrorCommand(opts *runtimeOptions) *cobra.Command {
 		Short: opts.t("cli.error.short"),
 	}
 	cmd.AddCommand(newErrorRecordCommand(opts))
+	cmd.AddCommand(newErrorListCommand(opts))
+	return cmd
+}
+
+func newErrorListCommand(opts *runtimeOptions) *cobra.Command {
+	var tag string
+	cmd := &cobra.Command{
+		Use:   "list [--tag TAG]",
+		Short: opts.t("cli.error.list.short"),
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return runJSON(cmd, func(ctx context.Context) (any, error) {
+				rt, err := opts.open(ctx, true)
+				if err != nil {
+					return nil, err
+				}
+				defer rt.close()
+				return rt.operationService().ListErrors(ctx, contract.ListErrorsInput{
+					ProjectSelector: opts.projectSelector(),
+					Tag:             tag,
+				})
+			})
+		},
+	}
+	cmd.Flags().StringVar(&tag, "tag", "", opts.t("cli.error.list.flag.tag"))
 	return cmd
 }
 

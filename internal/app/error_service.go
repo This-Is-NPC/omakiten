@@ -205,6 +205,19 @@ func (s *ErrorService) ListTopSolutions(ctx context.Context, project domain.Proj
 	return
 }
 
+// List returns the project's errors newest first. A non-empty rawTag is
+// normalised like a recorded tag and keeps only errors carrying it.
+func (s *ErrorService) List(ctx context.Context, project domain.ProjectContext, rawTag string) ([]domain.ErrorRecord, error) {
+	tag := ""
+	if strings.TrimSpace(rawTag) != "" {
+		tag = NormalizeTagName(rawTag, s.snap.Synonyms())
+		if tag == "" {
+			return nil, domain.NewError(domain.ErrValidation, "tag is invalid", map[string]any{"tag": rawTag})
+		}
+	}
+	return s.repo.ListErrors(ctx, project.ID, tag)
+}
+
 func normalizeTagInputs(rawTags []string, synonyms map[string]string) []domain.Tag {
 	tags := make([]domain.Tag, 0, len(rawTags))
 	seen := map[string]struct{}{}
