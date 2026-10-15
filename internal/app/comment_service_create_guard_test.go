@@ -54,7 +54,7 @@ func TestCommentServiceCreateGuard(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Add(locked task) = %v", err)
 	}
-	if _, err := taskSvc.Move(ctx, project.Context(), lockedTask.ID, "dev"); err != nil {
+	if _, _, err := taskSvc.Move(ctx, project.Context(), lockedTask.ID, "dev"); err != nil {
 		t.Fatalf("Move(locked task -> dev) = %v", err)
 	}
 	if _, err := service.AddScoped(ctx, project.Context(), domain.CommentWrite{

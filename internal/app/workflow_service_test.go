@@ -343,7 +343,7 @@ func TestWorkflowMoveTaskValidatesArgs(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			_, err := svc.MoveTask(context.Background(), domain.ProjectContext{ID: 1}, tc.taskID, tc.bucket)
+			_, _, err := svc.MoveTask(context.Background(), domain.ProjectContext{ID: 1}, tc.taskID, tc.bucket)
 			var coded *domain.CodedError
 			if !errors.As(err, &coded) || coded.Code != domain.ErrValidation {
 				t.Fatalf("err = %v, want validation_error", err)
@@ -358,7 +358,7 @@ func TestWorkflowMoveTaskBlocksUnknownTransition(t *testing.T) {
 		currentBucketID: 1,
 	}
 	svc := newWorkflowServiceForTest(f)
-	_, err := svc.MoveTask(context.Background(), domain.ProjectContext{ID: 1}, 5, "dev")
+	_, _, err := svc.MoveTask(context.Background(), domain.ProjectContext{ID: 1}, 5, "dev")
 	var coded *domain.CodedError
 	if !errors.As(err, &coded) || coded.Code != domain.ErrWorkflowInvalidTransition {
 		t.Fatalf("err = %v, want workflow_invalid_transition", err)
@@ -375,7 +375,7 @@ func TestWorkflowMoveTaskAllowsSameBucketWithoutGuards(t *testing.T) {
 		moveResp:        domain.Task{ID: 5, BucketKey: "backlog"},
 	}
 	svc := newWorkflowServiceForTest(f)
-	_, err := svc.MoveTask(context.Background(), domain.ProjectContext{ID: 1}, 5, "backlog")
+	_, _, err := svc.MoveTask(context.Background(), domain.ProjectContext{ID: 1}, 5, "backlog")
 	if err != nil {
 		t.Fatalf("MoveTask same-bucket = %v", err)
 	}
@@ -396,7 +396,7 @@ func TestWorkflowMoveTaskEmitsCompletedOnFinalBucket(t *testing.T) {
 		moveResp:        domain.Task{ID: 5, BucketKey: "done"},
 	}
 	svc := newWorkflowServiceForTest(f)
-	if _, err := svc.MoveTask(context.Background(), domain.ProjectContext{ID: 1}, 5, "done"); err != nil {
+	if _, _, err := svc.MoveTask(context.Background(), domain.ProjectContext{ID: 1}, 5, "done"); err != nil {
 		t.Fatalf("MoveTask = %v", err)
 	}
 	if len(f.eventCalls) != 1 || f.eventCalls[0].eventType != domain.EventTypeTaskCompleted {
@@ -419,7 +419,7 @@ func TestWorkflowMoveTaskInvokesPlanFinalizerOnFinalBucket(t *testing.T) {
 	}
 	pf := &fakePlanFinalizer{}
 	svc := newWorkflowServiceForTest(f).WithPlanFinalizer(pf)
-	if _, err := svc.MoveTask(context.Background(), domain.ProjectContext{ID: 1}, 5, "done"); err != nil {
+	if _, _, err := svc.MoveTask(context.Background(), domain.ProjectContext{ID: 1}, 5, "done"); err != nil {
 		t.Fatalf("MoveTask = %v", err)
 	}
 	if pf.calls != 1 {
@@ -446,7 +446,7 @@ func TestWorkflowMoveTaskBlockersInGuard(t *testing.T) {
 			}
 			svc := newWorkflowServiceForTest(f)
 			ctx := activity.WithAgent(context.Background(), "cli", "okt move", model, "")
-			_, err := svc.MoveTask(ctx, domain.ProjectContext{ID: 1}, 5, "dev")
+			_, _, err := svc.MoveTask(ctx, domain.ProjectContext{ID: 1}, 5, "dev")
 			var coded *domain.CodedError
 			if !errors.As(err, &coded) || coded.Code != domain.ErrGuardViolation {
 				t.Fatalf("err = %v, want guard_violation", err)
@@ -488,7 +488,7 @@ func TestWorkflowMoveTaskCommentsMinGuard(t *testing.T) {
 		commentCount:    1,
 	}
 	svc := newWorkflowServiceForTest(f)
-	_, err := svc.MoveTask(context.Background(), domain.ProjectContext{ID: 1}, 5, "dev")
+	_, _, err := svc.MoveTask(context.Background(), domain.ProjectContext{ID: 1}, 5, "dev")
 	var coded *domain.CodedError
 	if !errors.As(err, &coded) || coded.Code != domain.ErrGuardViolation {
 		t.Fatalf("err = %v, want guard_violation", err)
@@ -506,7 +506,7 @@ func TestWorkflowMoveTaskCommentsTaggedGuard(t *testing.T) {
 		taggedCount:     map[string]int{"review": 0},
 	}
 	svc := newWorkflowServiceForTest(f)
-	_, err := svc.MoveTask(context.Background(), domain.ProjectContext{ID: 1}, 5, "dev")
+	_, _, err := svc.MoveTask(context.Background(), domain.ProjectContext{ID: 1}, 5, "dev")
 	var coded *domain.CodedError
 	if !errors.As(err, &coded) || coded.Code != domain.ErrGuardViolation {
 		t.Fatalf("err = %v, want guard_violation", err)

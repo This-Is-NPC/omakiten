@@ -79,7 +79,7 @@ func addSubKitChildren(t *testing.T, ctx context.Context, service *TaskService, 
 }
 
 func assertSubtaskKitGuard(t *testing.T, ctx context.Context, service *TaskService, project domain.ProjectContext, parentID int64, children []domain.Task) {
-	_, err := service.Move(ctx, project, parentID, "review")
+	_, _, err := service.Move(ctx, project, parentID, "review")
 	if err == nil {
 		t.Fatal("Move(parent dev→review) before children done = nil, want guard violation")
 	}
@@ -97,23 +97,23 @@ func assertSubtaskKitGuard(t *testing.T, ctx context.Context, service *TaskServi
 
 func walkSubKitChildren(t *testing.T, ctx context.Context, service *TaskService, project domain.ProjectContext, children []domain.Task) {
 	for _, child := range children {
-		if _, err := service.Move(ctx, project, child.ID, "dev"); err != nil {
+		if _, _, err := service.Move(ctx, project, child.ID, "dev"); err != nil {
 			t.Fatalf("Move(%s backlog→dev) = %v", child.Title, err)
 		}
-		if _, err := service.Move(ctx, project, child.ID, "done"); err != nil {
+		if _, _, err := service.Move(ctx, project, child.ID, "done"); err != nil {
 			t.Fatalf("Move(%s dev→done) = %v", child.Title, err)
 		}
-		if _, err := service.Move(ctx, project, child.ID, "review"); err == nil {
+		if _, _, err := service.Move(ctx, project, child.ID, "review"); err == nil {
 			t.Fatalf("Move(%s done→review) succeeded; sub-kit has no review bucket", child.Title)
 		}
 	}
 }
 
 func closeSubtaskKitParent(t *testing.T, ctx context.Context, service *TaskService, project domain.ProjectContext, parentID int64) {
-	if _, err := service.Move(ctx, project, parentID, "review"); err != nil {
+	if _, _, err := service.Move(ctx, project, parentID, "review"); err != nil {
 		t.Fatalf("Move(parent dev→review) after children done = %v", err)
 	}
-	if _, err := service.Move(ctx, project, parentID, "done"); err != nil {
+	if _, _, err := service.Move(ctx, project, parentID, "done"); err != nil {
 		t.Fatalf("Move(parent review→done) = %v", err)
 	}
 }

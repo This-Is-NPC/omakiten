@@ -4,7 +4,6 @@ import (
 	"context"
 	"strings"
 
-	"omakiten/internal/app"
 	"omakiten/internal/contract"
 	"omakiten/internal/domain"
 )
@@ -24,12 +23,13 @@ func (s *Service) RecordProgress(ctx context.Context, input contract.RecordProgr
 
 	response := contract.RecordProgressResponse{Project: projectSummary(project)}
 	if progressHasTaskEdit(input) {
-		task, err := s.updateProgressTask(ctx, project, input)
+		task, team, err := s.updateProgressTask(ctx, project, input)
 		if err != nil {
 			return contract.RecordProgressResponse{}, err
 		}
 		summary := taskSummary(task, s.registry)
 		response.Task = &summary
+		response.Team = team
 	}
 	if strings.TrimSpace(input.Comment) != "" {
 		comment, err := s.newCommentService().Add(ctx, project, input.TaskID, input.Comment, input.AuthorType, nil)
@@ -47,7 +47,7 @@ func progressHasTaskEdit(input contract.RecordProgressInput) bool {
 	return input.Title != nil || input.Description != nil || input.Priority != nil || strings.TrimSpace(input.MoveToBucket) != ""
 }
 
-func (s *Service) updateProgressTask(ctx context.Context, project domain.ProjectContext, input contract.RecordProgressInput) (domain.Task, error) {
+func (s *Service) updateProgressTask(ctx context.Context, project domain.ProjectContext, input contract.RecordProgressInput) (domain.Task, *domain.TeamOutcome, error) {
 	update := domain.TaskUpdate{
 		Title:       input.Title,
 		Description: input.Description,
@@ -56,17 +56,17 @@ func (s *Service) updateProgressTask(ctx context.Context, project domain.Project
 	if input.Priority != nil {
 		label := strings.TrimSpace(*input.Priority)
 		if label == "" {
-			return domain.Task{}, domain.NewError(domain.ErrValidation,
+			return domain.Task{}, nil, domain.NewError(domain.ErrValidation,
 				"priority must be a non-empty label when provided; omit the field to leave it unchanged",
 				map[string]any{"priority": *input.Priority})
 		}
 		p, ok := s.registry.PriorityFromLabel(label)
 		if !ok {
-			return domain.Task{}, domain.NewError(domain.ErrValidation,
+			return domain.Task{}, nil, domain.NewError(domain.ErrValidation,
 				"unknown priority label; must match a value in config.priorities",
 				map[string]any{"priority": label})
 		}
 		update.Priority = &p
 	}
-	return app.NewTaskServiceFromStore(s.repo, s.registry, s.snapshot).Edit(ctx, project, input.TaskID, update)
+	return s.taskService().Edit(ctx, project, input.TaskID, update)
 }

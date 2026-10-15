@@ -13,6 +13,7 @@ import (
 	"sync"
 
 	"omakiten/internal/agentlaunch"
+	"omakiten/internal/app"
 	"omakiten/internal/contract"
 	"omakiten/internal/domain"
 	"omakiten/internal/paths"
@@ -23,6 +24,24 @@ type AgentLauncher interface {
 	Resolve(adapters domain.AgentAdapters, role domain.AgentRole) (agentlaunch.Plan, *domain.AgentFallback, *domain.AgentError)
 	Open(ctx context.Context, plan agentlaunch.Plan, req agentlaunch.Request) (string, error)
 	Send(ctx context.Context, spec domain.LauncherSpec, pane, text string) error
+}
+
+// taskService builds the task service whose moves open or plan the agent
+// team of the destination bucket.
+func (s *Service) taskService() *app.TaskService {
+	return app.NewTaskServiceFromStore(s.repo, s.registry, s.snapshot).WithTeamSpawner(teamSpawner{s})
+}
+
+// teamSpawner is the app.TeamSpawner backed by this service.
+type teamSpawner struct{ s *Service }
+
+func (t teamSpawner) SpawnTeam(ctx context.Context, project domain.ProjectContext, task domain.Task, team domain.BucketAgents) domain.TeamOutcome {
+	return t.s.spawnTeam(ctx, project, task, team)
+}
+
+func (t teamSpawner) PlanTeam(task domain.Task, team domain.BucketAgents, status string) domain.TeamOutcome {
+	out, _ := t.s.planTeam(task, team, status)
+	return out
 }
 
 // SetAgentLauncher replaces the process launcher.

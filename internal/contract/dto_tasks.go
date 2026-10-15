@@ -161,6 +161,8 @@ type MoveTaskResponse struct {
 	DryRun  bool                 `json:"dry_run,omitempty"`
 	Ready   *bool                `json:"ready,omitempty"`
 	Guards  []domain.GuardStatus `json:"guards,omitempty"`
+	// Team reports the destination bucket's agent team, when it declares one.
+	Team *domain.TeamOutcome `json:"team,omitempty"`
 }
 
 type DeleteTaskInput struct {

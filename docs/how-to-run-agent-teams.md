@@ -49,6 +49,11 @@ buckets:
         - {key: security, command: okt-task-review, harness: opencode, brief: "security only"}
 ```
 
+`trigger: manual` makes a move into the bucket report the team instead of
+opening it: `data.team` has `status: suggested`, the resolved seats, and the
+`spawn` command to run when you want it. `okt move --dry-run` reports the same
+`team` a real move would.
+
 `okt agent spawn --task 42` without `--command` opens the team of the task's
 current bucket: the lead first, then every member in parallel. A member that
 cannot open is reported as `failed` while the others keep working; a lead that

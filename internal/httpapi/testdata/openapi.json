@@ -1590,6 +1590,9 @@
           },
           "task": {
             "$ref": "#/components/schemas/contract.TaskSummary"
+          },
+          "team": {
+            "$ref": "#/components/schemas/domain.TeamOutcome"
           }
         },
         "required": [
@@ -1917,6 +1920,9 @@
           },
           "task": {
             "$ref": "#/components/schemas/contract.TaskSummary"
+          },
+          "team": {
+            "$ref": "#/components/schemas/domain.TeamOutcome"
           }
         },
         "required": [

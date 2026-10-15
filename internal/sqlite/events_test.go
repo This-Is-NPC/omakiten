@@ -98,10 +98,10 @@ func TestMoveTaskEmitsTaskMovedAndCompleted(t *testing.T) {
 		t.Fatalf("CreateTask = %v", err)
 	}
 
-	if _, err := workflow.MoveTask(ctx, project.Context(), task.ID, "dev"); err != nil {
+	if _, _, err := workflow.MoveTask(ctx, project.Context(), task.ID, "dev"); err != nil {
 		t.Fatalf("MoveTask(backlog->dev) = %v", err)
 	}
-	if _, err := workflow.MoveTask(ctx, project.Context(), task.ID, "done"); err != nil {
+	if _, _, err := workflow.MoveTask(ctx, project.Context(), task.ID, "done"); err != nil {
 		t.Fatalf("MoveTask(dev->done) = %v", err)
 	}
 

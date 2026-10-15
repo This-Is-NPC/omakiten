@@ -78,7 +78,7 @@ func runIsolationMove(wg *sync.WaitGroup, results chan<- isolationResult, snap *
 	defer wg.Done()
 	repo := newIsolationRepo()
 	service := NewWorkflowService(snap, repo, evaluator, repo, repo, snap.Registry())
-	_, err := service.MoveTask(context.Background(), domain.ProjectContext{ID: projectID}, taskID, "dev")
+	_, _, err := service.MoveTask(context.Background(), domain.ProjectContext{ID: projectID}, taskID, "dev")
 	results <- isolationResult{projectKey: key, err: err}
 }
 

@@ -100,7 +100,7 @@ func testDoneTagEdit(t *testing.T, ctx context.Context, service *CommentService,
 	if err != nil {
 		t.Fatalf("AddScoped(locked comment) = %v", err)
 	}
-	if _, err := taskSvc.Move(ctx, project, doneTask.ID, "done"); err != nil {
+	if _, _, err := taskSvc.Move(ctx, project, doneTask.ID, "done"); err != nil {
 		t.Fatalf("Move(done task -> done) = %v", err)
 	}
 	if _, err := service.Edit(ctx, project, locked.ID, "blocked", []string{"locked"}); err == nil {

@@ -280,7 +280,7 @@ func (s *Service) EditTask(ctx context.Context, input contract.EditTaskInput) (c
 		update.ChangeParent = true
 		update.NewParentID = input.ParentID.Value
 	}
-	task, err := app.NewTaskServiceFromStore(s.repo, s.registry, s.snapshot).Edit(ctx, project, input.TaskID, update)
+	task, _, err := s.taskService().Edit(ctx, project, input.TaskID, update)
 	if err != nil {
 		return contract.EditTaskResponse{}, err
 	}
@@ -295,20 +295,20 @@ func (s *Service) MoveTask(ctx context.Context, input contract.MoveTaskInput) (c
 	if err != nil {
 		return contract.MoveTaskResponse{}, err
 	}
-	tasks := app.NewTaskServiceFromStore(s.repo, s.registry, s.snapshot)
+	tasks := s.taskService()
 	if input.DryRun {
-		task, statuses, err := tasks.PreviewMove(ctx, project, input.TaskID, input.BucketKey)
+		task, statuses, team, err := tasks.PreviewMove(ctx, project, input.TaskID, input.BucketKey)
 		if err != nil {
 			return contract.MoveTaskResponse{}, err
 		}
 		ready := guardsSatisfied(statuses)
-		return contract.MoveTaskResponse{Project: projectSummary(project), Task: taskSummary(task, s.registry), DryRun: true, Ready: &ready, Guards: statuses}, nil
+		return contract.MoveTaskResponse{Project: projectSummary(project), Task: taskSummary(task, s.registry), DryRun: true, Ready: &ready, Guards: statuses, Team: team}, nil
 	}
-	task, err := tasks.Move(ctx, project, input.TaskID, input.BucketKey)
+	task, team, err := tasks.Move(ctx, project, input.TaskID, input.BucketKey)
 	if err != nil {
 		return contract.MoveTaskResponse{}, err
 	}
-	return contract.MoveTaskResponse{Project: projectSummary(project), Task: taskSummary(task, s.registry)}, nil
+	return contract.MoveTaskResponse{Project: projectSummary(project), Task: taskSummary(task, s.registry), Team: team}, nil
 }
 
 func (s *Service) DeleteTask(ctx context.Context, input contract.DeleteTaskInput) (contract.DeleteTaskResponse, error) {

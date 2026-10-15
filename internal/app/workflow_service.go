@@ -27,6 +27,15 @@ type WorkflowService struct {
 	events        EventRepository
 	registry      *domain.EnumRegistry
 	planFinalizer PlanFinalizer
+	teamSpawner   TeamSpawner
+}
+
+// WithTeamSpawner attaches the spawner that handles the agent team of the
+// bucket a task moves into. Without one, moves report no team. Returns the
+// receiver so callers can chain.
+func (s *WorkflowService) WithTeamSpawner(ts TeamSpawner) *WorkflowService {
+	s.teamSpawner = ts
+	return s
 }
 
 // WithPlanFinalizer attaches the optional PlanFinalizer hook called after
@@ -375,8 +384,9 @@ func (s *WorkflowService) ResolveTaskSnap(ctx context.Context, project domain.Pr
 // MoveTask runs the full move policy: resolve current/target buckets, enforce
 // the configured transition + guards, persist the move via TaskRepository
 // (which records task.moved), then conditionally emit task.completed when the
-// destination is the workflow's final bucket. Returns the persisted task.
-func (s *WorkflowService) MoveTask(ctx context.Context, project domain.ProjectContext, taskID int64, targetBucketKey string) (task domain.Task, err error) {
+// destination is the workflow's final bucket. Returns the persisted task and
+// what happened about the destination bucket's agent team, if it declares one.
+func (s *WorkflowService) MoveTask(ctx context.Context, project domain.ProjectContext, taskID int64, targetBucketKey string) (task domain.Task, team *domain.TeamOutcome, err error) {
 	finish := activity.Track(ctx, "app.WorkflowService.MoveTask", project, map[string]any{"task_id": taskID, "bucket": targetBucketKey})
 	defer func() {
 		status := "ok"
@@ -407,25 +417,52 @@ func (s *WorkflowService) MoveTask(ctx context.Context, project domain.ProjectCo
 		if err = s.recordCompletion(ctx, project, taskID, targetBucketKey, task, taskSnap, target.ID); err != nil {
 			return
 		}
+		task.BucketKey = target.Key
+		team = s.bucketTeam(task, target, false)
 	}
 	return
+}
+
+// bucketTeam reports the team a task entering target meets: a manual team is
+// suggested; a preview of an automatic team says it would spawn.
+func (s *WorkflowService) bucketTeam(task domain.Task, target domain.Bucket, preview bool) *domain.TeamOutcome {
+	if s.teamSpawner == nil || target.Agents == nil {
+		return nil
+	}
+	var out domain.TeamOutcome
+	switch {
+	case target.Agents.Trigger == domain.AgentTriggerManual:
+		out = s.teamSpawner.PlanTeam(task, *target.Agents, domain.TeamSuggested)
+		out.Spawn = fmt.Sprintf("okt agent spawn --task %d", task.ID)
+	case preview:
+		out = s.teamSpawner.PlanTeam(task, *target.Agents, domain.TeamWouldSpawn)
+	default:
+		return nil
+	}
+	return &out
 }
 
 // PreviewMove reports the guards a move of taskID to targetBucketKey would
 // face, without moving the task or recording events. A move that fails before
 // the guards (unknown bucket, archived task, undeclared transition) returns the
-// same error MoveTask would. A move to the current bucket has no guards.
-func (s *WorkflowService) PreviewMove(ctx context.Context, project domain.ProjectContext, taskID int64, targetBucketKey string) (domain.Task, []domain.GuardStatus, error) {
+// same error MoveTask would. A move to the current bucket has no guards and
+// meets no team.
+func (s *WorkflowService) PreviewMove(ctx context.Context, project domain.ProjectContext, taskID int64, targetBucketKey string) (domain.Task, []domain.GuardStatus, *domain.TeamOutcome, error) {
 	targetBucketKey, err := validateMoveInput(taskID, targetBucketKey)
 	if err != nil {
-		return domain.Task{}, nil, err
+		return domain.Task{}, nil, nil, err
 	}
 	task, taskSnap, current, target, err := s.resolveMove(ctx, project, taskID, targetBucketKey, true)
 	if err != nil || current == target.ID {
-		return task, nil, err
+		return task, nil, nil, err
 	}
 	statuses, err := s.guards.PreviewTransitionForTask(ctx, project.ID, task, current, target.ID, taskSnap)
-	return task, statuses, err
+	if err != nil {
+		return domain.Task{}, nil, nil, err
+	}
+	entering := task
+	entering.BucketKey = target.Key
+	return task, statuses, s.bucketTeam(entering, target, true), nil
 }
 
 // OutgoingGuards reports, for each transition leaving task's current bucket,

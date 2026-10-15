@@ -77,7 +77,7 @@ func TestMoveTaskEnforcesWorkflow(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := workflow.MoveTask(ctx, project.Context(), task.ID, tt.to)
+			_, _, err := workflow.MoveTask(ctx, project.Context(), task.ID, tt.to)
 			if tt.wantErr && err == nil {
 				t.Fatalf("MoveTask() error = nil, want error")
 			}
@@ -449,7 +449,7 @@ func TestMoveTaskGuardBlockersIn(t *testing.T) {
 	}
 
 	// Guard fails: blocker is in backlog, not done
-	_, err := workflow.MoveTask(ctx, project.Context(), main.ID, "dev")
+	_, _, err := workflow.MoveTask(ctx, project.Context(), main.ID, "dev")
 	if err == nil {
 		t.Fatal("MoveTask() error = nil, want guard_violation")
 	}
@@ -466,7 +466,7 @@ func TestMoveTaskGuardBlockersIn(t *testing.T) {
 	}
 
 	// Guard passes: blocker is in done
-	moved, err := workflow.MoveTask(ctx, project.Context(), main2.ID, "dev")
+	moved, _, err := workflow.MoveTask(ctx, project.Context(), main2.ID, "dev")
 	if err != nil {
 		t.Fatalf("MoveTask() error = %v", err)
 	}
@@ -486,7 +486,7 @@ func TestMoveTaskGuardBlockersInNoBlockers(t *testing.T) {
 	workflow := app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.snap())
 
 	// No blockers — guard passes
-	moved, err := workflow.MoveTask(ctx, project.Context(), task.ID, "dev")
+	moved, _, err := workflow.MoveTask(ctx, project.Context(), task.ID, "dev")
 	if err != nil {
 		t.Fatalf("MoveTask() error = %v", err)
 	}
@@ -506,7 +506,7 @@ func TestMoveTaskGuardCommentsMin(t *testing.T) {
 	workflow := app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.snap())
 
 	// Guard fails: 0 comments
-	_, err := workflow.MoveTask(ctx, project.Context(), task.ID, "dev")
+	_, _, err := workflow.MoveTask(ctx, project.Context(), task.ID, "dev")
 	if err == nil {
 		t.Fatal("MoveTask() error = nil, want guard_violation")
 	}
@@ -521,7 +521,7 @@ func TestMoveTaskGuardCommentsMin(t *testing.T) {
 	}
 
 	// Guard passes: 1 comment >= 1
-	moved, err := workflow.MoveTask(ctx, project.Context(), task.ID, "dev")
+	moved, _, err := workflow.MoveTask(ctx, project.Context(), task.ID, "dev")
 	if err != nil {
 		t.Fatalf("MoveTask() error = %v", err)
 	}
@@ -545,7 +545,7 @@ func TestMoveTaskNoGuardUnaffected(t *testing.T) {
 	workflow := app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.snap())
 
 	// Transition has no guard — move succeeds even with pending blocker
-	moved, err := workflow.MoveTask(ctx, project.Context(), task.ID, "dev")
+	moved, _, err := workflow.MoveTask(ctx, project.Context(), task.ID, "dev")
 	if err != nil {
 		t.Fatalf("MoveTask() error = %v", err)
 	}
@@ -565,7 +565,7 @@ func TestMoveTaskGuardCommentsTagged(t *testing.T) {
 	workflow := app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.snap())
 
 	// Guard fails: no comments at all
-	_, err := workflow.MoveTask(ctx, project.Context(), task.ID, "dev")
+	_, _, err := workflow.MoveTask(ctx, project.Context(), task.ID, "dev")
 	if err == nil {
 		t.Fatal("MoveTask() error = nil, want guard_violation")
 	}
@@ -580,7 +580,7 @@ func TestMoveTaskGuardCommentsTagged(t *testing.T) {
 	}
 
 	// Guard still fails: comment exists but lacks the tag
-	_, err = workflow.MoveTask(ctx, project.Context(), task.ID, "dev")
+	_, _, err = workflow.MoveTask(ctx, project.Context(), task.ID, "dev")
 	if err == nil {
 		t.Fatal("MoveTask() untagged error = nil, want guard_violation")
 	}
@@ -594,7 +594,7 @@ func TestMoveTaskGuardCommentsTagged(t *testing.T) {
 	}
 
 	// Guard passes
-	moved, err := workflow.MoveTask(ctx, project.Context(), task.ID, "dev")
+	moved, _, err := workflow.MoveTask(ctx, project.Context(), task.ID, "dev")
 	if err != nil {
 		t.Fatalf("MoveTask() error = %v", err)
 	}

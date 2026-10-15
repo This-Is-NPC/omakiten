@@ -92,7 +92,7 @@ func TestArchiveBypassesTransitionGuardsButHonorsOperationGuards(t *testing.T) {
 	// MoveTask must reject archived rows even though backlog→done is no
 	// stranger to transition guards (we never get there because state check
 	// fires first).
-	if _, err := tasks.Move(ctx, project, task.ID, "dev"); err == nil {
+	if _, _, err := tasks.Move(ctx, project, task.ID, "dev"); err == nil {
 		t.Fatalf("Move on archived succeeded; expected validation error")
 	}
 
@@ -350,7 +350,7 @@ func TestEditPolicyAndCommentInheritance(t *testing.T) {
 
 	// Backlog allows task.edit + comment.edit (inherited).
 	newTitle := "Renamed"
-	if _, err := tasks.Edit(ctx, project, task.ID, domain.TaskUpdate{Title: &newTitle}); err != nil {
+	if _, _, err := tasks.Edit(ctx, project, task.ID, domain.TaskUpdate{Title: &newTitle}); err != nil {
 		t.Fatalf("Edit(backlog) = %v", err)
 	}
 
@@ -365,7 +365,7 @@ func TestEditPolicyAndCommentInheritance(t *testing.T) {
 	}
 
 	otherTitle := "Blocked"
-	if _, err := tasks.Edit(ctx, project, task.ID, domain.TaskUpdate{Title: &otherTitle}); err == nil {
+	if _, _, err := tasks.Edit(ctx, project, task.ID, domain.TaskUpdate{Title: &otherTitle}); err == nil {
 		t.Fatalf("Edit(dev) succeeded; expected policy violation")
 	}
 

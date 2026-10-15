@@ -3,6 +3,7 @@ package operation
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -33,9 +34,17 @@ func agentArgs(values ...string) []domain.AgentArg {
 	return out
 }
 
-// newAgentSpawnFixture seeds a backlog task whose bucket declares a lead and
-// one member, with a fake launcher that counts opens and can fail them.
+// newAgentSpawnFixture seeds a backlog task whose bucket declares a manual
+// team of a lead and one member, with a fake launcher that counts opens and
+// can fail them.
 func newAgentSpawnFixture(t *testing.T) agentFixtureSet {
+	t.Helper()
+	return newAgentTeamFixture(t, "backlog", domain.AgentTriggerManual)
+}
+
+// newAgentTeamFixture is newAgentSpawnFixture with the team declared on
+// bucket with trigger.
+func newAgentTeamFixture(t *testing.T, teamBucket, trigger string) agentFixtureSet {
 	t.Helper()
 	t.Setenv("OMAKITEN_HOME", t.TempDir())
 	ctx := context.Background()
@@ -46,9 +55,9 @@ func newAgentSpawnFixture(t *testing.T) agentFixtureSet {
 		Launchers: map[string]domain.LauncherSpec{"fake": {Open: agentArgs("fake-term", "{command}"), Send: agentArgs("fake-term", "{pane}", "{text}")}},
 	}
 	for i := range bundle.Workflows[0].Buckets {
-		if bundle.Workflows[0].Buckets[i].Key == "backlog" {
+		if bundle.Workflows[0].Buckets[i].Key == teamBucket {
 			bundle.Workflows[0].Buckets[i].Agents = &config.BucketAgentsConfig{
-				Trigger: domain.AgentTriggerManual,
+				Trigger: trigger,
 				Lead:    config.AgentRoleConfig{Command: "okt-start"},
 				Members: []config.AgentRoleConfig{{Key: "security", Command: "okt-start", Brief: "security only"}},
 			}
@@ -169,5 +178,43 @@ func TestSpawnAgentsBlockedStoreOpensNothing(t *testing.T) {
 	f.service.BlockAgentSpawn("use OMAKITEN_HOME")
 	if _, err := f.service.SpawnAgents(f.ctx, contract.SpawnAgentsInput{TaskID: f.task.ID}); err == nil || *f.opens != 0 {
 		t.Fatalf("blocked spawn error = %v, opens %d; want a failure and no panes", err, *f.opens)
+	}
+}
+
+// TestMoveIntoManualTeamBucketSuggestsTheTeam verifies a move into a bucket
+// with a manual team opens nothing and reports the team with its spawn
+// command, and that a dry run reports what the move would do.
+func TestMoveIntoManualTeamBucketSuggestsTheTeam(t *testing.T) {
+	f := newAgentTeamFixture(t, "dev", domain.AgentTriggerManual)
+	preview, err := f.service.MoveTask(f.ctx, contract.MoveTaskInput{TaskID: f.task.ID, BucketKey: "dev", DryRun: true})
+	if err != nil || preview.Team == nil || preview.Team.Status != domain.TeamSuggested {
+		t.Fatalf("dry run = %+v, %v; want a suggested team", preview.Team, err)
+	}
+	moved, err := f.service.MoveTask(f.ctx, contract.MoveTaskInput{TaskID: f.task.ID, BucketKey: "dev"})
+	if err != nil {
+		t.Fatalf("MoveTask() error = %v", err)
+	}
+	team := moved.Team
+	if team == nil || team.Status != domain.TeamSuggested || team.Spawn != fmt.Sprintf("okt agent spawn --task %d", f.task.ID) || team.Bucket != "dev" {
+		t.Fatalf("team = %+v, want a suggested dev team with its spawn command", team)
+	}
+	if team.Lead.Harness != "fake" || len(team.Members) != 1 || team.Members[0].Key != "security" || *f.opens != 0 {
+		t.Fatalf("team = %+v (opens %d), want the resolved seats and no panes", team, *f.opens)
+	}
+}
+
+// TestDryRunIntoAutoTeamBucketWouldSpawn verifies a dry run into a bucket
+// with an automatic team reports would_spawn without opening panes, and a
+// move between buckets without teams reports none.
+func TestDryRunIntoAutoTeamBucketWouldSpawn(t *testing.T) {
+	f := newAgentTeamFixture(t, "dev", domain.AgentTriggerAuto)
+	preview, err := f.service.MoveTask(f.ctx, contract.MoveTaskInput{TaskID: f.task.ID, BucketKey: "dev", DryRun: true})
+	if err != nil || preview.Team == nil || preview.Team.Status != domain.TeamWouldSpawn || preview.Team.Lead.SessionID != "" || *f.opens != 0 {
+		t.Fatalf("dry run = %+v, %v (opens %d); want would_spawn and no panes", preview.Team, err, *f.opens)
+	}
+	f = newAgentTeamFixture(t, "done", domain.AgentTriggerAuto)
+	moved, err := f.service.MoveTask(f.ctx, contract.MoveTaskInput{TaskID: f.task.ID, BucketKey: "dev"})
+	if err != nil || moved.Team != nil {
+		t.Fatalf("move without a team = %+v, %v; want no team", moved.Team, err)
 	}
 }

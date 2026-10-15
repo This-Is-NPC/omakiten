@@ -1,5 +1,7 @@
 package contract
 
+import "omakiten/internal/domain"
+
 type RecordProgressInput struct {
 	ProjectSelector
 	TaskID      int64   `json:"task_id,omitempty"`
@@ -19,4 +21,6 @@ type RecordProgressResponse struct {
 	Project ProjectSummary  `json:"project"`
 	Task    *TaskSummary    `json:"task,omitempty"`
 	Comment *CommentSummary `json:"comment,omitempty"`
+	// Team reports the destination bucket's agent team after a move.
+	Team *domain.TeamOutcome `json:"team,omitempty"`
 }

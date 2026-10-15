@@ -60,7 +60,7 @@ func TestTaskServiceInputCaps(t *testing.T) {
 			t.Fatalf("Add(seed) error = %v", err)
 		}
 		over := strings.Repeat("t", domain.MaxTaskTitleRunes+1)
-		_, err = service.Edit(ctx, project.Context(), task.ID, domain.TaskUpdate{Title: &over})
+		_, _, err = service.Edit(ctx, project.Context(), task.ID, domain.TaskUpdate{Title: &over})
 		assertCodedError(t, err, domain.ErrValidation)
 	})
 
@@ -70,7 +70,7 @@ func TestTaskServiceInputCaps(t *testing.T) {
 			t.Fatalf("Add(seed) error = %v", err)
 		}
 		over := strings.Repeat("d", domain.MaxTaskDescriptionBytes+1)
-		_, err = service.Edit(ctx, project.Context(), task.ID, domain.TaskUpdate{Description: &over})
+		_, _, err = service.Edit(ctx, project.Context(), task.ID, domain.TaskUpdate{Description: &over})
 		assertCodedError(t, err, domain.ErrValidation)
 	})
 }

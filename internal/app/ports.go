@@ -242,6 +242,13 @@ type AgentRepository interface {
 	LastAgentActivity(ctx context.Context, sessionID string) (domain.EventRow, error)
 }
 
+// TeamSpawner opens, or only resolves, the agent team a bucket declares for
+// a task. PlanTeam opens nothing and reports status for every seat.
+type TeamSpawner interface {
+	SpawnTeam(ctx context.Context, project domain.ProjectContext, task domain.Task, team domain.BucketAgents) domain.TeamOutcome
+	PlanTeam(task domain.Task, team domain.BucketAgents, status string) domain.TeamOutcome
+}
+
 // ChangeFeed detects committed writes: DataVersion moves on every external
 // commit and LatestEventID is the newest event id.
 type ChangeFeed interface {
