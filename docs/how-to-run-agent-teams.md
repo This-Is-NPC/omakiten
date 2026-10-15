@@ -49,6 +49,14 @@ buckets:
         - {key: security, command: okt-task-review, harness: opencode, brief: "security only"}
 ```
 
+`trigger: auto` opens the team when a task moves into the bucket, after the
+move commits; the move's result carries it in `data.team`, with the sessions,
+panes, and commands to follow them. The agent that moved the task keeps its
+conversation; it reads progress when it wants. A team that cannot open never
+undoes the move: `data.team.status` is `failed` and the error says why.
+`okt move --no-spawn`, and `--no-spawn` on `progress record`, report the team
+as `skipped` instead.
+
 `trigger: manual` makes a move into the bucket report the team instead of
 opening it: `data.team` has `status: suggested`, the resolved seats, and the
 `spawn` command to run when you want it. `okt move --dry-run` reports the same
@@ -71,6 +79,11 @@ each other's panes:
 | Ask the lead or a member | `okt comment add 42 -a agent -T to-lead -b "…"` |
 | Read messages for a key | `okt comment list 42 --tag to-security` |
 | Wait for results | `okt wait --task 42 --tag 'review-*' --timeout 10m` |
+
+A member's `review-<key>` comment marks its session `done`, records
+`team.member_done`, and types one line into the lead's pane:
+`okt: security finished task #42 — okt team show t-…`. No other text is ever
+typed into a running agent.
 
 `wait` returns the first comment newer than its start, or than `--after`,
 whose tag matches the glob, plus the cursor for the next wait. On timeout it

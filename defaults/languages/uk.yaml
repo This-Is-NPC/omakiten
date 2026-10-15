@@ -278,6 +278,7 @@ keys:
   cli.task.list.flag.parent: "необов'язковий фільтр parent; omit без фільтра, 0 лише roots (parent_id IS NULL), додатний id для прямих дітей того parent"
   cli.task.move.flag.to: "ключ цільового bucket"
   cli.task.move.flag.dry-run: "показати guards, з якими зіткнеться move, без переміщення й запису подій"
+  cli.task.move.flag.no-spawn: "не відкривати автоматичну команду агентів цільового bucket"
   cli.task.delete.flag.confirm: "обов'язково: підтвердити деструктивне видалення"
   cli.comment.add.flag.body: "тіло comment"
   cli.comment.add.flag.author: "тип автора: human або agent"

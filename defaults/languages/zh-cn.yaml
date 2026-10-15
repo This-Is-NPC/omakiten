@@ -276,6 +276,7 @@ keys:
   cli.task.list.flag.parent: "可选 parent 筛选；省略表示无筛选，0 仅 roots (parent_id IS NULL)，正 id 表示该 parent 的直接子项"
   cli.task.move.flag.to: "目标 bucket 键"
   cli.task.move.flag.dry-run: "显示 move 将面临的 guard,不移动也不记录事件"
+  cli.task.move.flag.no-spawn: "不打开目标 bucket 的自动代理团队"
   cli.task.delete.flag.confirm: "必需:确认破坏性删除"
   cli.comment.add.flag.body: "评论正文"
   cli.comment.add.flag.author: "作者类型:human 或 agent"

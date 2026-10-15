@@ -68,5 +68,5 @@ func (s *Service) updateProgressTask(ctx context.Context, project domain.Project
 		}
 		update.Priority = &p
 	}
-	return s.taskService().Edit(ctx, project, input.TaskID, update)
+	return s.taskService(input.NoSpawn).Edit(ctx, project, input.TaskID, update)
 }

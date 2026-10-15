@@ -279,6 +279,7 @@ keys:
   cli.task.list.flag.parent: "वैकल्पिक parent filter; no filter के लिए omit, roots only के लिए 0 (parent_id IS NULL), positive id उस parent के direct children"
   cli.task.move.flag.to: "लक्ष्य bucket key"
   cli.task.move.flag.dry-run: "move किन guards का सामना करेगा, यह बिना move किए या event दर्ज किए दिखाएँ"
+  cli.task.move.flag.no-spawn: "लक्ष्य bucket की automatic agent team न खोलें"
   cli.task.delete.flag.confirm: "आवश्यक: विनाशकारी delete की पुष्टि करें"
   cli.comment.add.flag.body: "comment सामग्री"
   cli.comment.add.flag.author: "author प्रकार: human या agent"

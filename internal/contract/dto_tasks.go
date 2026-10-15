@@ -151,6 +151,9 @@ type MoveTaskInput struct {
 	// DryRun reports the guards the move would face without moving the
 	// task or recording events.
 	DryRun bool `json:"dry_run,omitempty"`
+	// NoSpawn reports the destination's automatic agent team as skipped
+	// instead of opening it.
+	NoSpawn bool `json:"no_spawn,omitempty"`
 }
 
 // MoveTaskResponse carries the moved task, or on a dry run the unchanged

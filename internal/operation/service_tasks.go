@@ -280,7 +280,7 @@ func (s *Service) EditTask(ctx context.Context, input contract.EditTaskInput) (c
 		update.ChangeParent = true
 		update.NewParentID = input.ParentID.Value
 	}
-	task, _, err := s.taskService().Edit(ctx, project, input.TaskID, update)
+	task, _, err := s.taskService(false).Edit(ctx, project, input.TaskID, update)
 	if err != nil {
 		return contract.EditTaskResponse{}, err
 	}
@@ -295,7 +295,7 @@ func (s *Service) MoveTask(ctx context.Context, input contract.MoveTaskInput) (c
 	if err != nil {
 		return contract.MoveTaskResponse{}, err
 	}
-	tasks := s.taskService()
+	tasks := s.taskService(input.NoSpawn)
 	if input.DryRun {
 		task, statuses, team, err := tasks.PreviewMove(ctx, project, input.TaskID, input.BucketKey)
 		if err != nil {

@@ -418,14 +418,15 @@ func (s *WorkflowService) MoveTask(ctx context.Context, project domain.ProjectCo
 			return
 		}
 		task.BucketKey = target.Key
-		team = s.bucketTeam(task, target, false)
+		team = s.bucketTeam(ctx, project, task, target, false)
 	}
 	return
 }
 
-// bucketTeam reports the team a task entering target meets: a manual team is
-// suggested; a preview of an automatic team says it would spawn.
-func (s *WorkflowService) bucketTeam(task domain.Task, target domain.Bucket, preview bool) *domain.TeamOutcome {
+// bucketTeam handles the team a task entering target meets: a manual team is
+// suggested, an automatic team is spawned, and a preview of an automatic
+// team says it would spawn.
+func (s *WorkflowService) bucketTeam(ctx context.Context, project domain.ProjectContext, task domain.Task, target domain.Bucket, preview bool) *domain.TeamOutcome {
 	if s.teamSpawner == nil || target.Agents == nil {
 		return nil
 	}
@@ -437,7 +438,7 @@ func (s *WorkflowService) bucketTeam(task domain.Task, target domain.Bucket, pre
 	case preview:
 		out = s.teamSpawner.PlanTeam(task, *target.Agents, domain.TeamWouldSpawn)
 	default:
-		return nil
+		out = s.teamSpawner.SpawnTeam(ctx, project, task, *target.Agents)
 	}
 	return &out
 }
@@ -462,7 +463,7 @@ func (s *WorkflowService) PreviewMove(ctx context.Context, project domain.Projec
 	}
 	entering := task
 	entering.BucketKey = target.Key
-	return task, statuses, s.bucketTeam(entering, target, true), nil
+	return task, statuses, s.bucketTeam(ctx, project, entering, target, true), nil
 }
 
 // OutgoingGuards reports, for each transition leaving task's current bucket,

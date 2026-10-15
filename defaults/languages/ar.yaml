@@ -277,6 +277,7 @@ keys:
   cli.task.list.flag.parent: "فلتر parent اختياري; اتركه للكل، 0 للجذور فقط (parent_id IS NULL)، معرّف موجب لأبناء ذلك parent مباشرة"
   cli.task.move.flag.to: "مفتاح bucket الهدف"
   cli.task.move.flag.dry-run: "عرض guards التي سيواجهها النقل دون نقل المهمة أو تسجيل أحداث"
+  cli.task.move.flag.no-spawn: "عدم فتح فريق الوكلاء التلقائي في bucket الهدف"
   cli.task.delete.flag.confirm: "مطلوب: تأكيد الحذف المُدمِّر"
   cli.comment.add.flag.body: "نص comment"
   cli.comment.add.flag.author: "نوع المؤلّف: human أو agent"

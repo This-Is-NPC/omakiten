@@ -24,6 +24,7 @@ type agentFixtureSet struct {
 	task    domain.Task
 	opens   *int
 	fail    *bool
+	sends   *[][]string
 }
 
 func agentArgs(values ...string) []domain.AgentArg {
@@ -80,17 +81,22 @@ func newAgentTeamFixture(t *testing.T, teamBucket, trigger string) agentFixtureS
 	svc.SetSnapshot(store.Snapshot())
 	svc.SetSettings(ServiceSettings{RecentCommentLimit: 5, IncludeWorkflow: true, NextWorkLimit: 5, SimilarTaskLimit: 5})
 	opens, fail := 0, false
+	var sends [][]string
 	svc.SetAgentLauncher(agentlaunch.Launcher{
 		LookPath: func(name string) (string, error) { return "/bin/" + name, nil },
 		Run: func(_ context.Context, argv []string) ([]byte, error) {
 			if fail {
 				return nil, errors.New("no terminal")
 			}
+			if len(argv) == 3 {
+				sends = append(sends, argv)
+				return nil, nil
+			}
 			opens++
 			return []byte("%" + string(rune('0'+opens))), nil
 		},
 	})
-	return agentFixtureSet{ctx: ctx, store: store, service: svc, project: project, task: task, opens: &opens, fail: &fail}
+	return agentFixtureSet{ctx: ctx, store: store, service: svc, project: project, task: task, opens: &opens, fail: &fail, sends: &sends}
 }
 
 // TestSpawnAgentsOpensTheBucketTeamOnce verifies a spawn opens the bucket's
@@ -216,5 +222,55 @@ func TestDryRunIntoAutoTeamBucketWouldSpawn(t *testing.T) {
 	moved, err := f.service.MoveTask(f.ctx, contract.MoveTaskInput{TaskID: f.task.ID, BucketKey: "dev"})
 	if err != nil || moved.Team != nil {
 		t.Fatalf("move without a team = %+v, %v; want no team", moved.Team, err)
+	}
+}
+
+// TestMoveIntoAutoTeamBucketSpawnsUnlessSkipped verifies a move into a
+// bucket with an automatic team opens it and reports it, and --no-spawn
+// reports it skipped without opening panes.
+func TestMoveIntoAutoTeamBucketSpawnsUnlessSkipped(t *testing.T) {
+	f := newAgentTeamFixture(t, "dev", domain.AgentTriggerAuto)
+	skipped, err := f.service.MoveTask(f.ctx, contract.MoveTaskInput{TaskID: f.task.ID, BucketKey: "dev", NoSpawn: true})
+	if err != nil || skipped.Team == nil || skipped.Team.Status != domain.TeamSkipped || *f.opens != 0 {
+		t.Fatalf("--no-spawn move = %+v, %v (opens %d); want skipped and no panes", skipped.Team, err, *f.opens)
+	}
+
+	f = newAgentTeamFixture(t, "dev", domain.AgentTriggerAuto)
+	moved, err := f.service.MoveTask(f.ctx, contract.MoveTaskInput{TaskID: f.task.ID, BucketKey: "dev"})
+	if err != nil {
+		t.Fatalf("MoveTask() error = %v", err)
+	}
+	if moved.Task.BucketKey != "dev" || moved.Team == nil || moved.Team.Status != domain.TeamSpawned || moved.Team.Lead.Pane == "" || *f.opens != 2 {
+		t.Fatalf("move = %+v (opens %d), want the task in dev and its team spawned", moved, *f.opens)
+	}
+}
+
+// TestMemberResultWakesTheLead verifies a review-<key> comment marks that
+// member done, records team.member_done, and types one line into the lead's
+// pane.
+func TestMemberResultWakesTheLead(t *testing.T) {
+	f := newAgentSpawnFixture(t)
+	spawned, err := f.service.SpawnAgents(f.ctx, contract.SpawnAgentsInput{TaskID: f.task.ID})
+	if err != nil {
+		t.Fatalf("SpawnAgents() error = %v", err)
+	}
+	if _, err := f.service.AddComment(f.ctx, contract.AddCommentInput{TaskID: f.task.ID, Body: "no findings", AuthorType: "agent", Tags: []string{"review-security"}}); err != nil {
+		t.Fatalf("AddComment() error = %v", err)
+	}
+	team, err := f.service.ShowTeam(f.ctx, contract.ShowTeamInput{TeamID: spawned.Team.TeamID})
+	if err != nil {
+		t.Fatalf("ShowTeam() error = %v", err)
+	}
+	if team.Team.Sessions[1].Status != domain.SessionDone || len(team.Results) != 1 || team.Results[0].Member != "security" {
+		t.Fatalf("team = %+v, want security done with its result", team)
+	}
+	if len(*f.sends) != 1 || (*f.sends)[0][1] != spawned.Team.Lead.Pane || !strings.Contains((*f.sends)[0][2], "security finished task") {
+		t.Fatalf("sends = %q, want one wake line to the lead's pane %s", *f.sends, spawned.Team.Lead.Pane)
+	}
+	if _, err := f.service.AddComment(f.ctx, contract.AddCommentInput{TaskID: f.task.ID, Body: "again", AuthorType: "agent", Tags: []string{"review-security"}}); err != nil {
+		t.Fatalf("AddComment(again) error = %v", err)
+	}
+	if len(*f.sends) != 1 {
+		t.Fatalf("a second result woke the lead again: %q", *f.sends)
 	}
 }

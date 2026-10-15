@@ -42,7 +42,7 @@ working directory. Configuration discovery is described in
 | `project relocate --root PATH` | Repair a moved project's registered root; requires `--project` or `--project-id`. See [project configuration](how-to-configure-a-project.md#repair-a-moved-project). |
 | `task create`, `task import`, `task export` | Create work and move structured work documents. |
 | `task show`, `task continue`, `task activity` | Read a task with every comment, recover it for an agent, and read its activity. |
-| `list`, `edit`, `move` | List work, change fields, and request a workflow transition; `move --dry-run` reports the transition's guards without moving. |
+| `list`, `edit`, `move` | List work, change fields, and request a workflow transition; `move --dry-run` reports the transition's guards without moving; `--no-spawn` keeps an automatic agent team closed. |
 | `assign`, `archive`, `unarchive`, `delete` | Assignment and task lifecycle. |
 | `comment add`, `list`, `edit`, `delete` | Task, project, and universal comments. |
 | `depend add`, `remove`, `list` | Explicit task blockers. |

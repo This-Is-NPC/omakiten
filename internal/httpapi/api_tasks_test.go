@@ -19,7 +19,7 @@ var _ = mapping([]mappingCase{
 	{"editTask", http.MethodPatch, "/api/v1/projects/alpha/tasks/5", `{"title":"New","parent_id":null}`, "EditTask", contract.EditTaskInput{
 		ProjectSelector: alpha, TaskID: 5, Title: ptr("New"), ParentID: contract.OptionalInt64{Set: true},
 	}},
-	{"moveTask", http.MethodPost, "/api/v1/projects/alpha/tasks/5/transitions", `{"bucket_key":"review"}`, "MoveTask", contract.MoveTaskInput{ProjectSelector: alpha, TaskID: 5, BucketKey: "review"}},
+	{"moveTask", http.MethodPost, "/api/v1/projects/alpha/tasks/5/transitions", `{"bucket_key":"review","no_spawn":true}`, "MoveTask", contract.MoveTaskInput{ProjectSelector: alpha, TaskID: 5, BucketKey: "review", NoSpawn: true}},
 	{"assignTask", http.MethodPut, "/api/v1/projects/alpha/tasks/5/assignee", `{"assignee":""}`, "AssignTask", contract.AssignTaskInput{ProjectSelector: alpha, TaskID: 5}},
 	{"listTaskActivity", http.MethodGet, "/api/v1/projects/alpha/tasks/5/activity?order=desc", "", "ListTaskActivity", contract.ListTaskActivityInput{ProjectSelector: alpha, TaskID: 5, Order: "desc"}},
 	{"deleteTask", http.MethodDelete, "/api/v1/projects/alpha/tasks/5?confirmed=true", "", "DeleteTask", contract.DeleteTaskInput{ProjectSelector: alpha, TaskID: 5, Confirmed: true}},

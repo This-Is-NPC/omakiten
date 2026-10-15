@@ -47,6 +47,8 @@ type EditTaskBody struct {
 // TransitionBody names the target bucket of moveTask.
 type TransitionBody struct {
 	BucketKey string `json:"bucket_key"`
+	// NoSpawn reports the destination's automatic agent team as skipped.
+	NoSpawn bool `json:"no_spawn,omitempty"`
 }
 
 // AssigneeBody sets the assignee; empty clears it.
@@ -154,7 +156,7 @@ func (s *Server) moveTask(r *http.Request, body TransitionBody) (contract.MoveTa
 	if err != nil {
 		return contract.MoveTaskResponse{}, err
 	}
-	return ops.MoveTask(r.Context(), contract.MoveTaskInput{ProjectSelector: selector, TaskID: taskID, BucketKey: body.BucketKey})
+	return ops.MoveTask(r.Context(), contract.MoveTaskInput{ProjectSelector: selector, TaskID: taskID, BucketKey: body.BucketKey, NoSpawn: body.NoSpawn})
 }
 
 func (s *Server) assignTask(r *http.Request, body AssigneeBody) (contract.AssignTaskResponse, error) {

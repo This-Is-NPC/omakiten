@@ -27,15 +27,22 @@ type AgentLauncher interface {
 }
 
 // taskService builds the task service whose moves open or plan the agent
-// team of the destination bucket.
-func (s *Service) taskService() *app.TaskService {
-	return app.NewTaskServiceFromStore(s.repo, s.registry, s.snapshot).WithTeamSpawner(teamSpawner{s})
+// team of the destination bucket. noSpawn reports an automatic team as
+// skipped instead of opening it.
+func (s *Service) taskService(noSpawn bool) *app.TaskService {
+	return app.NewTaskServiceFromStore(s.repo, s.registry, s.snapshot).WithTeamSpawner(teamSpawner{s: s, noSpawn: noSpawn})
 }
 
 // teamSpawner is the app.TeamSpawner backed by this service.
-type teamSpawner struct{ s *Service }
+type teamSpawner struct {
+	s       *Service
+	noSpawn bool
+}
 
 func (t teamSpawner) SpawnTeam(ctx context.Context, project domain.ProjectContext, task domain.Task, team domain.BucketAgents) domain.TeamOutcome {
+	if t.noSpawn {
+		return t.PlanTeam(task, team, domain.TeamSkipped)
+	}
 	return t.s.spawnTeam(ctx, project, task, team)
 }
 
@@ -388,4 +395,71 @@ func hasTag(tags []domain.Tag, name string) bool {
 		}
 	}
 	return false
+}
+
+// noteTeamResults finishes the session of every active team member whose
+// review-<key> tag the task comment carries, records team.member_done, and
+// wakes the team's lead with one line. Failures never fail the comment.
+func (s *Service) noteTeamResults(ctx context.Context, project domain.ProjectContext, comment domain.Comment) {
+	members := resultMembers(comment)
+	if len(members) == 0 {
+		return
+	}
+	teams, err := s.repo.ActiveAgentTeamIDs(ctx, project.ID, comment.TaskID)
+	if err != nil {
+		return
+	}
+	for _, id := range teams {
+		if team, err := s.repo.GetAgentTeam(ctx, id); err == nil {
+			s.finishMembers(ctx, project, team, members, comment.ID)
+		}
+	}
+}
+
+// resultMembers returns the member keys whose review-<key> tag a task
+// comment carries.
+func resultMembers(comment domain.Comment) map[string]bool {
+	members := map[string]bool{}
+	if comment.Scope != domain.CommentScopeTask || comment.TaskID == 0 {
+		return members
+	}
+	for _, tag := range comment.Tags {
+		if key, ok := strings.CutPrefix(tag.Name, domain.AgentResultTag); ok && key != "" {
+			members[key] = true
+		}
+	}
+	return members
+}
+
+func (s *Service) finishMembers(ctx context.Context, project domain.ProjectContext, team domain.AgentTeam, members map[string]bool, commentID int64) {
+	var lead domain.AgentSession
+	for _, session := range team.Sessions {
+		if session.Member == domain.AgentLeadKey {
+			lead = session
+		}
+	}
+	for _, session := range team.Sessions {
+		if !members[session.Member] {
+			continue
+		}
+		if finished, err := s.repo.FinishAgentSession(ctx, session.ID); err != nil || !finished {
+			continue
+		}
+		payload := map[string]any{"team_id": team.ID, "member": session.Member, "session_id": session.ID, "comment_id": commentID}
+		if err := s.wakeLead(ctx, team, lead, session.Member); err != nil {
+			payload["wake_error"] = err.Error()
+		}
+		if body, err := json.Marshal(payload); err == nil {
+			_ = s.repo.RecordEntityEvent(ctx, domain.EventEntityTask, team.TaskID, project.ID, domain.EventTypeTeamMemberDone, string(body))
+		}
+	}
+}
+
+// wakeLead types one line naming the finished member into the lead's pane.
+func (s *Service) wakeLead(ctx context.Context, team domain.AgentTeam, lead domain.AgentSession, member string) error {
+	if member == domain.AgentLeadKey || lead.Status != domain.SessionSpawned || lead.Pane == "" {
+		return nil
+	}
+	line := fmt.Sprintf("okt: %s finished task #%d — okt team show %s", member, team.TaskID, team.ID)
+	return s.launcher.Send(ctx, s.snapshot.AgentAdapters().Launchers[lead.Launcher], lead.Pane, line)
 }

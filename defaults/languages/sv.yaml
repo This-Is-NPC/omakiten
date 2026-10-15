@@ -280,6 +280,7 @@ keys:
   cli.task.list.flag.parent: "valfritt parent-filter; utelämna för inget filter, 0 endast roots (parent_id IS NULL), positivt id för direkta barn till den parent"
   cli.task.move.flag.to: "mål-bucket-nyckel"
   cli.task.move.flag.dry-run: "visa de guards flytten skulle möta, utan att flytta eller registrera händelser"
+  cli.task.move.flag.no-spawn: "öppna inte målbucketens automatiska agentteam"
   cli.task.delete.flag.confirm: "krävs: bekräfta destruktiv radering"
   cli.comment.add.flag.body: "comment-body"
   cli.comment.add.flag.author: "författartyp: human eller agent"

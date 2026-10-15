@@ -45,6 +45,8 @@ type ProgressBody struct {
 	Priority     *string `json:"priority,omitempty"`
 	MoveToBucket string  `json:"move_to_bucket,omitempty"`
 	Comment      string  `json:"comment,omitempty"`
+	// NoSpawn reports the destination's automatic agent team as skipped.
+	NoSpawn bool `json:"no_spawn,omitempty"`
 }
 
 func (s *Server) recordRoutes() []route {
@@ -136,5 +138,6 @@ func (s *Server) recordProgress(r *http.Request, body ProgressBody) (contract.Re
 		MoveToBucket:    body.MoveToBucket,
 		Comment:         body.Comment,
 		AuthorType:      "human",
+		NoSpawn:         body.NoSpawn,
 	})
 }

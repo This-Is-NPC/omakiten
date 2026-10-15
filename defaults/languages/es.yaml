@@ -281,6 +281,7 @@ keys:
   cli.task.list.flag.parent: "filtro parent opcional; omitir para sin filtro, 0 solo roots (parent_id IS NULL), id positivo para hijos directos de ese parent"
   cli.task.move.flag.to: "clave del bucket destino"
   cli.task.move.flag.dry-run: "muestra los guards que enfrentaría el move, sin mover ni registrar eventos"
+  cli.task.move.flag.no-spawn: "no abre el equipo automático de agentes del bucket de destino"
   cli.task.delete.flag.confirm: "obligatorio: confirma la eliminación destructiva"
   cli.comment.add.flag.body: "cuerpo del comentario"
   cli.comment.add.flag.author: "tipo de autor: human o agent"

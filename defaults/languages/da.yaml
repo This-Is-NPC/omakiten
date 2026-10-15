@@ -280,6 +280,7 @@ keys:
   cli.task.list.flag.parent: "valgfrit parent-filter; udelad for intet filter, 0 kun roots (parent_id IS NULL), positivt id for det pågældende parents direkte børn"
   cli.task.move.flag.to: "mål-bucket-nøgle"
   cli.task.move.flag.dry-run: "vis de guards flytningen ville møde, uden at flytte eller registrere hændelser"
+  cli.task.move.flag.no-spawn: "åbn ikke destinationsbucketens automatiske agentteam"
   cli.task.delete.flag.confirm: "påkrævet: bekræft den destruktive sletning"
   cli.comment.add.flag.body: "comment-tekst"
   cli.comment.add.flag.author: "forfattertype: human eller agent"

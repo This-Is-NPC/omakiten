@@ -270,6 +270,7 @@ keys:
   cli.task.list.flag.parent: "optional parent filter; omit for no filter, 0 for roots only (parent_id IS NULL), positive id for that parent's direct children"
   cli.task.move.flag.to: "target bucket key"
   cli.task.move.flag.dry-run: "report the guards the move would face without moving or recording events"
+  cli.task.move.flag.no-spawn: "do not open the destination bucket's automatic agent team"
   cli.task.delete.flag.confirm: "required: confirm the destructive delete"
   cli.comment.add.flag.body: "comment body"
   cli.comment.add.flag.author: "author type: human or agent"

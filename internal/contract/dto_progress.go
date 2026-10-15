@@ -15,6 +15,9 @@ type RecordProgressInput struct {
 	MoveToBucket string  `json:"move_to_bucket,omitempty"`
 	Comment      string  `json:"comment,omitempty"`
 	AuthorType   string  `json:"author_type,omitempty"`
+	// NoSpawn reports the destination's automatic agent team as skipped
+	// instead of opening it.
+	NoSpawn bool `json:"no_spawn,omitempty"`
 }
 
 type RecordProgressResponse struct {

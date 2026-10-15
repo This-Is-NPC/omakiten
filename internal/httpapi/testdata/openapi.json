@@ -4007,6 +4007,9 @@
           "move_to_bucket": {
             "type": "string"
           },
+          "no_spawn": {
+            "type": "boolean"
+          },
           "priority": {
             "type": "string"
           },
@@ -4455,6 +4458,9 @@
         "properties": {
           "bucket_key": {
             "type": "string"
+          },
+          "no_spawn": {
+            "type": "boolean"
           }
         },
         "required": [
