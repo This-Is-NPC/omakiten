@@ -3,6 +3,8 @@ package operation
 import (
 	"context"
 	"errors"
+	"fmt"
+	"maps"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -106,6 +108,52 @@ func assertPlanGate(t *testing.T, err error, stage domain.PlanStage, tag string)
 	}
 	if fix, _ := coded.Details["fix"].(string); !strings.HasPrefix(fix, "okt comment add --scope plan --plan p ") || !strings.Contains(fix, " -T "+tag+" ") {
 		t.Fatalf("fix = %q, want a plan comment tagged %s", fix, tag)
+	}
+}
+
+// gateStates maps each plan gate the plan reports to whether it is met,
+// keyed by stage, with the share for a progress gate.
+func (f planGateFixture) gateStates(t *testing.T) map[string]bool {
+	t.Helper()
+	shown, err := f.service.ShowPlan(f.ctx, contract.ShowPlanInput{Slug: "p"})
+	if err != nil {
+		t.Fatalf("ShowPlan() error = %v", err)
+	}
+	continued, err := f.service.ContinuePlan(f.ctx, contract.ContinuePlanInput{Slug: "p"})
+	if err != nil {
+		t.Fatalf("ContinuePlan() error = %v", err)
+	}
+	if len(continued.Gates) != len(shown.Gates) {
+		t.Fatalf("continue gates = %+v, want show's %+v", continued.Gates, shown.Gates)
+	}
+	states := map[string]bool{}
+	for _, gate := range shown.Gates {
+		key, _ := gate.Details["stage"].(string)
+		if percent, ok := gate.Details["percent"]; ok {
+			key = fmt.Sprintf("%s %v", key, percent)
+		}
+		states[key] = gate.Satisfied
+	}
+	return states
+}
+
+func TestPlanShowReportsItsGates(t *testing.T) {
+	f := newPlanGateFixture(t)
+	want := map[string]bool{"start": false, "progress 50": false, "complete": false}
+	if got := f.gateStates(t); !maps.Equal(got, want) {
+		t.Fatalf("gates = %v, want %v", got, want)
+	}
+	f.comment(t, "kickoff")
+	want["start"] = true
+	if got := f.gateStates(t); !maps.Equal(got, want) {
+		t.Fatalf("gates after kickoff = %v, want %v", got, want)
+	}
+	abandoned := string(domain.PlanStatusAbandoned)
+	if _, err := f.service.EditPlan(f.ctx, contract.EditPlanInput{Slug: "p", Status: &abandoned}); err != nil {
+		t.Fatalf("abandon error = %v", err)
+	}
+	if got := f.gateStates(t); len(got) != 0 {
+		t.Fatalf("gates of an abandoned plan = %v, want none", got)
 	}
 }
 

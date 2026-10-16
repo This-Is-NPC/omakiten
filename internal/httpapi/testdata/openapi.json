@@ -707,6 +707,12 @@
             "format": "int32",
             "type": "integer"
           },
+          "gates": {
+            "items": {
+              "$ref": "#/components/schemas/domain.GuardStatus"
+            },
+            "type": "array"
+          },
           "next_claimable": {
             "$ref": "#/components/schemas/contract.PlanTaskRow"
           },
@@ -2328,6 +2334,12 @@
           "done_count": {
             "format": "int32",
             "type": "integer"
+          },
+          "gates": {
+            "items": {
+              "$ref": "#/components/schemas/domain.GuardStatus"
+            },
+            "type": "array"
           },
           "percent": {
             "format": "int32",

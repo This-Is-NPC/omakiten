@@ -94,6 +94,28 @@ func (e *Evaluator) EvaluatePlanStage(ctx context.Context, projectID, planID int
 // active plan without recording events. A plan that is not active meets
 // none.
 func (e *Evaluator) PreviewPlanStage(ctx context.Context, projectID, planID int64, stage domain.PlanStage) ([]domain.GuardStatus, error) {
+	return e.previewPlan(ctx, projectID, planID, func(gates *domain.PlanGates) []planGate {
+		if stage == domain.PlanStageComplete {
+			return []planGate{{stage: stage, guards: gates.Complete.Guards}}
+		}
+		return []planGate{{stage: stage, guards: gates.Start.Guards}}
+	})
+}
+
+// PreviewPlanGates reports the state of every gate of an active plan, start
+// first, then each progress share, then complete, without recording events.
+// A plan that is not active meets none.
+func (e *Evaluator) PreviewPlanGates(ctx context.Context, projectID, planID int64) ([]domain.GuardStatus, error) {
+	return e.previewPlan(ctx, projectID, planID, func(gates *domain.PlanGates) []planGate {
+		all := []planGate{{stage: domain.PlanStageStart, guards: gates.Start.Guards}}
+		for _, gate := range gates.Progress {
+			all = append(all, planGate{stage: domain.PlanStageProgress, percent: gate.Percent, guards: gate.Guards})
+		}
+		return append(all, planGate{stage: domain.PlanStageComplete, guards: gates.Complete.Guards})
+	})
+}
+
+func (e *Evaluator) previewPlan(ctx context.Context, projectID, planID int64, pick func(*domain.PlanGates) []planGate) ([]domain.GuardStatus, error) {
 	gates := e.planGates()
 	if gates == nil {
 		return nil, nil
@@ -102,11 +124,7 @@ func (e *Evaluator) PreviewPlanStage(ctx context.Context, projectID, planID int6
 	if err != nil || state.Status != domain.PlanStatusActive {
 		return nil, err
 	}
-	gate := planGate{stage: stage, guards: gates.Start.Guards}
-	if stage == domain.PlanStageComplete {
-		gate.guards = gates.Complete.Guards
-	}
-	return e.evaluatePlanGates(ctx, projectID, state, []planGate{gate})
+	return e.evaluatePlanGates(ctx, projectID, state, pick(gates))
 }
 
 // planGates returns the root workflow's plans block, or nil when it declares

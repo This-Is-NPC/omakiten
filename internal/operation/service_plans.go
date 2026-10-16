@@ -121,6 +121,13 @@ func (s *Service) showPlan(ctx context.Context, input contract.ShowPlanInput) (c
 	if show.TotalCount > 0 {
 		percent = show.DoneCount * 100 / show.TotalCount
 	}
+	var gates []domain.GuardStatus
+	if s.workflow != nil {
+		gates, err = s.workflow.Evaluator().PreviewPlanGates(ctx, project.ID, show.Plan.ID)
+		if err != nil {
+			return contract.ShowPlanResponse{}, err
+		}
+	}
 
 	return contract.ShowPlanResponse{
 		Project:      projectSummary(project),
@@ -130,6 +137,7 @@ func (s *Service) showPlan(ctx context.Context, input contract.ShowPlanInput) (c
 		TotalCount:   show.TotalCount,
 		Percent:      percent,
 		ActiveWaveID: show.ActiveWaveID,
+		Gates:        gates,
 	}, nil
 }
 
@@ -158,6 +166,7 @@ func (s *Service) ContinuePlan(ctx context.Context, input contract.ContinuePlanI
 		TotalCount:   show.TotalCount,
 		Percent:      show.Percent,
 		ActiveWaveID: show.ActiveWaveID,
+		Gates:        show.Gates,
 	}
 	row, ok, err := s.newPlanService().PeekNextClaimable(ctx, project, show.Plan.ID)
 	if err != nil {

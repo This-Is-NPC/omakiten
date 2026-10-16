@@ -147,7 +147,10 @@ okt comment add --scope plan --plan release-2 -T kickoff -b "Scope agreed"
 Plans that are done or abandoned meet no gate, and tasks outside a plan never
 do. A blocked move or claim fails like any guard, naming the stage, the plan,
 and the command that adds the missing comment; `okt move --dry-run` lists the
-plan gates beside the transition guards.
+plan gates beside the transition guards. `okt plan show` and
+`okt plan continue` report every gate of an active plan under `gates`, each
+with `satisfied`, its `stage` and `percent` in `details`, and the `fix` while
+it is unmet.
 
 Subtask kits declare the workflow at the next task level. Parent links remain
 project-local. Changing kit or bucket identity can require rebinding existing
