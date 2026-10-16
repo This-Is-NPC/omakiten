@@ -417,7 +417,7 @@ func (c *BundleCache) applyLocked(ctx context.Context, projectID int64, configPa
 }
 
 func (c *BundleCache) commitReload(ctx context.Context, projectID int64, old, runtime *ProjectRuntime) {
-	if runtime != nil && runtime.BundleImportedPayload != "" && c.store != nil {
+	if runtime != nil && runtime.BundleImportedPayload != "" && c.store != nil && !c.reloadsLastImport(ctx, projectID, old, runtime) {
 		// bundle.imported is a lifecycle event for the runtime that imported
 		// the bundle. It uses entity_type=system, but that does not make its
 		// project scope global. Zero remains reserved for an explicitly
@@ -427,6 +427,17 @@ func (c *BundleCache) commitReload(ctx context.Context, projectID int64, old, ru
 	if old != nil {
 		c.maybeEmitSubtaskKitNotice(ctx, projectID, old.Snapshot, runtime.Snapshot)
 	}
+}
+
+// reloadsLastImport reports whether a process's first runtime for the
+// project loads exactly the bundle the project last recorded as imported.
+// Such a load restores state rather than importing it.
+func (c *BundleCache) reloadsLastImport(ctx context.Context, projectID int64, old, runtime *ProjectRuntime) bool {
+	if old != nil {
+		return false
+	}
+	last, err := c.store.LatestProjectEventPayload(ctx, projectID, domain.EventTypeBundleImported)
+	return err == nil && last == runtime.BundleImportedPayload
 }
 
 func (c *BundleCache) commitRuntime(ctx context.Context, projectID int64, old, runtime *ProjectRuntime) error {

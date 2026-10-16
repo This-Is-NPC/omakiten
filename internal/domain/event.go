@@ -230,8 +230,10 @@ const (
 	// law_count, template_count}. Distinct from bundle.swapped: the
 	// `imported` event records "a fresh bundle reached the runtime"
 	// (source-of-truth flipped), while `swapped` records "an existing
-	// bundle handle was activated" (e.g. project switch). Hooks subscribe
-	// to bundle.imported to react when configuration content changes.
+	// bundle handle was activated" (e.g. project switch). A process whose
+	// first runtime for a project loads exactly the bundle that project last
+	// recorded does not record it again. Hooks subscribe to bundle.imported
+	// to react when configuration content changes.
 	EventTypeBundleImported = "bundle.imported"
 
 	// EventTypeConfirmationGranted fires immediately before the TUI
