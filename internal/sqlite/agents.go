@@ -19,33 +19,29 @@ func agentSessionColumns(prefix string) string {
 
 // OpenAgentTeam records team as the active team of its task in its bucket.
 // When the task already has an active team there, it returns that team and
-// false instead.
+// false instead. The insert comes first, so concurrent opens wait for each
+// other's write.
 func (s *Store) OpenAgentTeam(ctx context.Context, team domain.AgentTeam) (domain.AgentTeam, bool, error) {
 	tx, err := s.beginTransaction(ctx)
 	if err != nil {
 		return domain.AgentTeam{}, false, err
 	}
 	defer func() { _ = s.rollbackTransaction(ctx, tx) }()
-	var existing string
-	err = tx.QueryRowContext(ctx, `SELECT id FROM agent_teams WHERE project_id = ? AND task_id = ? AND bucket_key = ? AND status = 'active'`, team.ProjectID, team.TaskID, team.BucketKey).Scan(&existing)
-	if err == nil {
-		if err := s.commitTransaction(ctx, tx); err != nil {
-			return domain.AgentTeam{}, false, err
-		}
-		found, err := s.GetAgentTeam(ctx, existing)
-		return found, false, err
-	}
-	if !errors.Is(err, sql.ErrNoRows) {
-		return domain.AgentTeam{}, false, err
-	}
-	err = tx.QueryRowContext(ctx, `
+	if _, err := tx.ExecContext(ctx, `
 INSERT INTO agent_teams(id, project_id, task_id, bucket_key, status, opened_after)
 VALUES (?, ?, ?, ?, 'active', (SELECT COALESCE(MAX(id), 0) FROM events))
-RETURNING status, opened_after, created_at`, team.ID, team.ProjectID, team.TaskID, team.BucketKey).Scan(&team.Status, &team.OpenedAfter, &team.CreatedAt)
-	if err != nil {
+ON CONFLICT DO NOTHING`, team.ID, team.ProjectID, team.TaskID, team.BucketKey); err != nil {
 		return domain.AgentTeam{}, false, err
 	}
-	return team, true, s.commitTransaction(ctx, tx)
+	var active string
+	if err := tx.QueryRowContext(ctx, `SELECT id FROM agent_teams WHERE project_id = ? AND task_id = ? AND bucket_key = ? AND status = 'active'`, team.ProjectID, team.TaskID, team.BucketKey).Scan(&active); err != nil {
+		return domain.AgentTeam{}, false, err
+	}
+	if err := s.commitTransaction(ctx, tx); err != nil {
+		return domain.AgentTeam{}, false, err
+	}
+	found, err := s.GetAgentTeam(ctx, active)
+	return found, active == team.ID, err
 }
 
 // FailAgentTeam marks a team failed, which frees its task and bucket.
@@ -75,13 +71,41 @@ func (s *Store) CloseAgentTeam(ctx context.Context, teamID string) (bool, error)
 	return true, s.commitTransaction(ctx, tx)
 }
 
-// AddAgentSession records a running session of a team.
-func (s *Store) AddAgentSession(ctx context.Context, session domain.AgentSession) error {
-	_, err := s.query(ctx).ExecContext(ctx, `
+// ReserveAgentSessions records sessions as running in their teams, after
+// marking the session replaced names replaced when it is set, as one
+// write. With a positive limit it refuses, recording nothing, when the
+// project would then run more than limit sessions in active teams.
+func (s *Store) ReserveAgentSessions(ctx context.Context, projectID int64, sessions []domain.AgentSession, replaced string, limit int) error {
+	tx, err := s.beginTransaction(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = s.rollbackTransaction(ctx, tx) }()
+	if replaced != "" {
+		if _, err := tx.ExecContext(ctx, `UPDATE agent_sessions SET status = 'replaced', finished_at = COALESCE(finished_at, CURRENT_TIMESTAMP) WHERE id = ? AND status != 'replaced'`, replaced); err != nil {
+			return err
+		}
+	}
+	for _, session := range sessions {
+		if _, err := tx.ExecContext(ctx, `
 INSERT INTO agent_sessions(id, team_id, member, command, persona, harness, model, transcript, status)
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'running')`,
-		session.ID, session.TeamID, session.Member, session.Command, session.Persona, session.Harness, session.Model, session.Transcript)
-	return err
+			session.ID, session.TeamID, session.Member, session.Command, session.Persona, session.Harness, session.Model, session.Transcript); err != nil {
+			return err
+		}
+	}
+	if limit > 0 {
+		var running int
+		if err := tx.QueryRowContext(ctx, `
+SELECT COUNT(*) FROM agent_sessions s JOIN agent_teams t ON t.id = s.team_id
+WHERE t.project_id = ? AND t.status = 'active' AND s.status = 'running'`, projectID).Scan(&running); err != nil {
+			return err
+		}
+		if running > limit {
+			return domain.SessionLimitError{Running: running - len(sessions), Limit: limit}
+		}
+	}
+	return s.commitTransaction(ctx, tx)
 }
 
 // SetAgentSessionPID records the pid of a session's supervisor.
@@ -115,12 +139,6 @@ FROM agent_teams t JOIN agent_sessions s ON s.team_id = t.id WHERE s.id = ?`, se
 		return false, false, err
 	}
 	return true, idle, s.commitTransaction(ctx, tx)
-}
-
-// ReplaceAgentSession marks a session replaced by a newer one for its seat.
-func (s *Store) ReplaceAgentSession(ctx context.Context, sessionID string) error {
-	_, err := s.query(ctx).ExecContext(ctx, `UPDATE agent_sessions SET status = 'replaced', finished_at = COALESCE(finished_at, CURRENT_TIMESTAMP) WHERE id = ? AND status != 'replaced'`, sessionID)
-	return err
 }
 
 // GetAgentTeam returns a team with its sessions in creation order.
@@ -234,16 +252,6 @@ func (s *Store) ActiveAgentTeamIDs(ctx context.Context, projectID, taskID int64)
 		ids = append(ids, id)
 	}
 	return ids, rows.Err()
-}
-
-// CountRunningAgentSessions counts the project's sessions still running in
-// active teams.
-func (s *Store) CountRunningAgentSessions(ctx context.Context, projectID int64) (int, error) {
-	var n int
-	err := s.query(ctx).QueryRowContext(ctx, `
-SELECT COUNT(*) FROM agent_sessions s JOIN agent_teams t ON t.id = s.team_id
-WHERE t.project_id = ? AND t.status = 'active' AND s.status = 'running'`, projectID).Scan(&n)
-	return n, err
 }
 
 // StaleRunningAgentSessions returns the project's sessions that have been

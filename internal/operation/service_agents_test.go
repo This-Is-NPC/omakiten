@@ -712,3 +712,49 @@ func TestManualTeamSuggestsWhatIsMissing(t *testing.T) {
 		t.Fatalf("lead = %+v, want unconfigured with what is missing", lead)
 	}
 }
+
+// TestMaxSessionsHoldsAcrossConcurrentSpawns verifies spawns racing for
+// the last session slot start exactly one seat between them.
+func TestMaxSessionsHoldsAcrossConcurrentSpawns(t *testing.T) {
+	f := newAgentSpawnFixture(t)
+	bundle := agentTestBundle(t)
+	bundle.AgentAdapters = f.store.Snapshot().AgentAdapters()
+	bundle.AgentAdapters.MaxSessions = 1
+	if err := f.store.ImportBundle(f.ctx, bundle, "test.yaml", "hash"); err != nil {
+		t.Fatal(err)
+	}
+	f.service.SetSnapshot(f.store.Snapshot())
+	tasks := []int64{f.task.ID}
+	for i := range 5 {
+		task, err := f.store.CreateTask(f.ctx, f.project.ID, fmt.Sprintf("Race %d", i), "Races for the slot", domain.Priority(2), "backlog", nil, f.store.Snapshot())
+		if err != nil {
+			t.Fatal(err)
+		}
+		tasks = append(tasks, task.ID)
+	}
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+	started, refused := 0, 0
+	for _, id := range tasks {
+		wg.Add(1)
+		go func(id int64) {
+			defer wg.Done()
+			_, err := f.service.SpawnAgents(f.ctx, contract.SpawnAgentsInput{TaskID: id, Command: "okt-start"})
+			mu.Lock()
+			defer mu.Unlock()
+			var coded *domain.CodedError
+			switch {
+			case err == nil:
+				started++
+			case errors.As(err, &coded) && coded.Details["team"].(domain.TeamOutcome).Error.Code == "max_sessions":
+				refused++
+			default:
+				t.Errorf("SpawnAgents(%d) error = %v (%+v)", id, err, coded.Details["team"].(domain.TeamOutcome).Error)
+			}
+		}(id)
+	}
+	wg.Wait()
+	if started != 1 || refused != len(tasks)-1 {
+		t.Fatalf("started %d, refused %d; want exactly one seat in the only slot", started, refused)
+	}
+}

@@ -6,6 +6,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -241,20 +242,18 @@ func (s *Service) startTeamSeat(ctx context.Context, target seatTarget, replace 
 	adapters := s.snapshot.For(target.task).AgentAdapters()
 	seat, plan := s.planSeat(adapters, role, domain.TeamStarted)
 	if seat.Error == nil {
-		freed := 0
-		if old.Status == domain.SessionRunning {
-			freed = 1
-		}
-		seat.Error = s.spawnRefusal(ctx, target.project, adapters, len(target.roster.Members), 1-freed)
+		seat.Error = s.spawnRefusal(adapters, len(target.roster.Members))
+	}
+	var reserved reservedSeat
+	if seat.Error == nil {
+		reserved, seat = s.seatSession(team.ID, role, plan, seat)
 	}
 	if seat.Error == nil {
-		if old.ID != "" {
-			s.stopSession(old)
-			if err := s.repo.ReplaceAgentSession(ctx, old.ID); err != nil {
-				return contract.SpawnAgentsResponse{}, err
-			}
-		}
-		seat = s.openSeat(ctx, target.project, target.task, team.ID, target.roster, role, plan, seat)
+		seat.Error = s.reserveSeats(ctx, target.project, adapters, []reservedSeat{reserved}, old.ID)
+	}
+	if seat.Error == nil {
+		s.stopSession(old)
+		seat = s.launchSeat(ctx, target.project, target.task, target.roster, role, plan, reserved, seat)
 	}
 	placeSeat(&out, seat)
 	if seat.Error != nil {
@@ -398,6 +397,32 @@ func (s *Service) spawnTeam(ctx context.Context, project domain.ProjectContext, 
 		}
 		return withSeats(out, seats)
 	}
+	starts, unresolved := startableSeats(seats)
+	if len(starts) == 0 {
+		return fail(unresolved)
+	}
+	adapters := s.snapshot.For(task).AgentAdapters()
+	if perr := s.spawnRefusal(adapters, len(team.Members)); perr != nil {
+		return fail(perr)
+	}
+	opened, created, err := s.repo.OpenAgentTeam(ctx, domain.AgentTeam{ID: newAgentID("t"), ProjectID: project.ID, TaskID: task.ID, BucketKey: task.BucketKey})
+	if err != nil {
+		return fail(&domain.AgentError{Code: "store_error", Message: err.Error()})
+	}
+	if !created {
+		return runningTeam(opened)
+	}
+	out.TeamID, out.Follow = opened.ID, teamFollow(opened.ID, task.ID)
+	if perr := s.launchTeam(ctx, project, task, team, opened.ID, seats, plans, starts); perr != nil {
+		_ = s.repo.FailAgentTeam(ctx, opened.ID)
+		return fail(perr)
+	}
+	return withSeats(out, seats)
+}
+
+// startableSeats returns the indexes of the seats a team starts when it
+// opens and can resolve, and the first resolve error of the others.
+func startableSeats(seats []domain.MemberOutcome) ([]int, *domain.AgentError) {
 	var starts []int
 	var unresolved *domain.AgentError
 	for i, seat := range seats {
@@ -409,84 +434,106 @@ func (s *Service) spawnTeam(ctx context.Context, project domain.ProjectContext, 
 			starts = append(starts, i)
 		}
 	}
-	if len(starts) == 0 {
-		return fail(unresolved)
-	}
-	if perr := s.spawnRefusal(ctx, project, s.snapshot.For(task).AgentAdapters(), len(team.Members), len(starts)); perr != nil {
-		return fail(perr)
-	}
-	opened, created, err := s.repo.OpenAgentTeam(ctx, domain.AgentTeam{ID: newAgentID("t"), ProjectID: project.ID, TaskID: task.ID, BucketKey: task.BucketKey})
-	if err != nil {
-		return fail(&domain.AgentError{Code: "store_error", Message: err.Error()})
-	}
-	if !created {
-		return runningTeam(opened)
-	}
-	out.TeamID = opened.ID
-	roles := team.Roles()
-	var wg sync.WaitGroup
-	for _, i := range starts {
-		wg.Add(1)
-		go func(i int) {
-			defer wg.Done()
-			seats[i] = s.openSeat(ctx, project, task, opened.ID, team, roles[i], plans[i], seats[i])
-		}(i)
-	}
-	wg.Wait()
-	out.Follow = teamFollow(opened.ID, task.ID)
-	for _, i := range starts {
-		if seats[i].Error == nil {
-			return withSeats(out, seats)
-		}
-	}
-	_ = s.repo.FailAgentTeam(ctx, opened.ID)
-	return fail(seats[starts[0]].Error)
+	return starts, unresolved
 }
 
-// spawnRefusal returns why seats more sessions must not start for a team
-// of members: an uninheritable store or a preference limit.
-func (s *Service) spawnRefusal(ctx context.Context, project domain.ProjectContext, adapters domain.AgentAdapters, members, seats int) *domain.AgentError {
+// launchTeam reserves the starting seats of a new team in one write, then
+// launches them in parallel, updating seats. It returns why the team
+// fails: the reservation's refusal, or the first error when no seat
+// started.
+func (s *Service) launchTeam(ctx context.Context, project domain.ProjectContext, task domain.Task, team domain.BucketAgents, teamID string, seats []domain.MemberOutcome, plans []agentlaunch.Plan, starts []int) *domain.AgentError {
+	roles := team.Roles()
+	reserved := make([]reservedSeat, len(seats))
+	var sessions []reservedSeat
+	for _, i := range starts {
+		if reserved[i], seats[i] = s.seatSession(teamID, roles[i], plans[i], seats[i]); seats[i].Error == nil {
+			sessions = append(sessions, reserved[i])
+		}
+	}
+	if perr := s.reserveSeats(ctx, project, s.snapshot.For(task).AgentAdapters(), sessions, ""); perr != nil {
+		return perr
+	}
+	var wg sync.WaitGroup
+	for _, i := range starts {
+		if seats[i].Error == nil {
+			wg.Add(1)
+			go func(i int) {
+				defer wg.Done()
+				seats[i] = s.launchSeat(ctx, project, task, team, roles[i], plans[i], reserved[i], seats[i])
+			}(i)
+		}
+	}
+	wg.Wait()
+	for _, i := range starts {
+		if seats[i].Error == nil {
+			return nil
+		}
+	}
+	return seats[starts[0]].Error
+}
+
+// spawnRefusal returns why no seat of a team of members may start: an
+// uninheritable store or the max_members preference.
+func (s *Service) spawnRefusal(adapters domain.AgentAdapters, members int) *domain.AgentError {
 	if s.spawnBlocked != "" {
 		return &domain.AgentError{Code: "store_not_inheritable", Message: s.spawnBlocked}
 	}
 	if adapters.MaxMembers > 0 && members > adapters.MaxMembers {
 		return &domain.AgentError{Code: "max_members", Message: fmt.Sprintf("the team has %d members; preferences allow %d", members, adapters.MaxMembers)}
 	}
-	if adapters.MaxSessions > 0 {
-		s.reconcileSessions(ctx, project)
-		running, err := s.repo.CountRunningAgentSessions(ctx, project.ID)
-		if err != nil {
-			return &domain.AgentError{Code: "store_error", Message: err.Error()}
-		}
-		if running+seats > adapters.MaxSessions {
-			return &domain.AgentError{Code: "max_sessions", Message: fmt.Sprintf("%d sessions are running; preferences allow %d", running, adapters.MaxSessions)}
-		}
-	}
 	return nil
 }
 
-// openSeat records the seat's session and its start, writes its prompt,
-// and starts its supervisor. A seat that cannot start finishes failed at
-// once.
-func (s *Service) openSeat(ctx context.Context, project domain.ProjectContext, task domain.Task, teamID string, team domain.BucketAgents, role domain.AgentRole, plan agentlaunch.Plan, seat domain.MemberOutcome) domain.MemberOutcome {
+// reservedSeat is a seat's session before it starts, with its files.
+type reservedSeat struct {
+	session domain.AgentSession
+	files   agentlaunch.SessionFiles
+}
+
+// reserveSeats finishes the project's orphaned sessions, then records
+// seats as running sessions, replacing the session replaced names when
+// set, in one write that holds max_sessions.
+func (s *Service) reserveSeats(ctx context.Context, project domain.ProjectContext, adapters domain.AgentAdapters, seats []reservedSeat, replaced string) *domain.AgentError {
+	s.reconcileSessions(ctx, project)
+	sessions := make([]domain.AgentSession, len(seats))
+	for i, seat := range seats {
+		sessions[i] = seat.session
+	}
+	err := s.repo.ReserveAgentSessions(ctx, project.ID, sessions, replaced, adapters.MaxSessions)
+	var limit domain.SessionLimitError
+	switch {
+	case err == nil:
+		return nil
+	case errors.As(err, &limit):
+		return &domain.AgentError{Code: "max_sessions", Message: limit.Error()}
+	default:
+		return &domain.AgentError{Code: "store_error", Message: err.Error()}
+	}
+}
+
+// seatSession names a new session for a seat, with its files.
+func (s *Service) seatSession(teamID string, role domain.AgentRole, plan agentlaunch.Plan, seat domain.MemberOutcome) (reservedSeat, domain.MemberOutcome) {
 	seat.SessionID = newAgentID("s")
 	files, err := agentlaunch.Files(seat.SessionID)
 	if err != nil {
 		seat.Status, seat.Error = domain.SessionFailed, &domain.AgentError{Code: "start_failed", Message: err.Error()}
-		return seat
+		return reservedSeat{}, seat
 	}
 	seat.Transcript = files.Transcript
 	session := domain.AgentSession{ID: seat.SessionID, TeamID: teamID, Member: role.Key, Command: role.Command, Persona: seat.Persona, Harness: plan.Harness, Model: plan.Model, Transcript: files.Transcript, Status: domain.SessionRunning}
-	if err := s.repo.AddAgentSession(ctx, session); err != nil {
-		seat.Status, seat.Error = domain.SessionFailed, &domain.AgentError{Code: "store_error", Message: err.Error()}
-		return seat
-	}
+	return reservedSeat{session: session, files: files}, seat
+}
+
+// launchSeat records a reserved seat's start, writes its prompt, and
+// starts its supervisor. A seat that cannot start finishes failed at once.
+func (s *Service) launchSeat(ctx context.Context, project domain.ProjectContext, task domain.Task, team domain.BucketAgents, role domain.AgentRole, plan agentlaunch.Plan, reserved reservedSeat, seat domain.MemberOutcome) domain.MemberOutcome {
+	session, files := reserved.session, reserved.files
 	// Recorded before the supervisor starts, so its finish always follows.
-	payload := map[string]any{"team_id": teamID, "session_id": session.ID, "member": role.Key, "task_id": task.ID, "harness": plan.Harness, "model": plan.Model, "transcript": files.Transcript}
+	payload := map[string]any{"team_id": session.TeamID, "session_id": session.ID, "member": role.Key, "task_id": task.ID, "harness": plan.Harness, "model": plan.Model, "transcript": files.Transcript}
 	if body, err := json.Marshal(payload); err == nil {
 		_ = s.repo.RecordEntityEvent(ctx, domain.EventEntityTask, task.ID, project.ID, domain.EventTypeAgentSessionStarted, string(body))
 	}
-	if err := s.startSeat(ctx, project, task, teamID, team, role, plan, files); err != nil {
+	if err := s.startSeat(ctx, project, task, session.TeamID, team, role, plan, files); err != nil {
 		s.finishSession(ctx, project.ID, task.ID, session, domain.SessionFailed, nil, err.Error())
 		seat.Status, seat.Error = domain.SessionFailed, &domain.AgentError{Code: "start_failed", Message: err.Error()}
 	}

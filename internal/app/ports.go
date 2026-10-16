@@ -237,15 +237,13 @@ type AgentRepository interface {
 	OpenAgentTeam(ctx context.Context, team domain.AgentTeam) (domain.AgentTeam, bool, error)
 	FailAgentTeam(ctx context.Context, teamID string) error
 	CloseAgentTeam(ctx context.Context, teamID string) (bool, error)
-	AddAgentSession(ctx context.Context, session domain.AgentSession) error
+	ReserveAgentSessions(ctx context.Context, projectID int64, sessions []domain.AgentSession, replaced string, limit int) error
 	SetAgentSessionPID(ctx context.Context, sessionID string, pid int) error
 	FinishAgentSession(ctx context.Context, sessionID, status string, exitCode *int, message string) (finished, idle bool, err error)
-	ReplaceAgentSession(ctx context.Context, sessionID string) error
 	GetAgentTeam(ctx context.Context, teamID string) (domain.AgentTeam, error)
 	ListAgentTeams(ctx context.Context, projectID int64, filter domain.AgentTeamFilter) ([]domain.AgentTeam, error)
 	GetAgentSession(ctx context.Context, sessionID string) (domain.AgentSession, error)
 	ActiveAgentTeamIDs(ctx context.Context, projectID, taskID int64) ([]string, error)
-	CountRunningAgentSessions(ctx context.Context, projectID int64) (int, error)
 	StaleRunningAgentSessions(ctx context.Context, projectID int64, age time.Duration) ([]domain.TeamSession, error)
 	LastAgentActivity(ctx context.Context, sessionID string) (domain.EventRow, error)
 }

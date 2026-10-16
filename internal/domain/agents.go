@@ -1,5 +1,7 @@
 package domain
 
+import "fmt"
+
 // Agent team triggers, the lead's reserved member key, and the comment tag
 // prefixes of the team convention.
 const (
@@ -151,6 +153,17 @@ type AgentSession struct {
 	Error      string `json:"error,omitempty"`
 	CreatedAt  string `json:"created_at"`
 	FinishedAt string `json:"finished_at,omitempty"`
+}
+
+// SessionLimitError refuses sessions that would take a project past its
+// max_sessions limit; Running is how many already run.
+type SessionLimitError struct {
+	Running int
+	Limit   int
+}
+
+func (e SessionLimitError) Error() string {
+	return fmt.Sprintf("%d sessions are running; preferences allow %d", e.Running, e.Limit)
 }
 
 // TeamSession is a session with the task of its team.

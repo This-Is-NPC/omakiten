@@ -176,7 +176,10 @@ When the selected harness is not on `PATH`, the one in your preferences'
 `defaults` replaces it and the result reports `fallback`; without one, the
 seat fails with `harness_missing`. `max_sessions` and `max_members` in
 `preferences.yaml` cap running sessions per project and members per team;
-unset means no limit. A preset cannot set them.
+unset means no limit. A preset cannot set them. A team's starting seats
+take their sessions together, and spawns racing for the last slots cannot
+pass the limit between them: the ones left without a slot fail with
+`max_sessions`.
 
 ## 5. Chain seats with events
 
