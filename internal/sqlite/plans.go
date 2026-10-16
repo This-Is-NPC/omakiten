@@ -1515,11 +1515,12 @@ func insertEntityEvent(ctx context.Context, exec dbExecutor, entityType string, 
 		payload = "{}"
 	}
 	var event domain.Event
+	source, entrypoint, agentModel, agentSessionID := agentAttribution(ctx)
 	if err := exec.QueryRowContext(ctx, `
-INSERT INTO events(entity_type, entity_id, project_id, event_type, payload)
-VALUES (?, ?, ?, ?, ?)
+INSERT INTO events(entity_type, entity_id, project_id, event_type, payload, source, entrypoint, agent_model, agent_session_id)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 RETURNING id, entity_type, entity_id, project_id, event_type, COALESCE(body, ''), payload, created_at
-`, entityType, entityID, projectID, eventType, payload).Scan(
+`, entityType, entityID, projectID, eventType, payload, source, entrypoint, agentModel, agentSessionID).Scan(
 		&event.ID, &event.EntityType, &event.EntityID, &event.ProjectID,
 		&event.EventType, &event.Body, &event.Payload, &event.CreatedAt,
 	); err != nil {
