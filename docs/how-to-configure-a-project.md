@@ -74,7 +74,7 @@ application preference path or make the database project-local.
 Language preferences live in `<application config root>/preferences.yaml`.
 Changing language applies across projects and leaves preset identities intact.
 The same file holds your agent adapters and session limits; see
-[agents](how-to-run-agent-teams.md#4-choose-harnesses-and-launchers).
+[agents](how-to-run-agent-teams.md#4-choose-harnesses).
 
 ## How a change becomes active
 

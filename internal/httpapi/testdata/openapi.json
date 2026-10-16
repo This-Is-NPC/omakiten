@@ -2421,6 +2421,12 @@
             },
             "type": "array"
           },
+          "missing_results": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
           "project": {
             "$ref": "#/components/schemas/contract.ProjectSummary"
           },
@@ -2436,6 +2442,7 @@
         },
         "required": [
           "follow",
+          "missing_results",
           "project",
           "results",
           "team"
@@ -2975,14 +2982,12 @@
           "harness": {
             "type": "string"
           },
-          "launcher": {
-            "type": "string"
-          },
           "reason": {
             "type": "string"
           }
         },
         "required": [
+          "harness",
           "reason"
         ],
         "type": "object"
@@ -3030,13 +3035,14 @@
           "error": {
             "type": "string"
           },
+          "exit_code": {
+            "format": "int32",
+            "type": "integer"
+          },
           "finished_at": {
             "type": "string"
           },
           "harness": {
-            "type": "string"
-          },
-          "launcher": {
             "type": "string"
           },
           "member": {
@@ -3045,11 +3051,12 @@
           "model": {
             "type": "string"
           },
-          "pane": {
-            "type": "string"
-          },
           "persona": {
             "type": "string"
+          },
+          "pid": {
+            "format": "int32",
+            "type": "integer"
           },
           "session_id": {
             "type": "string"
@@ -3059,13 +3066,15 @@
           },
           "team_id": {
             "type": "string"
+          },
+          "transcript": {
+            "type": "string"
           }
         },
         "required": [
           "command",
           "created_at",
           "harness",
-          "launcher",
           "member",
           "session_id",
           "status",
@@ -3365,13 +3374,7 @@
           "key": {
             "type": "string"
           },
-          "launcher": {
-            "type": "string"
-          },
           "model": {
-            "type": "string"
-          },
-          "pane": {
             "type": "string"
           },
           "persona": {
@@ -3381,6 +3384,9 @@
             "type": "string"
           },
           "status": {
+            "type": "string"
+          },
+          "transcript": {
             "type": "string"
           }
         },
@@ -4126,9 +4132,6 @@
             "type": "string"
           },
           "harness": {
-            "type": "string"
-          },
-          "launcher": {
             "type": "string"
           },
           "model": {
@@ -8351,7 +8354,7 @@
             "description": "Error envelope."
           }
         },
-        "summary": "Open the bucket's agent team, or one agent running a command, for a task.",
+        "summary": "Start the bucket's agent team, or one agent running a command, for a task.",
         "x-okt-surface": "agent.spawn"
       }
     },
@@ -9397,7 +9400,7 @@
             "description": "Error envelope."
           }
         },
-        "summary": "Close an agent team and tell its running seats to stop.",
+        "summary": "Close an agent team and stop its running seats.",
         "x-okt-surface": "team.close"
       }
     },
@@ -9477,7 +9480,7 @@
             "description": "Error envelope."
           }
         },
-        "summary": "Reopen one roster seat of an active agent team in a new session.",
+        "summary": "Rerun one roster seat of an active agent team in a new session.",
         "x-okt-surface": "agent.spawn"
       }
     },

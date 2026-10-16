@@ -75,17 +75,18 @@ state with retained metadata under one consistent read snapshot.
 
 ## Agent teams
 
-`agent_teams` records the agents opened for one task in one bucket. A partial
+`agent_teams` records the agents run for one task in one bucket. A partial
 unique index keeps at most one `active` team per project, task, and bucket; a
-team whose lead could not open is `failed`, and a team whose task left the
+team whose lead could not start is `failed`, and a team whose task left the
 bucket or that was closed is `closed`. Both free that slot. Task deletion
 cascades teams.
 
-`agent_sessions` holds one row per team seat: its member key (`lead` or a
-declared key), command, persona, the resolved harness, model, and launcher,
-the pane id, and `spawned`, `failed`, `done`, `stopped`, or `replaced`. A
-partial unique index keeps one current session per team seat; reopening a
-seat marks its previous session `replaced`. A session's own `okt` calls
+`agent_sessions` holds one row per headless run of a team seat: its member
+key (`lead` or a declared key), command, persona, the resolved harness and
+model, the harness `pid`, the `transcript` path, the harness
+`exit_code`, and `running`, `done`, `failed`, `stopped`, or `replaced`. A
+partial unique index keeps one current session per team seat; running a seat
+again marks its previous session `replaced`. A session's own `okt` calls
 carry its id in `events.agent_session_id`, indexed for per-session reads.
 
 ## Search and recovery

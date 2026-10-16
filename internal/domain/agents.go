@@ -12,7 +12,7 @@ const (
 
 // Team outcome statuses.
 const (
-	TeamSpawned    = "spawned"
+	TeamStarted    = "started"
 	TeamFailed     = "failed"
 	TeamRunning    = "running"
 	TeamSuggested  = "suggested"
@@ -28,9 +28,10 @@ const (
 // failed and closed teams carry TeamFailed and TeamClosed.
 const TeamStatusActive = "active"
 
-// Agent session statuses.
+// Agent session statuses. A running session's supervisor process is alive;
+// the others are final.
 const (
-	SessionSpawned  = "spawned"
+	SessionRunning  = "running"
 	SessionFailed   = "failed"
 	SessionDone     = "done"
 	SessionStopped  = "stopped"
@@ -38,14 +39,15 @@ const (
 )
 
 // AgentRole is one team seat: the command it runs and the optional harness,
-// model, launcher, and brief that override the adapter defaults.
+// model, and timeout that override the adapter defaults, and its brief.
+// Timeout is a Go duration; empty lets the run last until it exits.
 type AgentRole struct {
-	Key      string `json:"key"`
-	Command  string `json:"command"`
-	Harness  string `json:"harness,omitempty"`
-	Model    string `json:"model,omitempty"`
-	Launcher string `json:"launcher,omitempty"`
-	Brief    string `json:"brief,omitempty"`
+	Key     string `json:"key"`
+	Command string `json:"command"`
+	Harness string `json:"harness,omitempty"`
+	Model   string `json:"model,omitempty"`
+	Timeout string `json:"timeout,omitempty"`
+	Brief   string `json:"brief,omitempty"`
 }
 
 // BucketAgents is the team a bucket opens for a task that enters it.
@@ -62,43 +64,29 @@ type AgentArg struct {
 	Group  bool     `json:"group,omitempty"`
 }
 
-// HarnessSpec is the command line that starts an agent harness.
+// HarnessSpec is the command line that runs an agent harness headless: it
+// does the work and exits.
 type HarnessSpec struct {
 	Argv []AgentArg `json:"argv"`
 }
 
-// LauncherSpec opens a terminal pane and types text into it. Pane is the dot
-// path of the pane id in Open's JSON output; empty means the whole output.
-// Run, when set, starts the command in the opened pane. Send types the text;
-// Submit, when set, presses Enter in a separate command, so a TUI does not
-// read text and Enter as one paste.
-type LauncherSpec struct {
-	Target string     `json:"target,omitempty"`
-	Open   []AgentArg `json:"open"`
-	Pane   string     `json:"pane,omitempty"`
-	Run    []AgentArg `json:"run,omitempty"`
-	Send   []AgentArg `json:"send"`
-	Submit []AgentArg `json:"submit,omitempty"`
-}
-
-// AgentDefaults names the harness, model, and launcher a role without its
+// AgentDefaults names the harness, model, and timeout a role without its
 // own falls back to.
 type AgentDefaults struct {
-	Harness  string `json:"harness,omitempty"`
-	Model    string `json:"model,omitempty"`
-	Launcher string `json:"launcher,omitempty"`
+	Harness string `json:"harness,omitempty"`
+	Model   string `json:"model,omitempty"`
+	Timeout string `json:"timeout,omitempty"`
 }
 
 // AgentAdapters is the effective agent configuration of a project. Fallback
-// holds the user's preferred harness and launcher, used when the selected
-// one is not installed. Zero limits mean unlimited.
+// holds the user's preferred harness, used when the selected one is not
+// installed. Zero limits mean unlimited.
 type AgentAdapters struct {
-	Defaults    AgentDefaults           `json:"defaults"`
-	Fallback    AgentDefaults           `json:"fallback"`
-	Harnesses   map[string]HarnessSpec  `json:"harnesses,omitempty"`
-	Launchers   map[string]LauncherSpec `json:"launchers,omitempty"`
-	MaxSessions int                     `json:"max_sessions,omitempty"`
-	MaxMembers  int                     `json:"max_members,omitempty"`
+	Defaults    AgentDefaults          `json:"defaults"`
+	Fallback    AgentDefaults          `json:"fallback"`
+	Harnesses   map[string]HarnessSpec `json:"harnesses,omitempty"`
+	MaxSessions int                    `json:"max_sessions,omitempty"`
+	MaxMembers  int                    `json:"max_members,omitempty"`
 }
 
 // AgentTeam is the set of sessions opened for one task in one bucket.
@@ -120,7 +108,10 @@ type AgentTeamFilter struct {
 	Status string
 }
 
-// AgentSession is one agent process opened in a terminal pane.
+// AgentSession is one headless run of a harness under its supervisor
+// process. PID leads the harness process group, set once the harness runs;
+// Transcript is the JSONL file holding the harness output; ExitCode is set
+// once the harness exited.
 type AgentSession struct {
 	ID         string `json:"session_id"`
 	TeamID     string `json:"team_id"`
@@ -129,35 +120,40 @@ type AgentSession struct {
 	Persona    string `json:"persona,omitempty"`
 	Harness    string `json:"harness"`
 	Model      string `json:"model,omitempty"`
-	Launcher   string `json:"launcher"`
-	Pane       string `json:"pane,omitempty"`
+	PID        int    `json:"pid,omitempty"`
+	Transcript string `json:"transcript,omitempty"`
 	Status     string `json:"status"`
+	ExitCode   *int   `json:"exit_code,omitempty"`
 	Error      string `json:"error,omitempty"`
 	CreatedAt  string `json:"created_at"`
 	FinishedAt string `json:"finished_at,omitempty"`
 }
 
-// AgentFallback reports a harness or launcher replaced by the user's
-// preference because the selected one is not installed.
-type AgentFallback struct {
-	Harness  string `json:"harness,omitempty"`
-	Launcher string `json:"launcher,omitempty"`
-	Reason   string `json:"reason"`
+// TeamSession is a session with the task of its team.
+type TeamSession struct {
+	Session AgentSession
+	TaskID  int64
 }
 
-// MemberOutcome is the result of opening one team seat.
+// AgentFallback reports a harness replaced by the user's preference because
+// the selected one is not installed.
+type AgentFallback struct {
+	Harness string `json:"harness"`
+	Reason  string `json:"reason"`
+}
+
+// MemberOutcome is the result of starting one team seat.
 type MemberOutcome struct {
-	Key       string         `json:"key"`
-	SessionID string         `json:"session_id,omitempty"`
-	Status    string         `json:"status"`
-	Command   string         `json:"command"`
-	Persona   string         `json:"persona,omitempty"`
-	Harness   string         `json:"harness,omitempty"`
-	Model     string         `json:"model,omitempty"`
-	Launcher  string         `json:"launcher,omitempty"`
-	Pane      string         `json:"pane,omitempty"`
-	Fallback  *AgentFallback `json:"fallback,omitempty"`
-	Error     *AgentError    `json:"error,omitempty"`
+	Key        string         `json:"key"`
+	SessionID  string         `json:"session_id,omitempty"`
+	Status     string         `json:"status"`
+	Command    string         `json:"command"`
+	Persona    string         `json:"persona,omitempty"`
+	Harness    string         `json:"harness,omitempty"`
+	Model      string         `json:"model,omitempty"`
+	Transcript string         `json:"transcript,omitempty"`
+	Fallback   *AgentFallback `json:"fallback,omitempty"`
+	Error      *AgentError    `json:"error,omitempty"`
 }
 
 // AgentError is a structured spawn failure. PreferencesPath is the user's
@@ -183,8 +179,7 @@ type TeamOutcome struct {
 
 // Event types recorded for agent sessions and teams.
 const (
-	EventTypeAgentSessionStarted = "agent.session_started"
-	EventTypeAgentSessionFailed  = "agent.session_failed"
-	EventTypeTeamMemberDone      = "team.member_done"
-	EventTypeTeamClosed          = "team.closed"
+	EventTypeAgentSessionStarted  = "agent.session_started"
+	EventTypeAgentSessionFinished = "agent.session_finished"
+	EventTypeTeamClosed           = "team.closed"
 )

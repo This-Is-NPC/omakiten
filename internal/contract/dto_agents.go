@@ -1,20 +1,23 @@
 package contract
 
-import "omakiten/internal/domain"
+import (
+	"time"
 
-// SpawnAgentsInput opens agents for a task. Without Command it opens the
-// team the task's bucket declares; Command opens a team of one lead. TeamID
-// with Member instead reopens that roster seat of an active team. The other
-// fields override the opened seat's adapters.
+	"omakiten/internal/domain"
+)
+
+// SpawnAgentsInput starts agents for a task. Without Command it starts the
+// team the task's bucket declares; Command starts a team of one lead.
+// TeamID with Member instead reruns that roster seat of an active team.
+// Harness and Model override the started seat's.
 type SpawnAgentsInput struct {
 	ProjectSelector
-	TaskID   int64  `json:"task_id,omitempty"`
-	TeamID   string `json:"team_id,omitempty"`
-	Member   string `json:"member,omitempty"`
-	Command  string `json:"command,omitempty"`
-	Harness  string `json:"harness,omitempty"`
-	Model    string `json:"model,omitempty"`
-	Launcher string `json:"launcher,omitempty"`
+	TaskID  int64  `json:"task_id,omitempty"`
+	TeamID  string `json:"team_id,omitempty"`
+	Member  string `json:"member,omitempty"`
+	Command string `json:"command,omitempty"`
+	Harness string `json:"harness,omitempty"`
+	Model   string `json:"model,omitempty"`
 }
 
 type SpawnAgentsResponse struct {
@@ -55,11 +58,14 @@ type TeamResult struct {
 	CreatedAt string `json:"created_at"`
 }
 
+// ShowTeamResponse is a team with the results its members published.
+// MissingResults names the members that finished done without one.
 type ShowTeamResponse struct {
-	Project ProjectSummary   `json:"project"`
-	Team    domain.AgentTeam `json:"team"`
-	Results []TeamResult     `json:"results"`
-	Follow  []string         `json:"follow"`
+	Project        ProjectSummary   `json:"project"`
+	Team           domain.AgentTeam `json:"team"`
+	Results        []TeamResult     `json:"results"`
+	MissingResults []string         `json:"missing_results"`
+	Follow         []string         `json:"follow"`
 }
 
 type CloseTeamInput struct {
@@ -83,4 +89,18 @@ type ListAgentsInput struct {
 type ListAgentsResponse struct {
 	Project ProjectSummary     `json:"project"`
 	Teams   []domain.AgentTeam `json:"teams"`
+}
+
+// RunAgentSessionInput is the supervisor's run of one session: the harness
+// argv and the timeout that ends it, zero for none.
+type RunAgentSessionInput struct {
+	ProjectSelector
+	SessionID string        `json:"session_id"`
+	Argv      []string      `json:"argv"`
+	Timeout   time.Duration `json:"timeout,omitempty"`
+}
+
+type RunAgentSessionResponse struct {
+	Project ProjectSummary      `json:"project"`
+	Session domain.AgentSession `json:"session"`
 }

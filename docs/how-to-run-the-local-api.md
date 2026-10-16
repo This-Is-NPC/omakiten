@@ -67,7 +67,7 @@ The API serves every operation the CLI runs on a project's work:
 |---|---|
 | Project | the project itself (`GET`, `PATCH`, `DELETE`), `relocate` (`POST`), `resume`, `workflow`, `workflow/orphans` |
 | Tasks | `tasks`, `tasks/{task}` and its `transitions`, `assignee`, `archive`, `unarchive`, `checkpoint`, `activity`, `progress`, `dependencies`, `comments`, `agents` (`POST`, spawn), `wait` |
-| Agents | `agents` (list, `?task=&status=`), `agents/{session}`, `teams/{team}`, `teams/{team}/close` (`POST`), `teams/{team}/members/{member}` (`POST`, reopen a seat) |
+| Agents | `agents` (list, `?task=&status=`), `agents/{session}`, `teams/{team}`, `teams/{team}/close` (`POST`), `teams/{team}/members/{member}` (`POST`, run a seat again) |
 | Comments | `comments/{comment}` |
 | Plans | `plans`, `plans/{plan}` and its `continuation`, `comments`, `waves`, `tasks/{task}`, `claims`; `waves/{wave}`; `tasks/{task}/plan` |
 | Errors and solutions | `errors`, `errors/{error}/solutions`, `solutions`, `solutions/{solution}/confirmations` |

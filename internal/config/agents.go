@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+	"time"
 
 	"gopkg.in/yaml.v3"
 
@@ -47,34 +48,24 @@ func (a AgentArgYAML) MarshalYAML() (any, error) {
 	return a.Values, nil
 }
 
-// HarnessConfig is a harness adapter declaration.
+// HarnessConfig is a harness adapter declaration: the headless command
+// line that does a seat's work and exits.
 type HarnessConfig struct {
 	Argv []AgentArgYAML `yaml:"argv" json:"argv"`
 }
 
-// LauncherConfig is a launcher adapter declaration.
-type LauncherConfig struct {
-	Target string         `yaml:"target,omitempty" json:"target,omitempty"`
-	Open   []AgentArgYAML `yaml:"open" json:"open"`
-	Pane   string         `yaml:"pane,omitempty" json:"pane,omitempty"`
-	Run    []AgentArgYAML `yaml:"run,omitempty" json:"run,omitempty"`
-	Send   []AgentArgYAML `yaml:"send" json:"send"`
-	Submit []AgentArgYAML `yaml:"submit,omitempty" json:"submit,omitempty"`
-}
-
-// AgentDefaultsConfig names the harness, model, and launcher roles inherit.
+// AgentDefaultsConfig names the harness, model, and timeout roles inherit.
 type AgentDefaultsConfig struct {
-	Harness  string `yaml:"harness,omitempty" json:"harness,omitempty"`
-	Model    string `yaml:"model,omitempty" json:"model,omitempty"`
-	Launcher string `yaml:"launcher,omitempty" json:"launcher,omitempty"`
+	Harness string `yaml:"harness,omitempty" json:"harness,omitempty"`
+	Model   string `yaml:"model,omitempty" json:"model,omitempty"`
+	Timeout string `yaml:"timeout,omitempty" json:"timeout,omitempty"`
 }
 
 // AgentsSettings declares agent adapters and defaults. The same shape is
 // read from Omakiten's defaults, the user's preferences, and a preset.
 type AgentsSettings struct {
-	Defaults  AgentDefaultsConfig       `yaml:"defaults,omitempty" json:"defaults,omitempty"`
-	Harnesses map[string]HarnessConfig  `yaml:"harnesses,omitempty" json:"harnesses,omitempty"`
-	Launchers map[string]LauncherConfig `yaml:"launchers,omitempty" json:"launchers,omitempty"`
+	Defaults  AgentDefaultsConfig      `yaml:"defaults,omitempty" json:"defaults,omitempty"`
+	Harnesses map[string]HarnessConfig `yaml:"harnesses,omitempty" json:"harnesses,omitempty"`
 }
 
 // AgentPreferences adds the user-only session limits to AgentsSettings.
@@ -86,12 +77,12 @@ type AgentPreferences struct {
 
 // AgentRoleConfig is one seat of a bucket team.
 type AgentRoleConfig struct {
-	Key      string `yaml:"key,omitempty" json:"key,omitempty"`
-	Command  string `yaml:"command" json:"command"`
-	Harness  string `yaml:"harness,omitempty" json:"harness,omitempty"`
-	Model    string `yaml:"model,omitempty" json:"model,omitempty"`
-	Launcher string `yaml:"launcher,omitempty" json:"launcher,omitempty"`
-	Brief    string `yaml:"brief,omitempty" json:"brief,omitempty"`
+	Key     string `yaml:"key,omitempty" json:"key,omitempty"`
+	Command string `yaml:"command" json:"command"`
+	Harness string `yaml:"harness,omitempty" json:"harness,omitempty"`
+	Model   string `yaml:"model,omitempty" json:"model,omitempty"`
+	Timeout string `yaml:"timeout,omitempty" json:"timeout,omitempty"`
+	Brief   string `yaml:"brief,omitempty" json:"brief,omitempty"`
 }
 
 // BucketAgentsConfig is the team a bucket opens for an entering task.
@@ -125,7 +116,7 @@ func mergeAgentAdapters(prefs *AgentPreferences, preset *AgentsSettings) (domain
 	if err != nil {
 		return domain.AgentAdapters{}, err
 	}
-	out := domain.AgentAdapters{Harnesses: map[string]domain.HarnessSpec{}, Launchers: map[string]domain.LauncherSpec{}}
+	out := domain.AgentAdapters{Harnesses: map[string]domain.HarnessSpec{}}
 	layers := []AgentsSettings{base}
 	if prefs != nil {
 		layers = append(layers, prefs.AgentsSettings)
@@ -140,15 +131,12 @@ func mergeAgentAdapters(prefs *AgentPreferences, preset *AgentsSettings) (domain
 		for name, h := range layer.Harnesses {
 			out.Harnesses[name] = domain.HarnessSpec{Argv: toDomainArgs(h.Argv)}
 		}
-		for name, l := range layer.Launchers {
-			out.Launchers[name] = domain.LauncherSpec{Target: l.Target, Open: toDomainArgs(l.Open), Pane: l.Pane, Run: toDomainArgs(l.Run), Send: toDomainArgs(l.Send), Submit: toDomainArgs(l.Submit)}
-		}
 	}
 	return out, nil
 }
 
 func agentDefaults(d AgentDefaultsConfig) domain.AgentDefaults {
-	return domain.AgentDefaults{Harness: d.Harness, Model: d.Model, Launcher: d.Launcher}
+	return domain.AgentDefaults{Harness: d.Harness, Model: d.Model, Timeout: d.Timeout}
 }
 
 func overlayAgentDefaults(base domain.AgentDefaults, layer AgentDefaultsConfig) domain.AgentDefaults {
@@ -158,8 +146,8 @@ func overlayAgentDefaults(base domain.AgentDefaults, layer AgentDefaultsConfig) 
 	if layer.Model != "" {
 		base.Model = layer.Model
 	}
-	if layer.Launcher != "" {
-		base.Launcher = layer.Launcher
+	if layer.Timeout != "" {
+		base.Timeout = layer.Timeout
 	}
 	return base
 }
@@ -185,7 +173,7 @@ func toDomainBucketAgents(c *BucketAgentsConfig) *domain.BucketAgents {
 }
 
 func toDomainRole(r AgentRoleConfig) domain.AgentRole {
-	return domain.AgentRole{Key: r.Key, Command: r.Command, Harness: r.Harness, Model: r.Model, Launcher: r.Launcher, Brief: r.Brief}
+	return domain.AgentRole{Key: r.Key, Command: r.Command, Harness: r.Harness, Model: r.Model, Timeout: r.Timeout, Brief: r.Brief}
 }
 
 // validateAgentAdapters checks the adapter declarations of one layer.
@@ -195,12 +183,7 @@ func validateAgentAdapters(scope string, s AgentsSettings) error {
 			return fmt.Errorf("%s.harnesses.%s.argv: required non-empty list", scope, name)
 		}
 	}
-	for name, l := range s.Launchers {
-		if len(l.Open) == 0 || len(l.Send) == 0 {
-			return fmt.Errorf("%s.launchers.%s: open and send are required non-empty lists", scope, name)
-		}
-	}
-	return nil
+	return validateAgentTimeout(scope+".defaults.timeout", s.Defaults.Timeout)
 }
 
 // validateBucketAgents checks every bucket team of the bundle's workflows
@@ -260,10 +243,16 @@ func validateAgentRole(bundle Bundle, scope string, role AgentRoleConfig) error 
 			return fmt.Errorf("%s.harness: %q is not a declared harness", scope, role.Harness)
 		}
 	}
-	if role.Launcher != "" {
-		if _, ok := bundle.AgentAdapters.Launchers[role.Launcher]; !ok {
-			return fmt.Errorf("%s.launcher: %q is not a declared launcher", scope, role.Launcher)
-		}
+	return validateAgentTimeout(scope+".timeout", role.Timeout)
+}
+
+// validateAgentTimeout accepts an empty timeout or a positive Go duration.
+func validateAgentTimeout(scope, timeout string) error {
+	if timeout == "" {
+		return nil
+	}
+	if d, err := time.ParseDuration(timeout); err != nil || d <= 0 {
+		return fmt.Errorf("%s: %q is not a positive Go duration such as 30m", scope, timeout)
 	}
 	return nil
 }

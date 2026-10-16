@@ -4,12 +4,18 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"strings"
+	"time"
 
 	"omakiten/internal/domain"
 )
 
-const agentSessionColumns = `id, team_id, member, command, persona, harness, model, launcher, pane, status, error, created_at, COALESCE(finished_at, '')`
+// agentSessionColumns selects a session's columns, each qualified by
+// prefix when one is given.
+func agentSessionColumns(prefix string) string {
+	return fmt.Sprintf(`%[1]sid, %[1]steam_id, %[1]smember, %[1]scommand, %[1]spersona, %[1]sharness, %[1]smodel, %[1]spid, %[1]stranscript, %[1]sstatus, %[1]sexit_code, %[1]serror, %[1]screated_at, COALESCE(%[1]sfinished_at, '')`, prefix)
+}
 
 // OpenAgentTeam records team as the active team of its task in its bucket.
 // When the task already has an active team there, it returns that team and
@@ -63,25 +69,33 @@ func (s *Store) CloseAgentTeam(ctx context.Context, teamID string) (bool, error)
 	if n, err := res.RowsAffected(); err != nil || n == 0 {
 		return false, err
 	}
-	if _, err := tx.ExecContext(ctx, `UPDATE agent_sessions SET status = 'stopped', finished_at = CURRENT_TIMESTAMP WHERE team_id = ? AND status = 'spawned'`, teamID); err != nil {
+	if _, err := tx.ExecContext(ctx, `UPDATE agent_sessions SET status = 'stopped', finished_at = CURRENT_TIMESTAMP WHERE team_id = ? AND status = 'running'`, teamID); err != nil {
 		return false, err
 	}
 	return true, s.commitTransaction(ctx, tx)
 }
 
-// AddAgentSession records a session of a team.
+// AddAgentSession records a running session of a team.
 func (s *Store) AddAgentSession(ctx context.Context, session domain.AgentSession) error {
 	_, err := s.query(ctx).ExecContext(ctx, `
-INSERT INTO agent_sessions(id, team_id, member, command, persona, harness, model, launcher, pane, status, error, finished_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CASE WHEN ? = 'spawned' THEN NULL ELSE CURRENT_TIMESTAMP END)`,
-		session.ID, session.TeamID, session.Member, session.Command, session.Persona, session.Harness, session.Model, session.Launcher, session.Pane, session.Status, session.Error, session.Status)
+INSERT INTO agent_sessions(id, team_id, member, command, persona, harness, model, transcript, status)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'running')`,
+		session.ID, session.TeamID, session.Member, session.Command, session.Persona, session.Harness, session.Model, session.Transcript)
 	return err
 }
 
-// FinishAgentSession marks a spawned session done. It reports whether the
-// session was still spawned.
-func (s *Store) FinishAgentSession(ctx context.Context, sessionID string) (bool, error) {
-	res, err := s.query(ctx).ExecContext(ctx, `UPDATE agent_sessions SET status = 'done', finished_at = CURRENT_TIMESTAMP WHERE id = ? AND status = 'spawned'`, sessionID)
+// SetAgentSessionPID records the pid of a session's supervisor.
+func (s *Store) SetAgentSessionPID(ctx context.Context, sessionID string, pid int) error {
+	_, err := s.query(ctx).ExecContext(ctx, `UPDATE agent_sessions SET pid = ? WHERE id = ?`, pid, sessionID)
+	return err
+}
+
+// FinishAgentSession records how a running session ended. It reports
+// whether the session was still running.
+func (s *Store) FinishAgentSession(ctx context.Context, sessionID, status string, exitCode *int, message string) (bool, error) {
+	res, err := s.query(ctx).ExecContext(ctx, `
+UPDATE agent_sessions SET status = ?, exit_code = ?, error = ?, finished_at = CURRENT_TIMESTAMP
+WHERE id = ? AND status = 'running'`, status, exitCode, message, sessionID)
 	if err != nil {
 		return false, err
 	}
@@ -106,7 +120,7 @@ func (s *Store) GetAgentTeam(ctx context.Context, teamID string) (domain.AgentTe
 	if err != nil {
 		return domain.AgentTeam{}, err
 	}
-	rows, err := s.query(ctx).QueryContext(ctx, `SELECT `+agentSessionColumns+` FROM agent_sessions WHERE team_id = ? ORDER BY rowid`, teamID)
+	rows, err := s.query(ctx).QueryContext(ctx, `SELECT `+agentSessionColumns("")+` FROM agent_sessions WHERE team_id = ? ORDER BY rowid`, teamID)
 	if err != nil {
 		return domain.AgentTeam{}, err
 	}
@@ -165,7 +179,7 @@ func (s *Store) attachAgentSessions(ctx context.Context, teams []domain.AgentTea
 	for i, team := range teams {
 		args[i] = team.ID
 	}
-	rows, err := s.query(ctx).QueryContext(ctx, `SELECT `+agentSessionColumns+` FROM agent_sessions WHERE team_id IN (`+strings.TrimSuffix(strings.Repeat("?,", len(args)), ",")+`) ORDER BY rowid`, args...)
+	rows, err := s.query(ctx).QueryContext(ctx, `SELECT `+agentSessionColumns("")+` FROM agent_sessions WHERE team_id IN (`+strings.TrimSuffix(strings.Repeat("?,", len(args)), ",")+`) ORDER BY rowid`, args...)
 	if err != nil {
 		return err
 	}
@@ -183,7 +197,7 @@ func (s *Store) attachAgentSessions(ctx context.Context, teams []domain.AgentTea
 
 // GetAgentSession returns one session.
 func (s *Store) GetAgentSession(ctx context.Context, sessionID string) (domain.AgentSession, error) {
-	session, err := scanAgentSession(s.query(ctx).QueryRowContext(ctx, `SELECT `+agentSessionColumns+` FROM agent_sessions WHERE id = ?`, sessionID))
+	session, err := scanAgentSession(s.query(ctx).QueryRowContext(ctx, `SELECT `+agentSessionColumns("")+` FROM agent_sessions WHERE id = ?`, sessionID))
 	if errors.Is(err, sql.ErrNoRows) {
 		return domain.AgentSession{}, domain.NewError(domain.ErrAgentNotFound, "agent session not found", map[string]any{"session_id": sessionID})
 	}
@@ -208,14 +222,39 @@ func (s *Store) ActiveAgentTeamIDs(ctx context.Context, projectID, taskID int64)
 	return ids, rows.Err()
 }
 
-// CountSpawnedAgentSessions counts the project's sessions still running in
+// CountRunningAgentSessions counts the project's sessions still running in
 // active teams.
-func (s *Store) CountSpawnedAgentSessions(ctx context.Context, projectID int64) (int, error) {
+func (s *Store) CountRunningAgentSessions(ctx context.Context, projectID int64) (int, error) {
 	var n int
 	err := s.query(ctx).QueryRowContext(ctx, `
 SELECT COUNT(*) FROM agent_sessions s JOIN agent_teams t ON t.id = s.team_id
-WHERE t.project_id = ? AND t.status = 'active' AND s.status = 'spawned'`, projectID).Scan(&n)
+WHERE t.project_id = ? AND t.status = 'active' AND s.status = 'running'`, projectID).Scan(&n)
 	return n, err
+}
+
+// StaleRunningAgentSessions returns the project's sessions that have been
+// running for longer than age, with the task of each one's team.
+func (s *Store) StaleRunningAgentSessions(ctx context.Context, projectID int64, age time.Duration) ([]domain.TeamSession, error) {
+	rows, err := s.query(ctx).QueryContext(ctx, `
+SELECT t.task_id, `+agentSessionColumns("s.")+`
+FROM agent_sessions s JOIN agent_teams t ON t.id = s.team_id
+WHERE t.project_id = ? AND s.status = 'running' AND s.created_at < datetime('now', ?)
+ORDER BY s.rowid`, projectID, fmt.Sprintf("-%d seconds", int(age.Seconds())))
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	var out []domain.TeamSession
+	for rows.Next() {
+		var ts domain.TeamSession
+		session, err := scanAgentSession(rows, &ts.TaskID)
+		if err != nil {
+			return nil, err
+		}
+		ts.Session = session
+		out = append(out, ts)
+	}
+	return out, rows.Err()
 }
 
 // LastAgentActivity returns the newest event recorded by a session, or a
@@ -235,8 +274,14 @@ type rowScanner interface {
 	Scan(dest ...any) error
 }
 
-func scanAgentSession(row rowScanner) (domain.AgentSession, error) {
+// scanAgentSession scans the leading columns into lead, then the session.
+func scanAgentSession(row rowScanner, lead ...any) (domain.AgentSession, error) {
 	var s domain.AgentSession
-	err := row.Scan(&s.ID, &s.TeamID, &s.Member, &s.Command, &s.Persona, &s.Harness, &s.Model, &s.Launcher, &s.Pane, &s.Status, &s.Error, &s.CreatedAt, &s.FinishedAt)
+	var exitCode sql.NullInt64
+	err := row.Scan(append(lead, &s.ID, &s.TeamID, &s.Member, &s.Command, &s.Persona, &s.Harness, &s.Model, &s.PID, &s.Transcript, &s.Status, &exitCode, &s.Error, &s.CreatedAt, &s.FinishedAt)...)
+	if exitCode.Valid {
+		code := int(exitCode.Int64)
+		s.ExitCode = &code
+	}
 	return s, err
 }

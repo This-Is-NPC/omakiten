@@ -20,16 +20,15 @@ type AgentOperations interface {
 // SpawnBody is the spawnAgents request body; empty fields keep the
 // bucket's declared team and adapters.
 type SpawnBody struct {
-	Command  string `json:"command,omitempty"`
-	Harness  string `json:"harness,omitempty"`
-	Model    string `json:"model,omitempty"`
-	Launcher string `json:"launcher,omitempty"`
+	Command string `json:"command,omitempty"`
+	Harness string `json:"harness,omitempty"`
+	Model   string `json:"model,omitempty"`
 }
 
 func (s *Server) agentRoutes() []route {
 	return []route{
-		command("spawnAgents", http.MethodPost, taskPath+"/agents", "agent.spawn", "Open the bucket's agent team, or one agent running a command, for a task.", []param{projectParam, taskParam}, s.spawnAgents),
-		command("respawnTeamMember", http.MethodPost, projectPath+"/teams/{team}/members/{member}", "agent.spawn", "Reopen one roster seat of an active agent team in a new session.", []param{
+		command("spawnAgents", http.MethodPost, taskPath+"/agents", "agent.spawn", "Start the bucket's agent team, or one agent running a command, for a task.", []param{projectParam, taskParam}, s.spawnAgents),
+		command("respawnTeamMember", http.MethodPost, projectPath+"/teams/{team}/members/{member}", "agent.spawn", "Rerun one roster seat of an active agent team in a new session.", []param{
 			projectParam,
 			pathParam("team", "Agent team id.", stringSchema),
 			pathParam("member", "Roster key of the seat; `lead` for the lead.", stringSchema),
@@ -47,7 +46,7 @@ func (s *Server) agentRoutes() []route {
 			projectParam,
 			pathParam("team", "Agent team id.", stringSchema),
 		}, s.showTeam),
-		query("closeTeam", http.MethodPost, projectPath+"/teams/{team}/close", "team.close", "Close an agent team and tell its running seats to stop.", []param{
+		query("closeTeam", http.MethodPost, projectPath+"/teams/{team}/close", "team.close", "Close an agent team and stop its running seats.", []param{
 			projectParam,
 			pathParam("team", "Agent team id.", stringSchema),
 		}, s.closeTeam),
@@ -78,7 +77,7 @@ func (s *Server) spawnAgents(r *http.Request, body SpawnBody) (contract.SpawnAge
 	if err != nil {
 		return contract.SpawnAgentsResponse{}, err
 	}
-	return ops.SpawnAgents(r.Context(), contract.SpawnAgentsInput{ProjectSelector: selector, TaskID: taskID, Command: body.Command, Harness: body.Harness, Model: body.Model, Launcher: body.Launcher})
+	return ops.SpawnAgents(r.Context(), contract.SpawnAgentsInput{ProjectSelector: selector, TaskID: taskID, Command: body.Command, Harness: body.Harness, Model: body.Model})
 }
 
 func (s *Server) respawnMember(r *http.Request, body SpawnBody) (contract.SpawnAgentsResponse, error) {
@@ -86,7 +85,7 @@ func (s *Server) respawnMember(r *http.Request, body SpawnBody) (contract.SpawnA
 	if err != nil {
 		return contract.SpawnAgentsResponse{}, err
 	}
-	return ops.SpawnAgents(r.Context(), contract.SpawnAgentsInput{ProjectSelector: selector, TeamID: r.PathValue("team"), Member: r.PathValue("member"), Harness: body.Harness, Model: body.Model, Launcher: body.Launcher})
+	return ops.SpawnAgents(r.Context(), contract.SpawnAgentsInput{ProjectSelector: selector, TeamID: r.PathValue("team"), Member: r.PathValue("member"), Harness: body.Harness, Model: body.Model})
 }
 
 func (s *Server) listAgents(r *http.Request) (contract.ListAgentsResponse, error) {

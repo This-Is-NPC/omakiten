@@ -28,7 +28,7 @@ instructions; do not assume that an older binary has a newer operation.
 | Tasks, comments, plans, assignment, dependencies | `task`, `comment`, `plan`, `assign`, `depend` |
 | Failures, reusable fixes, progress | `error`, `solution`, `progress` |
 | Active policy, configuration, events | `workflow show`, `config`, `preset`, `logs` |
-| Agents opened for a task | `agent spawn`, `agent show`, `team show`, `team close`, `wait`, `logs --session` |
+| Agents run for a task | `agent spawn`, `agent show`, `team show`, `team close`, `wait`, `logs --session` |
 | A moved project directory | `project relocate --help`; preserve the existing project id |
 | Local HTTP access or outside events | `serve --help`, `emit --help` |
 | Documentation attached to a project | `knowledge list`, `knowledge search`, `knowledge show` |
@@ -119,14 +119,16 @@ Use an isolated `OMAKITEN_HOME` or the repository's `dev_env` for experiments.
 ## Work beside agent teams
 
 A move into a bucket that declares an agent team returns it in `data.team`.
-`spawned` means agents are already working: keep talking with the user and
-follow them with the `follow` commands. `unconfigured` means no harness or
-launcher was chosen; tell the user what `error` says to set. `suggested` lists the `spawn` command
-to run if the user wants the team. Opened as a seat yourself, follow the team
-section of your prompt: publish once with `-T review-<key>`, address
-teammates with `-T to-<key>`, and wait with `okt wait`. Reopen a failed or
-silent seat with `okt agent spawn --team <T> --member <key>`; a team closes
-by itself when its task leaves the bucket, or with `okt team close <T>`.
+`started` means headless agents are already working in the background: keep
+talking with the user and follow them with the `follow` commands; each one
+runs once and exits. `unconfigured` means no harness was chosen; tell the
+user what `error` says to set. `suggested` lists the `spawn` command to run
+if the user wants the team. Started as a seat yourself, follow the team
+section of your prompt: do the work, publish once with `-T review-<key>`,
+leave questions with `-T to-<key>`, wait with `okt wait`, then exit. Run a
+failed seat again with `okt agent spawn --team <T> --member <key>`; a team
+closes by itself when its task leaves the bucket, or with
+`okt team close <T>`.
 
 ## Read results
 

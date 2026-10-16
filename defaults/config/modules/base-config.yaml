@@ -227,6 +227,18 @@ events:
       category: tag-dep
       display: "dependency removed"
       formatter: dependency.removed
+    agent.session_started:
+      category: task
+      display: "agent session started"
+      formatter: agent.session_started
+    agent.session_finished:
+      category: task
+      display: "agent session finished"
+      formatter: agent.session_finished
+    team.closed:
+      category: task
+      display: "agent team closed"
+      formatter: team.closed
     guard.violated:
       category: guard
       display: "guard violated"

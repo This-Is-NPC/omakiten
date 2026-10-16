@@ -2,12 +2,15 @@ package operation
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"omakiten/internal/agentlaunch"
 	"omakiten/internal/config"
@@ -19,12 +22,33 @@ import (
 type agentFixtureSet struct {
 	ctx     context.Context
 	store   *snapstore.Store
+	dbPath  string
 	service *Service
 	project domain.Project
 	task    domain.Task
-	opens   *int
-	fail    *bool
-	sends   *[][]string
+	agents  *fakeAgents
+}
+
+// fakeAgents is the real launcher with a fake detach that records each
+// supervisor start, and fake liveness and stops; realStop makes Stop end
+// the real process group too.
+type fakeAgents struct {
+	agentlaunch.Launcher
+	starts   [][]string
+	fail     bool
+	alive    map[string]bool
+	stopped  []int
+	realStop bool
+}
+
+func (f *fakeAgents) Alive(sessionID string) bool { return f.alive[sessionID] }
+
+func (f *fakeAgents) Stop(pid int) error {
+	f.stopped = append(f.stopped, pid)
+	if f.realStop {
+		return f.Launcher.Stop(pid)
+	}
+	return nil
 }
 
 func agentArgs(values ...string) []domain.AgentArg {
@@ -36,8 +60,8 @@ func agentArgs(values ...string) []domain.AgentArg {
 }
 
 // newAgentSpawnFixture seeds a backlog task whose bucket declares a manual
-// team of a lead and one member, with a fake launcher that counts opens and
-// can fail them.
+// team of a lead and one member, with a fake launcher that records starts
+// and can fail them.
 func newAgentSpawnFixture(t *testing.T) agentFixtureSet {
 	t.Helper()
 	return newAgentTeamFixture(t, "backlog", domain.AgentTriggerManual)
@@ -51,9 +75,8 @@ func newAgentTeamFixture(t *testing.T, teamBucket, trigger string) agentFixtureS
 	ctx := context.Background()
 	bundle := agentTestBundle(t)
 	bundle.AgentAdapters = domain.AgentAdapters{
-		Defaults:  domain.AgentDefaults{Harness: "fake", Launcher: "fake"},
-		Harnesses: map[string]domain.HarnessSpec{"fake": {Argv: agentArgs("fake-agent", "{prompt}")}},
-		Launchers: map[string]domain.LauncherSpec{"fake": {Open: agentArgs("fake-term", "{command}"), Send: agentArgs("fake-term", "{pane}", "{text}")}},
+		Defaults:  domain.AgentDefaults{Harness: "fake"},
+		Harnesses: map[string]domain.HarnessSpec{"fake": {Argv: agentArgs("fake-agent", "--", "{prompt}")}},
 	}
 	for i := range bundle.Workflows[0].Buckets {
 		if bundle.Workflows[0].Buckets[i].Key == teamBucket {
@@ -65,7 +88,8 @@ func newAgentTeamFixture(t *testing.T, teamBucket, trigger string) agentFixtureS
 		}
 	}
 	bundle.Workflows[0].Transitions = append(bundle.Workflows[0].Transitions, config.Transition{From: 2, To: 1})
-	store := snapstore.Open(t, filepath.Join(t.TempDir(), "omakiten.db"))
+	dbPath := filepath.Join(t.TempDir(), "omakiten.db")
+	store := snapstore.Open(t, dbPath)
 	if err := store.ImportBundle(ctx, bundle, "test.yaml", "hash"); err != nil {
 		t.Fatalf("ImportBundle() error = %v", err)
 	}
@@ -81,42 +105,69 @@ func newAgentTeamFixture(t *testing.T, teamBucket, trigger string) agentFixtureS
 	svc := NewService(store, contract.ProjectSelector{CWD: root})
 	svc.SetSnapshot(store.Snapshot())
 	svc.SetSettings(ServiceSettings{RecentCommentLimit: 5, IncludeWorkflow: true, NextWorkLimit: 5, SimilarTaskLimit: 5})
-	opens, fail := 0, false
-	var sends [][]string
-	svc.SetAgentLauncher(agentlaunch.Launcher{
+	agents := &fakeAgents{alive: map[string]bool{}}
+	agents.Launcher = agentlaunch.Launcher{
 		LookPath: func(name string) (string, error) { return "/bin/" + name, nil },
-		Run: func(_ context.Context, argv []string) ([]byte, error) {
-			if fail {
-				return nil, errors.New("no terminal")
+		Detach: func(argv, _ []string, _, _ string) error {
+			if agents.fail {
+				return errors.New("cannot start")
 			}
-			if len(argv) == 3 {
-				sends = append(sends, argv)
-				return nil, nil
-			}
-			opens++
-			return []byte("%" + string(rune('0'+opens))), nil
+			agents.starts = append(agents.starts, argv)
+			return nil
 		},
-	})
-	return agentFixtureSet{ctx: ctx, store: store, service: svc, project: project, task: task, opens: &opens, fail: &fail, sends: &sends}
+	}
+	svc.SetAgentLauncher(agents)
+	return agentFixtureSet{ctx: ctx, store: store, dbPath: dbPath, service: svc, project: project, task: task, agents: agents}
 }
 
-// TestSpawnAgentsOpensTheBucketTeamOnce verifies a spawn opens the bucket's
-// lead and members with prompts and events, and a repeat returns the team.
-func TestSpawnAgentsOpensTheBucketTeamOnce(t *testing.T) {
+// harnessStarted records pid as the harness of each session, as its
+// supervisor does once the harness runs, and marks the sessions alive.
+func (f agentFixtureSet) harnessStarted(t *testing.T, pids map[string]int) {
+	t.Helper()
+	for id, pid := range pids {
+		if err := f.store.SetAgentSessionPID(f.ctx, id, pid); err != nil {
+			t.Fatal(err)
+		}
+		f.agents.alive[id] = true
+	}
+}
+
+// run supervises sessionID with argv as the harness, as `okt agent run`
+// does.
+func (f agentFixtureSet) run(t *testing.T, sessionID string, timeout time.Duration, argv ...string) domain.AgentSession {
+	t.Helper()
+	resp, err := f.service.RunAgentSession(f.ctx, contract.RunAgentSessionInput{SessionID: sessionID, Argv: argv, Timeout: timeout})
+	if err != nil {
+		t.Fatalf("RunAgentSession(%s) error = %v", sessionID, err)
+	}
+	return resp.Session
+}
+
+// TestSpawnAgentsStartsTheBucketTeamOnce verifies a spawn starts a
+// supervisor for the bucket's lead and members with prompts and events, and
+// a repeat returns the team.
+func TestSpawnAgentsStartsTheBucketTeamOnce(t *testing.T) {
 	f := newAgentSpawnFixture(t)
 	resp, err := f.service.SpawnAgents(f.ctx, contract.SpawnAgentsInput{TaskID: f.task.ID})
 	if err != nil {
 		t.Fatalf("SpawnAgents() error = %v", err)
 	}
 	team := resp.Team
-	if team.Status != domain.TeamSpawned || team.Lead.Status != domain.SessionSpawned || len(team.Members) != 1 || team.Members[0].Status != domain.SessionSpawned {
-		t.Fatalf("team = %+v, want lead and member spawned", team)
+	if team.Status != domain.TeamStarted || team.Lead.Status != domain.TeamStarted || len(team.Members) != 1 || team.Members[0].Status != domain.TeamStarted {
+		t.Fatalf("team = %+v, want lead and member started", team)
 	}
-	assertPromptContains(t, team.Members[0].SessionID, "security only", "-T review-security", "okt team show "+team.TeamID)
+	if !strings.HasSuffix(team.Lead.Transcript, team.Lead.SessionID+".jsonl") {
+		t.Fatalf("lead transcript = %q, want the session's JSONL file", team.Lead.Transcript)
+	}
+	assertPromptContains(t, team.Members[0].SessionID, "security only", "-T review-security", "okt team show "+team.TeamID, "You run once")
+	supervisor := strings.Join(f.agents.starts[0], " ")
+	if !strings.Contains(supervisor, " --project agents agent run --session "+team.Lead.SessionID+" -- fake-agent -- ") {
+		t.Fatalf("supervisor argv = %q, want agent run for the lead's session", supervisor)
+	}
 
 	again, err := f.service.SpawnAgents(f.ctx, contract.SpawnAgentsInput{TaskID: f.task.ID})
-	if err != nil || again.Team.Status != domain.TeamRunning || again.Team.TeamID != team.TeamID || *f.opens != 2 {
-		t.Fatalf("second spawn = %+v, %v (opens %d), want the running team and no new panes", again.Team, err, *f.opens)
+	if err != nil || again.Team.Status != domain.TeamRunning || again.Team.TeamID != team.TeamID || len(f.agents.starts) != 2 {
+		t.Fatalf("second spawn = %+v, %v (starts %d), want the running team and no new supervisor", again.Team, err, len(f.agents.starts))
 	}
 
 	shown, err := f.service.ShowTeam(f.ctx, contract.ShowTeamInput{TeamID: team.TeamID})
@@ -124,7 +175,7 @@ func TestSpawnAgentsOpensTheBucketTeamOnce(t *testing.T) {
 		t.Fatalf("ShowTeam() = %+v, %v", shown, err)
 	}
 	agent, err := f.service.ShowAgent(f.ctx, contract.ShowAgentInput{SessionID: team.Lead.SessionID})
-	if err != nil || agent.Session.Member != domain.AgentLeadKey || agent.Bucket != "backlog" {
+	if err != nil || agent.Session.Member != domain.AgentLeadKey || agent.Bucket != "backlog" || agent.Session.Status != domain.SessionRunning {
 		t.Fatalf("ShowAgent() = %+v, %v", agent, err)
 	}
 	if started := countEvents(t, f, domain.EventTypeAgentSessionStarted); started != 2 {
@@ -161,35 +212,146 @@ func countEvents(t *testing.T, f agentFixtureSet, eventType string) int {
 	return n
 }
 
-// TestSpawnAgentsFailedLeadFreesTheTask verifies a lead that cannot open
-// fails the spawn and leaves the task free for the next attempt.
+// TestSpawnAgentsFailedLeadFreesTheTask verifies a lead that cannot start
+// fails the spawn, finishes its session failed, and leaves the task free
+// for the next attempt.
 func TestSpawnAgentsFailedLeadFreesTheTask(t *testing.T) {
 	f := newAgentSpawnFixture(t)
-	*f.fail = true
+	f.agents.fail = true
 	_, err := f.service.SpawnAgents(f.ctx, contract.SpawnAgentsInput{TaskID: f.task.ID, Command: "okt-start"})
 	var coded *domain.CodedError
 	if !errors.As(err, &coded) || coded.Code != domain.ErrAgentSpawnFailed {
 		t.Fatalf("SpawnAgents() error = %v, want agent_spawn_failed", err)
 	}
-	*f.fail = false
+	if finished := countEvents(t, f, domain.EventTypeAgentSessionFinished); finished != 1 {
+		t.Fatalf("recorded %d agent.session_finished events, want the failed lead's", finished)
+	}
+	f.agents.fail = false
 	resp, err := f.service.SpawnAgents(f.ctx, contract.SpawnAgentsInput{TaskID: f.task.ID, Command: "okt-start"})
-	if err != nil || resp.Team.Status != domain.TeamSpawned || len(resp.Team.Members) != 0 {
-		t.Fatalf("retry = %+v, %v, want a team of one spawned", resp.Team, err)
+	if err != nil || resp.Team.Status != domain.TeamStarted || len(resp.Team.Members) != 0 {
+		t.Fatalf("retry = %+v, %v, want a team of one started", resp.Team, err)
 	}
 }
 
-// TestSpawnAgentsBlockedStoreOpensNothing verifies an uninheritable store
-// stops a spawn before any pane opens.
-func TestSpawnAgentsBlockedStoreOpensNothing(t *testing.T) {
+// TestRunAgentSessionRecordsHowTheHarnessEnded verifies the supervisor
+// writes the harness output to the transcript and finishes the session
+// from its exit code, its timeout, or its stop, each once.
+func TestRunAgentSessionRecordsHowTheHarnessEnded(t *testing.T) {
+	f := newAgentSpawnFixture(t)
+	spawned, err := f.service.SpawnAgents(f.ctx, contract.SpawnAgentsInput{TaskID: f.task.ID})
+	if err != nil {
+		t.Fatalf("SpawnAgents() error = %v", err)
+	}
+	lead := f.run(t, spawned.Team.Lead.SessionID, 0, "sh", "-c", `echo '{"type":"result"}'`)
+	if lead.Status != domain.SessionDone || lead.ExitCode == nil || *lead.ExitCode != 0 || lead.FinishedAt == "" || lead.PID == 0 {
+		t.Fatalf("lead = %+v, want done with exit 0 and the harness pid", lead)
+	}
+	if transcript, err := os.ReadFile(lead.Transcript); err != nil || !strings.Contains(string(transcript), `{"type":"result"}`) {
+		t.Fatalf("transcript = %q, %v; want the harness output", transcript, err)
+	}
+	member := f.run(t, spawned.Team.Members[0].SessionID, 0, "sh", "-c", "exit 2")
+	if member.Status != domain.SessionFailed || *member.ExitCode != 2 || member.Error != "exit status 2" {
+		t.Fatalf("member = %+v, want failed with exit 2", member)
+	}
+	if again := f.run(t, member.ID, 0, "sh", "-c", "exit 0"); again.Status != domain.SessionFailed {
+		t.Fatalf("a second run rewrote a finished session: %+v", again)
+	}
+	if finished := countEvents(t, f, domain.EventTypeAgentSessionFinished); finished != 2 {
+		t.Fatalf("recorded %d agent.session_finished events, want one per session", finished)
+	}
+
+	f = newAgentSpawnFixture(t)
+	spawned, err = f.service.SpawnAgents(f.ctx, contract.SpawnAgentsInput{TaskID: f.task.ID, Command: "okt-start"})
+	if err != nil {
+		t.Fatalf("SpawnAgents() error = %v", err)
+	}
+	timedOut := f.run(t, spawned.Team.Lead.SessionID, 100*time.Millisecond, "sleep", "30")
+	if timedOut.Status != domain.SessionFailed || timedOut.Error != "timed out after 100ms" {
+		t.Fatalf("timed out run = %+v, want failed by its timeout", timedOut)
+	}
+}
+
+// TestASeatStoppedBeforeItsHarnessStartsStopsAtOnce verifies a supervisor
+// whose session was stopped before the harness ran stops the harness as
+// soon as it starts, and leaves the session stopped.
+func TestASeatStoppedBeforeItsHarnessStartsStopsAtOnce(t *testing.T) {
+	f := newAgentSpawnFixture(t)
+	spawned, err := f.service.SpawnAgents(f.ctx, contract.SpawnAgentsInput{TaskID: f.task.ID, Command: "okt-start"})
+	if err != nil {
+		t.Fatalf("SpawnAgents() error = %v", err)
+	}
+	if _, err := f.service.CloseTeam(f.ctx, contract.CloseTeamInput{TeamID: spawned.Team.TeamID}); err != nil {
+		t.Fatalf("CloseTeam() error = %v", err)
+	}
+	f.agents.realStop = true
+	start := time.Now()
+	session := f.run(t, spawned.Team.Lead.SessionID, 0, "sleep", "30")
+	if session.Status != domain.SessionStopped || len(f.agents.stopped) != 1 || time.Since(start) > 5*time.Second {
+		t.Fatalf("run = %+v after %s (stopped %v), want the harness stopped at once", session, time.Since(start), f.agents.stopped)
+	}
+}
+
+// TestOrphanedSessionsFinishFailed verifies a running session whose
+// supervisor no longer holds its lock finishes failed on the next read,
+// while a live one keeps running.
+func TestOrphanedSessionsFinishFailed(t *testing.T) {
+	f := newAgentSpawnFixture(t)
+	spawned, err := f.service.SpawnAgents(f.ctx, contract.SpawnAgentsInput{TaskID: f.task.ID})
+	if err != nil {
+		t.Fatalf("SpawnAgents() error = %v", err)
+	}
+	db, err := sql.Open("sqlite", f.dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = db.Close() }()
+	if _, err := db.Exec(`UPDATE agent_sessions SET created_at = datetime('now', '-2 hours')`); err != nil {
+		t.Fatal(err)
+	}
+	f.agents.alive[spawned.Team.Lead.SessionID] = true
+	shown, err := f.service.ShowTeam(f.ctx, contract.ShowTeamInput{TeamID: spawned.Team.TeamID})
+	if err != nil {
+		t.Fatalf("ShowTeam() error = %v", err)
+	}
+	lead, member := shown.Team.Sessions[0], shown.Team.Sessions[1]
+	if lead.Status != domain.SessionRunning || member.Status != domain.SessionFailed || !strings.HasPrefix(member.Error, "orphaned") {
+		t.Fatalf("sessions = %+v / %+v, want the live lead running and the orphan failed", lead, member)
+	}
+}
+
+// TestShowTeamNamesMembersDoneWithoutAResult verifies a member that exited
+// 0 without publishing review-<key> is reported until it publishes one.
+func TestShowTeamNamesMembersDoneWithoutAResult(t *testing.T) {
+	f := newAgentSpawnFixture(t)
+	spawned, err := f.service.SpawnAgents(f.ctx, contract.SpawnAgentsInput{TaskID: f.task.ID})
+	if err != nil {
+		t.Fatalf("SpawnAgents() error = %v", err)
+	}
+	f.run(t, spawned.Team.Members[0].SessionID, 0, "true")
+	shown, err := f.service.ShowTeam(f.ctx, contract.ShowTeamInput{TeamID: spawned.Team.TeamID})
+	if err != nil || len(shown.MissingResults) != 1 || shown.MissingResults[0] != "security" {
+		t.Fatalf("ShowTeam() = %+v, %v; want security missing its result", shown, err)
+	}
+	if _, err := f.service.AddComment(f.ctx, contract.AddCommentInput{TaskID: f.task.ID, Body: "no findings", AuthorType: "agent", Tags: []string{"review-security"}}); err != nil {
+		t.Fatalf("AddComment() error = %v", err)
+	}
+	if shown, err = f.service.ShowTeam(f.ctx, contract.ShowTeamInput{TeamID: spawned.Team.TeamID}); err != nil || len(shown.MissingResults) != 0 || len(shown.Results) != 1 {
+		t.Fatalf("ShowTeam() after the result = %+v, %v", shown, err)
+	}
+}
+
+// TestSpawnAgentsBlockedStoreStartsNothing verifies an uninheritable store
+// stops a spawn before any supervisor starts.
+func TestSpawnAgentsBlockedStoreStartsNothing(t *testing.T) {
 	f := newAgentSpawnFixture(t)
 	f.service.BlockAgentSpawn("use OMAKITEN_HOME")
-	if _, err := f.service.SpawnAgents(f.ctx, contract.SpawnAgentsInput{TaskID: f.task.ID}); err == nil || *f.opens != 0 {
-		t.Fatalf("blocked spawn error = %v, opens %d; want a failure and no panes", err, *f.opens)
+	if _, err := f.service.SpawnAgents(f.ctx, contract.SpawnAgentsInput{TaskID: f.task.ID}); err == nil || len(f.agents.starts) != 0 {
+		t.Fatalf("blocked spawn error = %v, starts %d; want a failure and nothing started", err, len(f.agents.starts))
 	}
 }
 
 // TestMoveIntoManualTeamBucketSuggestsTheTeam verifies a move into a bucket
-// with a manual team opens nothing and reports the team with its spawn
+// with a manual team starts nothing and reports the team with its spawn
 // command, and that a dry run reports what the move would do.
 func TestMoveIntoManualTeamBucketSuggestsTheTeam(t *testing.T) {
 	f := newAgentTeamFixture(t, "dev", domain.AgentTriggerManual)
@@ -205,19 +367,19 @@ func TestMoveIntoManualTeamBucketSuggestsTheTeam(t *testing.T) {
 	if team == nil || team.Status != domain.TeamSuggested || team.Spawn != fmt.Sprintf("okt agent spawn --task %d", f.task.ID) || team.Bucket != "dev" {
 		t.Fatalf("team = %+v, want a suggested dev team with its spawn command", team)
 	}
-	if team.Lead.Harness != "fake" || len(team.Members) != 1 || team.Members[0].Key != "security" || *f.opens != 0 {
-		t.Fatalf("team = %+v (opens %d), want the resolved seats and no panes", team, *f.opens)
+	if team.Lead.Harness != "fake" || len(team.Members) != 1 || team.Members[0].Key != "security" || len(f.agents.starts) != 0 {
+		t.Fatalf("team = %+v (starts %d), want the resolved seats and nothing started", team, len(f.agents.starts))
 	}
 }
 
 // TestDryRunIntoAutoTeamBucketWouldSpawn verifies a dry run into a bucket
-// with an automatic team reports would_spawn without opening panes, and a
+// with an automatic team reports would_spawn without starting anything, and a
 // move between buckets without teams reports none.
 func TestDryRunIntoAutoTeamBucketWouldSpawn(t *testing.T) {
 	f := newAgentTeamFixture(t, "dev", domain.AgentTriggerAuto)
 	preview, err := f.service.MoveTask(f.ctx, contract.MoveTaskInput{TaskID: f.task.ID, BucketKey: "dev", DryRun: true})
-	if err != nil || preview.Team == nil || preview.Team.Status != domain.TeamWouldSpawn || preview.Team.Lead.SessionID != "" || *f.opens != 0 {
-		t.Fatalf("dry run = %+v, %v (opens %d); want would_spawn and no panes", preview.Team, err, *f.opens)
+	if err != nil || preview.Team == nil || preview.Team.Status != domain.TeamWouldSpawn || preview.Team.Lead.SessionID != "" || len(f.agents.starts) != 0 {
+		t.Fatalf("dry run = %+v, %v (starts %d); want would_spawn and nothing started", preview.Team, err, len(f.agents.starts))
 	}
 	f = newAgentTeamFixture(t, "done", domain.AgentTriggerAuto)
 	moved, err := f.service.MoveTask(f.ctx, contract.MoveTaskInput{TaskID: f.task.ID, BucketKey: "dev"})
@@ -227,13 +389,13 @@ func TestDryRunIntoAutoTeamBucketWouldSpawn(t *testing.T) {
 }
 
 // TestMoveIntoAutoTeamBucketSpawnsUnlessSkipped verifies a move into a
-// bucket with an automatic team opens it and reports it, and --no-spawn
-// reports it skipped without opening panes.
+// bucket with an automatic team starts it and reports it, and --no-spawn
+// reports it skipped without starting anything.
 func TestMoveIntoAutoTeamBucketSpawnsUnlessSkipped(t *testing.T) {
 	f := newAgentTeamFixture(t, "dev", domain.AgentTriggerAuto)
 	skipped, err := f.service.MoveTask(f.ctx, contract.MoveTaskInput{TaskID: f.task.ID, BucketKey: "dev", NoSpawn: true})
-	if err != nil || skipped.Team == nil || skipped.Team.Status != domain.TeamSkipped || *f.opens != 0 {
-		t.Fatalf("--no-spawn move = %+v, %v (opens %d); want skipped and no panes", skipped.Team, err, *f.opens)
+	if err != nil || skipped.Team == nil || skipped.Team.Status != domain.TeamSkipped || len(f.agents.starts) != 0 {
+		t.Fatalf("--no-spawn move = %+v, %v (starts %d); want skipped and nothing started", skipped.Team, err, len(f.agents.starts))
 	}
 
 	f = newAgentTeamFixture(t, "dev", domain.AgentTriggerAuto)
@@ -241,69 +403,22 @@ func TestMoveIntoAutoTeamBucketSpawnsUnlessSkipped(t *testing.T) {
 	if err != nil {
 		t.Fatalf("MoveTask() error = %v", err)
 	}
-	if moved.Task.BucketKey != "dev" || moved.Team == nil || moved.Team.Status != domain.TeamSpawned || moved.Team.Lead.Pane == "" || *f.opens != 2 {
-		t.Fatalf("move = %+v (opens %d), want the task in dev and its team spawned", moved, *f.opens)
-	}
-}
-
-// TestMemberResultWakesTheLead verifies a review-<key> comment marks that
-// member done, records team.member_done, and types one line into the lead's
-// pane.
-func TestMemberResultWakesTheLead(t *testing.T) {
-	f := newAgentSpawnFixture(t)
-	spawned, err := f.service.SpawnAgents(f.ctx, contract.SpawnAgentsInput{TaskID: f.task.ID})
-	if err != nil {
-		t.Fatalf("SpawnAgents() error = %v", err)
-	}
-	if _, err := f.service.AddComment(f.ctx, contract.AddCommentInput{TaskID: f.task.ID, Body: "no findings", AuthorType: "agent", Tags: []string{"review-security"}}); err != nil {
-		t.Fatalf("AddComment() error = %v", err)
-	}
-	team, err := f.service.ShowTeam(f.ctx, contract.ShowTeamInput{TeamID: spawned.Team.TeamID})
-	if err != nil {
-		t.Fatalf("ShowTeam() error = %v", err)
-	}
-	if team.Team.Sessions[1].Status != domain.SessionDone || len(team.Results) != 1 || team.Results[0].Member != "security" {
-		t.Fatalf("team = %+v, want security done with its result", team)
-	}
-	if len(*f.sends) != 1 || (*f.sends)[0][1] != spawned.Team.Lead.Pane || !strings.Contains((*f.sends)[0][2], "security finished task") {
-		t.Fatalf("sends = %q, want one wake line to the lead's pane %s", *f.sends, spawned.Team.Lead.Pane)
-	}
-	if _, err := f.service.AddComment(f.ctx, contract.AddCommentInput{TaskID: f.task.ID, Body: "again", AuthorType: "agent", Tags: []string{"review-security"}}); err != nil {
-		t.Fatalf("AddComment(again) error = %v", err)
-	}
-	if len(*f.sends) != 1 {
-		t.Fatalf("a second result woke the lead again: %q", *f.sends)
-	}
-}
-
-// TestAddressedMessageWakesTheRecipient verifies a to-<key> comment types
-// one line into that seat's pane, and an unknown key does nothing.
-func TestAddressedMessageWakesTheRecipient(t *testing.T) {
-	f := newAgentSpawnFixture(t)
-	spawned, err := f.service.SpawnAgents(f.ctx, contract.SpawnAgentsInput{TaskID: f.task.ID})
-	if err != nil {
-		t.Fatalf("SpawnAgents() error = %v", err)
-	}
-	for _, tag := range []string{"to-security", "to-nobody"} {
-		if _, err := f.service.AddComment(f.ctx, contract.AddCommentInput{TaskID: f.task.ID, Body: "question", AuthorType: "agent", Tags: []string{tag}}); err != nil {
-			t.Fatalf("AddComment(%s) error = %v", tag, err)
-		}
-	}
-	want := fmt.Sprintf("okt: message for security on task #%d — okt comment list %d --tag to-security", f.task.ID, f.task.ID)
-	if len(*f.sends) != 1 || (*f.sends)[0][1] != spawned.Team.Members[0].Pane || (*f.sends)[0][2] != want {
-		t.Fatalf("sends = %q, want %q to the security pane %s", *f.sends, want, spawned.Team.Members[0].Pane)
+	if moved.Task.BucketKey != "dev" || moved.Team == nil || moved.Team.Status != domain.TeamStarted || moved.Team.Lead.Transcript == "" || len(f.agents.starts) != 2 {
+		t.Fatalf("move = %+v (starts %d), want the task in dev and its team started", moved, len(f.agents.starts))
 	}
 }
 
 // TestTeamClosesWhenTheTaskLeavesItsBucket verifies a move out of the
-// team's bucket closes the team, stops its running seats with one line each,
-// and a later spawn in that bucket opens a new team.
+// team's bucket closes the team, stops its running seats and terminates
+// the supervisors still alive, and a later spawn in that bucket opens a new
+// team.
 func TestTeamClosesWhenTheTaskLeavesItsBucket(t *testing.T) {
 	f := newAgentSpawnFixture(t)
 	spawned, err := f.service.SpawnAgents(f.ctx, contract.SpawnAgentsInput{TaskID: f.task.ID})
 	if err != nil {
 		t.Fatalf("SpawnAgents() error = %v", err)
 	}
+	f.harnessStarted(t, map[string]int{spawned.Team.Lead.SessionID: 1001})
 	if _, err := f.service.MoveTask(f.ctx, contract.MoveTaskInput{TaskID: f.task.ID, BucketKey: "dev"}); err != nil {
 		t.Fatalf("MoveTask(dev) error = %v", err)
 	}
@@ -316,15 +431,14 @@ func TestTeamClosesWhenTheTaskLeavesItsBucket(t *testing.T) {
 			t.Fatalf("session %s status = %s, want stopped", session.Member, session.Status)
 		}
 	}
-	stop := fmt.Sprintf("okt: task #%d left backlog; stop working on it", f.task.ID)
-	if len(*f.sends) != 2 || (*f.sends)[0][2] != stop {
-		t.Fatalf("sends = %q, want %q to both panes", *f.sends, stop)
+	if !slices.Equal(f.agents.stopped, []int{1001}) {
+		t.Fatalf("stopped = %v, want only the running lead's harness", f.agents.stopped)
 	}
 	if _, err := f.service.MoveTask(f.ctx, contract.MoveTaskInput{TaskID: f.task.ID, BucketKey: "backlog"}); err != nil {
 		t.Fatalf("MoveTask(backlog) error = %v", err)
 	}
 	again, err := f.service.SpawnAgents(f.ctx, contract.SpawnAgentsInput{TaskID: f.task.ID})
-	if err != nil || again.Team.Status != domain.TeamSpawned || again.Team.TeamID == spawned.Team.TeamID {
+	if err != nil || again.Team.Status != domain.TeamStarted || again.Team.TeamID == spawned.Team.TeamID {
 		t.Fatalf("spawn after closing = %+v, %v; want a new team", again.Team, err)
 	}
 }
@@ -337,18 +451,19 @@ func TestCloseTeamStopsItsSeats(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SpawnAgents() error = %v", err)
 	}
+	f.harnessStarted(t, map[string]int{spawned.Team.Lead.SessionID: 1001, spawned.Team.Members[0].SessionID: 1002})
 	closed, err := f.service.CloseTeam(f.ctx, contract.CloseTeamInput{TeamID: spawned.Team.TeamID})
-	if err != nil || closed.Team.Status != domain.TeamClosed || len(*f.sends) != 2 {
-		t.Fatalf("CloseTeam() = %+v, %v (sends %q); want closed and both seats told", closed.Team, err, *f.sends)
+	if err != nil || closed.Team.Status != domain.TeamClosed || len(f.agents.stopped) != 2 {
+		t.Fatalf("CloseTeam() = %+v, %v (stopped %v); want closed and both harnesses stopped", closed.Team, err, f.agents.stopped)
 	}
 	if _, err := f.service.CloseTeam(f.ctx, contract.CloseTeamInput{TeamID: spawned.Team.TeamID}); err == nil {
 		t.Fatal("closing a closed team succeeded")
 	}
 }
 
-// TestRespawnMemberReplacesItsSession verifies --team/--member opens a new
-// session for a roster key, marks the old one replaced, and refuses keys
-// outside the roster.
+// TestRespawnMemberReplacesItsSession verifies --team/--member starts a new
+// session for a roster key, stops and replaces the old one, and refuses
+// keys outside the roster.
 func TestRespawnMemberReplacesItsSession(t *testing.T) {
 	f := newAgentSpawnFixture(t)
 	spawned, err := f.service.SpawnAgents(f.ctx, contract.SpawnAgentsInput{TaskID: f.task.ID})
@@ -356,11 +471,15 @@ func TestRespawnMemberReplacesItsSession(t *testing.T) {
 		t.Fatalf("SpawnAgents() error = %v", err)
 	}
 	old := spawned.Team.Members[0].SessionID
+	f.harnessStarted(t, map[string]int{old: 1002})
 	again, err := f.service.SpawnAgents(f.ctx, contract.SpawnAgentsInput{TeamID: spawned.Team.TeamID, Member: "security"})
-	if err != nil || again.Team.Status != domain.TeamSpawned || len(again.Team.Members) != 1 || again.Team.Members[0].SessionID == old {
+	if err != nil || again.Team.Status != domain.TeamStarted || len(again.Team.Members) != 1 || again.Team.Members[0].SessionID == old {
 		t.Fatalf("respawn = %+v, %v; want a new security session", again.Team, err)
 	}
-	assertPromptContains(t, again.Team.Members[0].SessionID, "security only", "Your lead's session is `"+spawned.Team.Lead.SessionID+"`")
+	if !slices.Equal(f.agents.stopped, []int{1002}) {
+		t.Fatalf("stopped = %v, want the replaced seat's harness", f.agents.stopped)
+	}
+	assertPromptContains(t, again.Team.Members[0].SessionID, "security only", "-T review-security")
 	team, err := f.service.ShowTeam(f.ctx, contract.ShowTeamInput{TeamID: spawned.Team.TeamID})
 	if err != nil {
 		t.Fatalf("ShowTeam() error = %v", err)
@@ -369,8 +488,8 @@ func TestRespawnMemberReplacesItsSession(t *testing.T) {
 	for _, session := range team.Team.Sessions {
 		statuses[session.ID] = session.Status
 	}
-	if statuses[old] != domain.SessionReplaced || statuses[again.Team.Members[0].SessionID] != domain.SessionSpawned {
-		t.Fatalf("sessions = %v, want the old one replaced and the new one spawned", statuses)
+	if statuses[old] != domain.SessionReplaced || statuses[again.Team.Members[0].SessionID] != domain.SessionRunning {
+		t.Fatalf("sessions = %v, want the old one replaced and the new one running", statuses)
 	}
 	if _, err := f.service.SpawnAgents(f.ctx, contract.SpawnAgentsInput{TeamID: spawned.Team.TeamID, Member: "perf"}); err == nil {
 		t.Fatal("respawning a key outside the roster succeeded")
@@ -449,7 +568,7 @@ func TestTaskReadsShowTheActiveTeam(t *testing.T) {
 }
 
 // TestUnconfiguredTeamLeavesTheMoveWhole verifies a team whose seats name no
-// harness, with nothing in preset or preferences, opens no pane, reports
+// harness, with nothing in preset or preferences, starts nothing, reports
 // unconfigured, and does not fail the move.
 func TestUnconfiguredTeamLeavesTheMoveWhole(t *testing.T) {
 	f := newAgentTeamFixture(t, "dev", domain.AgentTriggerAuto)
@@ -471,8 +590,8 @@ func TestUnconfiguredTeamLeavesTheMoveWhole(t *testing.T) {
 		t.Fatalf("MoveTask() error = %v, want the move to succeed", err)
 	}
 	team := moved.Team
-	if moved.Task.BucketKey != "dev" || team == nil || team.Status != domain.TeamUnconfigured || team.Lead.Status != domain.TeamUnconfigured || *f.opens != 0 {
-		t.Fatalf("move = %+v (opens %d), want the task moved and its team unconfigured", moved, *f.opens)
+	if moved.Task.BucketKey != "dev" || team == nil || team.Status != domain.TeamUnconfigured || team.Lead.Status != domain.TeamUnconfigured || len(f.agents.starts) != 0 {
+		t.Fatalf("move = %+v (starts %d), want the task moved and its team unconfigured", moved, len(f.agents.starts))
 	}
 	if team.Error == nil || team.Error.Code != "agent_unconfigured" || !strings.Contains(team.Error.Message, "preferences.yaml") {
 		t.Fatalf("team error = %+v, want agent_unconfigured pointing at preferences.yaml", team.Error)

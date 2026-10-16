@@ -8,8 +8,8 @@ import (
 )
 
 var _ = mapping([]mappingCase{
-	{"spawnAgents", http.MethodPost, "/api/v1/projects/alpha/tasks/5/agents", `{"command":"okt-task-review","harness":"opencode","model":"m","launcher":"tmux"}`, "SpawnAgents", contract.SpawnAgentsInput{
-		ProjectSelector: alpha, TaskID: 5, Command: "okt-task-review", Harness: "opencode", Model: "m", Launcher: "tmux",
+	{"spawnAgents", http.MethodPost, "/api/v1/projects/alpha/tasks/5/agents", `{"command":"okt-task-review","harness":"opencode","model":"m"}`, "SpawnAgents", contract.SpawnAgentsInput{
+		ProjectSelector: alpha, TaskID: 5, Command: "okt-task-review", Harness: "opencode", Model: "m",
 	}},
 	{"respawnTeamMember", http.MethodPost, "/api/v1/projects/alpha/teams/t-1/members/security", `{"model":"m"}`, "SpawnAgents", contract.SpawnAgentsInput{ProjectSelector: alpha, TeamID: "t-1", Member: "security", Model: "m"}},
 	{"listAgents", http.MethodGet, "/api/v1/projects/alpha/agents?task=5&status=active", "", "ListAgents", contract.ListAgentsInput{ProjectSelector: alpha, TaskID: 5, Status: "active"}},

@@ -2,6 +2,10 @@ package cli
 
 import (
 	"context"
+	"os"
+	"os/signal"
+	"syscall"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -10,7 +14,7 @@ import (
 
 func newAgentCommand(opts *runtimeOptions) *cobra.Command {
 	cmd := &cobra.Command{Use: "agent", Short: opts.t("cli.agent.short")}
-	cmd.AddCommand(newAgentSpawnCommand(opts), newAgentShowCommand(opts), newAgentListCommand(opts))
+	cmd.AddCommand(newAgentSpawnCommand(opts), newAgentShowCommand(opts), newAgentListCommand(opts), newAgentRunCommand(opts))
 	return cmd
 }
 
@@ -41,7 +45,7 @@ func newAgentSpawnCommand(opts *runtimeOptions) *cobra.Command {
 	var taskID int64
 	var input contract.SpawnAgentsInput
 	cmd := &cobra.Command{
-		Use:   "spawn (--task ID [--command C] | --team T --member KEY) [--harness H] [--model M] [--launcher L]",
+		Use:   "spawn (--task ID [--command C] | --team T --member KEY) [--harness H] [--model M]",
 		Short: opts.t("cli.agent.spawn.short"),
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
@@ -63,9 +67,38 @@ func newAgentSpawnCommand(opts *runtimeOptions) *cobra.Command {
 	cmd.Flags().StringVar(&input.Command, "command", "", opts.t("cli.agent.spawn.flag.command"))
 	cmd.Flags().StringVar(&input.Harness, "harness", "", opts.t("cli.agent.spawn.flag.harness"))
 	cmd.Flags().StringVar(&input.Model, "model", "", opts.t("cli.agent.spawn.flag.model"))
-	cmd.Flags().StringVar(&input.Launcher, "launcher", "", opts.t("cli.agent.spawn.flag.launcher"))
 	cmd.MarkFlagsMutuallyExclusive("task", "team")
 	cmd.MarkFlagsOneRequired("task", "team")
+	return cmd
+}
+
+// newAgentRunCommand is the supervisor `agent spawn` starts detached for
+// each seat; a stop signal ends the harness it runs.
+func newAgentRunCommand(opts *runtimeOptions) *cobra.Command {
+	var input contract.RunAgentSessionInput
+	cmd := &cobra.Command{
+		Use:    "run --session ID [--timeout D] -- HARNESS_ARGV...",
+		Short:  opts.t("cli.agent.run.short"),
+		Hidden: true,
+		Args:   cobra.MinimumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runJSON(cmd, func(ctx context.Context) (any, error) {
+				ctx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
+				defer stop()
+				rt, err := opts.open(ctx, true)
+				if err != nil {
+					return nil, err
+				}
+				defer rt.close()
+				input.ProjectSelector = opts.projectSelector()
+				input.Argv = args
+				return rt.operationService().RunAgentSession(ctx, input)
+			})
+		},
+	}
+	cmd.Flags().StringVar(&input.SessionID, "session", "", opts.t("cli.agent.run.flag.session"))
+	cmd.Flags().DurationVar(&input.Timeout, "timeout", time.Duration(0), opts.t("cli.agent.run.flag.timeout"))
+	_ = cmd.MarkFlagRequired("session")
 	return cmd
 }
 

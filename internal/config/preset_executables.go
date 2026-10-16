@@ -32,9 +32,6 @@ func adapterExecutables(agents *AgentsSettings) []string {
 	for _, name := range slices.Sorted(maps.Keys(agents.Harnesses)) {
 		out = append(out, fmt.Sprintf("agent harness %s: %s", name, agentArgvText(agents.Harnesses[name].Argv)))
 	}
-	for _, name := range slices.Sorted(maps.Keys(agents.Launchers)) {
-		out = append(out, fmt.Sprintf("agent launcher %s: %s", name, agentArgvText(agents.Launchers[name].Open)))
-	}
 	return out
 }
 

@@ -389,9 +389,10 @@ CREATE TABLE agent_sessions (
   persona TEXT NOT NULL DEFAULT '',
   harness TEXT NOT NULL,
   model TEXT NOT NULL DEFAULT '',
-  launcher TEXT NOT NULL,
-  pane TEXT NOT NULL DEFAULT '',
-  status TEXT NOT NULL CHECK (status IN ('spawned', 'failed', 'done', 'stopped', 'replaced')),
+  pid INTEGER NOT NULL DEFAULT 0,
+  transcript TEXT NOT NULL DEFAULT '',
+  status TEXT NOT NULL CHECK (status IN ('running', 'failed', 'done', 'stopped', 'replaced')),
+  exit_code INTEGER,
   error TEXT NOT NULL DEFAULT '',
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   finished_at TEXT

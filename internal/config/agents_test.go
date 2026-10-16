@@ -23,7 +23,7 @@ max_members: 2
 	}
 	var preset AgentsSettings
 	if err := yaml.Unmarshal([]byte(`
-defaults: {model: preset-model, launcher: herdr}
+defaults: {model: preset-model, timeout: 20m}
 harnesses:
   codex: {argv: [codex, [-m, "{model}"], "{prompt}"]}
 `), &preset); err != nil {
@@ -33,8 +33,8 @@ harnesses:
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.Defaults.Harness != "opencode" || got.Defaults.Model != "preset-model" || got.Defaults.Launcher != "herdr" {
-		t.Fatalf("defaults = %+v, want preferences' harness and preset's model and launcher", got.Defaults)
+	if got.Defaults.Harness != "opencode" || got.Defaults.Model != "preset-model" || got.Defaults.Timeout != "20m" {
+		t.Fatalf("defaults = %+v, want preferences' harness and preset's model and timeout", got.Defaults)
 	}
 	if got.Fallback != (domain.AgentDefaults{Harness: "opencode", Model: "pref-model"}) {
 		t.Fatalf("fallback = %+v, want exactly the preferences' defaults", got.Fallback)
@@ -68,12 +68,12 @@ func TestValidateBucketTeam(t *testing.T) {
 		t.Fatalf("valid team rejected: %v", err)
 	}
 	for name, mutate := range map[string]func(*BucketAgentsConfig){
-		"trigger":          func(c *BucketAgentsConfig) { c.Trigger = "always" },
-		"unbound command":  func(c *BucketAgentsConfig) { c.Lead.Command = "okt-missing" },
-		"unknown harness":  func(c *BucketAgentsConfig) { c.Members[0].Harness = "codex" },
-		"reserved key":     func(c *BucketAgentsConfig) { c.Members[0].Key = "lead" },
-		"key not kebab":    func(c *BucketAgentsConfig) { c.Members[0].Key = "Sec" },
-		"unknown launcher": func(c *BucketAgentsConfig) { c.Lead.Launcher = "screen" },
+		"trigger":         func(c *BucketAgentsConfig) { c.Trigger = "always" },
+		"unbound command": func(c *BucketAgentsConfig) { c.Lead.Command = "okt-missing" },
+		"unknown harness": func(c *BucketAgentsConfig) { c.Members[0].Harness = "aider" },
+		"reserved key":    func(c *BucketAgentsConfig) { c.Members[0].Key = "lead" },
+		"key not kebab":   func(c *BucketAgentsConfig) { c.Members[0].Key = "Sec" },
+		"bad timeout":     func(c *BucketAgentsConfig) { c.Lead.Timeout = "soon" },
 	} {
 		team := ok
 		team.Members = append([]AgentRoleConfig(nil), ok.Members...)
@@ -105,7 +105,7 @@ func TestShippedHarnessesEndOptionsBeforeThePrompt(t *testing.T) {
 }
 
 // TestShippedAdaptersChooseNothing verifies Omakiten ships how to call each
-// harness and launcher but never which one a role uses.
+// harness but never which one a role uses.
 func TestShippedAdaptersChooseNothing(t *testing.T) {
 	shipped, err := defaultAgentSettings()
 	if err != nil {
@@ -121,8 +121,8 @@ func TestShippedAdaptersChooseNothing(t *testing.T) {
 	if got.Defaults != (domain.AgentDefaults{}) || got.Fallback != (domain.AgentDefaults{}) {
 		t.Fatalf("effective defaults without preferences or preset = %+v / %+v, want none", got.Defaults, got.Fallback)
 	}
-	if len(got.Harnesses) == 0 || len(got.Launchers) == 0 {
-		t.Fatal("the shipped adapter templates are missing")
+	if len(got.Harnesses) == 0 {
+		t.Fatal("the shipped harness templates are missing")
 	}
 }
 
@@ -145,22 +145,27 @@ func TestPresetExecutablesNameEachSeatsHarness(t *testing.T) {
 	}
 }
 
-// TestShippedLaunchersSubmitSeparately verifies every shipped launcher types
-// text with send and presses Enter only in a separate submit step.
-func TestShippedLaunchersSubmitSeparately(t *testing.T) {
+// TestShippedHarnessesRunHeadless verifies every shipped harness runs once
+// and exits with machine-readable output instead of opening a terminal UI.
+func TestShippedHarnessesRunHeadless(t *testing.T) {
 	shipped, err := defaultAgentSettings()
 	if err != nil {
 		t.Fatal(err)
 	}
-	for name, l := range shipped.Launchers {
-		if len(l.Submit) == 0 {
-			t.Errorf("launcher %s has no submit step", name)
+	headless := map[string][]string{
+		"claude-code": {"-p", "stream-json"},
+		"codex":       {"exec", "--json"},
+		"opencode":    {"run", "json"},
+	}
+	for name, h := range shipped.Harnesses {
+		argv := " " + agentArgvText(h.Argv) + " "
+		want, ok := headless[name]
+		if !ok {
+			t.Errorf("harness %s has no headless expectation", name)
 		}
-		for _, arg := range l.Send {
-			for _, v := range arg.Values {
-				if strings.EqualFold(v, "enter") {
-					t.Errorf("launcher %s presses Enter inside send: %+v", name, l.Send)
-				}
+		for _, flag := range want {
+			if !strings.Contains(argv, " "+flag+" ") {
+				t.Errorf("harness %s argv %q lacks %q", name, argv, flag)
 			}
 		}
 	}

@@ -1,19 +1,11 @@
-# How to call each agent harness and launcher. Omakiten never chooses one:
-# a role, the preset, or the user's preferences name it. Preferences and
-# presets override these templates by name; see docs/how-to-run-agent-teams.md.
+# How to run each agent harness headless: the seat does its work through
+# the board and exits. Omakiten never chooses one: a role, the preset, or
+# the user's preferences name it. Preferences and presets override these
+# templates by name; see docs/how-to-run-agent-teams.md.
 harnesses:
   claude-code:
-    argv: [claude, [--model, "{model}"], --, "{prompt}"]
+    argv: [claude, -p, --output-format, stream-json, --verbose, --permission-mode, acceptEdits, --allowedTools, "Bash(okt *)", [--model, "{model}"], --, "{prompt}"]
+  codex:
+    argv: [codex, exec, --json, --skip-git-repo-check, --sandbox, workspace-write, --add-dir, "{store_dir}", --cd, "{cwd}", [--model, "{model}"], --, "{prompt}"]
   opencode:
-    argv: [opencode, [-m, "{model}"], --prompt, "{prompt}", "{cwd}"]
-launchers:
-  tmux:
-    open: [tmux, new-window, -d, -P, -F, "#{pane_id}", [-t, "{target}"], -c, "{cwd}", -n, "{label}", "{command}"]
-    send: [tmux, send-keys, -t, "{pane}", -l, "{text}"]
-    submit: [tmux, send-keys, -t, "{pane}", Enter]
-  herdr:
-    open: [herdr, tab, create, --cwd, "{cwd}", --label, "{label}", --no-focus]
-    pane: result.root_pane.pane_id
-    run: [herdr, pane, run, "{pane}", "{command}"]
-    send: [herdr, pane, send-text, "{pane}", "{text}"]
-    submit: [herdr, pane, send-keys, "{pane}", enter]
+    argv: [opencode, run, --format, json, --auto, [--model, "{model}"], --, "{prompt}"]
