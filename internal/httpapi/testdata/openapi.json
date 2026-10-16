@@ -612,6 +612,10 @@
           "pinned": {
             "type": "boolean"
           },
+          "plan_id": {
+            "format": "int64",
+            "type": "integer"
+          },
           "scope": {
             "type": "string"
           },
@@ -6681,6 +6685,136 @@
         },
         "summary": "Claim the next free task of the active wave.",
         "x-okt-surface": "plan.task.claim_next"
+      }
+    },
+    "/api/v1/projects/{project}/plans/{plan}/comments": {
+      "get": {
+        "operationId": "listPlanComments",
+        "parameters": [
+          {
+            "description": "Project slug.",
+            "in": "path",
+            "name": "project",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Plan slug.",
+            "in": "path",
+            "name": "plan",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/contract.CommentsResponse"
+                    },
+                    "ok": {
+                      "const": true
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success."
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/output.Envelope"
+                }
+              }
+            },
+            "description": "Error envelope."
+          }
+        },
+        "summary": "Comments of a plan.",
+        "x-okt-surface": "comment.list"
+      },
+      "post": {
+        "operationId": "addPlanComment",
+        "parameters": [
+          {
+            "description": "Project slug.",
+            "in": "path",
+            "name": "project",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Plan slug.",
+            "in": "path",
+            "name": "plan",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/httpapi.CommentBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/contract.CommentResponse"
+                    },
+                    "ok": {
+                      "const": true
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success."
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/output.Envelope"
+                }
+              }
+            },
+            "description": "Error envelope."
+          }
+        },
+        "summary": "Add a human comment to a plan.",
+        "x-okt-surface": "comment.add"
       }
     },
     "/api/v1/projects/{project}/plans/{plan}/continuation": {

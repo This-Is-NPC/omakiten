@@ -49,7 +49,8 @@ deletion removes project events and work in its protected transaction.
 | `error_tags` | Tags for reusable failures. |
 
 There is one event log. Comments are event records with their content and
-scope; task, project, and universal scope are explicit. Event policy controls
+scope; task, plan, project, and universal scope are explicit, and a plan's
+comments are deleted with the plan. Event policy controls
 logging, broadcast, hook dispatch, visibility, and retention. Cross-project
 readers use each originating project's immutable event registry.
 An outside caller writes only `external.<name>` events its kit declares in the

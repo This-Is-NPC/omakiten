@@ -93,7 +93,8 @@ the creation default; the final ordered bucket represents completion. Moves
 must follow declared transitions.
 
 Task permissions cover edit and delete. Comment permissions cover create,
-edit, and delete, with scope-specific defaults. An explicit `false` blocks;
+edit, and delete, with scope-specific defaults under `defaults.comment.task`,
+`.plan`, `.project`, and `.universal`. An explicit `false` blocks;
 an omitted setting follows the configured fallback chain.
 
 ### Evidence before a move

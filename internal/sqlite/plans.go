@@ -355,6 +355,9 @@ func (s *Store) DeletePlan(ctx context.Context, projectID, planID int64) (domain
 				}
 				return deletedPlan{}, err
 			}
+			if _, err := tx.ExecContext(ctx, `DELETE FROM events WHERE entity_type = 'plan' AND event_type = 'comment' AND project_id = ? AND entity_id = ?`, projectID, planID); err != nil {
+				return deletedPlan{}, err
+			}
 			if _, err := tx.ExecContext(ctx, `DELETE FROM plans WHERE project_id = ? AND id = ?`, projectID, planID); err != nil {
 				return deletedPlan{}, err
 			}

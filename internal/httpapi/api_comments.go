@@ -5,9 +5,10 @@ import (
 
 	"net/http"
 	"omakiten/internal/contract"
+	"omakiten/internal/domain"
 )
 
-// CommentOperations reads and writes task comments.
+// CommentOperations reads and writes task and plan comments.
 type CommentOperations interface {
 	ListComments(ctx context.Context, input contract.ListCommentsInput) (contract.CommentsResponse, error)
 	AddComment(ctx context.Context, input contract.AddCommentInput) (contract.CommentResponse, error)
@@ -15,7 +16,7 @@ type CommentOperations interface {
 	DeleteComment(ctx context.Context, input contract.DeleteCommentInput) (contract.DeleteCommentResponse, error)
 }
 
-// CommentBody is the addTaskComment request body.
+// CommentBody is the addTaskComment and addPlanComment request body.
 type CommentBody struct {
 	Body         string   `json:"body"`
 	Title        string   `json:"title,omitempty"`
@@ -41,6 +42,8 @@ func (s *Server) commentRoutes() []route {
 	return []route{
 		query("listTaskComments", http.MethodGet, taskPath+"/comments", "comment.list", "Comments of a task.", []param{projectParam, taskParam}, s.listComments),
 		command("addTaskComment", http.MethodPost, taskPath+"/comments", "comment.add", "Add a human comment to a task.", []param{projectParam, taskParam}, s.addComment),
+		query("listPlanComments", http.MethodGet, planPath+"/comments", "comment.list", "Comments of a plan.", []param{projectParam, planParam}, s.listPlanComments),
+		command("addPlanComment", http.MethodPost, planPath+"/comments", "comment.add", "Add a human comment to a plan.", []param{projectParam, planParam}, s.addPlanComment),
 		command("editComment", http.MethodPatch, projectPath+"/comments/{comment}", "comment.edit", "Edit comment fields.", []param{projectParam, commentParam}, s.editComment),
 		query("deleteComment", http.MethodDelete, projectPath+"/comments/{comment}", "comment.delete", "Delete a comment; requires confirmation.", []param{projectParam, commentParam, confirmedParam}, s.deleteComment),
 	}
@@ -59,17 +62,42 @@ func (s *Server) addComment(r *http.Request, body CommentBody) (contract.Comment
 	if err != nil {
 		return contract.CommentResponse{}, err
 	}
-	return ops.AddComment(r.Context(), contract.AddCommentInput{
+	input := body.input(selector)
+	input.TaskID = taskID
+	return ops.AddComment(r.Context(), input)
+}
+
+func (s *Server) listPlanComments(r *http.Request) (contract.CommentsResponse, error) {
+	ops, selector, err := s.project(r)
+	if err != nil {
+		return contract.CommentsResponse{}, err
+	}
+	return ops.ListComments(r.Context(), contract.ListCommentsInput{ProjectSelector: selector, Scope: domain.CommentScopePlan, PlanSlug: r.PathValue("plan")})
+}
+
+func (s *Server) addPlanComment(r *http.Request, body CommentBody) (contract.CommentResponse, error) {
+	ops, selector, err := s.project(r)
+	if err != nil {
+		return contract.CommentResponse{}, err
+	}
+	input := body.input(selector)
+	input.Scope = domain.CommentScopePlan
+	input.PlanSlug = r.PathValue("plan")
+	return ops.AddComment(r.Context(), input)
+}
+
+// input maps the body onto a human comment of the selected project.
+func (b CommentBody) input(selector contract.ProjectSelector) contract.AddCommentInput {
+	return contract.AddCommentInput{
 		ProjectSelector: selector,
-		TaskID:          taskID,
-		Body:            body.Body,
-		Title:           body.Title,
-		Kind:            body.Kind,
-		Pinned:          body.Pinned,
+		Body:            b.Body,
+		Title:           b.Title,
+		Kind:            b.Kind,
+		Pinned:          b.Pinned,
 		AuthorType:      "human",
-		Tags:            body.Tags,
-		TemplateSlug:    body.TemplateSlug,
-	})
+		Tags:            b.Tags,
+		TemplateSlug:    b.TemplateSlug,
+	}
 }
 
 func (s *Server) comment(r *http.Request) (Operations, contract.ProjectSelector, int64, error) {

@@ -82,9 +82,10 @@ func (s *CommentService) Add(ctx context.Context, project domain.ProjectContext,
 	return
 }
 
-// AddScoped creates a comment at the requested scope (task|project|universal),
-// carrying the optional kind/title/pinned note-like fields. Task scope still
-// requires a positive task id; project/universal scopes do not. Body and author
+// AddScoped creates a comment at the requested scope
+// (task|plan|project|universal), carrying the optional kind/title/pinned
+// note-like fields. Task scope requires a positive task id and plan scope a
+// positive plan id; project/universal scopes need neither. Body and author
 // validation match Add.
 func (s *CommentService) AddScoped(ctx context.Context, project domain.ProjectContext, w domain.CommentWrite) (comment domain.Comment, err error) {
 	finish := activity.Track(ctx, "app.CommentService.AddScoped", project, map[string]any{"scope": w.Scope, "task_id": w.TaskID})
@@ -103,7 +104,7 @@ func (s *CommentService) AddScoped(ctx context.Context, project domain.ProjectCo
 		return
 	}
 
-	if err = s.enforceCommentCreatePermission(ctx, project, w.Scope, w.TaskID, tagNames(w.Tags)); err != nil {
+	if err = s.enforceCommentCreatePermission(ctx, project, w, tagNames(w.Tags)); err != nil {
 		return
 	}
 
@@ -119,7 +120,10 @@ func (s *CommentService) prepareCommentWrite(project domain.ProjectContext, w do
 	if scope == domain.CommentScopeTask && w.TaskID <= 0 {
 		return w, domain.NewError(domain.ErrValidation, "task id must be positive", nil)
 	}
-	if scope != domain.CommentScopeTask && scope != domain.CommentScopeProject && scope != domain.CommentScopeUniversal {
+	if scope == domain.CommentScopePlan && w.PlanID <= 0 {
+		return w, domain.NewError(domain.ErrValidation, "plan id must be positive", nil)
+	}
+	if scope != domain.CommentScopeTask && scope != domain.CommentScopePlan && scope != domain.CommentScopeProject && scope != domain.CommentScopeUniversal {
 		return w, domain.NewError(domain.ErrValidation, "unknown comment scope", map[string]any{"scope": w.Scope})
 	}
 	w.Scope = scope
@@ -157,14 +161,17 @@ func (s *CommentService) prepareCommentWrite(project domain.ProjectContext, w do
 //   - task scope:      bucket-resolved create permission via
 //     ResolveBucketPermissions(taskID, EntityComment, PermissionCreate). A
 //     denial emits a task-scoped guard.violated and returns ErrGuardViolation.
+//   - plan scope:      resolved task-lessly (defaults.comment.plan.create);
+//     a denial emits a plan-scoped guard.violated.
 //   - project scope:   resolved task-lessly (defaults.comment.project.create);
 //     a denial emits a project-scoped guard.violated.
 //   - universal scope: resolved task-lessly (defaults.comment.universal.create);
 //     a denial emits a project-less (universal) guard.violated.
-func (s *CommentService) enforceCommentCreatePermission(ctx context.Context, project domain.ProjectContext, scope string, taskID int64, tags []string) error {
+func (s *CommentService) enforceCommentCreatePermission(ctx context.Context, project domain.ProjectContext, w domain.CommentWrite, tags []string) error {
 	if s.workflow == nil {
 		return nil
 	}
+	scope, taskID := w.Scope, w.TaskID
 	if scope == "" {
 		scope = domain.CommentScopeTask
 	}
@@ -187,19 +194,13 @@ func (s *CommentService) enforceCommentCreatePermission(ctx context.Context, pro
 		return domain.NewError(domain.ErrGuardViolation, hint, map[string]any{"task_id": taskID, "hint": hint, "entity": EntityComment, "operation": PermissionCreate})
 	}
 
-	// project / universal: no task, resolve against workflow defaults only.
+	// plan / project / universal: no task, resolve against workflow defaults only.
 	allowed, hint := s.workflow.ResolveCommentScopePolicy(scope, PermissionCreate, tags)
 	if allowed {
 		return nil
 	}
 	target := map[string]any{"entity": EntityComment, "operation": PermissionCreate, "scope": scope}
-	if scope == domain.CommentScopeProject {
-		s.workflow.Evaluator().EmitViolatedForProject(ctx, project.ID, GuardOperationCommentCreate, GuardRulePermissions, hint, target)
-	} else {
-		// Universal comments are stored project-less (project_id IS NULL); the
-		// violation row must match, so pass projectID=0.
-		s.workflow.Evaluator().EmitViolated(ctx, 0, domain.EventEntityUniversal, 0, GuardOperationCommentCreate, GuardRulePermissions, hint, target)
-	}
+	s.emitScopeViolation(ctx, project, scope, w.PlanID, GuardOperationCommentCreate, hint, target)
 	return domain.NewError(domain.ErrGuardViolation, hint, map[string]any{"hint": hint, "entity": EntityComment, "operation": PermissionCreate, "scope": scope})
 }
 
@@ -440,6 +441,8 @@ func (s *CommentService) Remove(ctx context.Context, project domain.ProjectConte
 //   - task scope:      resolved against the comment's current bucket via
 //     ResolveBucketPermissions (uses the comment's TaskID). A denial emits a
 //     task-scoped guard.violated and returns ErrGuardViolation.
+//   - plan scope:      resolved task-lessly (defaults.comment.plan.<op>). A
+//     denial emits a plan-scoped guard.violated and returns ErrGuardViolation.
 //   - project scope:   resolved task-lessly against the workflow defaults
 //     (defaults.comment.project.<op>). A denial emits a project-scoped
 //     guard.violated and returns ErrGuardViolation.
@@ -479,21 +482,32 @@ func (s *CommentService) enforceCommentPermission(ctx context.Context, project d
 		return domain.NewError(domain.ErrGuardViolation, hint, map[string]any{"comment_id": commentID, "task_id": existing.TaskID, "hint": hint, "entity": EntityComment, "operation": operation})
 	}
 
-	// project / universal: no task, resolve against workflow defaults only.
+	// plan / project / universal: no task, resolve against workflow defaults only.
 	allowed, hint := s.workflow.ResolveCommentScopePolicy(scope, operation, storedTags)
 	if allowed {
 		return nil
 	}
 	target := map[string]any{"comment_id": commentID, "entity": EntityComment, "operation": operation, "scope": scope}
-	if scope == domain.CommentScopeProject {
-		s.workflow.Evaluator().EmitViolatedForProject(ctx, project.ID, guardOp, GuardRulePermissions, hint, target)
-	} else {
+	s.emitScopeViolation(ctx, project, scope, existing.PlanID, guardOp, hint, target)
+	return domain.NewError(domain.ErrGuardViolation, hint, map[string]any{"comment_id": commentID, "hint": hint, "entity": EntityComment, "operation": operation, "scope": scope})
+}
+
+// emitScopeViolation records a task-less comment permission denial under the
+// entity the comment hangs off.
+func (s *CommentService) emitScopeViolation(ctx context.Context, project domain.ProjectContext, scope string, planID int64, guardOp, hint string, target map[string]any) {
+	evaluator := s.workflow.Evaluator()
+	switch scope {
+	case domain.CommentScopePlan:
+		target["plan_id"] = planID
+		evaluator.EmitViolated(ctx, project.ID, domain.EventEntityPlan, planID, guardOp, GuardRulePermissions, hint, target)
+	case domain.CommentScopeProject:
+		evaluator.EmitViolatedForProject(ctx, project.ID, guardOp, GuardRulePermissions, hint, target)
+	default:
 		// Universal comments are stored project-less (project_id IS NULL); the
 		// violation row must match, so pass projectID=0 rather than stamping the
 		// acting project onto a project-less entity.
-		s.workflow.Evaluator().EmitViolated(ctx, 0, domain.EventEntityUniversal, 0, guardOp, GuardRulePermissions, hint, target)
+		evaluator.EmitViolated(ctx, 0, domain.EventEntityUniversal, 0, guardOp, GuardRulePermissions, hint, target)
 	}
-	return domain.NewError(domain.ErrGuardViolation, hint, map[string]any{"comment_id": commentID, "hint": hint, "entity": EntityComment, "operation": operation, "scope": scope})
 }
 
 func (s *CommentService) List(ctx context.Context, project domain.ProjectContext, taskID int64) (comments []domain.Comment, err error) {

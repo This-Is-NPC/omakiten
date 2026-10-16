@@ -799,11 +799,12 @@ type BucketPermissions struct {
 // to the next layer of the resolution chain rather than treating the zero
 // value as "explicit false".
 //
-// Task/Project/Universal are optional scope sub-blocks used by the comment
+// Task/Plan/Project/Universal are optional scope sub-blocks used by the comment
 // entity only: `defaults.comment` may declare per-scope policy as
 //
 //	comment:
 //	  task:      { edit: false, delete: false }
+//	  plan:      { edit: true,  delete: false }
 //	  project:   { edit: true,  delete: false }
 //	  universal: { edit: false, delete: false }
 //
@@ -816,6 +817,7 @@ type EntityPermission struct {
 	Edit      *CommentOpPolicy  `yaml:"edit,omitempty" json:"edit,omitempty"`
 	Delete    *CommentOpPolicy  `yaml:"delete,omitempty" json:"delete,omitempty"`
 	Task      *EntityPermission `yaml:"task,omitempty" json:"task,omitempty"`
+	Plan      *EntityPermission `yaml:"plan,omitempty" json:"plan,omitempty"`
 	Project   *EntityPermission `yaml:"project,omitempty" json:"project,omitempty"`
 	Universal *EntityPermission `yaml:"universal,omitempty" json:"universal,omitempty"`
 }

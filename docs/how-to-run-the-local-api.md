@@ -69,7 +69,7 @@ The API serves every operation the CLI runs on a project's work:
 | Tasks | `tasks`, `tasks/{task}` and its `transitions`, `assignee`, `archive`, `unarchive`, `checkpoint`, `activity`, `progress`, `dependencies`, `comments`, `agents` (`POST`, spawn), `wait` |
 | Agents | `agents` (list, `?task=&status=`), `agents/{session}`, `teams/{team}`, `teams/{team}/close` (`POST`), `teams/{team}/members/{member}` (`POST`, reopen a seat) |
 | Comments | `comments/{comment}` |
-| Plans | `plans`, `plans/{plan}` and its `continuation`, `waves`, `tasks/{task}`, `claims`; `waves/{wave}`; `tasks/{task}/plan` |
+| Plans | `plans`, `plans/{plan}` and its `continuation`, `comments`, `waves`, `tasks/{task}`, `claims`; `waves/{wave}`; `tasks/{task}/plan` |
 | Errors and solutions | `errors`, `errors/{error}/solutions`, `solutions`, `solutions/{solution}/confirmations` |
 | Outside events | `events` (`POST`): an `external.<name>` event the workflow declares, which runs its hooks |
 | Tags | `tags`, `tags/{tag}`; across projects, `/api/v1/tags` and `/api/v1/tags/{tag}/merge` |

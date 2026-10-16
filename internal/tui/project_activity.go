@@ -15,6 +15,8 @@ func commentToEvent(comment domain.Comment) domain.Event {
 	}
 	entityID := comment.TaskID
 	switch scope {
+	case domain.CommentScopePlan:
+		entityID = comment.PlanID
 	case domain.CommentScopeProject:
 		entityID = comment.ProjectID
 	case domain.CommentScopeUniversal:

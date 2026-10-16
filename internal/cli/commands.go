@@ -109,7 +109,7 @@ func configureFlagCompletions(cmd *cobra.Command) {
 		case "config":
 			choices["scope"] = []string{"global", "local"}
 		case "comment":
-			choices["scope"] = []string{domain.CommentScopeTask, domain.CommentScopeProject, domain.CommentScopeUniversal}
+			choices["scope"] = []string{domain.CommentScopeTask, domain.CommentScopePlan, domain.CommentScopeProject, domain.CommentScopeUniversal}
 		case "law":
 			choices["scope"] = []string{string(domain.LawScopeGlobal), string(domain.LawScopeProject), string(domain.LawScopePersona)}
 		}

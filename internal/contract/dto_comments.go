@@ -3,6 +3,7 @@ package contract
 type CommentSummary struct {
 	ID         int64        `json:"id"`
 	TaskID     int64        `json:"task_id"`
+	PlanID     int64        `json:"plan_id,omitempty"`
 	Scope      string       `json:"scope,omitempty"`
 	Body       string       `json:"body"`
 	Title      string       `json:"title,omitempty"`
@@ -16,7 +17,9 @@ type CommentSummary struct {
 
 type AddCommentInput struct {
 	ProjectSelector
-	TaskID       int64    `json:"task_id,omitempty"`
+	TaskID int64 `json:"task_id,omitempty"`
+	// PlanSlug names the plan a plan-scoped comment hangs off.
+	PlanSlug     string   `json:"plan_slug,omitempty"`
 	Scope        string   `json:"scope,omitempty"`
 	Body         string   `json:"body"`
 	Title        string   `json:"title,omitempty"`
@@ -56,7 +59,9 @@ type DeleteCommentResponse struct {
 
 type ListCommentsInput struct {
 	ProjectSelector
-	TaskID    int64  `json:"task_id,omitempty"`
+	TaskID int64 `json:"task_id,omitempty"`
+	// PlanSlug narrows to the comments of one plan.
+	PlanSlug  string `json:"plan_slug,omitempty"`
 	CommentID int64  `json:"comment_id,omitempty"`
 	Scope     string `json:"scope,omitempty"`
 	Kind      string `json:"kind,omitempty"`

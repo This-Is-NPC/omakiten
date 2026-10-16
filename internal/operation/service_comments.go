@@ -36,7 +36,12 @@ func (s *Service) AddComment(ctx context.Context, input contract.AddCommentInput
 	}
 	// The agent surface has no separate "task id supplied" signal — a positive
 	// TaskID is the only way to carry one — so hasTaskID mirrors TaskID > 0.
-	if err := domain.ValidateCommentScopeTaskID(scope, input.TaskID, input.TaskID > 0); err != nil {
+	planSlug := strings.TrimSpace(input.PlanSlug)
+	if err := domain.ValidateCommentScopeTarget(scope, input.TaskID, input.TaskID > 0, planSlug != ""); err != nil {
+		return contract.CommentResponse{}, err
+	}
+	planID, err := s.commentPlanID(ctx, project, planSlug)
+	if err != nil {
 		return contract.CommentResponse{}, err
 	}
 
@@ -47,6 +52,7 @@ func (s *Service) AddComment(ctx context.Context, input contract.AddCommentInput
 	comment, err := s.newCommentServiceWithWorkflow(s.workflow).AddScoped(ctx, project, domain.CommentWrite{
 		Scope:      scope,
 		TaskID:     input.TaskID,
+		PlanID:     planID,
 		Body:       body,
 		Title:      strings.TrimSpace(input.Title),
 		Kind:       strings.TrimSpace(input.Kind),
@@ -59,6 +65,19 @@ func (s *Service) AddComment(ctx context.Context, input contract.AddCommentInput
 	}
 	s.noteTeamComment(ctx, project, comment)
 	return contract.CommentResponse{Project: projectSummary(project), Comment: commentSummary(comment)}, nil
+}
+
+// commentPlanID resolves the plan a comment names by slug; an empty slug
+// names no plan.
+func (s *Service) commentPlanID(ctx context.Context, project domain.ProjectContext, slug string) (int64, error) {
+	if slug == "" {
+		return 0, nil
+	}
+	plan, err := s.newPlanService().GetBySlug(ctx, project, slug)
+	if err != nil {
+		return 0, err
+	}
+	return plan.ID, nil
 }
 
 func (s *Service) EditComment(ctx context.Context, input contract.EditCommentInput) (contract.CommentResponse, error) {
@@ -152,11 +171,15 @@ func (s *Service) ListComments(ctx context.Context, input contract.ListCommentsI
 	tag := strings.TrimSpace(input.Tag)
 	query := strings.TrimSpace(input.Query)
 	since := strings.TrimSpace(input.Since)
+	planID, err := s.commentPlanID(ctx, project, strings.TrimSpace(input.PlanSlug))
+	if err != nil {
+		return contract.CommentsResponse{}, err
+	}
 
 	// Pure task-scoped listing (no extra filters) keeps the original List path
 	// so the default behaviour is byte-for-byte unchanged. A comment_id (the
 	// get-by-id path) routes through Query so the id filter applies.
-	if scope == "" && kind == "" && tag == "" && query == "" && since == "" && !input.Pinned && input.CommentID <= 0 {
+	if scope == "" && kind == "" && tag == "" && query == "" && since == "" && !input.Pinned && input.CommentID <= 0 && planID == 0 {
 		comments, err := s.newCommentService().List(ctx, project, input.TaskID)
 		if err != nil {
 			return contract.CommentsResponse{}, err
@@ -180,6 +203,7 @@ func (s *Service) ListComments(ctx context.Context, input contract.ListCommentsI
 		Scope:      scope,
 		ProjectID:  projectID,
 		TaskID:     input.TaskID,
+		PlanID:     planID,
 		Kind:       kind,
 		Tag:        tag,
 		PinnedOnly: input.Pinned,

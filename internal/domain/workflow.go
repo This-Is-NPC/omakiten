@@ -88,12 +88,13 @@ type EntityPermission struct {
 	Edit   *CommentOpPolicy `json:"edit,omitempty"`
 	Delete *CommentOpPolicy `json:"delete,omitempty"`
 	// Scopes carries optional per-scope sub-blocks for the comment entity
-	// only (task|project|universal). Task scope reuses the flat Edit/Delete
+	// only (task|plan|project|universal). Task scope reuses the flat Edit/Delete
 	// fields for backward-compat: a flat `comment: {edit,delete}` resolves
-	// as the task scope. Project/Universal comments have no bucket, so they
+	// as the task scope. Plan/Project/Universal comments have no bucket, so they
 	// resolve purely at the workflow-defaults level via these sub-blocks.
 	// nil sub-blocks fall through to the implicit `true`.
 	Task      *EntityPermission `json:"task,omitempty"`
+	Plan      *EntityPermission `json:"plan,omitempty"`
 	Project   *EntityPermission `json:"project,omitempty"`
 	Universal *EntityPermission `json:"universal,omitempty"`
 }
@@ -232,8 +233,8 @@ func ResolveCommentScopePolicy(defaults *WorkflowDefaults, scope, op string) Com
 		comment = defaults.Comment
 	}
 	switch scope {
-	case CommentScopeProject:
-		return resolveCommentPolicy(scopeOpField(scopeBlock(comment, CommentScopeProject), op))
+	case CommentScopePlan, CommentScopeProject:
+		return resolveCommentPolicy(scopeOpField(scopeBlock(comment, scope), op))
 	case CommentScopeUniversal:
 		return resolveCommentPolicy(scopeOpField(scopeBlock(comment, CommentScopeUniversal), op))
 	default: // task scope (also the implicit/empty fallback)
@@ -254,6 +255,8 @@ func scopeBlock(comment *EntityPermission, scope string) *EntityPermission {
 	switch scope {
 	case CommentScopeTask:
 		return comment.Task
+	case CommentScopePlan:
+		return comment.Plan
 	case CommentScopeProject:
 		return comment.Project
 	case CommentScopeUniversal:

@@ -127,6 +127,7 @@ func toDomainPermission(in *EntityPermission) *domain.EntityPermission {
 		Edit:      toDomainCommentPolicy(in.Edit),
 		Delete:    toDomainCommentPolicy(in.Delete),
 		Task:      toDomainPermission(in.Task),
+		Plan:      toDomainPermission(in.Plan),
 		Project:   toDomainPermission(in.Project),
 		Universal: toDomainPermission(in.Universal),
 	}

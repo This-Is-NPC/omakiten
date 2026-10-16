@@ -26,8 +26,8 @@ const commentSelectColumnsE = `e.id, COALESCE(e.project_id, 0), e.entity_type, C
 	`COALESCE(e.author_type, ''), e.created_at, COALESCE(e.updated_at, '')`
 
 // scanComment reads a row produced by commentSelectColumns into a domain
-// comment and derives Scope/TaskID from entity_type. Project-scoped comments
-// store the project id in entity_id; only task-scoped rows expose a TaskID.
+// comment and derives Scope/TaskID/PlanID from entity_type. Project-scoped
+// comments store the project id in entity_id, which no field exposes.
 func scanComment(scan func(dest ...any) error) (domain.Comment, error) {
 	var c domain.Comment
 	var entityType string
@@ -39,8 +39,11 @@ func scanComment(scan func(dest ...any) error) (domain.Comment, error) {
 	}
 	c.Scope = entityType
 	c.Pinned = pinned != 0
-	if entityType == domain.CommentScopeTask {
+	switch entityType {
+	case domain.CommentScopeTask:
 		c.TaskID = entityID
+	case domain.CommentScopePlan:
+		c.PlanID = entityID
 	}
 	return c, nil
 }
@@ -58,17 +61,18 @@ func (s *Store) AddComment(ctx context.Context, projectID, taskID int64, body, a
 	})
 }
 
-// AddScopedComment inserts a comment at the requested scope. task comments go
-// through the existing ensureTaskExists guard; project/universal comments skip
-// the task check. entity_id/project_id are mapped per scope: project comments
-// carry the project id in entity_id, universal comments carry NULL in both.
+// AddScopedComment inserts a comment at the requested scope. task and plan
+// comments require their entity to exist in the project; project/universal
+// comments do not. entity_id/project_id are mapped per scope: plan comments
+// carry the plan id in entity_id, project comments the project id, universal
+// comments carry NULL in both.
 func (s *Store) AddScopedComment(ctx context.Context, w domain.CommentWrite) (domain.Comment, error) {
 	scope := w.Scope
 	if scope == "" {
 		scope = domain.CommentScopeTask
 	}
 
-	entityIDArg, projectIDArg, err := s.commentScopeArgs(ctx, scope, w.ProjectID, w.TaskID, w.Scope)
+	entityIDArg, projectIDArg, err := s.commentScopeArgs(ctx, scope, w)
 	if err != nil {
 		return domain.Comment{}, err
 	}
@@ -109,11 +113,13 @@ RETURNING id, created_at
 		AuthorType: w.AuthorType,
 		CreatedAt:  createdAt,
 	}
-	if scope == domain.CommentScopeUniversal {
+	switch scope {
+	case domain.CommentScopeUniversal:
 		comment.ProjectID = 0
-	}
-	if scope == domain.CommentScopeTask {
+	case domain.CommentScopeTask:
 		comment.TaskID = w.TaskID
+	case domain.CommentScopePlan:
+		comment.PlanID = w.PlanID
 	}
 
 	attached, err := attachTagsTx(ctx, tx, tagPivotEvent, comment.ID, w.Tags)
@@ -128,7 +134,7 @@ RETURNING id, created_at
 	s.publishEvent(ctx, domain.Event{
 		ID:         comment.ID,
 		EntityType: scope,
-		EntityID:   comment.TaskID,
+		EntityID:   comment.TaskID + comment.PlanID, // at most one is set
 		ProjectID:  comment.ProjectID,
 		EventType:  domain.EventTypeComment,
 		Body:       comment.Body,
@@ -137,22 +143,27 @@ RETURNING id, created_at
 	return comment, nil
 }
 
-func (s *Store) commentScopeArgs(ctx context.Context, scope string, projectID, taskID int64, requestedScope string) (any, any, error) {
+func (s *Store) commentScopeArgs(ctx context.Context, scope string, w domain.CommentWrite) (any, any, error) {
 	switch scope {
 	case domain.CommentScopeTask:
-		if err := s.ensureTaskExists(ctx, projectID, taskID); err != nil {
+		if err := s.ensureTaskExists(ctx, w.ProjectID, w.TaskID); err != nil {
 			return nil, nil, err
 		}
-		return taskID, projectID, nil
+		return w.TaskID, w.ProjectID, nil
+	case domain.CommentScopePlan:
+		if _, err := s.GetPlanByID(ctx, w.ProjectID, w.PlanID); err != nil {
+			return nil, nil, err
+		}
+		return w.PlanID, w.ProjectID, nil
 	case domain.CommentScopeProject:
-		if projectID <= 0 {
+		if w.ProjectID <= 0 {
 			return nil, nil, domain.NewError(domain.ErrValidation, "project comment requires a project id", nil)
 		}
-		return projectID, projectID, nil
+		return w.ProjectID, w.ProjectID, nil
 	case domain.CommentScopeUniversal:
 		return nil, nil, nil
 	default:
-		return nil, nil, domain.NewError(domain.ErrValidation, "unknown comment scope", map[string]any{"scope": requestedScope})
+		return nil, nil, domain.NewError(domain.ErrValidation, "unknown comment scope", map[string]any{"scope": w.Scope})
 	}
 }
 
@@ -251,6 +262,10 @@ func commentQueryFilters(filter domain.CommentFilter) ([]string, []any) {
 	if filter.TaskID > 0 {
 		conds = append(conds, "e.entity_type = 'task' AND e.entity_id = ?")
 		args = append(args, filter.TaskID)
+	}
+	if filter.PlanID > 0 {
+		conds = append(conds, "e.entity_type = 'plan' AND e.entity_id = ?")
+		args = append(args, filter.PlanID)
 	}
 	if filter.Kind != "" {
 		conds = append(conds, "e.kind = ?")
@@ -499,12 +514,14 @@ func sameTagSet(a, b []domain.Tag) bool {
 }
 
 // entityIDForScope resolves the events.entity_id the comment's event row points
-// at: the task id for task scope, the project id for project scope, and 0
-// (NULL) for universal scope.
+// at: the task id for task scope, the plan id for plan scope, the project id
+// for project scope, and 0 (NULL) for universal scope.
 func entityIDForScope(c domain.Comment) int64 {
 	switch c.Scope {
 	case domain.CommentScopeTask:
 		return c.TaskID
+	case domain.CommentScopePlan:
+		return c.PlanID
 	case domain.CommentScopeProject:
 		return c.ProjectID
 	default:

@@ -1191,17 +1191,28 @@ func validateCommentTagNames(p *EntityPermission, path string) error {
 			}
 		}
 	}
-	if err := validateCommentTagNames(p.Task, path+".task"); err != nil {
-		return err
+	for _, s := range scopeBlocks(p) {
+		if err := validateCommentTagNames(s.sub, path+"."+s.name); err != nil {
+			return err
+		}
 	}
-	if err := validateCommentTagNames(p.Project, path+".project"); err != nil {
-		return err
-	}
-	return validateCommentTagNames(p.Universal, path+".universal")
+	return nil
+}
+
+// scopeBlock is one per-scope sub-block of a comment permission.
+type scopeBlock struct {
+	name string
+	sub  *EntityPermission
+}
+
+// scopeBlocks lists the per-scope sub-blocks of p in task, plan, project,
+// universal order.
+func scopeBlocks(p *EntityPermission) []scopeBlock {
+	return []scopeBlock{{"task", p.Task}, {"plan", p.Plan}, {"project", p.Project}, {"universal", p.Universal}}
 }
 
 // rejectNestedScopes enforces that a comment scope sub-block (comment.task /
-// .project / .universal) does not itself declare scope sub-blocks. Scope
+// .plan / .project / .universal) does not itself declare scope sub-blocks. Scope
 // resolution (scopeBlock) descends exactly one level, so a nested scope like
 // comment.task.project parses but can never be reached — failing it at load
 // turns a silent no-op into a diagnosable config error.
@@ -1209,14 +1220,7 @@ func rejectNestedScopes(comment *EntityPermission, path string) error {
 	if comment == nil {
 		return nil
 	}
-	for _, s := range []struct {
-		name string
-		sub  *EntityPermission
-	}{
-		{"task", comment.Task},
-		{"project", comment.Project},
-		{"universal", comment.Universal},
-	} {
+	for _, s := range scopeBlocks(comment) {
 		if hasScopeBlocks(s.sub) {
 			return fmt.Errorf("%s.%s: scope sub-blocks must not be nested inside a scope sub-block", path, s.name)
 		}
@@ -1227,7 +1231,7 @@ func rejectNestedScopes(comment *EntityPermission, path string) error {
 // hasScopeBlocks reports whether any per-scope sub-block is declared on the
 // permission. nil is treated as "no sub-blocks".
 func hasScopeBlocks(p *EntityPermission) bool {
-	return p != nil && (p.Task != nil || p.Project != nil || p.Universal != nil)
+	return p != nil && (p.Task != nil || p.Plan != nil || p.Project != nil || p.Universal != nil)
 }
 
 // validateGuards enforces the comments_tagged / comments_min / blockers_in

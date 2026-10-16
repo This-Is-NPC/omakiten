@@ -47,7 +47,7 @@ agents working in parallel worktrees reach the same project without
 | `task show`, `task continue`, `task activity` | Read a task with every comment, recover it for an agent, and read its activity. |
 | `list`, `edit`, `move` | List work, change fields, and request a workflow transition; `move --dry-run` reports the transition's guards without moving; `--no-spawn` keeps an automatic agent team closed. |
 | `assign`, `archive`, `unarchive`, `delete` | Assignment and task lifecycle. |
-| `comment add`, `list`, `edit`, `delete` | Task, project, and universal comments. |
+| `comment add`, `list`, `edit`, `delete` | Task, plan, project, and universal comments. |
 | `depend add`, `remove`, `list` | Explicit task blockers. |
 | `tag add`, `remove`, `list`, `list-all`, `merge` | Task and project tags. |
 | `plan create`, `import`, `export`, `show`, `list`, `edit`, `delete` | Plans and their portable documents. |

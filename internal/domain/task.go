@@ -147,32 +147,44 @@ type TaskUpdate struct {
 
 // CommentScope names which entity a comment hangs off. It is derived from the
 // events.entity_type column: a task comment carries the task id in entity_id, a
-// project comment the project id, and a universal comment has no entity_id and
-// no project_id. The three values mirror the EventEntity* constants reused as
-// the events.entity_type for comment rows.
+// plan comment the plan id, a project comment the project id, and a universal
+// comment has no entity_id and no project_id. The values mirror the
+// EventEntity* constants reused as the events.entity_type for comment rows.
 const (
 	CommentScopeTask      = "task"
+	CommentScopePlan      = "plan"
 	CommentScopeProject   = "project"
 	CommentScopeUniversal = "universal"
 )
 
-// ValidateCommentScopeTaskID is the single scope→task_id rule both the CLI and
-// the agent handler delegate to (the previously hand-rolled, diverging checks).
-// hasTaskID reports whether a task id was supplied at all — the CLI derives it
-// from arg presence, the agent from a non-zero TaskID — so a task id of 0 that
-// was explicitly supplied is still rejected for a non-task scope. The rule:
+// ValidateCommentScopeTarget is the single scope→target rule the comment
+// handlers delegate to. hasTaskID reports whether a task id was supplied at
+// all, so a task id of 0 that was explicitly supplied is still rejected for a
+// non-task scope; hasPlan reports whether a plan was named. The rule:
 //
-//   - task:               requires a positive task id;
-//   - project/universal:  must not carry a task id;
+//   - task:               requires a positive task id and no plan;
+//   - plan:               requires a plan and no task id;
+//   - project/universal:  must carry neither;
 //   - anything else:       unknown scope, rejected.
 //
 // The caller is expected to default an empty scope to CommentScopeTask before
 // calling so a bare add still requires a task id.
-func ValidateCommentScopeTaskID(scope string, taskID int64, hasTaskID bool) error {
+func ValidateCommentScopeTarget(scope string, taskID int64, hasTaskID, hasPlan bool) error {
+	if scope != CommentScopePlan && hasPlan {
+		return NewError(ErrValidation, scope+" scope must not carry a plan", map[string]any{"scope": scope})
+	}
 	switch scope {
 	case CommentScopeTask:
 		if !hasTaskID || taskID <= 0 {
 			return NewError(ErrValidation, "task scope requires task_id", map[string]any{"scope": scope})
+		}
+		return nil
+	case CommentScopePlan:
+		if hasTaskID || taskID > 0 {
+			return NewError(ErrValidation, scope+" scope must not carry task_id", map[string]any{"scope": scope, "task_id": taskID})
+		}
+		if !hasPlan {
+			return NewError(ErrValidation, "plan scope requires a plan", map[string]any{"scope": scope})
 		}
 		return nil
 	case CommentScopeProject, CommentScopeUniversal:
@@ -189,7 +201,8 @@ type Comment struct {
 	ID        int64 `json:"id"`
 	ProjectID int64 `json:"project_id"`
 	TaskID    int64 `json:"task_id"`
-	// Scope is derived from events.entity_type (task|project|universal).
+	PlanID    int64 `json:"plan_id,omitempty"`
+	// Scope is derived from events.entity_type (task|plan|project|universal).
 	Scope      string `json:"scope,omitempty"`
 	Body       string `json:"body"`
 	Title      string `json:"title,omitempty"`
@@ -205,12 +218,14 @@ type Comment struct {
 // the events.entity_type and how ProjectID/TaskID map onto entity_id/project_id:
 //
 //   - task:      entity_type='task',      entity_id=TaskID,    project_id=ProjectID
+//   - plan:      entity_type='plan',      entity_id=PlanID,    project_id=ProjectID
 //   - project:   entity_type='project',   entity_id=ProjectID, project_id=ProjectID
 //   - universal: entity_type='universal', entity_id=NULL,      project_id=NULL
 type CommentWrite struct {
 	Scope      string
 	ProjectID  int64
 	TaskID     int64
+	PlanID     int64
 	Body       string
 	Title      string
 	Kind       string
@@ -245,13 +260,15 @@ type CommentFilter struct {
 	// Used by the get-by-id read path (okt-note-show) so the agent can fetch
 	// exactly one comment through the filterable query surface.
 	CommentID int64
-	// Scope restricts to task|project|universal when non-empty.
+	// Scope restricts to task|plan|project|universal when non-empty.
 	Scope string
 	// ProjectID scopes to a single project. 0 means cross-project. Universal
 	// comments (project_id NULL) only match when ProjectID is 0.
 	ProjectID int64
 	// TaskID further narrows task-scoped rows to a single task.
 	TaskID int64
+	// PlanID narrows to the comments of a single plan when > 0.
+	PlanID int64
 	// Kind restricts to a single comment kind when non-empty.
 	Kind string
 	// Tag restricts to comments carrying the named tag when non-empty.
