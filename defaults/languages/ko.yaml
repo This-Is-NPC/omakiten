@@ -123,6 +123,7 @@ keys:
   cli.agent.spawn.store_flags: "에이전트는 --db나 --config를 상속할 수 없습니다. OMAKITEN_HOME으로 저장소를 선택하세요"
   cli.agent.show.short: "에이전트 세션과 마지막 활동 표시"
   cli.team.short: "에이전트 팀 확인"
+  cli.team.close.short: "에이전트 팀을 닫고 실행 중인 자리에 중지를 알림"
   cli.team.show.short: "에이전트 팀, 세션, 게시한 결과 표시"
   cli.wait.short: "작업 댓글에 일치하는 태그가 붙을 때까지 대기"
   cli.wait.flag.task: "댓글을 지켜볼 작업"

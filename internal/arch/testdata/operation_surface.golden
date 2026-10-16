@@ -69,6 +69,7 @@ task.show product
 task.transition product
 task.unarchive product
 task_activity.list product
+team.close product
 team.show product
 template.list product
 template.show product

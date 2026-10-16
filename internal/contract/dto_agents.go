@@ -58,3 +58,13 @@ type ShowTeamResponse struct {
 	Results []TeamResult     `json:"results"`
 	Follow  []string         `json:"follow"`
 }
+
+type CloseTeamInput struct {
+	ProjectSelector
+	TeamID string `json:"team_id"`
+}
+
+type CloseTeamResponse struct {
+	Project ProjectSummary   `json:"project"`
+	Team    domain.AgentTeam `json:"team"`
+}

@@ -123,6 +123,7 @@ keys:
   cli.agent.spawn.store_flags: "エージェントは --db や --config を引き継げません。OMAKITEN_HOME でストアを選択してください"
   cli.agent.show.short: "エージェントセッションと最後のアクティビティを表示"
   cli.team.short: "エージェントチームを確認"
+  cli.team.close.short: "エージェントチームを閉じ、稼働中の席に停止を伝える"
   cli.team.show.short: "エージェントチーム、そのセッション、公開された結果を表示"
   cli.wait.short: "タスクのコメントに一致するタグが付くまで待機"
   cli.wait.flag.task: "コメントを監視するタスク"

@@ -76,12 +76,13 @@ state with retained metadata under one consistent read snapshot.
 
 `agent_teams` records the agents opened for one task in one bucket. A partial
 unique index keeps at most one `active` team per project, task, and bucket; a
-team whose lead could not open is `failed` and frees that slot. Task deletion
+team whose lead could not open is `failed`, and a team whose task left the
+bucket or that was closed is `closed`. Both free that slot. Task deletion
 cascades teams.
 
 `agent_sessions` holds one row per team seat: its member key (`lead` or a
 declared key), command, persona, the resolved harness, model, and launcher,
-the pane id, and `spawned`, `failed`, or `done`. A session's own `okt` calls
+the pane id, and `spawned`, `failed`, `done`, or `stopped`. A session's own `okt` calls
 carry its id in `events.agent_session_id`, indexed for per-session reads.
 
 ## Search and recovery

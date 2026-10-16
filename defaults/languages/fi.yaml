@@ -124,6 +124,7 @@ keys:
   cli.agent.spawn.store_flags: "agentit eivät peri --db- tai --config-valintaa; valitse store OMAKITEN_HOME-muuttujalla"
   cli.agent.show.short: "Näytä agenttiistunto ja sen viimeisin toiminta"
   cli.team.short: "Tarkastele agenttitiimejä"
+  cli.team.close.short: "Sulje agenttitiimi ja pyydä käynnissä olevia paikkoja lopettamaan"
   cli.team.show.short: "Näytä agenttitiimi, sen istunnot ja julkaistut tulokset"
   cli.wait.short: "Odota, kunnes tehtävän kommentilla on vastaava tagi"
   cli.wait.flag.task: "tehtävä, jonka kommentteja seurataan"

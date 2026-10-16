@@ -27,14 +27,14 @@ type WorkflowService struct {
 	events        EventRepository
 	registry      *domain.EnumRegistry
 	planFinalizer PlanFinalizer
-	teamSpawner   TeamSpawner
+	teams         AgentTeams
 }
 
-// WithTeamSpawner attaches the spawner that handles the agent team of the
-// bucket a task moves into. Without one, moves report no team. Returns the
-// receiver so callers can chain.
-func (s *WorkflowService) WithTeamSpawner(ts TeamSpawner) *WorkflowService {
-	s.teamSpawner = ts
+// WithAgentTeams attaches the handler of the agent teams a moving task
+// leaves and enters. Without one, moves touch no team. Returns the receiver
+// so callers can chain.
+func (s *WorkflowService) WithAgentTeams(teams AgentTeams) *WorkflowService {
+	s.teams = teams
 	return s
 }
 
@@ -417,6 +417,11 @@ func (s *WorkflowService) MoveTask(ctx context.Context, project domain.ProjectCo
 		if err = s.recordCompletion(ctx, project, taskID, targetBucketKey, task, taskSnap, target.ID); err != nil {
 			return
 		}
+		if s.teams != nil {
+			if left, ok := taskSnap.BucketByID(currentBucketID); ok {
+				s.teams.LeaveBucket(ctx, project, task, left.Key)
+			}
+		}
 		task.BucketKey = target.Key
 		team = s.bucketTeam(ctx, project, task, target, false)
 	}
@@ -427,18 +432,18 @@ func (s *WorkflowService) MoveTask(ctx context.Context, project domain.ProjectCo
 // suggested, an automatic team is spawned, and a preview of an automatic
 // team says it would spawn.
 func (s *WorkflowService) bucketTeam(ctx context.Context, project domain.ProjectContext, task domain.Task, target domain.Bucket, preview bool) *domain.TeamOutcome {
-	if s.teamSpawner == nil || target.Agents == nil {
+	if s.teams == nil || target.Agents == nil {
 		return nil
 	}
 	var out domain.TeamOutcome
 	switch {
 	case target.Agents.Trigger == domain.AgentTriggerManual:
-		out = s.teamSpawner.PlanTeam(task, *target.Agents, domain.TeamSuggested)
+		out = s.teams.PlanTeam(task, *target.Agents, domain.TeamSuggested)
 		out.Spawn = fmt.Sprintf("okt agent spawn --task %d", task.ID)
 	case preview:
-		out = s.teamSpawner.PlanTeam(task, *target.Agents, domain.TeamWouldSpawn)
+		out = s.teams.PlanTeam(task, *target.Agents, domain.TeamWouldSpawn)
 	default:
-		out = s.teamSpawner.SpawnTeam(ctx, project, task, *target.Agents)
+		out = s.teams.SpawnTeam(ctx, project, task, *target.Agents)
 	}
 	return &out
 }

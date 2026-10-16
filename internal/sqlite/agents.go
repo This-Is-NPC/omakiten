@@ -47,6 +47,27 @@ func (s *Store) FailAgentTeam(ctx context.Context, teamID string) error {
 	return err
 }
 
+// CloseAgentTeam closes an active team and stops its running sessions. It
+// reports whether the team was active.
+func (s *Store) CloseAgentTeam(ctx context.Context, teamID string) (bool, error) {
+	tx, err := s.beginTransaction(ctx)
+	if err != nil {
+		return false, err
+	}
+	defer func() { _ = s.rollbackTransaction(ctx, tx) }()
+	res, err := tx.ExecContext(ctx, `UPDATE agent_teams SET status = 'closed' WHERE id = ? AND status = 'active'`, teamID)
+	if err != nil {
+		return false, err
+	}
+	if n, err := res.RowsAffected(); err != nil || n == 0 {
+		return false, err
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE agent_sessions SET status = 'stopped', finished_at = CURRENT_TIMESTAMP WHERE team_id = ? AND status = 'spawned'`, teamID); err != nil {
+		return false, err
+	}
+	return true, s.commitTransaction(ctx, tx)
+}
+
 // AddAgentSession records a session of a team.
 func (s *Store) AddAgentSession(ctx context.Context, session domain.AgentSession) error {
 	_, err := s.query(ctx).ExecContext(ctx, `

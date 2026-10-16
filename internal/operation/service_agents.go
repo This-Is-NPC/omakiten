@@ -30,10 +30,10 @@ type AgentLauncher interface {
 // team of the destination bucket. noSpawn reports an automatic team as
 // skipped instead of opening it.
 func (s *Service) taskService(noSpawn bool) *app.TaskService {
-	return app.NewTaskServiceFromStore(s.repo, s.registry, s.snapshot).WithTeamSpawner(teamSpawner{s: s, noSpawn: noSpawn})
+	return app.NewTaskServiceFromStore(s.repo, s.registry, s.snapshot).WithAgentTeams(teamSpawner{s: s, noSpawn: noSpawn})
 }
 
-// teamSpawner is the app.TeamSpawner backed by this service.
+// teamSpawner is the app.AgentTeams backed by this service.
 type teamSpawner struct {
 	s       *Service
 	noSpawn bool
@@ -49,6 +49,57 @@ func (t teamSpawner) SpawnTeam(ctx context.Context, project domain.ProjectContex
 func (t teamSpawner) PlanTeam(task domain.Task, team domain.BucketAgents, status string) domain.TeamOutcome {
 	out, _ := t.s.planTeam(task, team, status)
 	return out
+}
+
+func (t teamSpawner) LeaveBucket(ctx context.Context, project domain.ProjectContext, task domain.Task, bucket string) {
+	ids, err := t.s.repo.ActiveAgentTeamIDs(ctx, project.ID, task.ID)
+	if err != nil {
+		return
+	}
+	for _, id := range ids {
+		team, err := t.s.repo.GetAgentTeam(ctx, id)
+		if err == nil && team.BucketKey == bucket {
+			_, _ = t.s.closeTeam(ctx, project, team, fmt.Sprintf("okt: task #%d left %s; stop working on it", task.ID, bucket), "left_bucket")
+		}
+	}
+}
+
+// closeTeam closes an active team, tells each seat it stopped with line, and
+// records team.closed with reason.
+func (s *Service) closeTeam(ctx context.Context, project domain.ProjectContext, team domain.AgentTeam, line, reason string) (domain.AgentTeam, error) {
+	closed, err := s.repo.CloseAgentTeam(ctx, team.ID)
+	if err != nil {
+		return domain.AgentTeam{}, err
+	}
+	if !closed {
+		return domain.AgentTeam{}, domain.NewError(domain.ErrValidation, "the agent team is not active", map[string]any{"team_id": team.ID, "status": team.Status})
+	}
+	for _, session := range team.Sessions {
+		_ = s.wake(ctx, session, line)
+	}
+	if body, err := json.Marshal(map[string]any{"team_id": team.ID, "bucket": team.BucketKey, "reason": reason}); err == nil {
+		_ = s.repo.RecordEntityEvent(ctx, domain.EventEntityTask, team.TaskID, project.ID, domain.EventTypeTeamClosed, string(body))
+	}
+	return s.repo.GetAgentTeam(ctx, team.ID)
+}
+
+func (s *Service) CloseTeam(ctx context.Context, input contract.CloseTeamInput) (contract.CloseTeamResponse, error) {
+	if err := s.allow("team.close"); err != nil {
+		return contract.CloseTeamResponse{}, err
+	}
+	project, err := s.resolveProject(ctx, input.ProjectSelector)
+	if err != nil {
+		return contract.CloseTeamResponse{}, err
+	}
+	team, err := s.projectTeam(ctx, project, strings.TrimSpace(input.TeamID))
+	if err != nil {
+		return contract.CloseTeamResponse{}, err
+	}
+	closed, err := s.closeTeam(ctx, project, team, fmt.Sprintf("okt: team %s was closed; stop working on task #%d", team.ID, team.TaskID), "closed")
+	if err != nil {
+		return contract.CloseTeamResponse{}, err
+	}
+	return contract.CloseTeamResponse{Project: projectSummary(project), Team: closed}, nil
 }
 
 // SetAgentLauncher replaces the process launcher.

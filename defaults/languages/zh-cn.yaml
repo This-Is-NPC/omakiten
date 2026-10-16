@@ -123,6 +123,7 @@ keys:
   cli.agent.spawn.store_flags: "代理无法继承 --db 或 --config;请用 OMAKITEN_HOME 选择存储"
   cli.agent.show.short: "显示代理会话及其最近活动"
   cli.team.short: "查看代理团队"
+  cli.team.close.short: "关闭代理团队并通知其运行中的席位停止"
   cli.team.show.short: "显示代理团队、其会话及已发布的结果"
   cli.wait.short: "等待任务评论带上匹配的标签"
   cli.wait.flag.task: "要监视其评论的任务"

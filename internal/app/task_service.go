@@ -188,9 +188,9 @@ func (s *TaskService) Move(ctx context.Context, project domain.ProjectContext, t
 	return s.workflow.MoveTask(ctx, project, taskID, targetBucketKey)
 }
 
-// WithTeamSpawner attaches the spawner moves use for bucket agent teams.
-func (s *TaskService) WithTeamSpawner(ts TeamSpawner) *TaskService {
-	s.workflow.WithTeamSpawner(ts)
+// WithAgentTeams attaches the handler moves use for bucket agent teams.
+func (s *TaskService) WithAgentTeams(teams AgentTeams) *TaskService {
+	s.workflow.WithAgentTeams(teams)
 	return s
 }
 

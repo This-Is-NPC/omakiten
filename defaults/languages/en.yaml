@@ -111,6 +111,7 @@ keys:
   cli.agent.spawn.store_flags: "agents cannot inherit --db or --config; select the store with OMAKITEN_HOME"
   cli.agent.show.short: "Show an agent session and its last activity"
   cli.team.short: "Inspect agent teams"
+  cli.team.close.short: "Close an agent team and tell its running seats to stop"
   cli.team.show.short: "Show an agent team, its sessions, and the results they published"
   cli.wait.short: "Wait until a task comment carries a matching tag"
   cli.wait.flag.task: "task whose comments to watch"

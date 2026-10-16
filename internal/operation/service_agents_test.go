@@ -64,6 +64,7 @@ func newAgentTeamFixture(t *testing.T, teamBucket, trigger string) agentFixtureS
 			}
 		}
 	}
+	bundle.Workflows[0].Transitions = append(bundle.Workflows[0].Transitions, config.Transition{From: 2, To: 1})
 	store := snapstore.Open(t, filepath.Join(t.TempDir(), "omakiten.db"))
 	if err := store.ImportBundle(ctx, bundle, "test.yaml", "hash"); err != nil {
 		t.Fatalf("ImportBundle() error = %v", err)
@@ -291,5 +292,56 @@ func TestAddressedMessageWakesTheRecipient(t *testing.T) {
 	want := fmt.Sprintf("okt: message for security on task #%d — okt comment list %d --tag to-security", f.task.ID, f.task.ID)
 	if len(*f.sends) != 1 || (*f.sends)[0][1] != spawned.Team.Members[0].Pane || (*f.sends)[0][2] != want {
 		t.Fatalf("sends = %q, want %q to the security pane %s", *f.sends, want, spawned.Team.Members[0].Pane)
+	}
+}
+
+// TestTeamClosesWhenTheTaskLeavesItsBucket verifies a move out of the
+// team's bucket closes the team, stops its running seats with one line each,
+// and a later spawn in that bucket opens a new team.
+func TestTeamClosesWhenTheTaskLeavesItsBucket(t *testing.T) {
+	f := newAgentSpawnFixture(t)
+	spawned, err := f.service.SpawnAgents(f.ctx, contract.SpawnAgentsInput{TaskID: f.task.ID})
+	if err != nil {
+		t.Fatalf("SpawnAgents() error = %v", err)
+	}
+	if _, err := f.service.MoveTask(f.ctx, contract.MoveTaskInput{TaskID: f.task.ID, BucketKey: "dev"}); err != nil {
+		t.Fatalf("MoveTask(dev) error = %v", err)
+	}
+	team, err := f.service.ShowTeam(f.ctx, contract.ShowTeamInput{TeamID: spawned.Team.TeamID})
+	if err != nil || team.Team.Status != domain.TeamClosed {
+		t.Fatalf("team after leaving = %+v, %v; want closed", team.Team, err)
+	}
+	for _, session := range team.Team.Sessions {
+		if session.Status != domain.SessionStopped {
+			t.Fatalf("session %s status = %s, want stopped", session.Member, session.Status)
+		}
+	}
+	stop := fmt.Sprintf("okt: task #%d left backlog; stop working on it", f.task.ID)
+	if len(*f.sends) != 2 || (*f.sends)[0][2] != stop {
+		t.Fatalf("sends = %q, want %q to both panes", *f.sends, stop)
+	}
+	if _, err := f.service.MoveTask(f.ctx, contract.MoveTaskInput{TaskID: f.task.ID, BucketKey: "backlog"}); err != nil {
+		t.Fatalf("MoveTask(backlog) error = %v", err)
+	}
+	again, err := f.service.SpawnAgents(f.ctx, contract.SpawnAgentsInput{TaskID: f.task.ID})
+	if err != nil || again.Team.Status != domain.TeamSpawned || again.Team.TeamID == spawned.Team.TeamID {
+		t.Fatalf("spawn after closing = %+v, %v; want a new team", again.Team, err)
+	}
+}
+
+// TestCloseTeamStopsItsSeats verifies team close has the same effect as
+// leaving the bucket and refuses a team that is not active.
+func TestCloseTeamStopsItsSeats(t *testing.T) {
+	f := newAgentSpawnFixture(t)
+	spawned, err := f.service.SpawnAgents(f.ctx, contract.SpawnAgentsInput{TaskID: f.task.ID})
+	if err != nil {
+		t.Fatalf("SpawnAgents() error = %v", err)
+	}
+	closed, err := f.service.CloseTeam(f.ctx, contract.CloseTeamInput{TeamID: spawned.Team.TeamID})
+	if err != nil || closed.Team.Status != domain.TeamClosed || len(*f.sends) != 2 {
+		t.Fatalf("CloseTeam() = %+v, %v (sends %q); want closed and both seats told", closed.Team, err, *f.sends)
+	}
+	if _, err := f.service.CloseTeam(f.ctx, contract.CloseTeamInput{TeamID: spawned.Team.TeamID}); err == nil {
+		t.Fatal("closing a closed team succeeded")
 	}
 }

@@ -123,6 +123,7 @@ keys:
   cli.agent.spawn.store_flags: "agenci nie dziedziczą --db ani --config; wybierz store przez OMAKITEN_HOME"
   cli.agent.show.short: "Pokaż sesję agenta i jej ostatnią aktywność"
   cli.team.short: "Sprawdzaj zespoły agentów"
+  cli.team.close.short: "Zamknij zespół agentów i poproś aktywne miejsca o zatrzymanie"
   cli.team.show.short: "Pokaż zespół agentów, jego sesje i opublikowane wyniki"
   cli.wait.short: "Czekaj, aż komentarz zadania będzie miał pasujący tag"
   cli.wait.flag.task: "zadanie, którego komentarze obserwować"

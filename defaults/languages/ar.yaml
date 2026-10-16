@@ -123,6 +123,7 @@ keys:
   cli.agent.spawn.store_flags: "لا يرث الوكلاء ‎--db أو ‎--config؛ اختر المخزن عبر OMAKITEN_HOME"
   cli.agent.show.short: "عرض جلسة وكيل وآخر نشاط لها"
   cli.team.short: "فحص فرق الوكلاء"
+  cli.team.close.short: "إغلاق فريق وكلاء وإبلاغ مقاعده العاملة بالتوقف"
   cli.team.show.short: "عرض فريق وكلاء وجلساته والنتائج التي نشرها"
   cli.wait.short: "الانتظار حتى يحمل تعليق المهمة وسمًا مطابقًا"
   cli.wait.flag.task: "المهمة التي تُراقَب تعليقاتها"

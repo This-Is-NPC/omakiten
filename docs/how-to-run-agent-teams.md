@@ -57,6 +57,12 @@ undoes the move: `data.team.status` is `failed` and the error says why.
 `okt move --no-spawn`, and `--no-spawn` on `progress record`, report the team
 as `skipped` instead.
 
+When the task leaves the bucket, its team there closes: the team becomes
+`closed`, running seats become `stopped`, and each pane receives
+`okt: task #42 left review; stop working on it`. Panes are never killed.
+`okt team close t-…` does the same at any time. A task that enters the bucket
+again opens a new team.
+
 `trigger: manual` makes a move into the bucket report the team instead of
 opening it: `data.team` has `status: suggested`, the resolved seats, and the
 `spawn` command to run when you want it. `okt move --dry-run` reports the same

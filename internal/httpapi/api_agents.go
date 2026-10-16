@@ -12,6 +12,7 @@ type AgentOperations interface {
 	SpawnAgents(ctx context.Context, input contract.SpawnAgentsInput) (contract.SpawnAgentsResponse, error)
 	ShowAgent(ctx context.Context, input contract.ShowAgentInput) (contract.ShowAgentResponse, error)
 	ShowTeam(ctx context.Context, input contract.ShowTeamInput) (contract.ShowTeamResponse, error)
+	CloseTeam(ctx context.Context, input contract.CloseTeamInput) (contract.CloseTeamResponse, error)
 	Wait(ctx context.Context, input contract.WaitInput) (contract.WaitResponse, error)
 }
 
@@ -35,6 +36,10 @@ func (s *Server) agentRoutes() []route {
 			projectParam,
 			pathParam("team", "Agent team id.", stringSchema),
 		}, s.showTeam),
+		query("closeTeam", http.MethodPost, projectPath+"/teams/{team}/close", "team.close", "Close an agent team and tell its running seats to stop.", []param{
+			projectParam,
+			pathParam("team", "Agent team id.", stringSchema),
+		}, s.closeTeam),
 		query("waitTaskComment", http.MethodGet, taskPath+"/wait", "wait", "Block until a comment of the task carries a matching tag.", []param{
 			projectParam,
 			taskParam,
@@ -71,6 +76,14 @@ func (s *Server) showAgent(r *http.Request) (contract.ShowAgentResponse, error) 
 		return contract.ShowAgentResponse{}, err
 	}
 	return ops.ShowAgent(r.Context(), contract.ShowAgentInput{ProjectSelector: selector, SessionID: r.PathValue("session")})
+}
+
+func (s *Server) closeTeam(r *http.Request) (contract.CloseTeamResponse, error) {
+	ops, selector, err := s.project(r)
+	if err != nil {
+		return contract.CloseTeamResponse{}, err
+	}
+	return ops.CloseTeam(r.Context(), contract.CloseTeamInput{ProjectSelector: selector, TeamID: r.PathValue("team")})
 }
 
 func (s *Server) showTeam(r *http.Request) (contract.ShowTeamResponse, error) {

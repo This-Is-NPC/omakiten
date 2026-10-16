@@ -79,6 +79,7 @@ task.show: { cli: true, tui: true, http: true }
 task.transition: { cli: true, tui: true, http: true }
 task.unarchive: { cli: true, tui: true, http: true }
 task_activity.list: { cli: true, tui: true, http: true }
+team.close: { cli: true, tui: true, http: true }
 team.show: { cli: true, tui: true, http: true }
 template.list: { cli: true, tui: true, http: true }
 template.show: { cli: true, tui: true, http: true }

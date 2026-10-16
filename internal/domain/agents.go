@@ -18,6 +18,7 @@ const (
 	TeamSuggested  = "suggested"
 	TeamSkipped    = "skipped"
 	TeamWouldSpawn = "would_spawn"
+	TeamClosed     = "closed"
 )
 
 // Agent session statuses.
@@ -25,6 +26,7 @@ const (
 	SessionSpawned = "spawned"
 	SessionFailed  = "failed"
 	SessionDone    = "done"
+	SessionStopped = "stopped"
 )
 
 // AgentRole is one team seat: the command it runs and the optional harness,
@@ -163,4 +165,5 @@ const (
 	EventTypeAgentSessionStarted = "agent.session_started"
 	EventTypeAgentSessionFailed  = "agent.session_failed"
 	EventTypeTeamMemberDone      = "team.member_done"
+	EventTypeTeamClosed          = "team.closed"
 )

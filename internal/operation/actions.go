@@ -131,6 +131,7 @@ func (s *Service) actionHandlers() map[string]actionHandler {
 		"task.transition":    bindAction(s.MoveTask),
 		"task.unarchive":     bindAction(s.UnarchiveTask),
 		"task_activity.list": bindAction(s.ListTaskActivity),
+		"team.close":         bindAction(s.CloseTeam),
 		"team.show":          bindAction(s.ShowTeam),
 		"template.list":      bindAction(s.ListTemplates),
 		"template.show":      bindAction(s.ShowTemplate),

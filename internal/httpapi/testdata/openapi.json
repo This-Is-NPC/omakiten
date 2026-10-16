@@ -488,6 +488,21 @@
         ],
         "type": "object"
       },
+      "contract.CloseTeamResponse": {
+        "properties": {
+          "project": {
+            "$ref": "#/components/schemas/contract.ProjectSummary"
+          },
+          "team": {
+            "$ref": "#/components/schemas/domain.AgentTeam"
+          }
+        },
+        "required": [
+          "project",
+          "team"
+        ],
+        "type": "object"
+      },
       "contract.CommandDefinition": {
         "properties": {
           "name": {
@@ -9071,6 +9086,67 @@
         },
         "summary": "An agent team, its sessions, and the results they published.",
         "x-okt-surface": "team.show"
+      }
+    },
+    "/api/v1/projects/{project}/teams/{team}/close": {
+      "post": {
+        "operationId": "closeTeam",
+        "parameters": [
+          {
+            "description": "Project slug.",
+            "in": "path",
+            "name": "project",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Agent team id.",
+            "in": "path",
+            "name": "team",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/contract.CloseTeamResponse"
+                    },
+                    "ok": {
+                      "const": true
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success."
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/output.Envelope"
+                }
+              }
+            },
+            "description": "Error envelope."
+          }
+        },
+        "summary": "Close an agent team and tell its running seats to stop.",
+        "x-okt-surface": "team.close"
       }
     },
     "/api/v1/projects/{project}/templates": {

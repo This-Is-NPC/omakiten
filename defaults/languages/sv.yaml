@@ -124,6 +124,7 @@ keys:
   cli.agent.spawn.store_flags: "agenter ärver inte --db eller --config; välj store med OMAKITEN_HOME"
   cli.agent.show.short: "Visa en agentsession och dess senaste aktivitet"
   cli.team.short: "Granska agentteam"
+  cli.team.close.short: "Stäng ett agentteam och be pågående platser att sluta"
   cli.team.show.short: "Visa ett agentteam, dess sessioner och publicerade resultat"
   cli.wait.short: "Vänta tills en uppgiftskommentar har en matchande tagg"
   cli.wait.flag.task: "uppgift vars kommentarer bevakas"

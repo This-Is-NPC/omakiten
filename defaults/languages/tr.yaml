@@ -123,6 +123,7 @@ keys:
   cli.agent.spawn.store_flags: "ajanlar --db veya --config'i devralamaz; depoyu OMAKITEN_HOME ile seçin"
   cli.agent.show.short: "Bir ajan oturumunu ve son etkinliğini göster"
   cli.team.short: "Ajan ekiplerini incele"
+  cli.team.close.short: "Bir ajan ekibini kapat ve çalışan koltuklara durmalarını söyle"
   cli.team.show.short: "Bir ajan ekibini, oturumlarını ve yayımladıkları sonuçları göster"
   cli.wait.short: "Bir görev yorumu eşleşen bir etiket taşıyana kadar bekle"
   cli.wait.flag.task: "yorumları izlenecek görev"

@@ -373,7 +373,7 @@ CREATE TABLE agent_teams (
   project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
   task_id INTEGER NOT NULL,
   bucket_key TEXT NOT NULL,
-  status TEXT NOT NULL CHECK (status IN ('active', 'failed')),
+  status TEXT NOT NULL CHECK (status IN ('active', 'failed', 'closed')),
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   FOREIGN KEY (project_id, task_id) REFERENCES tasks(project_id, id) ON DELETE CASCADE
 );
@@ -390,7 +390,7 @@ CREATE TABLE agent_sessions (
   model TEXT NOT NULL DEFAULT '',
   launcher TEXT NOT NULL,
   pane TEXT NOT NULL DEFAULT '',
-  status TEXT NOT NULL CHECK (status IN ('spawned', 'failed', 'done')),
+  status TEXT NOT NULL CHECK (status IN ('spawned', 'failed', 'done', 'stopped')),
   error TEXT NOT NULL DEFAULT '',
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   finished_at TEXT,

@@ -233,6 +233,7 @@ type TagRepository interface {
 type AgentRepository interface {
 	OpenAgentTeam(ctx context.Context, team domain.AgentTeam) (domain.AgentTeam, bool, error)
 	FailAgentTeam(ctx context.Context, teamID string) error
+	CloseAgentTeam(ctx context.Context, teamID string) (bool, error)
 	AddAgentSession(ctx context.Context, session domain.AgentSession) error
 	FinishAgentSession(ctx context.Context, sessionID string) (bool, error)
 	GetAgentTeam(ctx context.Context, teamID string) (domain.AgentTeam, error)
@@ -242,11 +243,14 @@ type AgentRepository interface {
 	LastAgentActivity(ctx context.Context, sessionID string) (domain.EventRow, error)
 }
 
-// TeamSpawner opens, or only resolves, the agent team a bucket declares for
-// a task. PlanTeam opens nothing and reports status for every seat.
-type TeamSpawner interface {
+// AgentTeams handles the agent teams of a task as it moves. SpawnTeam opens
+// the team a bucket declares; PlanTeam resolves it without opening anything
+// and reports status for every seat; LeaveBucket closes the task's teams in
+// the bucket it left.
+type AgentTeams interface {
 	SpawnTeam(ctx context.Context, project domain.ProjectContext, task domain.Task, team domain.BucketAgents) domain.TeamOutcome
 	PlanTeam(task domain.Task, team domain.BucketAgents, status string) domain.TeamOutcome
+	LeaveBucket(ctx context.Context, project domain.ProjectContext, task domain.Task, bucket string)
 }
 
 // ChangeFeed detects committed writes: DataVersion moves on every external

@@ -64,6 +64,21 @@ func newAgentShowCommand(opts *runtimeOptions) *cobra.Command {
 func newTeamCommand(opts *runtimeOptions) *cobra.Command {
 	cmd := &cobra.Command{Use: "team", Short: opts.t("cli.team.short")}
 	cmd.AddCommand(&cobra.Command{
+		Use:   "close TEAM_ID",
+		Short: opts.t("cli.team.close.short"),
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runJSON(cmd, func(ctx context.Context) (any, error) {
+				rt, err := opts.open(ctx, true)
+				if err != nil {
+					return nil, err
+				}
+				defer rt.close()
+				return rt.operationService().CloseTeam(ctx, contract.CloseTeamInput{ProjectSelector: opts.projectSelector(), TeamID: args[0]})
+			})
+		},
+	})
+	cmd.AddCommand(&cobra.Command{
 		Use:   "show TEAM_ID",
 		Short: opts.t("cli.team.show.short"),
 		Args:  cobra.ExactArgs(1),

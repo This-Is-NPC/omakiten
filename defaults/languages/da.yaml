@@ -124,6 +124,7 @@ keys:
   cli.agent.spawn.store_flags: "agenter arver ikke --db eller --config; vælg store med OMAKITEN_HOME"
   cli.agent.show.short: "Vis en agentsession og dens seneste aktivitet"
   cli.team.short: "Inspicer agentteams"
+  cli.team.close.short: "Luk et agentteam og bed kørende pladser stoppe"
   cli.team.show.short: "Vis et agentteam, dets sessioner og publicerede resultater"
   cli.wait.short: "Vent til en opgavekommentar har et matchende tag"
   cli.wait.flag.task: "opgave hvis kommentarer overvåges"

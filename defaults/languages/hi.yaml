@@ -123,6 +123,7 @@ keys:
   cli.agent.spawn.store_flags: "agents --db या --config inherit नहीं कर सकते; store OMAKITEN_HOME से चुनें"
   cli.agent.show.short: "agent session और उसकी अंतिम गतिविधि दिखाएँ"
   cli.team.short: "agent teams जाँचें"
+  cli.team.close.short: "agent team बंद करें और चल रही seats को रुकने को कहें"
   cli.team.show.short: "agent team, उसके sessions और प्रकाशित परिणाम दिखाएँ"
   cli.wait.short: "task comment पर मेल खाता tag आने तक प्रतीक्षा करें"
   cli.wait.flag.task: "वह task जिसके comments देखने हैं"
