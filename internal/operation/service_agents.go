@@ -19,6 +19,10 @@ import (
 	"omakiten/internal/paths"
 )
 
+// agentUnconfigured is the AgentError code of a seat that names no harness
+// or launcher anywhere.
+const agentUnconfigured = string(domain.ErrAgentUnconfigured)
+
 // AgentLauncher resolves roles to adapters and runs them in panes.
 type AgentLauncher interface {
 	Resolve(adapters domain.AgentAdapters, role domain.AgentRole) (agentlaunch.Plan, *domain.AgentFallback, *domain.AgentError)
@@ -129,6 +133,9 @@ func (s *Service) SpawnAgents(ctx context.Context, input contract.SpawnAgentsInp
 		return contract.SpawnAgentsResponse{}, err
 	}
 	outcome := s.spawnTeam(ctx, detail.project, detail.task, team)
+	if outcome.Status == domain.TeamUnconfigured {
+		return contract.SpawnAgentsResponse{}, domain.NewError(domain.ErrAgentUnconfigured, outcome.Error.Message, map[string]any{"team": outcome})
+	}
 	if outcome.Status == domain.TeamFailed {
 		return contract.SpawnAgentsResponse{}, domain.NewError(domain.ErrAgentSpawnFailed, "agents could not be opened", map[string]any{"team": outcome})
 	}
@@ -273,7 +280,10 @@ func (s *Service) planSeat(adapters domain.AgentAdapters, role domain.AgentRole,
 	seat := domain.MemberOutcome{Key: role.Key, Status: status, Command: role.Command, Persona: s.commandPersona(role.Command)}
 	plan, fallback, perr := s.launcher.Resolve(adapters, role)
 	seat.Harness, seat.Model, seat.Launcher, seat.Fallback, seat.Error = plan.Harness, plan.Model, plan.Launcher, fallback, perr
-	if perr != nil {
+	switch {
+	case perr != nil && perr.Code == agentUnconfigured:
+		seat.Status = domain.TeamUnconfigured
+	case perr != nil:
 		seat.Status = domain.SessionFailed
 	}
 	return seat, plan
@@ -290,32 +300,19 @@ func (s *Service) commandPersona(command string) string {
 // team and its sessions. A lead that cannot open fails the whole team.
 func (s *Service) spawnTeam(ctx context.Context, project domain.ProjectContext, task domain.Task, team domain.BucketAgents) domain.TeamOutcome {
 	out, plans := s.planTeam(task, team, domain.TeamSpawned)
-	fail := func(code, message string) domain.TeamOutcome {
-		out.Status, out.Error = domain.TeamFailed, &domain.AgentError{Code: code, Message: message}
+	fail := func(perr *domain.AgentError) domain.TeamOutcome {
+		out.Status, out.Error = domain.TeamFailed, perr
+		if perr.Code == agentUnconfigured {
+			out.Status = domain.TeamUnconfigured
+		}
 		return out
 	}
-	if s.spawnBlocked != "" {
-		return fail("store_not_inheritable", s.spawnBlocked)
-	}
-	if out.Lead.Error != nil {
-		return fail(out.Lead.Error.Code, out.Lead.Error.Message)
-	}
-	adapters := s.snapshot.For(task).AgentAdapters()
-	if adapters.MaxMembers > 0 && len(team.Members) > adapters.MaxMembers {
-		return fail("max_members", fmt.Sprintf("the team has %d members; preferences allow %d", len(team.Members), adapters.MaxMembers))
-	}
-	if adapters.MaxSessions > 0 {
-		running, err := s.repo.CountSpawnedAgentSessions(ctx, project.ID)
-		if err != nil {
-			return fail("store_error", err.Error())
-		}
-		if running+1+len(team.Members) > adapters.MaxSessions {
-			return fail("max_sessions", fmt.Sprintf("%d sessions are running; preferences allow %d", running, adapters.MaxSessions))
-		}
+	if perr := s.spawnRefusal(ctx, project, task, team, out.Lead); perr != nil {
+		return fail(perr)
 	}
 	opened, created, err := s.repo.OpenAgentTeam(ctx, domain.AgentTeam{ID: newAgentID("t"), ProjectID: project.ID, TaskID: task.ID, BucketKey: task.BucketKey})
 	if err != nil {
-		return fail("store_error", err.Error())
+		return fail(&domain.AgentError{Code: "store_error", Message: err.Error()})
 	}
 	if !created {
 		return runningTeam(opened)
@@ -342,6 +339,31 @@ func (s *Service) spawnTeam(ctx context.Context, project domain.ProjectContext, 
 	wg.Wait()
 	out.Follow = teamFollow(opened.ID, task.ID, out.Lead.SessionID)
 	return out
+}
+
+// spawnRefusal returns why a team must not open before anything starts: an
+// uninheritable store, a lead that cannot resolve, or a preference limit.
+func (s *Service) spawnRefusal(ctx context.Context, project domain.ProjectContext, task domain.Task, team domain.BucketAgents, lead domain.MemberOutcome) *domain.AgentError {
+	if s.spawnBlocked != "" {
+		return &domain.AgentError{Code: "store_not_inheritable", Message: s.spawnBlocked}
+	}
+	if lead.Error != nil {
+		return lead.Error
+	}
+	adapters := s.snapshot.For(task).AgentAdapters()
+	if adapters.MaxMembers > 0 && len(team.Members) > adapters.MaxMembers {
+		return &domain.AgentError{Code: "max_members", Message: fmt.Sprintf("the team has %d members; preferences allow %d", len(team.Members), adapters.MaxMembers)}
+	}
+	if adapters.MaxSessions > 0 {
+		running, err := s.repo.CountSpawnedAgentSessions(ctx, project.ID)
+		if err != nil {
+			return &domain.AgentError{Code: "store_error", Message: err.Error()}
+		}
+		if running+1+len(team.Members) > adapters.MaxSessions {
+			return &domain.AgentError{Code: "max_sessions", Message: fmt.Sprintf("%d sessions are running; preferences allow %d", running, adapters.MaxSessions)}
+		}
+	}
+	return nil
 }
 
 // openSeat writes the seat's prompt, opens its pane, and records the session

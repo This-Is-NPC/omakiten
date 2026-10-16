@@ -1,8 +1,6 @@
-# Agent adapters Omakiten ships. Preferences and presets override them by
-# name; see docs/how-to-run-agent-teams.md.
-defaults:
-  harness: claude-code
-  launcher: tmux
+# How to call each agent harness and launcher. Omakiten never chooses one:
+# a role, the preset, or the user's preferences name it. Preferences and
+# presets override these templates by name; see docs/how-to-run-agent-teams.md.
 harnesses:
   claude-code:
     argv: [claude, [--model, "{model}"], --, "{prompt}"]

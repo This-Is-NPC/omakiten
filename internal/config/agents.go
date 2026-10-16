@@ -115,10 +115,10 @@ func defaultAgentSettings() (AgentsSettings, error) {
 	return s, nil
 }
 
-// mergeAgentAdapters resolves the effective adapters: Omakiten defaults,
+// mergeAgentAdapters resolves the effective adapters: Omakiten's templates,
 // then the user's preferences, then the preset. A named adapter replaces
-// the same name from a lower layer; defaults merge key by key. The user's
-// own defaults are kept as the fallback for missing executables.
+// the same name from a lower layer; defaults merge key by key. Only the
+// user's own defaults serve as the fallback for missing executables.
 func mergeAgentAdapters(prefs *AgentPreferences, preset *AgentsSettings) (domain.AgentAdapters, error) {
 	base, err := defaultAgentSettings()
 	if err != nil {
@@ -126,10 +126,9 @@ func mergeAgentAdapters(prefs *AgentPreferences, preset *AgentsSettings) (domain
 	}
 	out := domain.AgentAdapters{Harnesses: map[string]domain.HarnessSpec{}, Launchers: map[string]domain.LauncherSpec{}}
 	layers := []AgentsSettings{base}
-	out.Fallback = agentDefaults(base.Defaults)
 	if prefs != nil {
 		layers = append(layers, prefs.AgentsSettings)
-		out.Fallback = overlayAgentDefaults(out.Fallback, prefs.Defaults)
+		out.Fallback = agentDefaults(prefs.Defaults)
 		out.MaxSessions, out.MaxMembers = prefs.MaxSessions, prefs.MaxMembers
 	}
 	if preset != nil {

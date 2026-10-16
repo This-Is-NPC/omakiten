@@ -113,13 +113,15 @@ lead, and these commands.
 
 ## 4. Choose harnesses and launchers
 
-Adapters come from three layers, each replacing the one below by name:
-Omakiten's defaults, `agents` in `preferences.yaml`, and `agents` in the
-preset's `config/settings.yaml`.
+Omakiten ships how to call `claude-code`, `opencode`, `tmux`, and `herdr`, but
+never chooses one. A seat's harness, model, and launcher come from the role,
+then `agents.defaults` in the preset's `config/settings.yaml`, then
+`agents.defaults` in your `preferences.yaml`. Adapter templates come from the
+same layers, each replacing the one below by name, over Omakiten's own.
 
 ```yaml
 agents:
-  defaults: {harness: claude-code, model: claude-haiku-5-5, launcher: tmux}
+  defaults: {harness: claude-code, launcher: tmux}
   harnesses:
     claude-code: {argv: [claude, [--model, "{model}"], --, "{prompt}"]}
   launchers:
@@ -136,8 +138,16 @@ harness command line the launcher runs. A launcher whose `open` prints JSON
 names the pane id with `pane: result.root_pane.pane_id`, and `run` starts the
 command in that pane.
 
+A seat left without a harness or a launcher opens nothing: its status, and
+the team's when it is the lead, is `unconfigured`, and `error`
+(`agent_unconfigured`) names the missing setting and where to put it. The move
+still succeeds. A `manual` team is still `suggested`, with each incomplete
+seat marked. A missing model is fine: the `[--model, "{model}"]` group drops
+and the harness uses its own default.
+
 When the selected harness or launcher is not on `PATH`, the one in your
-preferences' `defaults` replaces it and the result reports `fallback`.
+preferences' `defaults` replaces it and the result reports `fallback`; without
+one, the seat fails with `harness_missing` or `launcher_missing`.
 `max_sessions` and `max_members` in `preferences.yaml` cap running sessions
 per project and members per team; unset means no limit. A preset cannot set
 them.

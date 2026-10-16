@@ -447,3 +447,59 @@ func TestTaskReadsShowTheActiveTeam(t *testing.T) {
 		t.Fatalf("ShowTask().Team after close = %+v, %v; want none", shown.Team, err)
 	}
 }
+
+// TestUnconfiguredTeamLeavesTheMoveWhole verifies a team whose seats name no
+// harness, with nothing in preset or preferences, opens no pane, reports
+// unconfigured, and does not fail the move.
+func TestUnconfiguredTeamLeavesTheMoveWhole(t *testing.T) {
+	f := newAgentTeamFixture(t, "dev", domain.AgentTriggerAuto)
+	adapters := f.store.Snapshot().AgentAdapters()
+	adapters.Defaults, adapters.Fallback = domain.AgentDefaults{}, domain.AgentDefaults{}
+	bundle := agentTestBundle(t)
+	bundle.AgentAdapters = adapters
+	for i := range bundle.Workflows[0].Buckets {
+		if bundle.Workflows[0].Buckets[i].Key == "dev" {
+			bundle.Workflows[0].Buckets[i].Agents = &config.BucketAgentsConfig{Trigger: domain.AgentTriggerAuto, Lead: config.AgentRoleConfig{Command: "okt-start"}}
+		}
+	}
+	if err := f.store.ImportBundle(f.ctx, bundle, "test.yaml", "hash"); err != nil {
+		t.Fatal(err)
+	}
+	f.service.SetSnapshot(f.store.Snapshot())
+	moved, err := f.service.MoveTask(f.ctx, contract.MoveTaskInput{TaskID: f.task.ID, BucketKey: "dev"})
+	if err != nil {
+		t.Fatalf("MoveTask() error = %v, want the move to succeed", err)
+	}
+	team := moved.Team
+	if moved.Task.BucketKey != "dev" || team == nil || team.Status != domain.TeamUnconfigured || team.Lead.Status != domain.TeamUnconfigured || *f.opens != 0 {
+		t.Fatalf("move = %+v (opens %d), want the task moved and its team unconfigured", moved, *f.opens)
+	}
+	if team.Error == nil || team.Error.Code != "agent_unconfigured" || !strings.Contains(team.Error.Message, "preferences.yaml") {
+		t.Fatalf("team error = %+v, want agent_unconfigured pointing at preferences.yaml", team.Error)
+	}
+}
+
+// TestManualTeamSuggestsWhatIsMissing verifies a manual team whose lead names
+// no harness is still suggested, with the seat saying what is missing.
+func TestManualTeamSuggestsWhatIsMissing(t *testing.T) {
+	f := newAgentTeamFixture(t, "dev", domain.AgentTriggerManual)
+	bundle := agentTestBundle(t)
+	bundle.AgentAdapters = f.store.Snapshot().AgentAdapters()
+	bundle.AgentAdapters.Defaults = domain.AgentDefaults{}
+	for i := range bundle.Workflows[0].Buckets {
+		if bundle.Workflows[0].Buckets[i].Key == "dev" {
+			bundle.Workflows[0].Buckets[i].Agents = &config.BucketAgentsConfig{Trigger: domain.AgentTriggerManual, Lead: config.AgentRoleConfig{Command: "okt-start"}}
+		}
+	}
+	if err := f.store.ImportBundle(f.ctx, bundle, "test.yaml", "hash"); err != nil {
+		t.Fatal(err)
+	}
+	f.service.SetSnapshot(f.store.Snapshot())
+	moved, err := f.service.MoveTask(f.ctx, contract.MoveTaskInput{TaskID: f.task.ID, BucketKey: "dev"})
+	if err != nil || moved.Team == nil || moved.Team.Status != domain.TeamSuggested {
+		t.Fatalf("move = %+v, %v; want a suggested team", moved.Team, err)
+	}
+	if lead := moved.Team.Lead; lead.Status != domain.TeamUnconfigured || lead.Error == nil || lead.Error.Code != "agent_unconfigured" {
+		t.Fatalf("lead = %+v, want unconfigured with what is missing", lead)
+	}
+}

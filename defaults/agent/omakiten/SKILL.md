@@ -120,7 +120,8 @@ Use an isolated `OMAKITEN_HOME` or the repository's `dev_env` for experiments.
 
 A move into a bucket that declares an agent team returns it in `data.team`.
 `spawned` means agents are already working: keep talking with the user and
-follow them with the `follow` commands. `suggested` lists the `spawn` command
+follow them with the `follow` commands. `unconfigured` means no harness or
+launcher was chosen; tell the user what `error` says to set. `suggested` lists the `spawn` command
 to run if the user wants the team. Opened as a seat yourself, follow the team
 section of your prompt: publish once with `-T review-<key>`, address
 teammates with `-T to-<key>`, and wait with `okt wait`. Reopen a failed or

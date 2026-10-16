@@ -113,3 +113,20 @@ func TestOpenReadsPaneAndRunsTheCommand(t *testing.T) {
 		t.Fatalf("Send() = %v, calls %q", err, *calls)
 	}
 }
+
+// TestResolveWithoutAChoiceIsUnconfigured verifies a role with no harness or
+// launcher from the role, preset, or preferences resolves to
+// agent_unconfigured naming what is missing.
+func TestResolveWithoutAChoiceIsUnconfigured(t *testing.T) {
+	l, _ := fakeLauncher("claude", "tmux")
+	adapters := testAdapters()
+	adapters.Defaults, adapters.Fallback = domain.AgentDefaults{}, domain.AgentDefaults{}
+	_, _, err := l.Resolve(adapters, domain.AgentRole{Key: "security", Command: "review"})
+	if err == nil || err.Code != "agent_unconfigured" || !strings.Contains(err.Message, "agents.defaults.harness") {
+		t.Fatalf("Resolve() without a harness = %+v, want agent_unconfigured naming agents.defaults.harness", err)
+	}
+	_, _, err = l.Resolve(adapters, domain.AgentRole{Key: "security", Command: "review", Harness: "claude-code"})
+	if err == nil || err.Code != "agent_unconfigured" || !strings.Contains(err.Message, "agents.defaults.launcher") {
+		t.Fatalf("Resolve() without a launcher = %+v, want agent_unconfigured naming agents.defaults.launcher", err)
+	}
+}

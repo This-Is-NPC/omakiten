@@ -4,6 +4,7 @@ package agentlaunch
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -53,36 +54,55 @@ type Plan struct {
 	LauncherSpec domain.LauncherSpec
 }
 
-// Resolve picks the role's harness and launcher, then the configured
-// defaults. A selection whose executable is not installed is replaced by the
-// user's fallback and reported; a missing fallback is a spawn error.
+// Resolve picks the role's harness and launcher, then the preset's and the
+// preferences' defaults; Omakiten chooses none. A seat left without either
+// is agent_unconfigured. A selection whose executable is not installed is
+// replaced by the user's preferred one and reported; without one it is a
+// spawn error. A missing model leaves the harness on its own default.
 func (l Launcher) Resolve(adapters domain.AgentAdapters, role domain.AgentRole) (Plan, *domain.AgentFallback, *domain.AgentError) {
-	plan := Plan{Harness: first(role.Harness, adapters.Defaults.Harness), Model: first(role.Model, adapters.Defaults.Model), Launcher: first(role.Launcher, adapters.Defaults.Launcher)}
-	var fallback *domain.AgentFallback
+	plan := Plan{Harness: cmp.Or(role.Harness, adapters.Defaults.Harness), Model: cmp.Or(role.Model, adapters.Defaults.Model), Launcher: cmp.Or(role.Launcher, adapters.Defaults.Launcher)}
+	if perr := unconfigured(role, plan); perr != nil {
+		return plan, nil, perr
+	}
+	fallback, perr := l.resolveHarness(adapters, &plan)
+	if perr != nil {
+		return plan, nil, perr
+	}
+	return l.resolveLauncher(adapters, &plan, fallback)
+}
+
+// resolveHarness sets the plan's harness spec, replacing a missing
+// executable with the user's preferred harness and model.
+func (l Launcher) resolveHarness(adapters domain.AgentAdapters, plan *Plan) (*domain.AgentFallback, *domain.AgentError) {
 	harness, ok := adapters.Harnesses[plan.Harness]
 	if !ok {
-		return plan, nil, &domain.AgentError{Code: "harness_missing", Message: fmt.Sprintf("harness %q is not declared", plan.Harness)}
+		return nil, &domain.AgentError{Code: "harness_missing", Message: fmt.Sprintf("harness %q is not declared", plan.Harness)}
 	}
+	var fallback *domain.AgentFallback
 	if !l.installed(harness.Argv) {
 		alt, altOK := adapters.Harnesses[adapters.Fallback.Harness]
 		if !altOK || adapters.Fallback.Harness == plan.Harness || !l.installed(alt.Argv) {
-			return plan, nil, &domain.AgentError{Code: "harness_missing", Message: fmt.Sprintf("harness %q is not installed and no installed preferred harness replaces it", plan.Harness)}
+			return nil, &domain.AgentError{Code: "harness_missing", Message: fmt.Sprintf("harness %q is not installed and no installed preferred harness replaces it", plan.Harness)}
 		}
 		fallback = &domain.AgentFallback{Harness: adapters.Fallback.Harness, Reason: fmt.Sprintf("%s not found on PATH", executable(harness.Argv))}
 		plan.Harness, harness = adapters.Fallback.Harness, alt
-		if adapters.Fallback.Model != "" {
-			plan.Model = adapters.Fallback.Model
-		}
+		plan.Model = cmp.Or(adapters.Fallback.Model, plan.Model)
 	}
 	plan.HarnessSpec = harness
+	return fallback, nil
+}
+
+// resolveLauncher sets the plan's launcher spec, replacing a missing
+// executable with the user's preferred launcher and extending fallback.
+func (l Launcher) resolveLauncher(adapters domain.AgentAdapters, plan *Plan, fallback *domain.AgentFallback) (Plan, *domain.AgentFallback, *domain.AgentError) {
 	launcher, ok := adapters.Launchers[plan.Launcher]
 	if !ok {
-		return plan, fallback, &domain.AgentError{Code: "launcher_missing", Message: fmt.Sprintf("launcher %q is not declared", plan.Launcher)}
+		return *plan, fallback, &domain.AgentError{Code: "launcher_missing", Message: fmt.Sprintf("launcher %q is not declared", plan.Launcher)}
 	}
 	if !l.installed(launcher.Open) {
 		alt, altOK := adapters.Launchers[adapters.Fallback.Launcher]
 		if !altOK || adapters.Fallback.Launcher == plan.Launcher || !l.installed(alt.Open) {
-			return plan, fallback, &domain.AgentError{Code: "launcher_missing", Message: fmt.Sprintf("launcher %q is not installed and no installed preferred launcher replaces it", plan.Launcher)}
+			return *plan, fallback, &domain.AgentError{Code: "launcher_missing", Message: fmt.Sprintf("launcher %q is not installed and no installed preferred launcher replaces it", plan.Launcher)}
 		}
 		reason := fmt.Sprintf("%s not found on PATH", executable(launcher.Open))
 		if fallback == nil {
@@ -94,7 +114,19 @@ func (l Launcher) Resolve(adapters domain.AgentAdapters, role domain.AgentRole) 
 		plan.Launcher, launcher = adapters.Fallback.Launcher, alt
 	}
 	plan.LauncherSpec = launcher
-	return plan, fallback, nil
+	return *plan, fallback, nil
+}
+
+// unconfigured reports the setting a seat lacks and where to set it.
+func unconfigured(role domain.AgentRole, plan Plan) *domain.AgentError {
+	for _, missing := range []struct{ value, setting string }{{plan.Harness, "harness"}, {plan.Launcher, "launcher"}} {
+		if missing.value == "" {
+			return &domain.AgentError{Code: "agent_unconfigured", Message: fmt.Sprintf(
+				"seat %q names no %s: set %s on the role, agents.defaults.%s in the preset's settings, or agents.defaults.%s in your preferences.yaml (`okt config path` shows where); check the resolved seats with `okt move <task> --to <bucket> --dry-run`",
+				role.Key, missing.setting, missing.setting, missing.setting, missing.setting)}
+		}
+	}
+	return nil
 }
 
 func (l Launcher) installed(argv []domain.AgentArg) bool {
@@ -111,15 +143,6 @@ func executable(argv []domain.AgentArg) string {
 		return ""
 	}
 	return argv[0].Values[0]
-}
-
-func first(values ...string) string {
-	for _, v := range values {
-		if v != "" {
-			return v
-		}
-	}
-	return ""
 }
 
 // Request carries what one pane needs: its directory, label, prompt file,

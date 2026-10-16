@@ -19,6 +19,9 @@ const (
 	TeamSkipped    = "skipped"
 	TeamWouldSpawn = "would_spawn"
 	TeamClosed     = "closed"
+	// TeamUnconfigured marks a team, or a seat, that names no harness or
+	// launcher anywhere: role, preset, or preferences.
+	TeamUnconfigured = "unconfigured"
 )
 
 // TeamStatusActive is the stored status of a team whose seats may run;

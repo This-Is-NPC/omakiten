@@ -5,10 +5,12 @@ import (
 	"testing"
 
 	"gopkg.in/yaml.v3"
+
+	"omakiten/internal/domain"
 )
 
-// TestMergeAgentAdaptersPrecedence verifies Omakiten defaults < preferences
-// < preset, with the preferences' defaults kept as the fallback.
+// TestMergeAgentAdaptersPrecedence verifies Omakiten templates < preferences
+// < preset, with only the preferences' defaults kept as the fallback.
 func TestMergeAgentAdaptersPrecedence(t *testing.T) {
 	var prefs AgentPreferences
 	if err := yaml.Unmarshal([]byte(`
@@ -34,8 +36,8 @@ harnesses:
 	if got.Defaults.Harness != "opencode" || got.Defaults.Model != "preset-model" || got.Defaults.Launcher != "herdr" {
 		t.Fatalf("defaults = %+v, want preferences' harness and preset's model and launcher", got.Defaults)
 	}
-	if got.Fallback.Harness != "opencode" || got.Fallback.Launcher != "tmux" {
-		t.Fatalf("fallback = %+v, want the preferences over Omakiten's defaults", got.Fallback)
+	if got.Fallback != (domain.AgentDefaults{Harness: "opencode", Model: "pref-model"}) {
+		t.Fatalf("fallback = %+v, want exactly the preferences' defaults", got.Fallback)
 	}
 	if got.Harnesses["opencode"].Argv[0].Values[0] != "my-opencode" || got.Harnesses["claude-code"].Argv[0].Values[0] != "claude" {
 		t.Fatalf("harnesses = %+v, want the preference replacing opencode and the shipped claude-code kept", got.Harnesses)
@@ -99,5 +101,46 @@ func TestShippedHarnessesEndOptionsBeforeThePrompt(t *testing.T) {
 				t.Errorf("harness %s passes {prompt} after %q, want `--` before a positional prompt", name, previous)
 			}
 		}
+	}
+}
+
+// TestShippedAdaptersChooseNothing verifies Omakiten ships how to call each
+// harness and launcher but never which one a role uses.
+func TestShippedAdaptersChooseNothing(t *testing.T) {
+	shipped, err := defaultAgentSettings()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if shipped.Defaults != (AgentDefaultsConfig{}) {
+		t.Fatalf("shipped defaults = %+v, want none", shipped.Defaults)
+	}
+	got, err := mergeAgentAdapters(nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Defaults != (domain.AgentDefaults{}) || got.Fallback != (domain.AgentDefaults{}) {
+		t.Fatalf("effective defaults without preferences or preset = %+v / %+v, want none", got.Defaults, got.Fallback)
+	}
+	if len(got.Harnesses) == 0 || len(got.Launchers) == 0 {
+		t.Fatal("the shipped adapter templates are missing")
+	}
+}
+
+// TestPresetExecutablesNameEachSeatsHarness verifies the consent listing
+// says which harness and model each seat runs, or that they come from the
+// user's preferences.
+func TestPresetExecutablesNameEachSeatsHarness(t *testing.T) {
+	bundle := Bundle{
+		Config: Settings{Agents: &AgentsSettings{Defaults: AgentDefaultsConfig{Model: "m1"}}},
+		Workflows: []Workflow{{Key: "w", Buckets: []Bucket{{Key: "review", Agents: &BucketAgentsConfig{
+			Trigger: "auto",
+			Lead:    AgentRoleConfig{Command: "okt-task-review", Harness: "opencode"},
+			Members: []AgentRoleConfig{{Key: "security", Command: "okt-task-review"}},
+		}}}}},
+	}
+	got := teamExecutables(bundle)
+	want := "agent team on review (auto): lead okt-task-review [harness opencode, model m1], security okt-task-review [harness from your preferences, model m1]"
+	if len(got) != 1 || got[0] != want {
+		t.Fatalf("teamExecutables() = %q, want %q", got, want)
 	}
 }

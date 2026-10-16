@@ -1,6 +1,7 @@
 package config
 
 import (
+	"cmp"
 	"fmt"
 	"maps"
 	"slices"
@@ -44,9 +45,9 @@ func teamExecutables(bundle Bundle) []string {
 			if b.Agents == nil {
 				continue
 			}
-			seats := []string{"lead " + b.Agents.Lead.Command}
+			seats := []string{seatText(bundle, "lead", b.Agents.Lead)}
 			for _, m := range b.Agents.Members {
-				seats = append(seats, m.Key+" "+m.Command)
+				seats = append(seats, seatText(bundle, m.Key, m))
 			}
 			out = append(out, fmt.Sprintf("agent team on %s (%s): %s", b.Key, b.Agents.Trigger, strings.Join(seats, ", ")))
 		}
@@ -73,4 +74,21 @@ func agentArgvText(args []AgentArgYAML) string {
 		parts = append(parts, a.Values...)
 	}
 	return strings.Join(parts, " ")
+}
+
+// seatText names a seat's command and the harness and model it runs; what
+// neither the role nor the preset sets comes from the user's preferences.
+func seatText(bundle Bundle, key string, role AgentRoleConfig) string {
+	var defaults AgentDefaultsConfig
+	if bundle.Config.Agents != nil {
+		defaults = bundle.Config.Agents.Defaults
+	}
+	harness, model := "harness from your preferences", "model from your preferences or the harness"
+	if h := cmp.Or(role.Harness, defaults.Harness); h != "" {
+		harness = "harness " + h
+	}
+	if m := cmp.Or(role.Model, defaults.Model); m != "" {
+		model = "model " + m
+	}
+	return fmt.Sprintf("%s %s [%s, %s]", key, role.Command, harness, model)
 }
