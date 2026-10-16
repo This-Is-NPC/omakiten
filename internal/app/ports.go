@@ -159,14 +159,17 @@ type GuardEvaluationRepository interface {
 	// finalBucketID; the returned task names the first offender for
 	// the human-readable hint.
 	FirstChildNotInBucket(ctx context.Context, projectID, parentID, finalBucketID int64, buckets domain.BucketResolver) (domain.Task, bool, error)
+	CountPlanCommentsTagged(ctx context.Context, projectID, planID int64, tagName string) (int, error)
+	PlanGateState(ctx context.Context, projectID, planID, finalBucketID int64) (domain.PlanGateState, error)
+	TaskPlanGateState(ctx context.Context, projectID, taskID, finalBucketID int64) (domain.PlanGateState, bool, error)
 }
 
 type CommentRepository interface {
 	// AddComment is the task-scope convenience wrapper kept for existing
 	// callers; it delegates to AddScopedComment with Scope=task.
 	AddComment(ctx context.Context, projectID, taskID int64, body, authorType string, tags []domain.Tag) (domain.Comment, error)
-	// AddScopedComment writes a comment at the requested scope (task, project,
-	// or universal) carrying the optional kind/title/pinned fields.
+	// AddScopedComment writes a comment at the requested scope (task, plan,
+	// project, or universal) carrying the optional kind/title/pinned fields.
 	AddScopedComment(ctx context.Context, w domain.CommentWrite) (domain.Comment, error)
 	ListComments(ctx context.Context, projectID, taskID int64) ([]domain.Comment, error)
 	// QueryComments is the filterable handoff-log surface: list by scope, kind,

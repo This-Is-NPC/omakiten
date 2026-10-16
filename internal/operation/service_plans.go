@@ -200,6 +200,11 @@ func (s *Service) EditPlan(ctx context.Context, input contract.EditPlanInput) (c
 	if err := validateEditPlan(input); err != nil {
 		return contract.EditPlanResponse{}, err
 	}
+	if input.Status != nil && domain.PlanStatus(*input.Status) == domain.PlanStatusDone {
+		if err := s.enforcePlanStage(ctx, project, planID, domain.PlanStageComplete); err != nil {
+			return contract.EditPlanResponse{}, err
+		}
+	}
 	plan, err := s.applyPlanEdits(ctx, svc, project, planID, input)
 	if err != nil {
 		return contract.EditPlanResponse{}, err
@@ -365,6 +370,9 @@ func (s *Service) ClaimNextPlanTask(ctx context.Context, input contract.ClaimNex
 	if planID == 0 {
 		return contract.ClaimNextPlanTaskResponse{}, domain.NewError(domain.ErrValidation, "plan id or slug is required", nil)
 	}
+	if err := s.enforcePlanStage(ctx, project, planID, domain.PlanStageStart); err != nil {
+		return contract.ClaimNextPlanTaskResponse{}, err
+	}
 	task, claimed, err := s.newPlanService().ClaimNext(ctx, project, planID)
 	if err != nil {
 		return contract.ClaimNextPlanTaskResponse{}, err
@@ -375,6 +383,15 @@ func (s *Service) ClaimNextPlanTask(ctx context.Context, input contract.ClaimNex
 		resp.Task = &summary
 	}
 	return resp, nil
+}
+
+// enforcePlanStage runs the start or complete gates of the plan's workflow;
+// a service without a workflow runs none.
+func (s *Service) enforcePlanStage(ctx context.Context, project domain.ProjectContext, planID int64, stage domain.PlanStage) error {
+	if s.workflow == nil {
+		return nil
+	}
+	return s.workflow.Evaluator().EvaluatePlanStage(ctx, project.ID, planID, stage)
 }
 
 // AddPlanWave appends (position=0) or inserts (position>0) a wave onto

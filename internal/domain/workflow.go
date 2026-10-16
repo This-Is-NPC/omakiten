@@ -7,6 +7,7 @@ type Workflow struct {
 	Buckets     []Bucket             `json:"buckets,omitempty"`
 	Transitions []WorkflowTransition `json:"transitions,omitempty"`
 	Operations  WorkflowOperations   `json:"operations,omitempty"`
+	Plans       PlanGates            `json:"plans,omitempty"`
 	// Defaults declares the workflow-level fallback for task/comment edit
 	// and delete. A nil pointer means "no rule declared at the workflow
 	// level" — bucket overrides are still consulted, and when neither
@@ -120,6 +121,36 @@ type WorkflowOperations struct {
 
 type OperationPolicy struct {
 	Guards []TransitionGuard `json:"guards,omitempty"`
+}
+
+// GuardPlanCommentsTagged is the plan guard type: the plan carries at least
+// Count (default 1) comments tagged Tag. It is valid only inside PlanGates.
+const GuardPlanCommentsTagged = "plan_comments_tagged"
+
+// PlanStage names a point in a plan's life that PlanGates can gate.
+type PlanStage string
+
+const (
+	PlanStageStart    PlanStage = "start"
+	PlanStageProgress PlanStage = "progress"
+	PlanStageComplete PlanStage = "complete"
+)
+
+// PlanGates declares the guards an active plan must meet to start (a claim,
+// or a task of the plan leaving the first bucket), to pass each Progress
+// share of done tasks, and to complete (the move of its last open task into
+// the final bucket, or an edit to done).
+type PlanGates struct {
+	Start    OperationPolicy    `json:"start,omitempty"`
+	Progress []PlanProgressGate `json:"progress,omitempty"`
+	Complete OperationPolicy    `json:"complete,omitempty"`
+}
+
+// PlanProgressGate gates the moves that leave more than Percent of a plan's
+// tasks done.
+type PlanProgressGate struct {
+	Percent int               `json:"percent"`
+	Guards  []TransitionGuard `json:"guards,omitempty"`
 }
 
 // ResolveTaskPermission returns the effective task-level (edit, delete)
@@ -427,16 +458,26 @@ func entityField(task, comment *EntityPermission, f permField) *CommentOpPolicy 
 // bucket name. Returns "" when the workflow has no buckets so callers
 // can fall back to a degraded count.
 func (w Workflow) FinalBucketKey() string {
+	_, final, _ := w.EdgeBuckets()
+	return final.Key
+}
+
+// EdgeBuckets returns the lowest-position (first) and highest-position
+// (final) buckets. ok is false when the workflow has no buckets.
+func (w Workflow) EdgeBuckets() (first, final Bucket, ok bool) {
 	if len(w.Buckets) == 0 {
-		return ""
+		return Bucket{}, Bucket{}, false
 	}
-	final := w.Buckets[0]
+	first, final = w.Buckets[0], w.Buckets[0]
 	for _, b := range w.Buckets {
+		if b.Position < first.Position {
+			first = b
+		}
 		if b.Position > final.Position {
 			final = b
 		}
 	}
-	return final.Key
+	return first, final, true
 }
 
 type WorkflowTransition struct {

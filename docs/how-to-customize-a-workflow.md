@@ -112,6 +112,43 @@ the selected repository to keep its argument shape correct, then change the
 condition and its actionable hint. `${{intl:KEY}}` resolves bundled translation
 text; literal hints are also available.
 
+### Evidence on a plan
+
+A workflow's `plans` block gates the life of every active plan in the project
+on comments posted to the plan itself:
+
+```yaml
+plans:
+  start:
+    guards:
+      - {type: plan_comments_tagged, tag: kickoff, hint: "Post the plan's kickoff first"}
+  progress:
+    - percent: 50
+      guards:
+        - {type: plan_comments_tagged, tag: midpoint-review}
+  complete:
+    guards:
+      - {type: plan_comments_tagged, tag: retro}
+```
+
+| Gate | What it holds back |
+| --- | --- |
+| `start` | `okt plan claim`, and any task of the plan leaving the first bucket. `okt plan assign` stays free, so a plan can be built before it starts. |
+| `progress` | A task entering the final bucket when that leaves more than `percent` of the plan's tasks done. Done is counted over the plan's active tasks at that moment. |
+| `complete` | The move of the plan's last open task into the final bucket, which completes the plan, and `okt plan edit --status done`. |
+
+`plan_comments_tagged` is the only plan guard and is valid only here; `count`
+defaults to 1. Satisfy it with a plan comment:
+
+```bash
+okt comment add --scope plan --plan release-2 -T kickoff -b "Scope agreed"
+```
+
+Plans that are done or abandoned meet no gate, and tasks outside a plan never
+do. A blocked move or claim fails like any guard, naming the stage, the plan,
+and the command that adds the missing comment; `okt move --dry-run` lists the
+plan gates beside the transition guards.
+
 Subtask kits declare the workflow at the next task level. Parent links remain
 project-local. Changing kit or bucket identity can require rebinding existing
 work; inspect `okt workflow orphans --help` before applying a migration.

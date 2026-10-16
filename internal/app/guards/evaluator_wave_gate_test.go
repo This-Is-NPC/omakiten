@@ -14,7 +14,24 @@ import (
 // implemented; every other method satisfies the Repository contract
 // with zero-value answers.
 type stubRepo struct {
+	noPlanGates
 	priorWaves int
+}
+
+// noPlanGates is the plan half of a guard repository whose tasks are in no
+// plan.
+type noPlanGates struct{}
+
+func (noPlanGates) CountPlanCommentsTagged(context.Context, int64, int64, string) (int, error) {
+	return 0, nil
+}
+
+func (noPlanGates) PlanGateState(context.Context, int64, int64, int64) (domain.PlanGateState, error) {
+	return domain.PlanGateState{}, nil
+}
+
+func (noPlanGates) TaskPlanGateState(context.Context, int64, int64, int64) (domain.PlanGateState, bool, error) {
+	return domain.PlanGateState{}, false, nil
 }
 
 func (r *stubRepo) ListTaskBlockerBuckets(context.Context, int64, int64, domain.BucketResolver) ([]domain.TaskBlocker, error) {

@@ -65,6 +65,13 @@ type Repository interface {
 	// own promotions, so the parent's guard fires exactly when the
 	// immediate sub-tasks are still open.
 	FirstChildNotInBucket(ctx context.Context, projectID, parentID, finalBucketID int64, buckets domain.BucketResolver) (domain.Task, bool, error)
+	// CountPlanCommentsTagged gates the plan_comments_tagged plan guard.
+	CountPlanCommentsTagged(ctx context.Context, projectID, planID int64, tagName string) (int, error)
+	// PlanGateState and TaskPlanGateState read a plan's status and its done
+	// and total active tasks, done meaning in finalBucketID; ok is false
+	// when the task is in no plan.
+	PlanGateState(ctx context.Context, projectID, planID, finalBucketID int64) (domain.PlanGateState, error)
+	TaskPlanGateState(ctx context.Context, projectID, taskID, finalBucketID int64) (domain.PlanGateState, bool, error)
 }
 
 // EventSink records guard.violated domain events. Telemetry only — emission
@@ -124,9 +131,26 @@ func (e *Evaluator) EvaluateTransitionForTask(ctx context.Context, projectID int
 	if snap == nil {
 		return nil
 	}
-	specs := snap.Guards(fromBucketID, toBucketID)
+	statuses, err := e.transitionStatuses(ctx, projectID, task, fromBucketID, toBucketID, snap)
+	if err != nil {
+		return err
+	}
 	target := map[string]any{"task_id": task.ID, "from_bucket_id": fromBucketID, "to_bucket_id": toBucketID, "to_bucket": targetBucketKey}
-	return e.runGuardsWithSnapshot(ctx, projectID, task, specs, OperationTaskTransition, target, snap)
+	return e.reportUnmet(ctx, projectID, task, snap, OperationTaskTransition, target, statuses)
+}
+
+// transitionStatuses evaluates the guards of the (from, to) transition and
+// then the gates of the task's plan that the move meets.
+func (e *Evaluator) transitionStatuses(ctx context.Context, projectID int64, task domain.Task, fromBucketID, toBucketID int64, snap *config.Snapshot) ([]domain.GuardStatus, error) {
+	statuses, err := e.evaluate(ctx, projectID, task, snap.Guards(fromBucketID, toBucketID), snap)
+	if err != nil {
+		return nil, err
+	}
+	gates, err := e.transitionPlanGates(ctx, projectID, task, fromBucketID, toBucketID, snap)
+	if err != nil {
+		return nil, err
+	}
+	return append(statuses, gates...), nil
 }
 
 // EvaluateOperation runs every guard declared on the named operation against
@@ -340,6 +364,13 @@ func (e *Evaluator) runGuardsWithSnapshot(ctx context.Context, projectID int64, 
 	if err != nil {
 		return err
 	}
+	return e.reportUnmet(ctx, projectID, task, snap, operation, target, statuses)
+}
+
+// reportUnmet records a guard.violated event for each unmet status and
+// returns the guard_violation listing them all, or nil when every status is
+// met.
+func (e *Evaluator) reportUnmet(ctx context.Context, projectID int64, task domain.Task, snap *config.Snapshot, operation string, target map[string]any, statuses []domain.GuardStatus) error {
 	var unmet []domain.GuardStatus
 	var messages []string
 	for _, status := range statuses {
@@ -353,12 +384,21 @@ func (e *Evaluator) runGuardsWithSnapshot(ctx context.Context, projectID int64, 
 	if len(unmet) == 0 {
 		return nil
 	}
-	details := make(map[string]any, len(unmet[0].Details)+5)
+	return violation(unmet, messages, map[string]any{"task_id": task.ID})
+}
+
+// violation builds the guard_violation error for unmet statuses: the first
+// one's details, type, hint and fix, ids naming the subject, and the full
+// unmet list.
+func violation(unmet []domain.GuardStatus, messages []string, ids map[string]any) error {
+	details := make(map[string]any, len(unmet[0].Details)+len(ids)+4)
 	for k, v := range unmet[0].Details {
 		details[k] = v
 	}
 	details["guard_type"] = unmet[0].Type
-	details["task_id"] = task.ID
+	for k, v := range ids {
+		details[k] = v
+	}
 	if unmet[0].Hint != "" {
 		details["hint"] = unmet[0].Hint
 	}
@@ -377,7 +417,7 @@ func (e *Evaluator) PreviewTransitionForTask(ctx context.Context, projectID int6
 	if snap == nil {
 		return nil, nil
 	}
-	return e.evaluate(ctx, projectID, task, snap.Guards(fromBucketID, toBucketID), snap)
+	return e.transitionStatuses(ctx, projectID, task, fromBucketID, toBucketID, snap)
 }
 
 // evaluate returns the state of each guard of a known type, in declaration
@@ -392,21 +432,27 @@ func (e *Evaluator) evaluate(ctx context.Context, projectID int64, task domain.T
 		if !known {
 			continue
 		}
-		status.Type = guard.Type
-		if !status.Satisfied {
-			status.Hint = e.resolveHintFrom(snap, guard.Hint)
-			if status.Hint != "" {
-				status.Message += ". Hint: " + status.Hint
-			}
-			if status.Fix != "" {
-				status.Message += ". Fix: " + status.Fix
-			}
-		} else {
-			status.Fix = ""
-		}
-		out = append(out, status)
+		out = append(out, e.finish(snap, guard, status))
 	}
 	return out, nil
+}
+
+// finish stamps the guard type on status and, when it is unmet, folds the
+// resolved hint and the fix into its message; a met status keeps no fix.
+func (e *Evaluator) finish(snap *config.Snapshot, guard domain.TransitionGuard, status domain.GuardStatus) domain.GuardStatus {
+	status.Type = guard.Type
+	if status.Satisfied {
+		status.Fix = ""
+		return status
+	}
+	status.Hint = e.resolveHintFrom(snap, guard.Hint)
+	if status.Hint != "" {
+		status.Message += ". Hint: " + status.Hint
+	}
+	if status.Fix != "" {
+		status.Message += ". Fix: " + status.Fix
+	}
+	return status
 }
 
 // check evaluates one guard. known is false for guard types the evaluator

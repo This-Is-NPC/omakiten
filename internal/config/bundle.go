@@ -758,6 +758,7 @@ type Workflow struct {
 	Buckets     []Bucket           `yaml:"buckets" json:"buckets"`
 	Transitions []Transition       `yaml:"transitions" json:"transitions,omitempty"`
 	Operations  WorkflowOperations `yaml:"operations,omitempty" json:"operations,omitempty"`
+	Plans       PlanGates          `yaml:"plans,omitempty" json:"plans,omitempty"`
 	// Defaults declares the workflow-level fallback for task/comment edit
 	// and delete. nil means "no rule declared at this layer" — the
 	// resolver falls through to bucket overrides and finally to the
@@ -913,6 +914,19 @@ type WorkflowOperations struct {
 
 type OperationPolicy struct {
 	Guards []TransitionGuard `yaml:"guards,omitempty" json:"guards,omitempty"`
+}
+
+// PlanGates is the YAML mirror of domain.PlanGates: the guards a plan meets
+// to start, to pass each progress share, and to complete.
+type PlanGates struct {
+	Start    OperationPolicy    `yaml:"start,omitempty" json:"start,omitempty"`
+	Progress []PlanProgressGate `yaml:"progress,omitempty" json:"progress,omitempty"`
+	Complete OperationPolicy    `yaml:"complete,omitempty" json:"complete,omitempty"`
+}
+
+type PlanProgressGate struct {
+	Percent int               `yaml:"percent" json:"percent"`
+	Guards  []TransitionGuard `yaml:"guards,omitempty" json:"guards,omitempty"`
 }
 
 type TransitionGuard struct {

@@ -21,6 +21,7 @@ import (
 // RecordEntityEvent are overridden below so tests can assert on eventCalls.
 type fakeStores struct {
 	eventrepo.NoOp
+	noPlanGates
 	defaultBucket    string
 	bucketsByKey     map[string]domain.Bucket
 	allowedFromTo    map[[2]int64]bool

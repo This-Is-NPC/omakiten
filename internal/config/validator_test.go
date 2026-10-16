@@ -102,6 +102,25 @@ func TestValidateBundleErrors(t *testing.T) {
 		{"guard unknown type", func(b *Bundle) {
 			b.Workflows[0].Transitions = []Transition{{From: 1, To: 1, Guards: []TransitionGuard{{Type: "unknown_type"}}}}
 		}, "unknown guard type"},
+		{"plan guard on a transition", func(b *Bundle) {
+			b.Workflows[0].Transitions = []Transition{{From: 1, To: 1, Guards: []TransitionGuard{{Type: "plan_comments_tagged", Tag: "kickoff"}}}}
+		}, "unknown guard type"},
+		{"task guard in plans", func(b *Bundle) {
+			b.Workflows[0].Plans.Start.Guards = []TransitionGuard{{Type: "comments_tagged", Tag: "kickoff", Count: 1}}
+		}, "is not a plan guard"},
+		{"plan guard without tag", func(b *Bundle) {
+			b.Workflows[0].Plans.Complete.Guards = []TransitionGuard{{Type: "plan_comments_tagged"}}
+		}, "tag is required"},
+		{"plan progress at 100", func(b *Bundle) {
+			b.Workflows[0].Plans.Progress = []PlanProgressGate{{Percent: 100, Guards: []TransitionGuard{{Type: "plan_comments_tagged", Tag: "x"}}}}
+		}, "percent must be between 1 and 99"},
+		{"plan progress duplicated", func(b *Bundle) {
+			guards := []TransitionGuard{{Type: "plan_comments_tagged", Tag: "x"}}
+			b.Workflows[0].Plans.Progress = []PlanProgressGate{{Percent: 50, Guards: guards}, {Percent: 50, Guards: guards}}
+		}, "duplicated percent 50"},
+		{"plan progress without guards", func(b *Bundle) {
+			b.Workflows[0].Plans.Progress = []PlanProgressGate{{Percent: 50}}
+		}, "guards is required"},
 		{"guard blockers_in empty buckets", func(b *Bundle) {
 			b.Workflows[0].Transitions = []Transition{{From: 1, To: 1, Guards: []TransitionGuard{{Type: "blockers_in"}}}}
 		}, "buckets is required"},

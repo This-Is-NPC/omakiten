@@ -31,6 +31,16 @@ type Plan struct {
 	CompletedAt string     `json:"completed_at,omitempty"`
 }
 
+// PlanGateState is what the plan gates read about one plan: its status and
+// how many of its active tasks are done out of all of them.
+type PlanGateState struct {
+	PlanID int64
+	Slug   string
+	Status PlanStatus
+	Done   int
+	Total  int
+}
+
 // PlanWave is an ordered phase inside a plan. Tasks attached to the same
 // wave run in parallel; tasks in wave N+1 are gated on every task in wave
 // N reaching the workflow's final bucket — enforced by the wave_gate guard

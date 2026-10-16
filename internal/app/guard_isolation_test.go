@@ -158,6 +158,7 @@ func buildIsolationSnapshot(t *testing.T, guards []domain.TransitionGuard) *conf
 // events log, so every method can return zero values.
 type isolationRepo struct {
 	eventrepo.NoOp
+	noPlanGates
 	moveCalls   atomic.Int64
 	commentsFn  func() int
 	taggedFn    func(string) int
@@ -270,7 +271,23 @@ func (r *isolationRepo) CountDescendants(context.Context, int64, int64) (int, er
 // EvaluateTransition's checkXXX paths, which read project-level counts;
 // returning zero/empty everywhere satisfies the contract and lets the
 // guard logic decide based on the configured count threshold alone.
-type nilGuardRepo struct{}
+type nilGuardRepo struct{ noPlanGates }
+
+// noPlanGates is the plan half of a guard repository whose tasks are in no
+// plan.
+type noPlanGates struct{}
+
+func (noPlanGates) CountPlanCommentsTagged(context.Context, int64, int64, string) (int, error) {
+	return 0, nil
+}
+
+func (noPlanGates) PlanGateState(context.Context, int64, int64, int64) (domain.PlanGateState, error) {
+	return domain.PlanGateState{}, nil
+}
+
+func (noPlanGates) TaskPlanGateState(context.Context, int64, int64, int64) (domain.PlanGateState, bool, error) {
+	return domain.PlanGateState{}, false, nil
+}
 
 func (nilGuardRepo) ListTaskBlockerBuckets(context.Context, int64, int64, domain.BucketResolver) ([]domain.TaskBlocker, error) {
 	return nil, nil
