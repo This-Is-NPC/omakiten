@@ -122,7 +122,7 @@ func unconfigured(role domain.AgentRole, plan Plan) *domain.AgentError {
 	for _, missing := range []struct{ value, setting string }{{plan.Harness, "harness"}, {plan.Launcher, "launcher"}} {
 		if missing.value == "" {
 			return &domain.AgentError{Code: "agent_unconfigured", Message: fmt.Sprintf(
-				"seat %q names no %s: set %s on the role, agents.defaults.%s in the preset's settings, or agents.defaults.%s in your preferences.yaml (`okt config path` shows where); check the resolved seats with `okt move <task> --to <bucket> --dry-run`",
+				"seat %q names no %s: set %s on the role, agents.defaults.%s in the preset's settings, or agents.defaults.%s in your preferences.yaml (`okt config path --scope global` prints the directory holding it); check the resolved seats with `okt move <task> --to <bucket> --dry-run`",
 				role.Key, missing.setting, missing.setting, missing.setting, missing.setting)}
 		}
 	}

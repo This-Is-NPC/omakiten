@@ -14,6 +14,7 @@ import (
 
 	"omakiten/internal/agentlaunch"
 	"omakiten/internal/app"
+	"omakiten/internal/config"
 	"omakiten/internal/contract"
 	"omakiten/internal/domain"
 	"omakiten/internal/paths"
@@ -134,7 +135,7 @@ func (s *Service) SpawnAgents(ctx context.Context, input contract.SpawnAgentsInp
 	}
 	outcome := s.spawnTeam(ctx, detail.project, detail.task, team)
 	if outcome.Status == domain.TeamUnconfigured {
-		return contract.SpawnAgentsResponse{}, domain.NewError(domain.ErrAgentUnconfigured, outcome.Error.Message, map[string]any{"team": outcome})
+		return contract.SpawnAgentsResponse{}, domain.NewError(domain.ErrAgentUnconfigured, outcome.Error.Message, map[string]any{"team": outcome, "preferences_path": outcome.Error.PreferencesPath})
 	}
 	if outcome.Status == domain.TeamFailed {
 		return contract.SpawnAgentsResponse{}, domain.NewError(domain.ErrAgentSpawnFailed, "agents could not be opened", map[string]any{"team": outcome})
@@ -283,6 +284,7 @@ func (s *Service) planSeat(adapters domain.AgentAdapters, role domain.AgentRole,
 	switch {
 	case perr != nil && perr.Code == agentUnconfigured:
 		seat.Status = domain.TeamUnconfigured
+		perr.PreferencesPath, _ = config.PreferencesPath()
 	case perr != nil:
 		seat.Status = domain.SessionFailed
 	}

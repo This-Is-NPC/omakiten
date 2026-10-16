@@ -140,7 +140,8 @@ command in that pane.
 
 A seat left without a harness or a launcher opens nothing: its status, and
 the team's when it is the lead, is `unconfigured`, and `error`
-(`agent_unconfigured`) names the missing setting and where to put it. The move
+(`agent_unconfigured`) names the missing setting and where to put it, with
+the absolute path of your `preferences.yaml` in `preferences_path`. The move
 still succeeds. A `manual` team is still `suggested`, with each incomplete
 seat marked. A missing model is fine: the `[--model, "{model}"]` group drops
 and the harness uses its own default.

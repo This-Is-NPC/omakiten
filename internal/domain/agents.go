@@ -157,10 +157,12 @@ type MemberOutcome struct {
 	Error     *AgentError    `json:"error,omitempty"`
 }
 
-// AgentError is a structured spawn failure.
+// AgentError is a structured spawn failure. PreferencesPath is the user's
+// preferences file, set when a seat is agent_unconfigured.
 type AgentError struct {
-	Code    string `json:"code"`
-	Message string `json:"message"`
+	Code            string `json:"code"`
+	Message         string `json:"message"`
+	PreferencesPath string `json:"preferences_path,omitempty"`
 }
 
 // TeamOutcome reports what a move or spawn did about a bucket's team.

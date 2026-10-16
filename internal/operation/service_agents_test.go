@@ -477,6 +477,25 @@ func TestUnconfiguredTeamLeavesTheMoveWhole(t *testing.T) {
 	if team.Error == nil || team.Error.Code != "agent_unconfigured" || !strings.Contains(team.Error.Message, "preferences.yaml") {
 		t.Fatalf("team error = %+v, want agent_unconfigured pointing at preferences.yaml", team.Error)
 	}
+	assertPointsAtPreferences(t, f, team)
+}
+
+// assertPointsAtPreferences checks an unconfigured team's errors, and an
+// explicit spawn's failure, name the global config path command and the
+// absolute preferences file.
+func assertPointsAtPreferences(t *testing.T, f agentFixtureSet, team *domain.TeamOutcome) {
+	t.Helper()
+	prefs := filepath.Join(os.Getenv("OMAKITEN_HOME"), "preferences.yaml")
+	for name, perr := range map[string]*domain.AgentError{"team": team.Error, "lead": team.Lead.Error} {
+		if !strings.Contains(perr.Message, "okt config path --scope global") || perr.PreferencesPath != prefs {
+			t.Fatalf("%s error = %+v, want `okt config path --scope global` and preferences_path %s", name, perr, prefs)
+		}
+	}
+	_, err := f.service.SpawnAgents(f.ctx, contract.SpawnAgentsInput{TaskID: f.task.ID})
+	var coded *domain.CodedError
+	if !errors.As(err, &coded) || coded.Details["preferences_path"] != prefs {
+		t.Fatalf("explicit spawn error = %v, want details.preferences_path %s", err, prefs)
+	}
 }
 
 // TestManualTeamSuggestsWhatIsMissing verifies a manual team whose lead names
