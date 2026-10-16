@@ -116,7 +116,7 @@ preset's `config/settings.yaml`.
 agents:
   defaults: {harness: claude-code, model: claude-haiku-5-5, launcher: tmux}
   harnesses:
-    claude-code: {argv: [claude, [--model, "{model}"], "{prompt}"]}
+    claude-code: {argv: [claude, [--model, "{model}"], --, "{prompt}"]}
   launchers:
     tmux:
       target: work
@@ -125,7 +125,8 @@ agents:
 ```
 
 A list inside `argv` is a group, dropped when one of its placeholders is
-empty. `{prompt}` becomes the prompt file's content; `{command}` is the
+empty. Put `--` before a positional `{prompt}`, as the shipped `claude-code`
+does, so a flag that takes several values cannot swallow the prompt. `{prompt}` becomes the prompt file's content; `{command}` is the
 harness command line the launcher runs. A launcher whose `open` prints JSON
 names the pane id with `pane: result.root_pane.pane_id`, and `run` starts the
 command in that pane.

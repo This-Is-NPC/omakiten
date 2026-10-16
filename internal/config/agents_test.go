@@ -81,3 +81,23 @@ func TestValidateBucketTeam(t *testing.T) {
 		}
 	}
 }
+
+// TestShippedHarnessesEndOptionsBeforeThePrompt verifies every shipped
+// harness whose prompt is positional ends option parsing with `--` first,
+// so a variadic flag cannot swallow the prompt.
+func TestShippedHarnessesEndOptionsBeforeThePrompt(t *testing.T) {
+	shipped, err := defaultAgentSettings()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, h := range shipped.Harnesses {
+		for i, arg := range h.Argv {
+			if len(arg.Values) != 1 || arg.Values[0] != "{prompt}" || arg.Group {
+				continue
+			}
+			if previous := h.Argv[i-1].Values; previous[len(previous)-1] != "--" && !strings.HasPrefix(previous[len(previous)-1], "--prompt") {
+				t.Errorf("harness %s passes {prompt} after %q, want `--` before a positional prompt", name, previous)
+			}
+		}
+	}
+}

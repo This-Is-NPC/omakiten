@@ -5,7 +5,7 @@ defaults:
   launcher: tmux
 harnesses:
   claude-code:
-    argv: [claude, [--model, "{model}"], "{prompt}"]
+    argv: [claude, [--model, "{model}"], --, "{prompt}"]
   opencode:
     argv: [opencode, [-m, "{model}"], --prompt, "{prompt}", "{cwd}"]
 launchers:
