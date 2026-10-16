@@ -608,6 +608,22 @@ func (c *BundleCache) releasePreviousSnapshot(projectID int64) {
 	entry.PreviousSnapshot = nil
 }
 
+// hookActions registers the actions a project's hooks can run: the
+// builtins, the notification card against the active CLI language catalog,
+// and spawn, whose service the caller sets once it is built.
+func hookActions(store *sqlite.Store, snapshot *config.Snapshot) (*hooks.ActionRegistry, *actions.NotificationShowAction, *spawnAction) {
+	notifSnapshot := notificationBundleSnapshot(snapshot)
+	notifSnapshot.Catalog = snapshot.Catalog(config.SurfaceCLI)
+	registry := hooks.NewActionRegistry()
+	actions.RegisterBuiltins(registry)
+	notificationAction := actions.NewNotificationShowAction(notifSnapshot)
+	notificationAction.SetRecorder(store)
+	registry.Register(notificationAction)
+	spawn := &spawnAction{}
+	registry.Register(spawn)
+	return registry, notificationAction, spawn
+}
+
 func buildProjectRuntime(ctx context.Context, store *sqlite.Store, cs *configstore.Adapter, bus events.Bus, configPath string, projectID int64, selector contract.ProjectSelector) (*ProjectRuntime, error) {
 	bundle, bundleHash, enumRegistry, err := app.NewConfigService(cs).Import(activity.WithoutTracking(ctx), configPath)
 	if err != nil {
@@ -637,14 +653,7 @@ func buildProjectRuntime(ctx context.Context, store *sqlite.Store, cs *configsto
 	// snapshots; nothing in the hot path reaches back into the bundle.
 	snapshot := config.BuildSnapshot(bundle)
 
-	notifSnapshot := notificationBundleSnapshot(snapshot)
-	// Resolve hook copy against the active CLI language catalog.
-	notifSnapshot.Catalog = snapshot.Catalog(config.SurfaceCLI)
-	registry := hooks.NewActionRegistry()
-	actions.RegisterBuiltins(registry)
-	notificationAction := actions.NewNotificationShowAction(notifSnapshot)
-	notificationAction.SetRecorder(store)
-	registry.Register(notificationAction)
+	registry, notificationAction, spawn := hookActions(store, snapshot)
 
 	knownEvents := config.KnownEventsFromDefinitions(bundle.Config.Events.Definitions)
 	if err := config.ValidateHooks(bundle.Config.Hooks, knownEvents, func(name string) bool {
@@ -686,6 +695,7 @@ func buildProjectRuntime(ctx context.Context, store *sqlite.Store, cs *configsto
 	// previous pointer continue reading from it until they return.
 
 	svc := operation.NewService(store, selector)
+	spawn.svc = svc
 	// SetSnapshot is the single wiring entry point: the agent service
 	// derives the catalog closures, synonym table, stopword set, and
 	// bundle-scoped EnumRegistry from the per-project Snapshot in one

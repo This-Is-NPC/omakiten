@@ -121,7 +121,8 @@ Use an isolated `OMAKITEN_HOME` or the repository's `dev_env` for experiments.
 A move into a bucket that declares an agent team returns it in `data.team`.
 `started` means headless agents are already working in the background: keep
 talking with the user and follow them with the `follow` commands; each one
-runs once and exits. `unconfigured` means no harness was chosen; tell the
+runs once and exits; a `waiting` seat starts later, from a workflow hook.
+`unconfigured` means no harness was chosen; tell the
 user what `error` says to set. `suggested` lists the `spawn` command to run
 if the user wants the team. Started as a seat yourself, follow the team
 section of your prompt: do the work, publish once with `-T review-<key>`,

@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -34,6 +35,7 @@ type agentFixtureSet struct {
 // the real process group too.
 type fakeAgents struct {
 	agentlaunch.Launcher
+	mu       sync.Mutex
 	starts   [][]string
 	fail     bool
 	alive    map[string]bool
@@ -68,8 +70,8 @@ func newAgentSpawnFixture(t *testing.T) agentFixtureSet {
 }
 
 // newAgentTeamFixture is newAgentSpawnFixture with the team declared on
-// bucket with trigger.
-func newAgentTeamFixture(t *testing.T, teamBucket, trigger string) agentFixtureSet {
+// bucket with trigger, starting the seats start names when it opens.
+func newAgentTeamFixture(t *testing.T, teamBucket, trigger string, start ...string) agentFixtureSet {
 	t.Helper()
 	t.Setenv("OMAKITEN_HOME", t.TempDir())
 	ctx := context.Background()
@@ -84,6 +86,7 @@ func newAgentTeamFixture(t *testing.T, teamBucket, trigger string) agentFixtureS
 				Trigger: trigger,
 				Lead:    config.AgentRoleConfig{Command: "okt-start"},
 				Members: []config.AgentRoleConfig{{Key: "security", Command: "okt-start", Brief: "security only"}},
+				Start:   start,
 			}
 		}
 	}
@@ -109,6 +112,8 @@ func newAgentTeamFixture(t *testing.T, teamBucket, trigger string) agentFixtureS
 	agents.Launcher = agentlaunch.Launcher{
 		LookPath: func(name string) (string, error) { return "/bin/" + name, nil },
 		Detach: func(argv, _ []string, _, _ string) error {
+			agents.mu.Lock()
+			defer agents.mu.Unlock()
 			if agents.fail {
 				return errors.New("cannot start")
 			}
@@ -160,9 +165,14 @@ func TestSpawnAgentsStartsTheBucketTeamOnce(t *testing.T) {
 		t.Fatalf("lead transcript = %q, want the session's JSONL file", team.Lead.Transcript)
 	}
 	assertPromptContains(t, team.Members[0].SessionID, "security only", "-T review-security", "okt team show "+team.TeamID, "You run once")
-	supervisor := strings.Join(f.agents.starts[0], " ")
-	if !strings.Contains(supervisor, " --project agents agent run --session "+team.Lead.SessionID+" -- fake-agent -- ") {
-		t.Fatalf("supervisor argv = %q, want agent run for the lead's session", supervisor)
+	var supervisors []string
+	for _, argv := range f.agents.starts {
+		supervisors = append(supervisors, strings.Join(argv, " "))
+	}
+	if !slices.ContainsFunc(supervisors, func(argv string) bool {
+		return strings.Contains(argv, " --project agents agent run --session "+team.Lead.SessionID+" -- fake-agent -- ")
+	}) {
+		t.Fatalf("supervisor argv = %q, want agent run for the lead's session", supervisors)
 	}
 
 	again, err := f.service.SpawnAgents(f.ctx, contract.SpawnAgentsInput{TaskID: f.task.ID})
@@ -223,8 +233,8 @@ func TestSpawnAgentsFailedLeadFreesTheTask(t *testing.T) {
 	if !errors.As(err, &coded) || coded.Code != domain.ErrAgentSpawnFailed {
 		t.Fatalf("SpawnAgents() error = %v, want agent_spawn_failed", err)
 	}
-	if finished := countEvents(t, f, domain.EventTypeAgentSessionFinished); finished != 1 {
-		t.Fatalf("recorded %d agent.session_finished events, want the failed lead's", finished)
+	if finished := countEvents(t, f, domain.EventTypeAgentSessionFinished); finished != 1 || countEvents(t, f, domain.EventTypeTeamFinished) != 0 {
+		t.Fatalf("recorded %d agent.session_finished events and a team.finished, want only the failed lead's finish", finished)
 	}
 	f.agents.fail = false
 	resp, err := f.service.SpawnAgents(f.ctx, contract.SpawnAgentsInput{TaskID: f.task.ID, Command: "okt-start"})
@@ -291,6 +301,67 @@ func TestASeatStoppedBeforeItsHarnessStartsStopsAtOnce(t *testing.T) {
 	}
 }
 
+// TestTeamFinishedFollowsTheLastRun verifies team.finished is recorded
+// once the last running seat of an active team ends, with the team's
+// counts, and not before.
+func TestTeamFinishedFollowsTheLastRun(t *testing.T) {
+	f := newAgentSpawnFixture(t)
+	spawned, err := f.service.SpawnAgents(f.ctx, contract.SpawnAgentsInput{TaskID: f.task.ID})
+	if err != nil {
+		t.Fatalf("SpawnAgents() error = %v", err)
+	}
+	f.run(t, spawned.Team.Lead.SessionID, 0, "true")
+	if n := countEvents(t, f, domain.EventTypeTeamFinished); n != 0 {
+		t.Fatalf("team.finished recorded %d times while the member runs", n)
+	}
+	f.run(t, spawned.Team.Members[0].SessionID, 0, "false")
+	events, err := f.store.ListEvents(f.ctx, domain.EventFilter{ProjectID: f.project.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var payloads []string
+	for _, event := range events {
+		if event.EventType == domain.EventTypeTeamFinished {
+			payloads = append(payloads, event.Payload)
+		}
+	}
+	want := fmt.Sprintf(`"bucket":"backlog","done":1,"failed":1,"task_id":%d,"team_id":"%s"`, f.task.ID, spawned.Team.TeamID)
+	if len(payloads) != 1 || !strings.Contains(payloads[0], want) {
+		t.Fatalf("team.finished payloads = %q, want one with %s", payloads, want)
+	}
+}
+
+// TestTeamStartsOnlyItsStartSeats verifies a team whose start lists its
+// members opens with the lead waiting, and SpawnSeat starts the lead once,
+// by team or by task, leaving a seat that already ran as it is.
+func TestTeamStartsOnlyItsStartSeats(t *testing.T) {
+	f := newAgentTeamFixture(t, "backlog", domain.AgentTriggerManual, "security")
+	spawned, err := f.service.SpawnAgents(f.ctx, contract.SpawnAgentsInput{TaskID: f.task.ID})
+	if err != nil {
+		t.Fatalf("SpawnAgents() error = %v", err)
+	}
+	if team := spawned.Team; team.Lead.Status != domain.TeamWaiting || team.Lead.SessionID != "" || team.Members[0].Status != domain.TeamStarted || len(f.agents.starts) != 1 {
+		t.Fatalf("team = %+v (starts %d), want the lead waiting and the member started", team, len(f.agents.starts))
+	}
+	lead, err := f.service.SpawnSeat(f.ctx, contract.SpawnSeatInput{TeamID: spawned.Team.TeamID, Member: domain.AgentLeadKey})
+	if err != nil || lead.Team.Status != domain.TeamStarted || lead.Team.Lead.SessionID == "" || len(f.agents.starts) != 2 {
+		t.Fatalf("SpawnSeat(lead) = %+v, %v; want the lead started", lead.Team, err)
+	}
+	again, err := f.service.SpawnSeat(f.ctx, contract.SpawnSeatInput{TaskID: f.task.ID, Member: domain.AgentLeadKey})
+	if err != nil || again.Team.Status != domain.TeamRunning || again.Team.Lead.SessionID != lead.Team.Lead.SessionID || len(f.agents.starts) != 2 {
+		t.Fatalf("second SpawnSeat(lead) = %+v, %v (starts %d); want the seat left as it is", again.Team, err, len(f.agents.starts))
+	}
+	if _, err := f.service.SpawnSeat(f.ctx, contract.SpawnSeatInput{TeamID: spawned.Team.TeamID, Member: "perf"}); err == nil {
+		t.Fatal("SpawnSeat started a key outside the roster")
+	}
+	if _, err := f.service.CloseTeam(f.ctx, contract.CloseTeamInput{TeamID: spawned.Team.TeamID}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.service.SpawnSeat(f.ctx, contract.SpawnSeatInput{TaskID: f.task.ID, Member: domain.AgentLeadKey}); err == nil {
+		t.Fatal("SpawnSeat started a seat for a task without an active team")
+	}
+}
+
 // TestOrphanedSessionsFinishFailed verifies a running session whose
 // supervisor no longer holds its lock finishes failed on the next read,
 // while a live one keeps running.
@@ -313,7 +384,7 @@ func TestOrphanedSessionsFinishFailed(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ShowTeam() error = %v", err)
 	}
-	lead, member := shown.Team.Sessions[0], shown.Team.Sessions[1]
+	lead, member := teamSeat(shown.Team, domain.AgentLeadKey), teamSeat(shown.Team, "security")
 	if lead.Status != domain.SessionRunning || member.Status != domain.SessionFailed || !strings.HasPrefix(member.Error, "orphaned") {
 		t.Fatalf("sessions = %+v / %+v, want the live lead running and the orphan failed", lead, member)
 	}

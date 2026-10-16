@@ -63,7 +63,7 @@ func TestValidateBucketTeam(t *testing.T) {
 		t.Fatal(err)
 	}
 	bundle := Bundle{Commands: map[string]CommandSpec{"okt-task-review": {}}, AgentAdapters: adapters}
-	ok := BucketAgentsConfig{Trigger: "auto", Lead: AgentRoleConfig{Command: "okt-task-review"}, Members: []AgentRoleConfig{{Key: "security", Command: "okt-task-review", Harness: "opencode"}}}
+	ok := BucketAgentsConfig{Trigger: "auto", Lead: AgentRoleConfig{Command: "okt-task-review"}, Members: []AgentRoleConfig{{Key: "security", Command: "okt-task-review", Harness: "opencode"}}, Start: []string{"security"}}
 	if err := validateBucketTeam(bundle, "agents", ok); err != nil {
 		t.Fatalf("valid team rejected: %v", err)
 	}
@@ -74,6 +74,8 @@ func TestValidateBucketTeam(t *testing.T) {
 		"reserved key":    func(c *BucketAgentsConfig) { c.Members[0].Key = "lead" },
 		"key not kebab":   func(c *BucketAgentsConfig) { c.Members[0].Key = "Sec" },
 		"bad timeout":     func(c *BucketAgentsConfig) { c.Lead.Timeout = "soon" },
+		"start unknown":   func(c *BucketAgentsConfig) { c.Start = []string{"perf"} },
+		"start twice":     func(c *BucketAgentsConfig) { c.Start = []string{"lead", "lead"} },
 	} {
 		team := ok
 		team.Members = append([]AgentRoleConfig(nil), ok.Members...)

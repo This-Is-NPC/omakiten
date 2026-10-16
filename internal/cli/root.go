@@ -90,11 +90,12 @@ func (r *runtime) close() {
 // persona list+show, workflow show/orphans) go through this facade
 // rather than constructing parallel app.*Service instances.
 func (r *runtime) operationService() *operation.Service {
-	svc := r.ProjectRuntime().Service.ForCLI()
+	base := r.ProjectRuntime().Service
+	// Blocked on the runtime's own service, which hook actions share.
 	if r.spawnBlocked != "" {
-		svc.BlockAgentSpawn(r.spawnBlocked)
+		base.BlockAgentSpawn(r.spawnBlocked)
 	}
-	return svc
+	return base.ForCLI()
 }
 
 // activeRegistry returns the EnumRegistry from the BundleCache's active

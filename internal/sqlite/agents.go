@@ -91,16 +91,30 @@ func (s *Store) SetAgentSessionPID(ctx context.Context, sessionID string, pid in
 }
 
 // FinishAgentSession records how a running session ended. It reports
-// whether the session was still running.
-func (s *Store) FinishAgentSession(ctx context.Context, sessionID, status string, exitCode *int, message string) (bool, error) {
-	res, err := s.query(ctx).ExecContext(ctx, `
+// whether the session was still running, and whether its team is active
+// with no session left running.
+func (s *Store) FinishAgentSession(ctx context.Context, sessionID, status string, exitCode *int, message string) (finished, idle bool, err error) {
+	tx, err := s.beginTransaction(ctx)
+	if err != nil {
+		return false, false, err
+	}
+	defer func() { _ = s.rollbackTransaction(ctx, tx) }()
+	res, err := tx.ExecContext(ctx, `
 UPDATE agent_sessions SET status = ?, exit_code = ?, error = ?, finished_at = CURRENT_TIMESTAMP
 WHERE id = ? AND status = 'running'`, status, exitCode, message, sessionID)
 	if err != nil {
-		return false, err
+		return false, false, err
 	}
-	n, err := res.RowsAffected()
-	return n == 1, err
+	if n, err := res.RowsAffected(); err != nil || n == 0 {
+		return false, false, err
+	}
+	err = tx.QueryRowContext(ctx, `
+SELECT t.status = 'active' AND NOT EXISTS (SELECT 1 FROM agent_sessions r WHERE r.team_id = t.id AND r.status = 'running')
+FROM agent_teams t JOIN agent_sessions s ON s.team_id = t.id WHERE s.id = ?`, sessionID).Scan(&idle)
+	if err != nil {
+		return false, false, err
+	}
+	return true, idle, s.commitTransaction(ctx, tx)
 }
 
 // ReplaceAgentSession marks a session replaced by a newer one for its seat.

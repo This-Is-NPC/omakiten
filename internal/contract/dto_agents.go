@@ -20,6 +20,15 @@ type SpawnAgentsInput struct {
 	Model   string `json:"model,omitempty"`
 }
 
+// SpawnSeatInput starts one roster seat of an active team: the team TeamID
+// names, or the active team of TaskID.
+type SpawnSeatInput struct {
+	ProjectSelector
+	TeamID string `json:"team_id,omitempty"`
+	TaskID int64  `json:"task_id,omitempty"`
+	Member string `json:"member"`
+}
+
 type SpawnAgentsResponse struct {
 	Project ProjectSummary     `json:"project"`
 	Team    domain.TeamOutcome `json:"team"`

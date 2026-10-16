@@ -90,10 +90,14 @@ starting it: `data.team` has `status: suggested`, the resolved seats, and the
 `team` a real move would.
 
 `okt agent spawn --task 42` without `--command` starts the team of the task's
-current bucket: the lead first, then every member in parallel. A member that
-cannot start is reported as `failed` while the others keep working; a lead
-that cannot start fails the whole spawn. `command` must be bound in
+current bucket: every seat it starts when it opens, in parallel. A seat that
+cannot start is reported as `failed` while the others keep working; the
+spawn fails only when none of them starts. `command` must be bound in
 `bindings.yaml`; the persona comes from that binding.
+
+`start` lists the seats the team starts when it opens; without it, every
+seat starts. A seat left out is `waiting` until a hook starts it, as in
+[section 5](#5-chain-seats-with-events).
 
 ## 3. Let the team talk through the task
 
@@ -173,6 +177,47 @@ When the selected harness is not on `PATH`, the one in your preferences'
 seat fails with `harness_missing`. `max_sessions` and `max_members` in
 `preferences.yaml` cap running sessions per project and members per team;
 unset means no limit. A preset cannot set them.
+
+## 5. Chain seats with events
+
+The workflow decides who runs after whom. Declare the seats that open with
+the team, then start the rest from events with the `spawn` hook action:
+
+```yaml
+# workflow
+agents:
+  trigger: auto
+  start: [security, perf]
+  lead: {command: okt-task-review}
+  members:
+    - {key: security, command: okt-task-review, brief: "security only"}
+    - {key: perf, command: okt-task-review, brief: "performance only"}
+```
+
+```yaml
+# config/settings.yaml
+hooks:
+  - on: team.finished
+    when: {bucket: review}
+    do: spawn
+    args: {member: lead}
+```
+
+The members run first and each publishes its `review-<key>` result. When
+the last one ends, `team.finished` starts the lead, which reads the results,
+publishes its verdict, and exits.
+
+`team.finished` is recorded when the last running harness of an active team
+ends. It carries `team_id`, `task_id`, `bucket`, and the team's `done` and
+`failed` session counts. A seat that never started does not record it.
+
+`spawn` starts the roster seat `args.member` of the event's team, named by
+its `team_id`, or of the active team of its `task_id`. It starts a seat only
+once: a seat that already has a session is left as it is, so the
+`team.finished` that follows the lead's own run starts nothing. To run a
+seat again, use `okt agent spawn --team t-… --member <key>`. The spawn obeys
+the same `max_sessions` limit and store rules as `okt agent spawn`; a refused
+or failed start is recorded in `hook.executed`.
 
 ## What runs, and what the agent inherits
 

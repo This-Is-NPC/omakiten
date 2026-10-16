@@ -239,7 +239,7 @@ type AgentRepository interface {
 	CloseAgentTeam(ctx context.Context, teamID string) (bool, error)
 	AddAgentSession(ctx context.Context, session domain.AgentSession) error
 	SetAgentSessionPID(ctx context.Context, sessionID string, pid int) error
-	FinishAgentSession(ctx context.Context, sessionID, status string, exitCode *int, message string) (bool, error)
+	FinishAgentSession(ctx context.Context, sessionID, status string, exitCode *int, message string) (finished, idle bool, err error)
 	ReplaceAgentSession(ctx context.Context, sessionID string) error
 	GetAgentTeam(ctx context.Context, teamID string) (domain.AgentTeam, error)
 	ListAgentTeams(ctx context.Context, projectID int64, filter domain.AgentTeamFilter) ([]domain.AgentTeam, error)

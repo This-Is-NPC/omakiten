@@ -114,3 +114,21 @@ func TestValidateHooks_notificationCannotFireOnNotificationShown(t *testing.T) {
 		t.Fatalf("expected a notification on notification.shown to be refused, got %v", err)
 	}
 }
+
+// TestValidateHooksSpawnRequiresARosterKey verifies a spawn hook names the
+// seat it starts with a roster key.
+func TestValidateHooksSpawnRequiresARosterKey(t *testing.T) {
+	ok := func(string) bool { return true }
+	for _, member := range []any{"lead", "security"} {
+		specs := []HookSpec{{On: domain.EventTypeTaskCreated, Do: HookActionSpawn, Args: map[string]any{"member": member}}}
+		if err := ValidateHooks(specs, knownEventsForTest(), ok, nil); err != nil {
+			t.Fatalf("spawn of %v rejected: %v", member, err)
+		}
+	}
+	for _, args := range []map[string]any{nil, {"member": "Security"}, {"member": 3}} {
+		specs := []HookSpec{{On: domain.EventTypeTaskCreated, Do: HookActionSpawn, Args: args}}
+		if err := ValidateHooks(specs, knownEventsForTest(), ok, nil); err == nil || !strings.Contains(err.Error(), "args.member") {
+			t.Fatalf("spawn with args %v: error = %v, want args.member", args, err)
+		}
+	}
+}

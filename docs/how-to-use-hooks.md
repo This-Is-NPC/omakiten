@@ -38,6 +38,9 @@ Use executable paths that are meaningful on the user's machine. A script in
 a package is captured with the package, but its arguments do not automatically
 become relative to that package directory.
 
+`do: spawn` with `args: {member: <key>}` starts a seat of the event's agent
+team instead; see [chaining seats with events](how-to-run-agent-teams.md#5-chain-seats-with-events).
+
 ## 2. Filter the event
 
 Add `when` to match top-level event payload fields:
@@ -77,9 +80,8 @@ an agent's CLI call or the daemon, the rendered notification is recorded as a
 event stream can too. A notification cannot fire on `notification.shown`
 itself.
 
-This records or displays an Omakiten notification; it does not interrupt another
-agent's session. Use `exec` with the intended receiver's supported command when
-the goal is to notify an agent, and check receipt at that receiver.
+This records or displays an Omakiten notification; it does not reach an agent.
+Agents run once and read the board; start the next one with `do: spawn`.
 
 ## 4. React to an outside event
 

@@ -16,7 +16,7 @@ type HookActionResolver func(name string) bool
 // ValidateHooks runs the hooks block through the catalog + ref
 // checks. Each entry is one of two mutually-exclusive shapes:
 //
-//   - action:        on + when + do + args  (exec/noop dispatch)
+//   - action:        on + when + do + args  (exec/spawn/noop dispatch)
 //   - notification:  on + when + notification:<slug>  (notification card)
 //
 // `do:` must name a registered action; `notification:` must resolve to a
@@ -65,8 +65,23 @@ func validateHook(i int, h HookSpec, knownEvents map[string]struct{}, isAction H
 	if isAction != nil && !isAction(do) {
 		return fmt.Errorf("config.hooks[%d]: unknown action %q (register it before LoadBundle)", i, do)
 	}
-	if do == "exec" {
+	switch do {
+	case "exec":
 		return validateExecArgs(i, h.Args)
+	case HookActionSpawn:
+		return validateSpawnArgs(i, h.Args)
+	}
+	return nil
+}
+
+// HookActionSpawn is the hook action that starts a roster seat of the
+// event's agent team.
+const HookActionSpawn = "spawn"
+
+func validateSpawnArgs(i int, args map[string]interface{}) error {
+	member, _ := args["member"].(string)
+	if member != domain.AgentLeadKey && !agentMemberKey.MatchString(member) {
+		return fmt.Errorf("config.hooks[%d]: action spawn requires args.member, a roster key such as lead", i)
 	}
 	return nil
 }

@@ -86,10 +86,12 @@ type AgentRoleConfig struct {
 }
 
 // BucketAgentsConfig is the team a bucket opens for an entering task.
+// Start lists the seats it starts when it opens; empty starts them all.
 type BucketAgentsConfig struct {
 	Trigger string            `yaml:"trigger" json:"trigger"`
 	Lead    AgentRoleConfig   `yaml:"lead" json:"lead"`
 	Members []AgentRoleConfig `yaml:"members,omitempty" json:"members,omitempty"`
+	Start   []string          `yaml:"start,omitempty" json:"start,omitempty"`
 }
 
 var agentMemberKey = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*$`)
@@ -164,7 +166,7 @@ func toDomainBucketAgents(c *BucketAgentsConfig) *domain.BucketAgents {
 	if c == nil {
 		return nil
 	}
-	out := &domain.BucketAgents{Trigger: c.Trigger, Lead: toDomainRole(c.Lead)}
+	out := &domain.BucketAgents{Trigger: c.Trigger, Lead: toDomainRole(c.Lead), Start: c.Start}
 	out.Lead.Key = domain.AgentLeadKey
 	for _, m := range c.Members {
 		out.Members = append(out.Members, toDomainRole(m))
@@ -225,6 +227,21 @@ func validateBucketTeam(bundle Bundle, scope string, team BucketAgentsConfig) er
 		if err := validateAgentRole(bundle, at, m); err != nil {
 			return err
 		}
+	}
+	return validateTeamStart(scope, team.Start, seen)
+}
+
+// validateTeamStart checks that start lists seats of the team, each once.
+func validateTeamStart(scope string, start []string, seats map[string]bool) error {
+	started := map[string]bool{}
+	for i, key := range start {
+		if !seats[key] {
+			return fmt.Errorf("%s.start[%d]: %q is not a seat of this team", scope, i, key)
+		}
+		if started[key] {
+			return fmt.Errorf("%s.start[%d]: %q is listed twice", scope, i, key)
+		}
+		started[key] = true
 	}
 	return nil
 }

@@ -18,7 +18,10 @@ const (
 	TeamSuggested  = "suggested"
 	TeamSkipped    = "skipped"
 	TeamWouldSpawn = "would_spawn"
-	TeamClosed     = "closed"
+	// TeamWaiting marks a roster seat the team does not start when it
+	// opens; a spawn hook starts it later.
+	TeamWaiting = "waiting"
+	TeamClosed  = "closed"
 	// TeamUnconfigured marks a team, or a seat, that names no harness or
 	// launcher anywhere: role, preset, or preferences.
 	TeamUnconfigured = "unconfigured"
@@ -50,11 +53,32 @@ type AgentRole struct {
 	Brief   string `json:"brief,omitempty"`
 }
 
-// BucketAgents is the team a bucket opens for a task that enters it.
+// BucketAgents is the team a bucket opens for a task that enters it. Start
+// lists the seat keys the team starts when it opens; empty starts every
+// seat.
 type BucketAgents struct {
 	Trigger string      `json:"trigger"`
 	Lead    AgentRole   `json:"lead"`
 	Members []AgentRole `json:"members,omitempty"`
+	Start   []string    `json:"start,omitempty"`
+}
+
+// Roles returns the lead, then the members.
+func (b BucketAgents) Roles() []AgentRole {
+	return append([]AgentRole{b.Lead}, b.Members...)
+}
+
+// StartsAt reports whether the team starts the seat key when it opens.
+func (b BucketAgents) StartsAt(key string) bool {
+	if len(b.Start) == 0 {
+		return true
+	}
+	for _, k := range b.Start {
+		if k == key {
+			return true
+		}
+	}
+	return false
 }
 
 // AgentArg is one argv element of an adapter template. A group expands to
@@ -182,4 +206,5 @@ const (
 	EventTypeAgentSessionStarted  = "agent.session_started"
 	EventTypeAgentSessionFinished = "agent.session_finished"
 	EventTypeTeamClosed           = "team.closed"
+	EventTypeTeamFinished         = "team.finished"
 )

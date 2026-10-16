@@ -239,6 +239,10 @@ events:
       category: task
       display: "agent team closed"
       formatter: team.closed
+    team.finished:
+      category: task
+      display: "agent team finished"
+      formatter: team.finished
     guard.violated:
       category: guard
       display: "guard violated"

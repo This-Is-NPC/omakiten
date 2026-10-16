@@ -8,6 +8,7 @@ func init() {
 	registerFormatter(EventTypeAgentSessionStarted, summarizeAgentSessionStarted)
 	registerFormatter(EventTypeAgentSessionFinished, summarizeAgentSessionFinished)
 	registerFormatter(EventTypeTeamClosed, summarizeTeamClosed)
+	registerFormatter(EventTypeTeamFinished, summarizeTeamFinished)
 }
 
 func summarizeAgentSessionStarted(row EventRow) string {
@@ -44,4 +45,15 @@ func summarizeTeamClosed(row EventRow) string {
 		return "agent team " + team + " closed"
 	}
 	return fmt.Sprintf("agent team %s closed (%s)", team, reason)
+}
+
+func summarizeTeamFinished(row EventRow) string {
+	payload := decodePayload(row.Payload)
+	team := readString(payload, "team_id")
+	if team == "" {
+		return "agent team finished"
+	}
+	done, _ := readInt(payload, "done")
+	failed, _ := readInt(payload, "failed")
+	return fmt.Sprintf("agent team %s finished: %d done, %d failed", team, done, failed)
 }
