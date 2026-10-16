@@ -4503,6 +4503,9 @@
           "bucket_key": {
             "type": "string"
           },
+          "dry_run": {
+            "type": "boolean"
+          },
           "no_spawn": {
             "type": "boolean"
           }

@@ -49,6 +49,9 @@ type TransitionBody struct {
 	BucketKey string `json:"bucket_key"`
 	// NoSpawn reports the destination's automatic agent team as skipped.
 	NoSpawn bool `json:"no_spawn,omitempty"`
+	// DryRun reports the guards and agent team the move would meet without
+	// moving the task.
+	DryRun bool `json:"dry_run,omitempty"`
 }
 
 // AssigneeBody sets the assignee; empty clears it.
@@ -156,7 +159,7 @@ func (s *Server) moveTask(r *http.Request, body TransitionBody) (contract.MoveTa
 	if err != nil {
 		return contract.MoveTaskResponse{}, err
 	}
-	return ops.MoveTask(r.Context(), contract.MoveTaskInput{ProjectSelector: selector, TaskID: taskID, BucketKey: body.BucketKey, NoSpawn: body.NoSpawn})
+	return ops.MoveTask(r.Context(), contract.MoveTaskInput{ProjectSelector: selector, TaskID: taskID, BucketKey: body.BucketKey, NoSpawn: body.NoSpawn, DryRun: body.DryRun})
 }
 
 func (s *Server) assignTask(r *http.Request, body AssigneeBody) (contract.AssignTaskResponse, error) {
