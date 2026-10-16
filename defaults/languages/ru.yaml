@@ -131,7 +131,7 @@ keys:
   cli.wait.flag.task: "задача, комментарии которой отслеживать"
   cli.wait.flag.tag: "шаблон тега, например review-*"
   cli.wait.flag.timeout: "сколько ждать, до 1h (по умолчанию 10m)"
-  cli.wait.flag.after: "id события, после которого ждать (по умолчанию: сейчас)"
+  cli.wait.flag.after: "id события, после которого ждать (по умолчанию: открытие активной команды агентов задачи, иначе сейчас)"
   cli.error.record.short: "Record an error with optional context and tags"
   cli.error.record.flag.description: "one-line error description"
   cli.error.record.flag.context: "optional context, stack, or symptoms"

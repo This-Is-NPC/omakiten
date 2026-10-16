@@ -32,9 +32,9 @@ func (s *Store) OpenAgentTeam(ctx context.Context, team domain.AgentTeam) (domai
 		return domain.AgentTeam{}, false, err
 	}
 	err = tx.QueryRowContext(ctx, `
-INSERT INTO agent_teams(id, project_id, task_id, bucket_key, status)
-VALUES (?, ?, ?, ?, 'active')
-RETURNING status, created_at`, team.ID, team.ProjectID, team.TaskID, team.BucketKey).Scan(&team.Status, &team.CreatedAt)
+INSERT INTO agent_teams(id, project_id, task_id, bucket_key, status, opened_after)
+VALUES (?, ?, ?, ?, 'active', (SELECT COALESCE(MAX(id), 0) FROM events))
+RETURNING status, opened_after, created_at`, team.ID, team.ProjectID, team.TaskID, team.BucketKey).Scan(&team.Status, &team.OpenedAfter, &team.CreatedAt)
 	if err != nil {
 		return domain.AgentTeam{}, false, err
 	}
@@ -97,8 +97,8 @@ func (s *Store) ReplaceAgentSession(ctx context.Context, sessionID string) error
 // GetAgentTeam returns a team with its sessions in creation order.
 func (s *Store) GetAgentTeam(ctx context.Context, teamID string) (domain.AgentTeam, error) {
 	var team domain.AgentTeam
-	err := s.query(ctx).QueryRowContext(ctx, `SELECT id, project_id, task_id, bucket_key, status, created_at FROM agent_teams WHERE id = ?`, teamID).
-		Scan(&team.ID, &team.ProjectID, &team.TaskID, &team.BucketKey, &team.Status, &team.CreatedAt)
+	err := s.query(ctx).QueryRowContext(ctx, `SELECT id, project_id, task_id, bucket_key, status, opened_after, created_at FROM agent_teams WHERE id = ?`, teamID).
+		Scan(&team.ID, &team.ProjectID, &team.TaskID, &team.BucketKey, &team.Status, &team.OpenedAfter, &team.CreatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return domain.AgentTeam{}, domain.NewError(domain.ErrAgentNotFound, "agent team not found", map[string]any{"team_id": teamID})
 	}

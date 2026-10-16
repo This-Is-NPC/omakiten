@@ -131,7 +131,7 @@ keys:
   cli.wait.flag.task: "tarea cuyos comentarios vigilar"
   cli.wait.flag.tag: "glob de etiqueta como review-*"
   cli.wait.flag.timeout: "cuánto esperar, hasta 1h (predeterminado 10m)"
-  cli.wait.flag.after: "id de evento tras el que esperar (predeterminado: ahora)"
+  cli.wait.flag.after: "id de evento tras el que esperar (predeterminado: cuando se abrió el equipo activo de la tarea, si no ahora)"
   cli.error.record.short: "Record an error with optional context and tags"
   cli.error.record.flag.description: "one-line error description"
   cli.error.record.flag.context: "optional context, stack, or symptoms"

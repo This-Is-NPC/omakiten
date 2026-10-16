@@ -131,7 +131,7 @@ keys:
   cli.wait.flag.task: "Aufgabe, deren Kommentare beobachtet werden"
   cli.wait.flag.tag: "Tag-Muster wie review-*"
   cli.wait.flag.timeout: "Wartezeit, bis 1h (Standard 10m)"
-  cli.wait.flag.after: "Ereignis-ID, nach der gewartet wird (Standard: jetzt)"
+  cli.wait.flag.after: "Ereignis-ID, nach der gewartet wird (Standard: Öffnung des aktiven Agententeams der Aufgabe, sonst jetzt)"
   cli.error.record.short: "Record an error with optional context and tags"
   cli.error.record.flag.description: "one-line error description"
   cli.error.record.flag.context: "optional context, stack, or symptoms"

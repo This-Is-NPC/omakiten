@@ -1,7 +1,8 @@
 package contract
 
 // WaitInput blocks until a comment on the task carries a tag matching the
-// glob Tag. AfterID is the event id to wait after; zero means now. Timeout
+// glob Tag. AfterID is the event id to wait after; zero means since the task's
+// active agent team opened, or now when it has none. Timeout
 // is a Go duration such as `10m`; empty means 10 minutes.
 type WaitInput struct {
 	ProjectSelector

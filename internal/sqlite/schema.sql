@@ -374,6 +374,7 @@ CREATE TABLE agent_teams (
   task_id INTEGER NOT NULL,
   bucket_key TEXT NOT NULL,
   status TEXT NOT NULL CHECK (status IN ('active', 'failed', 'closed')),
+  opened_after INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   FOREIGN KEY (project_id, task_id) REFERENCES tasks(project_id, id) ON DELETE CASCADE
 );

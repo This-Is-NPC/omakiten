@@ -376,3 +376,22 @@ func TestRespawnMemberReplacesItsSession(t *testing.T) {
 		t.Fatal("respawning a key outside the roster succeeded")
 	}
 }
+
+// TestWaitDefaultsToTheActiveTeamsStart verifies a wait without --after on
+// a task with an active team sees results published since the team opened.
+func TestWaitDefaultsToTheActiveTeamsStart(t *testing.T) {
+	f := newAgentSpawnFixture(t)
+	if _, err := f.service.AddComment(f.ctx, contract.AddCommentInput{TaskID: f.task.ID, Body: "before the team", AuthorType: "agent", Tags: []string{"review-old"}}); err != nil {
+		t.Fatalf("AddComment(before) error = %v", err)
+	}
+	if _, err := f.service.SpawnAgents(f.ctx, contract.SpawnAgentsInput{TaskID: f.task.ID}); err != nil {
+		t.Fatalf("SpawnAgents() error = %v", err)
+	}
+	if _, err := f.service.AddComment(f.ctx, contract.AddCommentInput{TaskID: f.task.ID, Body: "done", AuthorType: "agent", Tags: []string{"review-security"}}); err != nil {
+		t.Fatalf("AddComment(result) error = %v", err)
+	}
+	got, err := f.service.Wait(f.ctx, contract.WaitInput{TaskID: f.task.ID, Tag: "review-*", Timeout: "300ms"})
+	if err != nil || got.TimedOut || len(got.Matched) != 1 || got.Matched[0].Tags[0].Name != "review-security" {
+		t.Fatalf("Wait() = %+v, %v; want the result published after the team opened", got, err)
+	}
+}

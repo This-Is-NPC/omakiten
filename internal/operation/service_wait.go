@@ -39,7 +39,7 @@ func (s *Service) Wait(ctx context.Context, input contract.WaitInput) (contract.
 	}
 	after := input.AfterID
 	if after <= 0 {
-		if after, err = s.repo.LatestEventID(ctx); err != nil {
+		if after, err = s.defaultWaitCursor(ctx, detail.project, input.TaskID); err != nil {
 			return contract.WaitResponse{}, err
 		}
 	}
@@ -85,6 +85,23 @@ func (s *Service) awaitComments(ctx context.Context, project domain.ProjectConte
 		case <-tick.C:
 		}
 	}
+}
+
+// defaultWaitCursor is where a wait without a cursor starts: when the task
+// opened its newest active team, otherwise now.
+func (s *Service) defaultWaitCursor(ctx context.Context, project domain.ProjectContext, taskID int64) (int64, error) {
+	ids, err := s.repo.ActiveAgentTeamIDs(ctx, project.ID, taskID)
+	if err != nil {
+		return 0, err
+	}
+	if len(ids) > 0 {
+		team, err := s.repo.GetAgentTeam(ctx, ids[len(ids)-1])
+		if err != nil {
+			return 0, err
+		}
+		return team.OpenedAfter, nil
+	}
+	return s.repo.LatestEventID(ctx)
 }
 
 func waitTimeout(raw string) (time.Duration, error) {

@@ -99,8 +99,10 @@ types one line into that seat's pane:
 A key without a running seat is ignored. Nothing else is ever typed into a
 running agent.
 
-`wait` returns the first comment newer than its start, or than `--after`,
-whose tag matches the glob, plus the cursor for the next wait. On timeout it
+`wait` returns the first comment newer than `--after` whose tag matches the
+glob, plus the cursor for the next wait. Without `--after`, it starts from the
+moment the task's active team opened, so a result published before the wait
+began still counts; a task without an active team starts from now. On timeout it
 succeeds with `timed_out: true`. Each seat's prompt explains its key, its
 lead, and these commands.
 

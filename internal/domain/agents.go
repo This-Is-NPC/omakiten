@@ -97,13 +97,15 @@ type AgentAdapters struct {
 
 // AgentTeam is the set of sessions opened for one task in one bucket.
 type AgentTeam struct {
-	ID        string         `json:"team_id"`
-	ProjectID int64          `json:"project_id"`
-	TaskID    int64          `json:"task_id"`
-	BucketKey string         `json:"bucket"`
-	Status    string         `json:"status"`
-	CreatedAt string         `json:"created_at"`
-	Sessions  []AgentSession `json:"sessions,omitempty"`
+	ID        string `json:"team_id"`
+	ProjectID int64  `json:"project_id"`
+	TaskID    int64  `json:"task_id"`
+	BucketKey string `json:"bucket"`
+	Status    string `json:"status"`
+	// OpenedAfter is the newest event id when the team opened.
+	OpenedAfter int64          `json:"opened_after_event_id"`
+	CreatedAt   string         `json:"created_at"`
+	Sessions    []AgentSession `json:"sessions,omitempty"`
 }
 
 // AgentSession is one agent process opened in a terminal pane.

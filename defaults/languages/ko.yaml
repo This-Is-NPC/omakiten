@@ -131,7 +131,7 @@ keys:
   cli.wait.flag.task: "댓글을 지켜볼 작업"
   cli.wait.flag.tag: "review-* 같은 태그 glob"
   cli.wait.flag.timeout: "대기 시간, 최대 1h (기본 10m)"
-  cli.wait.flag.after: "이후를 기다릴 이벤트 ID (기본: 지금)"
+  cli.wait.flag.after: "이후를 기다릴 이벤트 ID (기본: 작업의 활성 에이전트 팀이 열린 시점, 없으면 지금)"
   cli.error.record.short: "Record an error with optional context and tags"
   cli.error.record.flag.description: "one-line error description"
   cli.error.record.flag.context: "optional context, stack, or symptoms"

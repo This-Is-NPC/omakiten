@@ -131,7 +131,7 @@ keys:
   cli.wait.flag.task: "वह task जिसके comments देखने हैं"
   cli.wait.flag.tag: "review-* जैसा tag glob"
   cli.wait.flag.timeout: "कितनी देर प्रतीक्षा, 1h तक (डिफ़ॉल्ट 10m)"
-  cli.wait.flag.after: "वह event id जिसके बाद प्रतीक्षा (डिफ़ॉल्ट: अभी)"
+  cli.wait.flag.after: "वह event id जिसके बाद प्रतीक्षा (डिफ़ॉल्ट: task की सक्रिय agent team खुलने का समय, नहीं तो अभी)"
   cli.error.record.short: "Record an error with optional context and tags"
   cli.error.record.flag.description: "one-line error description"
   cli.error.record.flag.context: "optional context, stack, or symptoms"

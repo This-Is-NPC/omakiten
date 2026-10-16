@@ -131,7 +131,7 @@ keys:
   cli.wait.flag.task: "要监视其评论的任务"
   cli.wait.flag.tag: "标签通配符,如 review-*"
   cli.wait.flag.timeout: "等待时长,最长 1h(默认 10m)"
-  cli.wait.flag.after: "在此事件 id 之后等待(默认:当前)"
+  cli.wait.flag.after: "在此事件 id 之后等待(默认:任务的活动代理团队打开时,否则为当前)"
   cli.error.record.short: "Record an error with optional context and tags"
   cli.error.record.flag.description: "one-line error description"
   cli.error.record.flag.context: "optional context, stack, or symptoms"

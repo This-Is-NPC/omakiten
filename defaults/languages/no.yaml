@@ -132,7 +132,7 @@ keys:
   cli.wait.flag.task: "oppgave med kommentarer som overvåkes"
   cli.wait.flag.tag: "tagg-glob som review-*"
   cli.wait.flag.timeout: "hvor lenge det ventes, opptil 1h (standard 10m)"
-  cli.wait.flag.after: "hendelses-id det ventes etter (standard: nå)"
+  cli.wait.flag.after: "hendelses-id det ventes etter (standard: da oppgavens aktive agentteam åpnet, ellers nå)"
   cli.error.record.short: "Record an error with optional context and tags"
   cli.error.record.flag.description: "one-line error description"
   cli.error.record.flag.context: "optional context, stack, or symptoms"

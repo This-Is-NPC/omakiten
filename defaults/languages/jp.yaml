@@ -131,7 +131,7 @@ keys:
   cli.wait.flag.task: "コメントを監視するタスク"
   cli.wait.flag.tag: "review-* のようなタグの glob"
   cli.wait.flag.timeout: "待機時間、最大 1h (既定 10m)"
-  cli.wait.flag.after: "この後を待つイベント ID (既定: 現在)"
+  cli.wait.flag.after: "この後を待つイベント ID (既定: タスクのアクティブなエージェントチームが開いた時点、なければ現在)"
   cli.error.record.short: "Record an error with optional context and tags"
   cli.error.record.flag.description: "one-line error description"
   cli.error.record.flag.context: "optional context, stack, or symptoms"

@@ -131,7 +131,7 @@ keys:
   cli.wait.flag.task: "zadanie, którego komentarze obserwować"
   cli.wait.flag.tag: "glob tagu, np. review-*"
   cli.wait.flag.timeout: "jak długo czekać, do 1h (domyślnie 10m)"
-  cli.wait.flag.after: "id zdarzenia, po którym czekać (domyślnie: teraz)"
+  cli.wait.flag.after: "id zdarzenia, po którym czekać (domyślnie: otwarcie aktywnego zespołu agentów zadania, inaczej teraz)"
   cli.error.record.short: "Record an error with optional context and tags"
   cli.error.record.flag.description: "one-line error description"
   cli.error.record.flag.context: "optional context, stack, or symptoms"

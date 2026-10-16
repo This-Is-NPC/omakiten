@@ -131,7 +131,7 @@ keys:
   cli.wait.flag.task: "task cujos comentários observar"
   cli.wait.flag.tag: "glob de tag como review-*"
   cli.wait.flag.timeout: "quanto esperar, até 1h (padrão 10m)"
-  cli.wait.flag.after: "id de evento após o qual esperar (padrão: agora)"
+  cli.wait.flag.after: "id de evento após o qual esperar (padrão: quando o time ativo da task abriu, senão agora)"
   cli.error.record.short: "Registra um erro com context e tags opcionais"
   cli.error.record.flag.description: "one-line error description"
   cli.error.record.flag.context: "optional context, stack, or symptoms"

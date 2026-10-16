@@ -132,7 +132,7 @@ keys:
   cli.wait.flag.task: "tehtävä, jonka kommentteja seurataan"
   cli.wait.flag.tag: "tagin glob, kuten review-*"
   cli.wait.flag.timeout: "odotusaika, enintään 1h (oletus 10m)"
-  cli.wait.flag.after: "tapahtuman id, jonka jälkeen odotetaan (oletus: nyt)"
+  cli.wait.flag.after: "tapahtuman id, jonka jälkeen odotetaan (oletus: tehtävän aktiivisen agenttitiimin avaus, muuten nyt)"
   cli.error.record.short: "Record an error with optional context and tags"
   cli.error.record.flag.description: "one-line error description"
   cli.error.record.flag.context: "optional context, stack, or symptoms"

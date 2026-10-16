@@ -3038,6 +3038,10 @@
           "created_at": {
             "type": "string"
           },
+          "opened_after_event_id": {
+            "format": "int64",
+            "type": "integer"
+          },
           "project_id": {
             "format": "int64",
             "type": "integer"
@@ -3062,6 +3066,7 @@
         "required": [
           "bucket",
           "created_at",
+          "opened_after_event_id",
           "project_id",
           "status",
           "task_id",

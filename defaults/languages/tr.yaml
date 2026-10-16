@@ -131,7 +131,7 @@ keys:
   cli.wait.flag.task: "yorumları izlenecek görev"
   cli.wait.flag.tag: "review-* gibi etiket kalıbı"
   cli.wait.flag.timeout: "ne kadar beklenecek, en fazla 1h (varsayılan 10m)"
-  cli.wait.flag.after: "sonrasında beklenecek olay kimliği (varsayılan: şimdi)"
+  cli.wait.flag.after: "sonrasında beklenecek olay kimliği (varsayılan: görevin etkin ajan ekibinin açıldığı an, yoksa şimdi)"
   cli.error.record.short: "Record an error with optional context and tags"
   cli.error.record.flag.description: "one-line error description"
   cli.error.record.flag.context: "optional context, stack, or symptoms"

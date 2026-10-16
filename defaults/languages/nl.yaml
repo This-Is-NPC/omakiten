@@ -131,7 +131,7 @@ keys:
   cli.wait.flag.task: "taak waarvan de commentaren gevolgd worden"
   cli.wait.flag.tag: "tag-glob zoals review-*"
   cli.wait.flag.timeout: "hoe lang wachten, tot 1h (standaard 10m)"
-  cli.wait.flag.after: "event-id waarna gewacht wordt (standaard: nu)"
+  cli.wait.flag.after: "event-id waarna gewacht wordt (standaard: opening van het actieve agentteam van de taak, anders nu)"
   cli.error.record.short: "Record an error with optional context and tags"
   cli.error.record.flag.description: "one-line error description"
   cli.error.record.flag.context: "optional context, stack, or symptoms"
