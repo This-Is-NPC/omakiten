@@ -57,7 +57,7 @@ func (s *Service) AddComment(ctx context.Context, input contract.AddCommentInput
 	if err != nil {
 		return contract.CommentResponse{}, err
 	}
-	s.noteTeamResults(ctx, project, comment)
+	s.noteTeamComment(ctx, project, comment)
 	return contract.CommentResponse{Project: projectSummary(project), Comment: commentSummary(comment)}, nil
 }
 

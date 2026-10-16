@@ -397,12 +397,14 @@ func hasTag(tags []domain.Tag, name string) bool {
 	return false
 }
 
-// noteTeamResults finishes the session of every active team member whose
-// review-<key> tag the task comment carries, records team.member_done, and
-// wakes the team's lead with one line. Failures never fail the comment.
-func (s *Service) noteTeamResults(ctx context.Context, project domain.ProjectContext, comment domain.Comment) {
-	members := resultMembers(comment)
-	if len(members) == 0 {
+// noteTeamComment applies the team convention to a task comment: each
+// review-<key> tag finishes that member and wakes the lead, and each
+// to-<key> tag wakes the addressed seat. Keys without a seat are ignored, and
+// failures never fail the comment.
+func (s *Service) noteTeamComment(ctx context.Context, project domain.ProjectContext, comment domain.Comment) {
+	results := taggedKeys(comment, domain.AgentResultTag)
+	messages := taggedKeys(comment, domain.AgentAddressTag)
+	if len(results) == 0 && len(messages) == 0 {
 		return
 	}
 	teams, err := s.repo.ActiveAgentTeamIDs(ctx, project.ID, comment.TaskID)
@@ -410,34 +412,31 @@ func (s *Service) noteTeamResults(ctx context.Context, project domain.ProjectCon
 		return
 	}
 	for _, id := range teams {
-		if team, err := s.repo.GetAgentTeam(ctx, id); err == nil {
-			s.finishMembers(ctx, project, team, members, comment.ID)
+		team, err := s.repo.GetAgentTeam(ctx, id)
+		if err != nil {
+			continue
 		}
+		s.finishMembers(ctx, project, team, results, comment.ID)
+		s.deliverMessages(ctx, team, messages)
 	}
 }
 
-// resultMembers returns the member keys whose review-<key> tag a task
-// comment carries.
-func resultMembers(comment domain.Comment) map[string]bool {
-	members := map[string]bool{}
+// taggedKeys returns the keys a task comment's tags name after prefix.
+func taggedKeys(comment domain.Comment, prefix string) map[string]bool {
+	keys := map[string]bool{}
 	if comment.Scope != domain.CommentScopeTask || comment.TaskID == 0 {
-		return members
+		return keys
 	}
 	for _, tag := range comment.Tags {
-		if key, ok := strings.CutPrefix(tag.Name, domain.AgentResultTag); ok && key != "" {
-			members[key] = true
+		if key, ok := strings.CutPrefix(tag.Name, prefix); ok && key != "" {
+			keys[key] = true
 		}
 	}
-	return members
+	return keys
 }
 
 func (s *Service) finishMembers(ctx context.Context, project domain.ProjectContext, team domain.AgentTeam, members map[string]bool, commentID int64) {
-	var lead domain.AgentSession
-	for _, session := range team.Sessions {
-		if session.Member == domain.AgentLeadKey {
-			lead = session
-		}
-	}
+	lead := teamSeat(team, domain.AgentLeadKey)
 	for _, session := range team.Sessions {
 		if !members[session.Member] {
 			continue
@@ -446,8 +445,10 @@ func (s *Service) finishMembers(ctx context.Context, project domain.ProjectConte
 			continue
 		}
 		payload := map[string]any{"team_id": team.ID, "member": session.Member, "session_id": session.ID, "comment_id": commentID}
-		if err := s.wakeLead(ctx, team, lead, session.Member); err != nil {
-			payload["wake_error"] = err.Error()
+		if session.Member != domain.AgentLeadKey {
+			if err := s.wake(ctx, lead, fmt.Sprintf("okt: %s finished task #%d — okt team show %s", session.Member, team.TaskID, team.ID)); err != nil {
+				payload["wake_error"] = err.Error()
+			}
 		}
 		if body, err := json.Marshal(payload); err == nil {
 			_ = s.repo.RecordEntityEvent(ctx, domain.EventEntityTask, team.TaskID, project.ID, domain.EventTypeTeamMemberDone, string(body))
@@ -455,11 +456,29 @@ func (s *Service) finishMembers(ctx context.Context, project domain.ProjectConte
 	}
 }
 
-// wakeLead types one line naming the finished member into the lead's pane.
-func (s *Service) wakeLead(ctx context.Context, team domain.AgentTeam, lead domain.AgentSession, member string) error {
-	if member == domain.AgentLeadKey || lead.Status != domain.SessionSpawned || lead.Pane == "" {
+// deliverMessages wakes each addressed seat with the command that reads
+// its messages.
+func (s *Service) deliverMessages(ctx context.Context, team domain.AgentTeam, keys map[string]bool) {
+	for key := range keys {
+		line := fmt.Sprintf("okt: message for %s on task #%d — okt comment list %d --tag %s%s", key, team.TaskID, team.TaskID, domain.AgentAddressTag, key)
+		_ = s.wake(ctx, teamSeat(team, key), line)
+	}
+}
+
+// teamSeat returns the team's session for a member key, or a zero session.
+func teamSeat(team domain.AgentTeam, key string) domain.AgentSession {
+	for _, session := range team.Sessions {
+		if session.Member == key {
+			return session
+		}
+	}
+	return domain.AgentSession{}
+}
+
+// wake types one line into a running session's pane.
+func (s *Service) wake(ctx context.Context, session domain.AgentSession, line string) error {
+	if session.Status != domain.SessionSpawned || session.Pane == "" {
 		return nil
 	}
-	line := fmt.Sprintf("okt: %s finished task #%d — okt team show %s", member, team.TaskID, team.ID)
-	return s.launcher.Send(ctx, s.snapshot.AgentAdapters().Launchers[lead.Launcher], lead.Pane, line)
+	return s.launcher.Send(ctx, s.snapshot.AgentAdapters().Launchers[session.Launcher], session.Pane, line)
 }

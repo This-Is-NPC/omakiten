@@ -274,3 +274,22 @@ func TestMemberResultWakesTheLead(t *testing.T) {
 		t.Fatalf("a second result woke the lead again: %q", *f.sends)
 	}
 }
+
+// TestAddressedMessageWakesTheRecipient verifies a to-<key> comment types
+// one line into that seat's pane, and an unknown key does nothing.
+func TestAddressedMessageWakesTheRecipient(t *testing.T) {
+	f := newAgentSpawnFixture(t)
+	spawned, err := f.service.SpawnAgents(f.ctx, contract.SpawnAgentsInput{TaskID: f.task.ID})
+	if err != nil {
+		t.Fatalf("SpawnAgents() error = %v", err)
+	}
+	for _, tag := range []string{"to-security", "to-nobody"} {
+		if _, err := f.service.AddComment(f.ctx, contract.AddCommentInput{TaskID: f.task.ID, Body: "question", AuthorType: "agent", Tags: []string{tag}}); err != nil {
+			t.Fatalf("AddComment(%s) error = %v", tag, err)
+		}
+	}
+	want := fmt.Sprintf("okt: message for security on task #%d — okt comment list %d --tag to-security", f.task.ID, f.task.ID)
+	if len(*f.sends) != 1 || (*f.sends)[0][1] != spawned.Team.Members[0].Pane || (*f.sends)[0][2] != want {
+		t.Fatalf("sends = %q, want %q to the security pane %s", *f.sends, want, spawned.Team.Members[0].Pane)
+	}
+}

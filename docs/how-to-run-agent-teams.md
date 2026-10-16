@@ -82,8 +82,11 @@ each other's panes:
 
 A member's `review-<key>` comment marks its session `done`, records
 `team.member_done`, and types one line into the lead's pane:
-`okt: security finished task #42 — okt team show t-…`. No other text is ever
-typed into a running agent.
+`okt: security finished task #42 — okt team show t-…`. A `to-<key>` comment
+types one line into that seat's pane:
+`okt: message for security on task #42 — okt comment list 42 --tag to-security`.
+A key without a running seat is ignored. Nothing else is ever typed into a
+running agent.
 
 `wait` returns the first comment newer than its start, or than `--after`,
 whose tag matches the glob, plus the cursor for the next wait. On timeout it
