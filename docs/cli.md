@@ -29,7 +29,10 @@ procedures.
 | `--version`, `-v` | Show the executable version at the root command. |
 
 Without an explicit project, Omakiten resolves the registered root from the
-working directory. Configuration discovery is described in
+working directory. Inside a linked git worktree that matches no registered
+root, it resolves from the same path in the repository's main checkout, so
+agents working in parallel worktrees reach the same project without
+`--project`. Configuration discovery is described in
 [project configuration](how-to-configure-a-project.md).
 
 ## Find the verb
