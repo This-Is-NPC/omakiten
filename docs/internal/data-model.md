@@ -82,7 +82,9 @@ cascades teams.
 
 `agent_sessions` holds one row per team seat: its member key (`lead` or a
 declared key), command, persona, the resolved harness, model, and launcher,
-the pane id, and `spawned`, `failed`, `done`, or `stopped`. A session's own `okt` calls
+the pane id, and `spawned`, `failed`, `done`, `stopped`, or `replaced`. A
+partial unique index keeps one current session per team seat; reopening a
+seat marks its previous session `replaced`. A session's own `okt` calls
 carry its id in `events.agent_session_id`, indexed for per-session reads.
 
 ## Search and recovery

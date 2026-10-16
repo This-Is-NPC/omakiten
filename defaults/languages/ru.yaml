@@ -116,6 +116,8 @@ keys:
   cli.agent.short: "Открывать сессии агентов для задач и просматривать их"
   cli.agent.spawn.short: "Открыть команду агентов bucket или одного агента с --command для задачи"
   cli.agent.spawn.flag.task: "задача, над которой работают агенты"
+  cli.agent.spawn.flag.team: "активная команда, место --member которой открыть заново"
+  cli.agent.spawn.flag.member: "ключ места из состава для повторного открытия (lead для ведущего)"
   cli.agent.spawn.flag.command: "команда, которую запускает один ведущий агент вместо команды bucket"
   cli.agent.spawn.flag.harness: "адаптер harness для ведущего"
   cli.agent.spawn.flag.model: "модель, которую запускает harness ведущего"

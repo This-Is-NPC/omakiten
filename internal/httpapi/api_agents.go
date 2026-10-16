@@ -28,6 +28,11 @@ type SpawnBody struct {
 func (s *Server) agentRoutes() []route {
 	return []route{
 		command("spawnAgents", http.MethodPost, taskPath+"/agents", "agent.spawn", "Open the bucket's agent team, or one agent running a command, for a task.", []param{projectParam, taskParam}, s.spawnAgents),
+		command("respawnTeamMember", http.MethodPost, projectPath+"/teams/{team}/members/{member}", "agent.spawn", "Reopen one roster seat of an active agent team in a new session.", []param{
+			projectParam,
+			pathParam("team", "Agent team id.", stringSchema),
+			pathParam("member", "Roster key of the seat; `lead` for the lead.", stringSchema),
+		}, s.respawnMember),
 		query("getAgent", http.MethodGet, projectPath+"/agents/{session}", "agent.show", "An agent session and its last activity.", []param{
 			projectParam,
 			pathParam("session", "Agent session id.", stringSchema),
@@ -68,6 +73,14 @@ func (s *Server) spawnAgents(r *http.Request, body SpawnBody) (contract.SpawnAge
 		return contract.SpawnAgentsResponse{}, err
 	}
 	return ops.SpawnAgents(r.Context(), contract.SpawnAgentsInput{ProjectSelector: selector, TaskID: taskID, Command: body.Command, Harness: body.Harness, Model: body.Model, Launcher: body.Launcher})
+}
+
+func (s *Server) respawnMember(r *http.Request, body SpawnBody) (contract.SpawnAgentsResponse, error) {
+	ops, selector, err := s.project(r)
+	if err != nil {
+		return contract.SpawnAgentsResponse{}, err
+	}
+	return ops.SpawnAgents(r.Context(), contract.SpawnAgentsInput{ProjectSelector: selector, TeamID: r.PathValue("team"), Member: r.PathValue("member"), Harness: body.Harness, Model: body.Model, Launcher: body.Launcher})
 }
 
 func (s *Server) showAgent(r *http.Request) (contract.ShowAgentResponse, error) {

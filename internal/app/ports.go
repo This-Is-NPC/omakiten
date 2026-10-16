@@ -236,6 +236,7 @@ type AgentRepository interface {
 	CloseAgentTeam(ctx context.Context, teamID string) (bool, error)
 	AddAgentSession(ctx context.Context, session domain.AgentSession) error
 	FinishAgentSession(ctx context.Context, sessionID string) (bool, error)
+	ReplaceAgentSession(ctx context.Context, sessionID string) error
 	GetAgentTeam(ctx context.Context, teamID string) (domain.AgentTeam, error)
 	GetAgentSession(ctx context.Context, sessionID string) (domain.AgentSession, error)
 	ActiveAgentTeamIDs(ctx context.Context, projectID, taskID int64) ([]string, error)

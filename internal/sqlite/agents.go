@@ -88,6 +88,12 @@ func (s *Store) FinishAgentSession(ctx context.Context, sessionID string) (bool,
 	return n == 1, err
 }
 
+// ReplaceAgentSession marks a session replaced by a newer one for its seat.
+func (s *Store) ReplaceAgentSession(ctx context.Context, sessionID string) error {
+	_, err := s.query(ctx).ExecContext(ctx, `UPDATE agent_sessions SET status = 'replaced', finished_at = COALESCE(finished_at, CURRENT_TIMESTAMP) WHERE id = ? AND status != 'replaced'`, sessionID)
+	return err
+}
+
 // GetAgentTeam returns a team with its sessions in creation order.
 func (s *Store) GetAgentTeam(ctx context.Context, teamID string) (domain.AgentTeam, error) {
 	var team domain.AgentTeam

@@ -117,6 +117,9 @@ func (s *Service) SpawnAgents(ctx context.Context, input contract.SpawnAgentsInp
 	if err := s.allow("agent.spawn"); err != nil {
 		return contract.SpawnAgentsResponse{}, err
 	}
+	if strings.TrimSpace(input.TeamID) != "" {
+		return s.respawnMember(ctx, input)
+	}
 	detail, err := s.loadTaskDetail(ctx, input.ProjectSelector, input.TaskID)
 	if err != nil {
 		return contract.SpawnAgentsResponse{}, err
@@ -149,6 +152,96 @@ func (s *Service) requestedTeam(task domain.Task, input contract.SpawnAgentsInpu
 	team.Lead.Model = first(input.Model, team.Lead.Model)
 	team.Lead.Launcher = first(input.Launcher, team.Lead.Launcher)
 	return team, nil
+}
+
+// respawnMember reopens one roster seat of an active team in a new session;
+// the seat's previous session becomes replaced.
+func (s *Service) respawnMember(ctx context.Context, input contract.SpawnAgentsInput) (contract.SpawnAgentsResponse, error) {
+	target, err := s.respawnTarget(ctx, input)
+	if err != nil {
+		return contract.SpawnAgentsResponse{}, err
+	}
+	team, role := target.team, target.role
+	lead := teamSeat(team, domain.AgentLeadKey).ID
+	seat, plan := s.planSeat(s.snapshot.For(target.task).AgentAdapters(), role, domain.TeamSpawned)
+	if seat.Error == nil {
+		if old := teamSeat(team, role.Key); old.ID != "" {
+			if err := s.repo.ReplaceAgentSession(ctx, old.ID); err != nil {
+				return contract.SpawnAgentsResponse{}, err
+			}
+		}
+		seat = s.openSeat(ctx, target.project, target.task, team.ID, target.roster, role, plan, seat, lead)
+	}
+	out := domain.TeamOutcome{Status: domain.TeamSpawned, TeamID: team.ID, TaskID: team.TaskID, Bucket: team.BucketKey, Follow: teamFollow(team.ID, team.TaskID, lead)}
+	if role.Key == domain.AgentLeadKey {
+		out.Lead = seat
+	} else {
+		out.Members = []domain.MemberOutcome{seat}
+	}
+	if seat.Error != nil {
+		out.Status, out.Error = domain.TeamFailed, seat.Error
+		return contract.SpawnAgentsResponse{}, domain.NewError(domain.ErrAgentSpawnFailed, "the seat could not be reopened", map[string]any{"team": out})
+	}
+	return contract.SpawnAgentsResponse{Project: projectSummary(target.project), Team: out}, nil
+}
+
+// seatTarget is the active team, task, roster, and role a respawn reopens.
+type seatTarget struct {
+	project domain.ProjectContext
+	team    domain.AgentTeam
+	task    domain.Task
+	roster  domain.BucketAgents
+	role    domain.AgentRole
+}
+
+// respawnTarget validates a respawn request and resolves the seat it names,
+// with the request's adapters applied to the role.
+func (s *Service) respawnTarget(ctx context.Context, input contract.SpawnAgentsInput) (seatTarget, error) {
+	if strings.TrimSpace(input.Member) == "" || strings.TrimSpace(input.Command) != "" {
+		return seatTarget{}, domain.NewError(domain.ErrValidation, "--team reopens one roster seat: pass --member and no --command", nil)
+	}
+	project, err := s.resolveProject(ctx, input.ProjectSelector)
+	if err != nil {
+		return seatTarget{}, err
+	}
+	team, err := s.projectTeam(ctx, project, strings.TrimSpace(input.TeamID))
+	if err != nil {
+		return seatTarget{}, err
+	}
+	if team.Status != domain.TeamStatusActive {
+		return seatTarget{}, domain.NewError(domain.ErrValidation, "the agent team is not active", map[string]any{"team_id": team.ID, "status": team.Status})
+	}
+	detail, err := s.loadTaskDetail(ctx, input.ProjectSelector, team.TaskID)
+	if err != nil {
+		return seatTarget{}, err
+	}
+	task := detail.task
+	task.BucketKey = team.BucketKey
+	bucket, _ := s.snapshot.For(task).BucketByKey(team.BucketKey)
+	roster, role, err := rosterSeat(bucket.Agents, strings.TrimSpace(input.Member))
+	if err != nil {
+		return seatTarget{}, err
+	}
+	role.Harness, role.Model, role.Launcher = first(input.Harness, role.Harness), first(input.Model, role.Model), first(input.Launcher, role.Launcher)
+	return seatTarget{project: project, team: team, task: task, roster: roster, role: role}, nil
+}
+
+// rosterSeat returns the bucket team and the role a member key names in it.
+func rosterSeat(team *domain.BucketAgents, key string) (domain.BucketAgents, domain.AgentRole, error) {
+	if team == nil {
+		return domain.BucketAgents{}, domain.AgentRole{}, domain.NewError(domain.ErrValidation, "the team's bucket declares no agents", nil)
+	}
+	keys := []string{domain.AgentLeadKey}
+	if key == domain.AgentLeadKey {
+		return *team, team.Lead, nil
+	}
+	for _, m := range team.Members {
+		if m.Key == key {
+			return *team, m, nil
+		}
+		keys = append(keys, m.Key)
+	}
+	return domain.BucketAgents{}, domain.AgentRole{}, domain.NewError(domain.ErrValidation, "member is not in the bucket's roster", map[string]any{"member": key, "roster": keys})
 }
 
 func first(values ...string) string {
@@ -348,6 +441,9 @@ func (s *Service) seatPrompt(ctx context.Context, task domain.Task, teamID strin
 func runningTeam(team domain.AgentTeam) domain.TeamOutcome {
 	out := domain.TeamOutcome{Status: domain.TeamRunning, TeamID: team.ID, TaskID: team.TaskID, Bucket: team.BucketKey}
 	for _, session := range team.Sessions {
+		if session.Status == domain.SessionReplaced {
+			continue
+		}
 		seat := domain.MemberOutcome{Key: session.Member, SessionID: session.ID, Status: session.Status, Command: session.Command, Persona: session.Persona, Harness: session.Harness, Model: session.Model, Launcher: session.Launcher, Pane: session.Pane}
 		if session.Member == domain.AgentLeadKey {
 			out.Lead = seat
@@ -416,6 +512,9 @@ func (s *Service) ShowTeam(ctx context.Context, input contract.ShowTeamInput) (c
 	}
 	results := []contract.TeamResult{}
 	for _, session := range team.Sessions {
+		if session.Status == domain.SessionReplaced {
+			continue
+		}
 		for _, c := range comments {
 			if hasTag(c.Tags, domain.AgentResultTag+session.Member) {
 				results = append(results, contract.TeamResult{Member: session.Member, CommentID: c.ID, CreatedAt: c.CreatedAt})
@@ -516,10 +615,10 @@ func (s *Service) deliverMessages(ctx context.Context, team domain.AgentTeam, ke
 	}
 }
 
-// teamSeat returns the team's session for a member key, or a zero session.
+// teamSeat returns the current session of a member key, or a zero session.
 func teamSeat(team domain.AgentTeam, key string) domain.AgentSession {
 	for _, session := range team.Sessions {
-		if session.Member == key {
+		if session.Member == key && session.Status != domain.SessionReplaced {
 			return session
 		}
 	}

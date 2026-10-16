@@ -116,6 +116,8 @@ keys:
   cli.agent.short: "为任务打开代理会话并查看"
   cli.agent.spawn.short: "为任务打开 bucket 的代理团队,或运行 --command 的单个代理"
   cli.agent.spawn.flag.task: "代理处理的任务"
+  cli.agent.spawn.flag.team: "要重新打开其 --member 席位的活动团队"
+  cli.agent.spawn.flag.member: "要重新打开的席位的名册键(主代理为 lead)"
   cli.agent.spawn.flag.command: "代替 bucket 团队由单个主代理运行的命令"
   cli.agent.spawn.flag.harness: "主代理的 harness 适配器"
   cli.agent.spawn.flag.model: "主代理 harness 使用的模型"

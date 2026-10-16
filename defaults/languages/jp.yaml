@@ -116,6 +116,8 @@ keys:
   cli.agent.short: "タスクのエージェントセッションを開いて確認"
   cli.agent.spawn.short: "タスクに bucket のエージェントチーム、または --command を実行する 1 体のエージェントを開く"
   cli.agent.spawn.flag.task: "エージェントが作業するタスク"
+  cli.agent.spawn.flag.team: "--member の席を開き直すアクティブなチーム"
+  cli.agent.spawn.flag.member: "開き直す席のロスターキー (リードは lead)"
   cli.agent.spawn.flag.command: "bucket のチームの代わりにリードエージェント 1 体が実行するコマンド"
   cli.agent.spawn.flag.harness: "リード用の harness アダプター"
   cli.agent.spawn.flag.model: "リードの harness が使うモデル"

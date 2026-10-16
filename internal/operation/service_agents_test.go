@@ -345,3 +345,34 @@ func TestCloseTeamStopsItsSeats(t *testing.T) {
 		t.Fatal("closing a closed team succeeded")
 	}
 }
+
+// TestRespawnMemberReplacesItsSession verifies --team/--member opens a new
+// session for a roster key, marks the old one replaced, and refuses keys
+// outside the roster.
+func TestRespawnMemberReplacesItsSession(t *testing.T) {
+	f := newAgentSpawnFixture(t)
+	spawned, err := f.service.SpawnAgents(f.ctx, contract.SpawnAgentsInput{TaskID: f.task.ID})
+	if err != nil {
+		t.Fatalf("SpawnAgents() error = %v", err)
+	}
+	old := spawned.Team.Members[0].SessionID
+	again, err := f.service.SpawnAgents(f.ctx, contract.SpawnAgentsInput{TeamID: spawned.Team.TeamID, Member: "security"})
+	if err != nil || again.Team.Status != domain.TeamSpawned || len(again.Team.Members) != 1 || again.Team.Members[0].SessionID == old {
+		t.Fatalf("respawn = %+v, %v; want a new security session", again.Team, err)
+	}
+	assertPromptContains(t, again.Team.Members[0].SessionID, "security only", "Your lead's session is `"+spawned.Team.Lead.SessionID+"`")
+	team, err := f.service.ShowTeam(f.ctx, contract.ShowTeamInput{TeamID: spawned.Team.TeamID})
+	if err != nil {
+		t.Fatalf("ShowTeam() error = %v", err)
+	}
+	statuses := map[string]string{}
+	for _, session := range team.Team.Sessions {
+		statuses[session.ID] = session.Status
+	}
+	if statuses[old] != domain.SessionReplaced || statuses[again.Team.Members[0].SessionID] != domain.SessionSpawned {
+		t.Fatalf("sessions = %v, want the old one replaced and the new one spawned", statuses)
+	}
+	if _, err := f.service.SpawnAgents(f.ctx, contract.SpawnAgentsInput{TeamID: spawned.Team.TeamID, Member: "perf"}); err == nil {
+		t.Fatal("respawning a key outside the roster succeeded")
+	}
+}

@@ -104,6 +104,8 @@ keys:
   cli.agent.short: "Open agent sessions for tasks and inspect them"
   cli.agent.spawn.short: "Open the bucket's agent team, or one agent running --command, for a task"
   cli.agent.spawn.flag.task: "task the agents work on"
+  cli.agent.spawn.flag.team: "active team whose --member seat to reopen"
+  cli.agent.spawn.flag.member: "roster key of the seat to reopen (lead for the lead)"
   cli.agent.spawn.flag.command: "command one lead agent runs instead of the bucket's team"
   cli.agent.spawn.flag.harness: "harness adapter for the lead"
   cli.agent.spawn.flag.model: "model the lead's harness runs"

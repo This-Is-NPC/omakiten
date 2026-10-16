@@ -3,11 +3,14 @@ package contract
 import "omakiten/internal/domain"
 
 // SpawnAgentsInput opens agents for a task. Without Command it opens the
-// team the task's bucket declares; Command opens a team of one lead. The
-// other fields override the lead's adapters.
+// team the task's bucket declares; Command opens a team of one lead. TeamID
+// with Member instead reopens that roster seat of an active team. The other
+// fields override the opened seat's adapters.
 type SpawnAgentsInput struct {
 	ProjectSelector
-	TaskID   int64  `json:"task_id"`
+	TaskID   int64  `json:"task_id,omitempty"`
+	TeamID   string `json:"team_id,omitempty"`
+	Member   string `json:"member,omitempty"`
 	Command  string `json:"command,omitempty"`
 	Harness  string `json:"harness,omitempty"`
 	Model    string `json:"model,omitempty"`

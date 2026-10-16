@@ -390,11 +390,12 @@ CREATE TABLE agent_sessions (
   model TEXT NOT NULL DEFAULT '',
   launcher TEXT NOT NULL,
   pane TEXT NOT NULL DEFAULT '',
-  status TEXT NOT NULL CHECK (status IN ('spawned', 'failed', 'done', 'stopped')),
+  status TEXT NOT NULL CHECK (status IN ('spawned', 'failed', 'done', 'stopped', 'replaced')),
   error TEXT NOT NULL DEFAULT '',
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  finished_at TEXT,
-  UNIQUE (team_id, member)
+  finished_at TEXT
 );
+
+CREATE UNIQUE INDEX idx_agent_sessions_seat ON agent_sessions(team_id, member) WHERE status != 'replaced';
 
 CREATE INDEX idx_events_agent_session ON events(agent_session_id, id) WHERE agent_session_id IS NOT NULL;

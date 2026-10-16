@@ -116,6 +116,8 @@ keys:
   cli.agent.short: "작업용 에이전트 세션을 열고 확인"
   cli.agent.spawn.short: "작업에 bucket의 에이전트 팀 또는 --command를 실행하는 에이전트 하나를 연다"
   cli.agent.spawn.flag.task: "에이전트가 작업할 작업"
+  cli.agent.spawn.flag.team: "--member 자리를 다시 열 활성 팀"
+  cli.agent.spawn.flag.member: "다시 열 자리의 로스터 키 (리드는 lead)"
   cli.agent.spawn.flag.command: "bucket 팀 대신 리드 에이전트 하나가 실행할 명령"
   cli.agent.spawn.flag.harness: "리드용 harness 어댑터"
   cli.agent.spawn.flag.model: "리드의 harness가 실행할 모델"

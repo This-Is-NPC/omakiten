@@ -21,12 +21,17 @@ const (
 	TeamClosed     = "closed"
 )
 
+// TeamStatusActive is the stored status of a team whose seats may run;
+// failed and closed teams carry TeamFailed and TeamClosed.
+const TeamStatusActive = "active"
+
 // Agent session statuses.
 const (
-	SessionSpawned = "spawned"
-	SessionFailed  = "failed"
-	SessionDone    = "done"
-	SessionStopped = "stopped"
+	SessionSpawned  = "spawned"
+	SessionFailed   = "failed"
+	SessionDone     = "done"
+	SessionStopped  = "stopped"
+	SessionReplaced = "replaced"
 )
 
 // AgentRole is one team seat: the command it runs and the optional harness,

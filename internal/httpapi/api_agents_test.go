@@ -11,6 +11,7 @@ var _ = mapping([]mappingCase{
 	{"spawnAgents", http.MethodPost, "/api/v1/projects/alpha/tasks/5/agents", `{"command":"okt-task-review","harness":"opencode","model":"m","launcher":"tmux"}`, "SpawnAgents", contract.SpawnAgentsInput{
 		ProjectSelector: alpha, TaskID: 5, Command: "okt-task-review", Harness: "opencode", Model: "m", Launcher: "tmux",
 	}},
+	{"respawnTeamMember", http.MethodPost, "/api/v1/projects/alpha/teams/t-1/members/security", `{"model":"m"}`, "SpawnAgents", contract.SpawnAgentsInput{ProjectSelector: alpha, TeamID: "t-1", Member: "security", Model: "m"}},
 	{"getAgent", http.MethodGet, "/api/v1/projects/alpha/agents/s-1", "", "ShowAgent", contract.ShowAgentInput{ProjectSelector: alpha, SessionID: "s-1"}},
 	{"waitTaskComment", http.MethodGet, "/api/v1/projects/alpha/tasks/5/wait?tag=review-*&timeout=2m&after=9", "", "Wait", contract.WaitInput{ProjectSelector: alpha, TaskID: 5, Tag: "review-*", Timeout: "2m", AfterID: 9}},
 	{"closeTeam", http.MethodPost, "/api/v1/projects/alpha/teams/t-1/close", "", "CloseTeam", contract.CloseTeamInput{ProjectSelector: alpha, TeamID: "t-1"}},

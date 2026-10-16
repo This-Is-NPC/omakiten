@@ -116,6 +116,8 @@ keys:
   cli.agent.short: "فتح جلسات وكلاء للمهام وفحصها"
   cli.agent.spawn.short: "فتح فريق وكلاء bucket، أو وكيل واحد يشغّل --command، لمهمة"
   cli.agent.spawn.flag.task: "المهمة التي يعمل عليها الوكلاء"
+  cli.agent.spawn.flag.team: "الفريق النشط الذي يُعاد فتح مقعد ‎--member فيه"
+  cli.agent.spawn.flag.member: "مفتاح المقعد في القائمة لإعادة فتحه (lead للقائد)"
   cli.agent.spawn.flag.command: "الأمر الذي يشغّله وكيل قائد واحد بدل فريق bucket"
   cli.agent.spawn.flag.harness: "محوّل harness للقائد"
   cli.agent.spawn.flag.model: "النموذج الذي يشغّله harness القائد"

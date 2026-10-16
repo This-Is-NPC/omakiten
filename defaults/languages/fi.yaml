@@ -117,6 +117,8 @@ keys:
   cli.agent.short: "Avaa agenttiistuntoja tehtäville ja tarkastele niitä"
   cli.agent.spawn.short: "Avaa bucketin agenttitiimi tai yksi agentti komennolla --command tehtävälle"
   cli.agent.spawn.flag.task: "tehtävä, jota agentit työstävät"
+  cli.agent.spawn.flag.team: "aktiivinen tiimi, jonka --member-paikka avataan uudelleen"
+  cli.agent.spawn.flag.member: "uudelleen avattavan paikan roster-avain (lead johtajalle)"
   cli.agent.spawn.flag.command: "komento, jonka yksi lead-agentti ajaa bucketin tiimin sijaan"
   cli.agent.spawn.flag.harness: "leadin harness-sovitin"
   cli.agent.spawn.flag.model: "malli, jota leadin harness ajaa"

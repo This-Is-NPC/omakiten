@@ -63,6 +63,11 @@ When the task leaves the bucket, its team there closes: the team becomes
 `okt team close t-…` does the same at any time. A task that enters the bucket
 again opens a new team.
 
+To reopen one seat of an active team, for example a member that failed or
+went silent, run `okt agent spawn --team t-… --member security`. Only keys of
+the bucket's roster, and `lead`, are accepted. The seat gets a new session
+and prompt; its previous session becomes `replaced`.
+
 `trigger: manual` makes a move into the bucket report the team instead of
 opening it: `data.team` has `status: suggested`, the resolved seats, and the
 `spawn` command to run when you want it. `okt move --dry-run` reports the same

@@ -116,6 +116,8 @@ keys:
   cli.agent.short: "Open agentsessies voor taken en bekijk ze"
   cli.agent.spawn.short: "Open het agentteam van de bucket, of één agent met --command, voor een taak"
   cli.agent.spawn.flag.task: "taak waaraan de agents werken"
+  cli.agent.spawn.flag.team: "actief team waarvan de --member-plaats heropend wordt"
+  cli.agent.spawn.flag.member: "rostersleutel van de te heropenen plaats (lead voor de lead)"
   cli.agent.spawn.flag.command: "commando dat één lead-agent uitvoert in plaats van het bucketteam"
   cli.agent.spawn.flag.harness: "harness-adapter voor de lead"
   cli.agent.spawn.flag.model: "model dat de harness van de lead gebruikt"
