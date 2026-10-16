@@ -395,3 +395,31 @@ func TestWaitDefaultsToTheActiveTeamsStart(t *testing.T) {
 		t.Fatalf("Wait() = %+v, %v; want the result published after the team opened", got, err)
 	}
 }
+
+// TestListAgentsFiltersTeams verifies agent.list returns the project's teams
+// newest first with their sessions, filtered by task and status.
+func TestListAgentsFiltersTeams(t *testing.T) {
+	f := newAgentSpawnFixture(t)
+	first, err := f.service.SpawnAgents(f.ctx, contract.SpawnAgentsInput{TaskID: f.task.ID})
+	if err != nil {
+		t.Fatalf("SpawnAgents() error = %v", err)
+	}
+	if _, err := f.service.CloseTeam(f.ctx, contract.CloseTeamInput{TeamID: first.Team.TeamID}); err != nil {
+		t.Fatalf("CloseTeam() error = %v", err)
+	}
+	second, err := f.service.SpawnAgents(f.ctx, contract.SpawnAgentsInput{TaskID: f.task.ID})
+	if err != nil {
+		t.Fatalf("SpawnAgents(again) error = %v", err)
+	}
+	all, err := f.service.ListAgents(f.ctx, contract.ListAgentsInput{TaskID: f.task.ID})
+	if err != nil || len(all.Teams) != 2 || all.Teams[0].ID != second.Team.TeamID || len(all.Teams[0].Sessions) != 2 {
+		t.Fatalf("ListAgents(task) = %+v, %v; want both teams newest first with sessions", all.Teams, err)
+	}
+	active, err := f.service.ListAgents(f.ctx, contract.ListAgentsInput{Status: domain.TeamStatusActive})
+	if err != nil || len(active.Teams) != 1 || active.Teams[0].ID != second.Team.TeamID {
+		t.Fatalf("ListAgents(active) = %+v, %v; want only the open team", active.Teams, err)
+	}
+	if _, err := f.service.ListAgents(f.ctx, contract.ListAgentsInput{Status: "running"}); err == nil {
+		t.Fatal("ListAgents accepted an unknown status")
+	}
+}

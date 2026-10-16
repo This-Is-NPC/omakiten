@@ -1,4 +1,5 @@
 agent.spawn product
+agent.list product
 agent.show product
 command.list product
 command.resolve product

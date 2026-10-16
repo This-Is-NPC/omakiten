@@ -69,6 +69,7 @@ func (s *Service) actionHandlers() map[string]actionHandler {
 		"command.list": bindAction(func(ctx context.Context, _ struct{}) (contract.ListCommandsResponse, error) {
 			return s.ListCommands(ctx)
 		}),
+		"agent.list":           bindAction(s.ListAgents),
 		"agent.show":           bindAction(s.ShowAgent),
 		"agent.spawn":          bindAction(s.SpawnAgents),
 		"command.resolve":      bindAction(s.ResolveCommand),

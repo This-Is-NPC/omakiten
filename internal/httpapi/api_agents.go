@@ -11,6 +11,7 @@ import (
 type AgentOperations interface {
 	SpawnAgents(ctx context.Context, input contract.SpawnAgentsInput) (contract.SpawnAgentsResponse, error)
 	ShowAgent(ctx context.Context, input contract.ShowAgentInput) (contract.ShowAgentResponse, error)
+	ListAgents(ctx context.Context, input contract.ListAgentsInput) (contract.ListAgentsResponse, error)
 	ShowTeam(ctx context.Context, input contract.ShowTeamInput) (contract.ShowTeamResponse, error)
 	CloseTeam(ctx context.Context, input contract.CloseTeamInput) (contract.CloseTeamResponse, error)
 	Wait(ctx context.Context, input contract.WaitInput) (contract.WaitResponse, error)
@@ -33,6 +34,11 @@ func (s *Server) agentRoutes() []route {
 			pathParam("team", "Agent team id.", stringSchema),
 			pathParam("member", "Roster key of the seat; `lead` for the lead.", stringSchema),
 		}, s.respawnMember),
+		query("listAgents", http.MethodGet, projectPath+"/agents", "agent.list", "A project's agent teams with their sessions, newest first.", []param{
+			projectParam,
+			queryParam("task", "Task id whose teams to keep.", intSchema),
+			queryParam("status", "Team status: `active`, `failed`, or `closed`.", stringSchema),
+		}, s.listAgents),
 		query("getAgent", http.MethodGet, projectPath+"/agents/{session}", "agent.show", "An agent session and its last activity.", []param{
 			projectParam,
 			pathParam("session", "Agent session id.", stringSchema),
@@ -81,6 +87,18 @@ func (s *Server) respawnMember(r *http.Request, body SpawnBody) (contract.SpawnA
 		return contract.SpawnAgentsResponse{}, err
 	}
 	return ops.SpawnAgents(r.Context(), contract.SpawnAgentsInput{ProjectSelector: selector, TeamID: r.PathValue("team"), Member: r.PathValue("member"), Harness: body.Harness, Model: body.Model, Launcher: body.Launcher})
+}
+
+func (s *Server) listAgents(r *http.Request) (contract.ListAgentsResponse, error) {
+	task, err := optionalInt(r, "task")
+	if err != nil {
+		return contract.ListAgentsResponse{}, err
+	}
+	ops, selector, err := s.project(r)
+	if err != nil {
+		return contract.ListAgentsResponse{}, err
+	}
+	return ops.ListAgents(r.Context(), contract.ListAgentsInput{ProjectSelector: selector, TaskID: int64(task), Status: r.URL.Query().Get("status")})
 }
 
 func (s *Server) showAgent(r *http.Request) (contract.ShowAgentResponse, error) {

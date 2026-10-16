@@ -1328,6 +1328,24 @@
         ],
         "type": "object"
       },
+      "contract.ListAgentsResponse": {
+        "properties": {
+          "project": {
+            "$ref": "#/components/schemas/contract.ProjectSummary"
+          },
+          "teams": {
+            "items": {
+              "$ref": "#/components/schemas/domain.AgentTeam"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "project",
+          "teams"
+        ],
+        "type": "object"
+      },
       "contract.ListCommandsResponse": {
         "properties": {
           "commands": {
@@ -4870,6 +4888,77 @@
         },
         "summary": "Change a project's description.",
         "x-okt-surface": "project.edit"
+      }
+    },
+    "/api/v1/projects/{project}/agents": {
+      "get": {
+        "operationId": "listAgents",
+        "parameters": [
+          {
+            "description": "Project slug.",
+            "in": "path",
+            "name": "project",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Task id whose teams to keep.",
+            "in": "query",
+            "name": "task",
+            "required": false,
+            "schema": {
+              "format": "int32",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Team status: `active`, `failed`, or `closed`.",
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/contract.ListAgentsResponse"
+                    },
+                    "ok": {
+                      "const": true
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success."
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/output.Envelope"
+                }
+              }
+            },
+            "description": "Error envelope."
+          }
+        },
+        "summary": "A project's agent teams with their sessions, newest first.",
+        "x-okt-surface": "agent.list"
       }
     },
     "/api/v1/projects/{project}/agents/{session}": {

@@ -10,7 +10,30 @@ import (
 
 func newAgentCommand(opts *runtimeOptions) *cobra.Command {
 	cmd := &cobra.Command{Use: "agent", Short: opts.t("cli.agent.short")}
-	cmd.AddCommand(newAgentSpawnCommand(opts), newAgentShowCommand(opts))
+	cmd.AddCommand(newAgentSpawnCommand(opts), newAgentShowCommand(opts), newAgentListCommand(opts))
+	return cmd
+}
+
+func newAgentListCommand(opts *runtimeOptions) *cobra.Command {
+	var input contract.ListAgentsInput
+	cmd := &cobra.Command{
+		Use:   "list [--task ID] [--status active|failed|closed]",
+		Short: opts.t("cli.agent.list.short"),
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return runJSON(cmd, func(ctx context.Context) (any, error) {
+				rt, err := opts.open(ctx, true)
+				if err != nil {
+					return nil, err
+				}
+				defer rt.close()
+				input.ProjectSelector = opts.projectSelector()
+				return rt.operationService().ListAgents(ctx, input)
+			})
+		},
+	}
+	cmd.Flags().Int64Var(&input.TaskID, "task", 0, opts.t("cli.agent.list.flag.task"))
+	cmd.Flags().StringVar(&input.Status, "status", "", opts.t("cli.agent.list.flag.status"))
 	return cmd
 }
 

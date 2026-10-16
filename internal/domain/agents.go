@@ -108,6 +108,12 @@ type AgentTeam struct {
 	Sessions    []AgentSession `json:"sessions,omitempty"`
 }
 
+// AgentTeamFilter scopes a team listing; zero fields do not filter.
+type AgentTeamFilter struct {
+	TaskID int64
+	Status string
+}
+
 // AgentSession is one agent process opened in a terminal pane.
 type AgentSession struct {
 	ID         string `json:"session_id"`

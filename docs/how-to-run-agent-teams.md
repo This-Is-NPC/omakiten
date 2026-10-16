@@ -27,6 +27,9 @@ okt --project example task continue 42
 ```
 
 `logs --session` lists everything the agent's own `okt` calls recorded.
+`okt agent list` lists the project's teams, newest first, each with its
+sessions; `--task 42` and `--status active|failed|closed` narrow it. Over the
+local API it is `GET /api/v1/projects/{project}/agents?task=&status=`.
 
 `--harness`, `--model`, and `--launcher` override the adapters for this spawn.
 Spawning again for the same task and bucket returns the running team instead

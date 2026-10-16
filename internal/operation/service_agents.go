@@ -632,3 +632,27 @@ func (s *Service) wake(ctx context.Context, session domain.AgentSession, line st
 	}
 	return s.launcher.Send(ctx, s.snapshot.AgentAdapters().Launchers[session.Launcher], session.Pane, line)
 }
+
+func (s *Service) ListAgents(ctx context.Context, input contract.ListAgentsInput) (contract.ListAgentsResponse, error) {
+	if err := s.allow("agent.list"); err != nil {
+		return contract.ListAgentsResponse{}, err
+	}
+	status := strings.TrimSpace(input.Status)
+	switch status {
+	case "", domain.TeamStatusActive, domain.TeamFailed, domain.TeamClosed:
+	default:
+		return contract.ListAgentsResponse{}, domain.NewError(domain.ErrValidation, "status must be active, failed, or closed", map[string]any{"status": input.Status})
+	}
+	project, err := s.resolveProject(ctx, input.ProjectSelector)
+	if err != nil {
+		return contract.ListAgentsResponse{}, err
+	}
+	teams, err := s.repo.ListAgentTeams(ctx, project.ID, domain.AgentTeamFilter{TaskID: input.TaskID, Status: status})
+	if err != nil {
+		return contract.ListAgentsResponse{}, err
+	}
+	if teams == nil {
+		teams = []domain.AgentTeam{}
+	}
+	return contract.ListAgentsResponse{Project: projectSummary(project), Teams: teams}, nil
+}

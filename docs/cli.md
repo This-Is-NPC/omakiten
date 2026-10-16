@@ -56,7 +56,7 @@ working directory. Configuration discovery is described in
 | `error record`, `list` | Record reusable development failures and list them, newest first, optionally by `--tag`. |
 | `solution add`, `confirm`, `list-top` | Fixes, observed outcomes, and ranked reuse. |
 | `progress` | Material progress on a task. |
-| `agent spawn`, `agent show`, `team show`, `team close` | Open a task's agent team in terminal panes and inspect its sessions. See [agents](how-to-run-agent-teams.md). |
+| `agent spawn`, `agent list`, `agent show`, `team show`, `team close` | Open a task's agent team in terminal panes and inspect its sessions. See [agents](how-to-run-agent-teams.md). |
 | `wait` | Block until a task comment carries a tag matching a glob, such as an agent's `review-*` result. |
 | `emit` | An outside event the workflow declares, from a script or CI job; its hooks run. |
 | `insights summary`, `metrics summary` | Project signals and agent behavior metrics. |

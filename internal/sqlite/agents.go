@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"strings"
 
 	"omakiten/internal/domain"
 )
@@ -118,6 +119,66 @@ func (s *Store) GetAgentTeam(ctx context.Context, teamID string) (domain.AgentTe
 		team.Sessions = append(team.Sessions, session)
 	}
 	return team, rows.Err()
+}
+
+const agentTeamListLimit = 200
+
+// ListAgentTeams returns the project's teams newest first, each with its
+// sessions, capped at agentTeamListLimit.
+func (s *Store) ListAgentTeams(ctx context.Context, projectID int64, filter domain.AgentTeamFilter) ([]domain.AgentTeam, error) {
+	query := `SELECT id, project_id, task_id, bucket_key, status, opened_after, created_at FROM agent_teams WHERE project_id = ?`
+	args := []any{projectID}
+	if filter.TaskID > 0 {
+		query += ` AND task_id = ?`
+		args = append(args, filter.TaskID)
+	}
+	if filter.Status != "" {
+		query += ` AND status = ?`
+		args = append(args, filter.Status)
+	}
+	query += ` ORDER BY rowid DESC LIMIT ?`
+	args = append(args, agentTeamListLimit)
+	rows, err := s.query(ctx).QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	var teams []domain.AgentTeam
+	index := map[string]int{}
+	for rows.Next() {
+		var team domain.AgentTeam
+		if err := rows.Scan(&team.ID, &team.ProjectID, &team.TaskID, &team.BucketKey, &team.Status, &team.OpenedAfter, &team.CreatedAt); err != nil {
+			return nil, err
+		}
+		index[team.ID] = len(teams)
+		teams = append(teams, team)
+	}
+	if err := rows.Err(); err != nil || len(teams) == 0 {
+		return teams, err
+	}
+	return teams, s.attachAgentSessions(ctx, teams, index)
+}
+
+// attachAgentSessions loads the sessions of every team in one query.
+func (s *Store) attachAgentSessions(ctx context.Context, teams []domain.AgentTeam, index map[string]int) error {
+	args := make([]any, len(teams))
+	for i, team := range teams {
+		args[i] = team.ID
+	}
+	rows, err := s.query(ctx).QueryContext(ctx, `SELECT `+agentSessionColumns+` FROM agent_sessions WHERE team_id IN (`+strings.TrimSuffix(strings.Repeat("?,", len(args)), ",")+`) ORDER BY rowid`, args...)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = rows.Close() }()
+	for rows.Next() {
+		session, err := scanAgentSession(rows)
+		if err != nil {
+			return err
+		}
+		i := index[session.TeamID]
+		teams[i].Sessions = append(teams[i].Sessions, session)
+	}
+	return rows.Err()
 }
 
 // GetAgentSession returns one session.

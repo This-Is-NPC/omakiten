@@ -71,3 +71,16 @@ type CloseTeamResponse struct {
 	Project ProjectSummary   `json:"project"`
 	Team    domain.AgentTeam `json:"team"`
 }
+
+// ListAgentsInput filters agent.list by task and team status (active,
+// failed, closed); zero fields do not filter.
+type ListAgentsInput struct {
+	ProjectSelector
+	TaskID int64  `json:"task_id,omitempty"`
+	Status string `json:"status,omitempty"`
+}
+
+type ListAgentsResponse struct {
+	Project ProjectSummary     `json:"project"`
+	Teams   []domain.AgentTeam `json:"teams"`
+}
