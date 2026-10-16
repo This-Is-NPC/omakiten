@@ -28,7 +28,7 @@ instructions; do not assume that an older binary has a newer operation.
 | Tasks, comments, plans, assignment, dependencies | `task`, `comment`, `plan`, `assign`, `depend` |
 | Failures, reusable fixes, progress | `error`, `solution`, `progress` |
 | Active policy, configuration, events | `workflow show`, `config`, `preset`, `logs` |
-| Agents opened for a task | `agent spawn`, `agent show`, `team show`, `wait`, `logs --session` |
+| Agents opened for a task | `agent spawn`, `agent show`, `team show`, `team close`, `wait`, `logs --session` |
 | A moved project directory | `project relocate --help`; preserve the existing project id |
 | Local HTTP access or outside events | `serve --help`, `emit --help` |
 | Documentation attached to a project | `knowledge list`, `knowledge search`, `knowledge show` |
@@ -123,7 +123,9 @@ A move into a bucket that declares an agent team returns it in `data.team`.
 follow them with the `follow` commands. `suggested` lists the `spawn` command
 to run if the user wants the team. Opened as a seat yourself, follow the team
 section of your prompt: publish once with `-T review-<key>`, address
-teammates with `-T to-<key>`, and wait with `okt wait`.
+teammates with `-T to-<key>`, and wait with `okt wait`. Reopen a failed or
+silent seat with `okt agent spawn --team <T> --member <key>`; a team closes
+by itself when its task leaves the bucket, or with `okt team close <T>`.
 
 ## Read results
 
