@@ -21,15 +21,21 @@ import (
 // exists, without waiting for the harness.
 const openTimeout = 10 * time.Second
 
-// Launcher runs adapter commands. LookPath and Run are the process seams.
+// submitDelay separates typing a line from submitting it, so the pane sees
+// two inputs rather than one paste.
+const submitDelay = 150 * time.Millisecond
+
+// Launcher runs adapter commands. LookPath and Run are the process seams;
+// SubmitDelay is the pause between a send and its submit.
 type Launcher struct {
-	LookPath func(file string) (string, error)
-	Run      func(ctx context.Context, argv []string) ([]byte, error)
+	LookPath    func(file string) (string, error)
+	Run         func(ctx context.Context, argv []string) ([]byte, error)
+	SubmitDelay time.Duration
 }
 
 // New returns a Launcher that runs real processes.
 func New() Launcher {
-	return Launcher{LookPath: exec.LookPath, Run: run}
+	return Launcher{LookPath: exec.LookPath, Run: run, SubmitDelay: submitDelay}
 }
 
 func run(ctx context.Context, argv []string) ([]byte, error) {
@@ -180,9 +186,19 @@ func (l Launcher) Open(ctx context.Context, plan Plan, req Request) (string, err
 	return pane, nil
 }
 
-// Send types one line into a pane.
+// Send types one line into a pane, then presses submit in its own command
+// after SubmitDelay.
 func (l Launcher) Send(ctx context.Context, spec domain.LauncherSpec, pane, text string) error {
-	_, err := l.Run(ctx, Expand(spec.Send, map[string]string{"pane": pane, "text": text, "target": spec.Target}))
+	vars := map[string]string{"pane": pane, "text": text, "target": spec.Target}
+	if _, err := l.Run(ctx, Expand(spec.Send, vars)); err != nil || len(spec.Submit) == 0 {
+		return err
+	}
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-time.After(l.SubmitDelay):
+	}
+	_, err := l.Run(ctx, Expand(spec.Submit, vars))
 	return err
 }
 

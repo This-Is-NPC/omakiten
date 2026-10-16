@@ -144,3 +144,24 @@ func TestPresetExecutablesNameEachSeatsHarness(t *testing.T) {
 		t.Fatalf("teamExecutables() = %q, want %q", got, want)
 	}
 }
+
+// TestShippedLaunchersSubmitSeparately verifies every shipped launcher types
+// text with send and presses Enter only in a separate submit step.
+func TestShippedLaunchersSubmitSeparately(t *testing.T) {
+	shipped, err := defaultAgentSettings()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, l := range shipped.Launchers {
+		if len(l.Submit) == 0 {
+			t.Errorf("launcher %s has no submit step", name)
+		}
+		for _, arg := range l.Send {
+			for _, v := range arg.Values {
+				if strings.EqualFold(v, "enter") {
+					t.Errorf("launcher %s presses Enter inside send: %+v", name, l.Send)
+				}
+			}
+		}
+	}
+}

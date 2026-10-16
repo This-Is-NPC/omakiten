@@ -128,7 +128,8 @@ agents:
     tmux:
       target: work
       open: [tmux, new-window, -d, -P, -F, "#{pane_id}", [-t, "{target}"], -c, "{cwd}", -n, "{label}", "{command}"]
-      send: [tmux, send-keys, -t, "{pane}", "{text}", Enter]
+      send: [tmux, send-keys, -t, "{pane}", -l, "{text}"]
+      submit: [tmux, send-keys, -t, "{pane}", Enter]
 ```
 
 A list inside `argv` is a group, dropped when one of its placeholders is
@@ -136,7 +137,9 @@ empty. Put `--` before a positional `{prompt}`, as the shipped `claude-code`
 does, so a flag that takes several values cannot swallow the prompt. `{prompt}` becomes the prompt file's content; `{command}` is the
 harness command line the launcher runs. A launcher whose `open` prints JSON
 names the pane id with `pane: result.root_pane.pane_id`, and `run` starts the
-command in that pane.
+command in that pane. `send` types a line and `submit` presses Enter in a
+separate command after a short pause; an agent's terminal UI reads text and
+Enter sent together as one paste and leaves the line unsubmitted.
 
 A seat left without a harness or a launcher opens nothing: its status, and
 the team's when it is the lead, is `unconfigured`, and `error`

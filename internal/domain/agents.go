@@ -67,15 +67,18 @@ type HarnessSpec struct {
 	Argv []AgentArg `json:"argv"`
 }
 
-// LauncherSpec opens a terminal pane and sends text to it. Pane is the dot
+// LauncherSpec opens a terminal pane and types text into it. Pane is the dot
 // path of the pane id in Open's JSON output; empty means the whole output.
-// Run, when set, starts the command in the opened pane.
+// Run, when set, starts the command in the opened pane. Send types the text;
+// Submit, when set, presses Enter in a separate command, so a TUI does not
+// read text and Enter as one paste.
 type LauncherSpec struct {
 	Target string     `json:"target,omitempty"`
 	Open   []AgentArg `json:"open"`
 	Pane   string     `json:"pane,omitempty"`
 	Run    []AgentArg `json:"run,omitempty"`
 	Send   []AgentArg `json:"send"`
+	Submit []AgentArg `json:"submit,omitempty"`
 }
 
 // AgentDefaults names the harness, model, and launcher a role without its

@@ -59,6 +59,7 @@ type LauncherConfig struct {
 	Pane   string         `yaml:"pane,omitempty" json:"pane,omitempty"`
 	Run    []AgentArgYAML `yaml:"run,omitempty" json:"run,omitempty"`
 	Send   []AgentArgYAML `yaml:"send" json:"send"`
+	Submit []AgentArgYAML `yaml:"submit,omitempty" json:"submit,omitempty"`
 }
 
 // AgentDefaultsConfig names the harness, model, and launcher roles inherit.
@@ -140,7 +141,7 @@ func mergeAgentAdapters(prefs *AgentPreferences, preset *AgentsSettings) (domain
 			out.Harnesses[name] = domain.HarnessSpec{Argv: toDomainArgs(h.Argv)}
 		}
 		for name, l := range layer.Launchers {
-			out.Launchers[name] = domain.LauncherSpec{Target: l.Target, Open: toDomainArgs(l.Open), Pane: l.Pane, Run: toDomainArgs(l.Run), Send: toDomainArgs(l.Send)}
+			out.Launchers[name] = domain.LauncherSpec{Target: l.Target, Open: toDomainArgs(l.Open), Pane: l.Pane, Run: toDomainArgs(l.Run), Send: toDomainArgs(l.Send), Submit: toDomainArgs(l.Submit)}
 		}
 	}
 	return out, nil

@@ -130,3 +130,21 @@ func TestResolveWithoutAChoiceIsUnconfigured(t *testing.T) {
 		t.Fatalf("Resolve() without a launcher = %+v, want agent_unconfigured naming agents.defaults.launcher", err)
 	}
 }
+
+// TestSendSubmitsInASeparateCommand verifies Send types the text in one
+// command and presses submit in another, so a TUI cannot read the burst as
+// a paste with an embedded newline.
+func TestSendSubmitsInASeparateCommand(t *testing.T) {
+	l, calls := fakeLauncher("tmux")
+	spec := domain.LauncherSpec{
+		Send:   args("tmux", "send-keys", "-t", "{pane}", "-l", "{text}"),
+		Submit: args("tmux", "send-keys", "-t", "{pane}", "Enter"),
+	}
+	if err := l.Send(context.Background(), spec, "%7", "okt: wake up"); err != nil {
+		t.Fatalf("Send() error = %v", err)
+	}
+	want := [][]string{{"tmux", "send-keys", "-t", "%7", "-l", "okt: wake up"}, {"tmux", "send-keys", "-t", "%7", "Enter"}}
+	if !reflect.DeepEqual(*calls, want) {
+		t.Fatalf("calls = %q, want %q", *calls, want)
+	}
+}

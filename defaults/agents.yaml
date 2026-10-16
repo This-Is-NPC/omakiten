@@ -9,9 +9,11 @@ harnesses:
 launchers:
   tmux:
     open: [tmux, new-window, -d, -P, -F, "#{pane_id}", [-t, "{target}"], -c, "{cwd}", -n, "{label}", "{command}"]
-    send: [tmux, send-keys, -t, "{pane}", "{text}", Enter]
+    send: [tmux, send-keys, -t, "{pane}", -l, "{text}"]
+    submit: [tmux, send-keys, -t, "{pane}", Enter]
   herdr:
     open: [herdr, tab, create, --cwd, "{cwd}", --label, "{label}", --no-focus]
     pane: result.root_pane.pane_id
     run: [herdr, pane, run, "{pane}", "{command}"]
-    send: [herdr, pane, run, "{pane}", "{text}"]
+    send: [herdr, pane, send-text, "{pane}", "{text}"]
+    submit: [herdr, pane, send-keys, "{pane}", enter]
