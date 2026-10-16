@@ -27,6 +27,8 @@ okt --project example task continue 42
 ```
 
 `logs --session` lists everything the agent's own `okt` calls recorded.
+`okt task show 42` and `okt task continue 42` carry the task's active team,
+with its sessions, in `team`; the field is absent when no team is active.
 `okt agent list` lists the project's teams, newest first, each with its
 sessions; `--task 42` and `--status active|failed|closed` narrow it. Over the
 local API it is `GET /api/v1/projects/{project}/agents?task=&status=`.

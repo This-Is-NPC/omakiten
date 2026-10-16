@@ -40,7 +40,12 @@ func (s *Service) ContinueTask(ctx context.Context, input contract.ContinueTaskI
 	if s.snapshot != nil {
 		agentOutputLang = s.snapshot.AgentOutputLanguage()
 	}
+	team, err := s.activeTeam(ctx, detail.project, detail.task.ID)
+	if err != nil {
+		return contract.ContinueTaskResponse{}, err
+	}
 	return contract.ContinueTaskResponse{
+		Team:                team,
 		Project:             projectSummary(detail.project),
 		Task:                taskSummary(detail.task, s.registry),
 		Workflow:            workflowSum,
@@ -60,11 +65,16 @@ func (s *Service) ShowTask(ctx context.Context, input contract.ShowTaskInput) (c
 	if err != nil {
 		return contract.ShowTaskResponse{}, err
 	}
+	team, err := s.activeTeam(ctx, detail.project, detail.task.ID)
+	if err != nil {
+		return contract.ShowTaskResponse{}, err
+	}
 	return contract.ShowTaskResponse{
 		Project:      projectSummary(detail.project),
 		Task:         taskSummary(detail.task, s.registry),
 		Dependencies: dependencySummaries(detail.dependencies),
 		Comments:     commentSummaries(detail.comments),
+		Team:         team,
 	}, nil
 }
 

@@ -423,3 +423,27 @@ func TestListAgentsFiltersTeams(t *testing.T) {
 		t.Fatal("ListAgents accepted an unknown status")
 	}
 }
+
+// TestTaskReadsShowTheActiveTeam verifies task show and task continue carry
+// the task's active team, and nothing once it closes.
+func TestTaskReadsShowTheActiveTeam(t *testing.T) {
+	f := newAgentSpawnFixture(t)
+	spawned, err := f.service.SpawnAgents(f.ctx, contract.SpawnAgentsInput{TaskID: f.task.ID})
+	if err != nil {
+		t.Fatalf("SpawnAgents() error = %v", err)
+	}
+	shown, err := f.service.ShowTask(f.ctx, contract.ShowTaskInput{TaskID: f.task.ID})
+	if err != nil || shown.Team == nil || shown.Team.ID != spawned.Team.TeamID || len(shown.Team.Sessions) != 2 {
+		t.Fatalf("ShowTask().Team = %+v, %v; want the active team", shown.Team, err)
+	}
+	continued, err := f.service.ContinueTask(f.ctx, contract.ContinueTaskInput{TaskID: f.task.ID})
+	if err != nil || continued.Team == nil || continued.Team.ID != spawned.Team.TeamID {
+		t.Fatalf("ContinueTask().Team = %+v, %v; want the active team", continued.Team, err)
+	}
+	if _, err := f.service.CloseTeam(f.ctx, contract.CloseTeamInput{TeamID: spawned.Team.TeamID}); err != nil {
+		t.Fatalf("CloseTeam() error = %v", err)
+	}
+	if shown, err = f.service.ShowTask(f.ctx, contract.ShowTaskInput{TaskID: f.task.ID}); err != nil || shown.Team != nil {
+		t.Fatalf("ShowTask().Team after close = %+v, %v; want none", shown.Team, err)
+	}
+}

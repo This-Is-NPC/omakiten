@@ -763,6 +763,9 @@
           "task": {
             "$ref": "#/components/schemas/contract.TaskSummary"
           },
+          "team": {
+            "$ref": "#/components/schemas/domain.AgentTeam"
+          },
           "workflow": {
             "$ref": "#/components/schemas/contract.WorkflowSummary"
           }
@@ -2383,6 +2386,9 @@
           },
           "task": {
             "$ref": "#/components/schemas/contract.TaskSummary"
+          },
+          "team": {
+            "$ref": "#/components/schemas/domain.AgentTeam"
           }
         },
         "required": [

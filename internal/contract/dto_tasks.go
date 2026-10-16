@@ -78,6 +78,8 @@ type ShowTaskResponse struct {
 	Task         TaskSummary         `json:"task"`
 	Dependencies []DependencySummary `json:"dependencies,omitempty"`
 	Comments     []CommentSummary    `json:"comments,omitempty"`
+	// Team is the task's active agent team, when it has one.
+	Team *domain.AgentTeam `json:"team,omitempty"`
 }
 
 type ContinueTaskResponse struct {
@@ -92,6 +94,8 @@ type ContinueTaskResponse struct {
 	// composed command. Empty when unset — consumers treat empty as
 	// "no directive in effect".
 	AgentOutputLanguage string `json:"agent_output_language,omitempty"`
+	// Team is the task's active agent team, when it has one.
+	Team *domain.AgentTeam `json:"team,omitempty"`
 }
 
 type ListTasksInput struct {

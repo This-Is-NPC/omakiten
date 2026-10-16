@@ -656,3 +656,12 @@ func (s *Service) ListAgents(ctx context.Context, input contract.ListAgentsInput
 	}
 	return contract.ListAgentsResponse{Project: projectSummary(project), Teams: teams}, nil
 }
+
+// activeTeam returns the task's newest active team, or nil.
+func (s *Service) activeTeam(ctx context.Context, project domain.ProjectContext, taskID int64) (*domain.AgentTeam, error) {
+	teams, err := s.repo.ListAgentTeams(ctx, project.ID, domain.AgentTeamFilter{TaskID: taskID, Status: domain.TeamStatusActive})
+	if err != nil || len(teams) == 0 {
+		return nil, err
+	}
+	return &teams[0], nil
+}
