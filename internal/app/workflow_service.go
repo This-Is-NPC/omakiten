@@ -417,13 +417,15 @@ func (s *WorkflowService) MoveTask(ctx context.Context, project domain.ProjectCo
 		if err = s.recordCompletion(ctx, project, taskID, targetBucketKey, task, taskSnap, target.ID); err != nil {
 			return
 		}
+		task.BucketKey = target.Key
+		// The next team opens before the leaving one closes, which may stop
+		// the seat making this move.
+		team = s.bucketTeam(ctx, project, task, target, false)
 		if s.teams != nil {
 			if left, ok := taskSnap.BucketByID(currentBucketID); ok {
 				s.teams.LeaveBucket(ctx, project, task, left.Key)
 			}
 		}
-		task.BucketKey = target.Key
-		team = s.bucketTeam(ctx, project, task, target, false)
 	}
 	return
 }

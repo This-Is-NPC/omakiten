@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"omakiten/internal/activity"
 	"omakiten/internal/agentlaunch"
 	"omakiten/internal/config"
 	"omakiten/internal/contract"
@@ -543,6 +544,74 @@ func TestTeamClosesWhenTheTaskLeavesItsBucket(t *testing.T) {
 	again, err := f.service.SpawnAgents(f.ctx, contract.SpawnAgentsInput{TaskID: f.task.ID})
 	if err != nil || again.Team.Status != domain.TeamStarted || again.Team.TeamID == spawned.Team.TeamID {
 		t.Fatalf("spawn after closing = %+v, %v; want a new team", again.Team, err)
+	}
+}
+
+// newHandoffFixture is the agent fixture with a manual team of a lead and
+// member security on backlog and an automatic team of a lead on dev.
+func newHandoffFixture(t *testing.T) agentFixtureSet {
+	t.Helper()
+	return newAgentWorkflowFixture(t, func(bundle *config.Bundle) {
+		for i, bucket := range bundle.Workflows[0].Buckets {
+			switch bucket.Key {
+			case "backlog":
+				bundle.Workflows[0].Buckets[i].Agents = &config.BucketAgentsConfig{Trigger: domain.AgentTriggerManual, Lead: config.AgentRoleConfig{Command: "okt-start"}, Members: []config.AgentRoleConfig{{Key: "security", Command: "okt-start"}}}
+			case "dev":
+				bundle.Workflows[0].Buckets[i].Agents = &config.BucketAgentsConfig{Trigger: domain.AgentTriggerAuto, Lead: config.AgentRoleConfig{Command: "okt-start"}}
+			}
+		}
+	})
+}
+
+// handoffEventIDs returns the id of the agent.session_started of team and
+// of the last team.closed, 0 when missing.
+func handoffEventIDs(t *testing.T, f agentFixtureSet, team string) (started, closed int64) {
+	t.Helper()
+	events, err := f.store.ListEvents(f.ctx, domain.EventFilter{ProjectID: f.project.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, event := range events {
+		switch {
+		case event.EventType == domain.EventTypeTeamClosed:
+			closed = max(closed, event.ID)
+		case event.EventType == domain.EventTypeAgentSessionStarted && strings.Contains(event.Payload, team):
+			started = event.ID
+		}
+	}
+	return started, closed
+}
+
+// TestASeatMovingItsOwnTaskOpensTheNextTeamAndKeepsRunning verifies a move
+// made by a seat of the team the task leaves opens the next bucket's team
+// before the leaving team closes, stops the other seats, and leaves the
+// mover's own run to finish and record its exit.
+func TestASeatMovingItsOwnTaskOpensTheNextTeamAndKeepsRunning(t *testing.T) {
+	f := newHandoffFixture(t)
+	spawned, err := f.service.SpawnAgents(f.ctx, contract.SpawnAgentsInput{TaskID: f.task.ID})
+	if err != nil {
+		t.Fatalf("SpawnAgents() error = %v", err)
+	}
+	lead, member := spawned.Team.Lead.SessionID, spawned.Team.Members[0].SessionID
+	f.harnessStarted(t, map[string]int{lead: 1001, member: 1002})
+	seatCtx := activity.WithAgent(f.ctx, "cli", "okt move", "", lead)
+	moved, err := f.service.MoveTask(seatCtx, contract.MoveTaskInput{TaskID: f.task.ID, BucketKey: "dev"})
+	if err != nil || moved.Team == nil || moved.Team.Status != domain.TeamStarted {
+		t.Fatalf("MoveTask(dev) by the lead = %+v, %v; want the dev team started", moved.Team, err)
+	}
+	if !slices.Equal(f.agents.stopped, []int{1002}) {
+		t.Fatalf("stopped = %v, want only the member's harness, not the mover's", f.agents.stopped)
+	}
+	startedAt, closedAt := handoffEventIDs(t, f, moved.Team.TeamID)
+	if startedAt == 0 || closedAt == 0 || startedAt > closedAt {
+		t.Fatalf("dev seat started at event %d, backlog team closed at %d; want the start first", startedAt, closedAt)
+	}
+	if session := f.run(t, lead, 0, "true"); session.Status != domain.SessionDone {
+		t.Fatalf("mover's run = %+v, want done by its exit code", session)
+	}
+	shown, err := f.service.ShowTeam(f.ctx, contract.ShowTeamInput{TeamID: spawned.Team.TeamID})
+	if err != nil || shown.Team.Status != domain.TeamClosed || teamSeat(shown.Team, "security").Status != domain.SessionStopped {
+		t.Fatalf("backlog team = %+v, %v; want closed with the member stopped", shown.Team, err)
 	}
 }
 

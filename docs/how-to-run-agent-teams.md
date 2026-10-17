@@ -30,7 +30,8 @@ okt --project example task continue 42
 
 A session is `running` while its harness runs, then `done` when the harness
 exits 0, `failed` when it exits otherwise, cannot start, or passes its
-timeout, and `stopped` when its team closes. `agent show` carries the
+timeout, and `stopped` when its team closes, unless the seat closed it
+itself. `agent show` carries the
 `exit_code` (`-1` when a signal ended the harness), the error, the harness
 `pid`, and the `transcript`: a JSONL file holding the harness output. A JSON
 object the harness prints on stdout is a line as is; every other line is
@@ -73,10 +74,13 @@ them. A team that cannot start never undoes the move: `data.team.status` is
 `failed` and the error says why. `okt move --no-spawn`, and `--no-spawn` on
 `progress record`, report the team as `skipped` instead.
 
-When the task leaves the bucket, its team there closes: the team becomes
-`closed`, and each running seat becomes `stopped` while its harness process
-group is told to stop. `okt team close t-…` does the same at any time. A task that
-enters the bucket again opens a new team.
+When the task leaves the bucket, the next bucket's team opens first, then
+the team it left closes: the team becomes `closed`, and each running seat
+becomes `stopped` while its harness process group is told to stop.
+`okt team close t-…` does the same at any time. A seat that makes the move
+or the close itself is spared: its harness runs on to its own exit, and its
+session ends `done` or `failed` by its exit code. A task that enters the
+bucket again opens a new team.
 
 To run one seat of an active team again, for example a member that failed,
 run `okt agent spawn --team t-… --member security`. Only keys of the

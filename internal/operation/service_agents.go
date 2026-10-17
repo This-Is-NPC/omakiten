@@ -15,6 +15,7 @@ import (
 	"sync"
 	"time"
 
+	"omakiten/internal/activity"
 	"omakiten/internal/agentlaunch"
 	"omakiten/internal/app"
 	"omakiten/internal/config"
@@ -79,10 +80,13 @@ func (t teamSpawner) LeaveBucket(ctx context.Context, project domain.ProjectCont
 	}
 }
 
-// closeTeam closes an active team, stops the supervisor of each running
-// seat, and records team.closed with reason.
+// closeTeam closes an active team, stops each running seat but the
+// caller's own, and records team.closed with reason.
 func (s *Service) closeTeam(ctx context.Context, project domain.ProjectContext, team domain.AgentTeam, reason string) (domain.AgentTeam, error) {
-	closed, err := s.repo.CloseAgentTeam(ctx, team.ID)
+	// A seat closing its own team, by a move or team close, runs on: its
+	// supervisor records how it ends.
+	_, _, _, caller, _ := activity.FromContext(ctx)
+	closed, err := s.repo.CloseAgentTeam(ctx, team.ID, caller)
 	if err != nil {
 		return domain.AgentTeam{}, err
 	}
@@ -90,7 +94,9 @@ func (s *Service) closeTeam(ctx context.Context, project domain.ProjectContext, 
 		return domain.AgentTeam{}, domain.NewError(domain.ErrValidation, "the agent team is not active", map[string]any{"team_id": team.ID, "status": team.Status})
 	}
 	for _, session := range team.Sessions {
-		s.stopSession(session)
+		if session.ID != caller {
+			s.stopSession(session)
+		}
 	}
 	s.recordTeamEvent(ctx, team, domain.EventTypeTeamClosed, map[string]any{"reason": reason})
 	return s.repo.GetAgentTeam(ctx, team.ID)

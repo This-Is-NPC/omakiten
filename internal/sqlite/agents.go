@@ -61,9 +61,10 @@ func (s *Store) FailAgentTeam(ctx context.Context, teamID string) error {
 	return err
 }
 
-// CloseAgentTeam closes an active team and stops its running sessions. It
-// reports whether the team was active.
-func (s *Store) CloseAgentTeam(ctx context.Context, teamID string) (bool, error) {
+// CloseAgentTeam closes an active team and stops its running sessions
+// except spared, which runs on to record its own end. It reports whether
+// the team was active.
+func (s *Store) CloseAgentTeam(ctx context.Context, teamID, spared string) (bool, error) {
 	tx, err := s.beginTransaction(ctx)
 	if err != nil {
 		return false, err
@@ -76,7 +77,7 @@ func (s *Store) CloseAgentTeam(ctx context.Context, teamID string) (bool, error)
 	if n, err := res.RowsAffected(); err != nil || n == 0 {
 		return false, err
 	}
-	if _, err := tx.ExecContext(ctx, `UPDATE agent_sessions SET status = 'stopped', finished_at = CURRENT_TIMESTAMP WHERE team_id = ? AND status = 'running'`, teamID); err != nil {
+	if _, err := tx.ExecContext(ctx, `UPDATE agent_sessions SET status = 'stopped', finished_at = CURRENT_TIMESTAMP WHERE team_id = ? AND status = 'running' AND id != ?`, teamID, spared); err != nil {
 		return false, err
 	}
 	return true, s.commitTransaction(ctx, tx)

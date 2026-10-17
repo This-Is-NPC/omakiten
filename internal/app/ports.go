@@ -236,7 +236,7 @@ type TagRepository interface {
 type AgentRepository interface {
 	OpenAgentTeam(ctx context.Context, team domain.AgentTeam) (domain.AgentTeam, bool, error)
 	FailAgentTeam(ctx context.Context, teamID string) error
-	CloseAgentTeam(ctx context.Context, teamID string) (bool, error)
+	CloseAgentTeam(ctx context.Context, teamID, spared string) (bool, error)
 	ReserveAgentSessions(ctx context.Context, projectID int64, sessions []domain.AgentSession, replaced string, limit int) error
 	SetAgentSessionPID(ctx context.Context, sessionID string, pid int) error
 	FinishAgentSession(ctx context.Context, sessionID, status string, exitCode *int, message string) (finished, idle bool, err error)
