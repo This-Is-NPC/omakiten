@@ -1,7 +1,7 @@
 # How to run agents for a task
 
-**The question:** how do I have Omakiten run coding agents for a task,
-choose which harness and model each one runs, and see what they did?
+**The question:** how do I have Omakiten run coding agents for a task or a
+plan, choose which harness and model each one runs, and see what they did?
 
 Prerequisites: a registered project, a task, and a harness (`claude`,
 `codex`, or `opencode`) on `PATH`. Nothing here runs unless a bucket declares
@@ -233,6 +233,58 @@ seat again, use `okt agent spawn --team t-… --member <key>`. The spawn obeys
 the same `max_sessions` limit and store rules as `okt agent spawn`; a refused
 or failed start is recorded in `hook.executed`.
 
+## 6. Run a seat for a plan
+
+A seat can work on a whole plan instead of one task, for example an
+auditor that checks the plan's work before it completes. Declare plan seats
+in the root workflow's `plans` block, in the same shape as team members:
+
+```yaml
+# workflow
+plans:
+  agents:
+    - {key: auditor, command: okt-task-review, persona: plan-auditor, timeout: 30m, brief: "check every task against the goal"}
+  complete:
+    guards:
+      - {type: plan_comments_tagged, tag: review-auditor, hint: "The auditor posts this; wait for it"}
+```
+
+```yaml
+# config/settings.yaml
+hooks:
+  - on: guard.violated
+    when: {stage: complete}
+    do: spawn
+    args: {plan_member: auditor}
+```
+
+When the move of the plan's last open task into the final bucket meets the
+`complete` gate, the move fails and records `guard.violated` with the
+plan's `plan_id` and `stage: complete`. The hook starts the auditor, which
+publishes `review-auditor` on the plan and exits; the next attempt at the
+move then completes the plan. `okt plan edit --status done` meets the same
+gate and records the same event.
+
+The seat's prompt carries the plan instead of a task: its goal, each wave
+with its tasks and their buckets, and the command that publishes the
+seat's result on the plan:
+
+```bash
+okt comment add --scope plan --plan release-2 -a agent -T review-auditor -b "…"
+```
+
+A plan's seats sit in one team per active plan, opened by its first seat.
+`spawn` starts a plan seat only once, so a repeated violation starts
+nothing new. To run it again, use
+`okt agent spawn --plan release-2 --member auditor`; its previous session
+becomes `replaced`. Only keys under `plans.agents` are accepted, and a plan
+that is done or abandoned starts none. The team's `team_id`, its
+`plan_id`, and the plan's comments stand where a task team has its task:
+`team show` reads `results` and `missing_results` from the plan's
+`review-<key>` comments, and the agent events below carry `plan_id`
+instead of `task_id` and `bucket`. A plan's team stays active until
+`okt team close`.
+
 ## What runs, and what the agent inherits
 
 `okt agent spawn` and an automatic move start one supervisor per seat: a
@@ -255,6 +307,7 @@ because the agent cannot inherit flags; select the store with
 
 Hooks can react to the run: `agent.session_started` when a seat starts and
 `agent.session_finished` when it ends, each with `team_id`, `task_id`,
-`member`, and `session_id`, the latter with `status`, `exit_code`, and
-`error`; and `team.closed`, with `team_id`, `task_id`, `bucket`, and
-`reason`, when a team closes.
+`bucket`, `member`, and `session_id`, the latter with `status`,
+`exit_code`, and `error`; and `team.closed`, with `team_id`, `task_id`,
+`bucket`, and `reason`, when a team closes. A plan seat's events carry
+`plan_id` in place of `task_id` and `bucket`.

@@ -2283,6 +2283,10 @@
           "last_activity": {
             "$ref": "#/components/schemas/contract.AgentActivity"
           },
+          "plan_id": {
+            "format": "int64",
+            "type": "integer"
+          },
           "project": {
             "$ref": "#/components/schemas/contract.ProjectSummary"
           },
@@ -2295,11 +2299,9 @@
           }
         },
         "required": [
-          "bucket",
           "follow",
           "project",
-          "session",
-          "task_id"
+          "session"
         ],
         "type": "object"
       },
@@ -3094,6 +3096,10 @@
             "format": "int64",
             "type": "integer"
           },
+          "plan_id": {
+            "format": "int64",
+            "type": "integer"
+          },
           "project_id": {
             "format": "int64",
             "type": "integer"
@@ -3116,12 +3122,10 @@
           }
         },
         "required": [
-          "bucket",
           "created_at",
           "opened_after_event_id",
           "project_id",
           "status",
-          "task_id",
           "team_id"
         ],
         "type": "object"
@@ -3670,6 +3674,10 @@
             },
             "type": "array"
           },
+          "plan_id": {
+            "format": "int64",
+            "type": "integer"
+          },
           "spawn": {
             "type": "string"
           },
@@ -3685,10 +3693,8 @@
           }
         },
         "required": [
-          "bucket",
           "lead",
-          "status",
-          "task_id"
+          "status"
         ],
         "type": "object"
       },

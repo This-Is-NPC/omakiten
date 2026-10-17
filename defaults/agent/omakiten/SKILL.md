@@ -28,7 +28,7 @@ instructions; do not assume that an older binary has a newer operation.
 | Tasks, comments, plans, assignment, dependencies | `task`, `comment`, `plan`, `assign`, `depend` |
 | Failures, reusable fixes, progress | `error`, `solution`, `progress` |
 | Active policy, configuration, events | `workflow show`, `config`, `preset`, `logs` |
-| Agents run for a task | `agent spawn`, `agent show`, `team show`, `team close`, `wait`, `logs --session` |
+| Agents run for a task or a plan | `agent spawn`, `agent show`, `team show`, `team close`, `wait`, `logs --session` |
 | A moved project directory | `project relocate --help`; preserve the existing project id |
 | Local HTTP access or outside events | `serve --help`, `emit --help` |
 | Documentation attached to a project | `knowledge list`, `knowledge search`, `knowledge show` |
@@ -129,7 +129,11 @@ section of your prompt: do the work, publish once with `-T review-<key>`,
 leave questions with `-T to-<key>`, wait with `okt wait`, then exit. Run a
 failed seat again with `okt agent spawn --team <T> --member <key>`; a team
 closes by itself when its task leaves the bucket, or with
-`okt team close <T>`.
+`okt team close <T>`. A plan gate whose comment a plan seat posts, such as
+an auditor's `review-auditor`, starts that seat from a hook when the gate
+holds your move: let the seat post it and retry the move, rather than
+posting it yourself. Run a plan seat again with
+`okt agent spawn --plan <slug> --member <key>`.
 
 ## Read results
 

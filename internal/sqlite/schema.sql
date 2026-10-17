@@ -371,15 +371,18 @@ CREATE TABLE document_metadata (
 CREATE TABLE agent_teams (
   id TEXT PRIMARY KEY,
   project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-  task_id INTEGER NOT NULL,
-  bucket_key TEXT NOT NULL,
+  task_id INTEGER,
+  plan_id INTEGER REFERENCES plans(id) ON DELETE CASCADE,
+  bucket_key TEXT NOT NULL DEFAULT '',
   status TEXT NOT NULL CHECK (status IN ('active', 'failed', 'closed')),
   opened_after INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CHECK ((task_id IS NULL) != (plan_id IS NULL)),
   FOREIGN KEY (project_id, task_id) REFERENCES tasks(project_id, id) ON DELETE CASCADE
 );
 
-CREATE UNIQUE INDEX idx_agent_teams_active ON agent_teams(project_id, task_id, bucket_key) WHERE status = 'active';
+CREATE UNIQUE INDEX idx_agent_teams_active ON agent_teams(project_id, task_id, bucket_key) WHERE status = 'active' AND task_id IS NOT NULL;
+CREATE UNIQUE INDEX idx_agent_teams_plan_active ON agent_teams(plan_id) WHERE status = 'active' AND plan_id IS NOT NULL;
 
 CREATE TABLE agent_sessions (
   id TEXT PRIMARY KEY,

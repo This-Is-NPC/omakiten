@@ -117,6 +117,7 @@ keys:
   cli.agent.spawn.short: "Bir görev için bucket'ın ajan ekibini ya da --command ile tek bir ajanı aç"
   cli.agent.spawn.flag.task: "ajanların üzerinde çalıştığı görev"
   cli.agent.spawn.flag.team: "--member koltuğu yeniden açılacak etkin ekip"
+  cli.agent.spawn.flag.plan: "--member plan koltuğu yeniden çalıştırılacak plan"
   cli.agent.spawn.flag.member: "yeniden açılacak koltuğun kadro anahtarı (lider için lead)"
   cli.agent.spawn.flag.command: "bucket ekibi yerine tek bir lider ajanın çalıştırdığı komut"
   cli.agent.spawn.flag.harness: "lider için harness bağdaştırıcısı"

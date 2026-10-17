@@ -151,14 +151,16 @@ plan gates beside the transition guards.
 
 Each unmet plan gate records a `guard.violated` event that carries, at the
 top level, `plan`, `plan_id`, `stage`, and, for a progress gate, `percent`,
-so a hook can react to one gate:
+so a hook can react to one gate, for example by starting the plan seat
+that posts the missing comment, as in
+[running a seat for a plan](how-to-run-agent-teams.md#6-run-a-seat-for-a-plan):
 
 ```yaml
 hooks:
   - on: guard.violated
     when: {stage: complete}
-    do: exec
-    args: {argv: [notify-send, Omakiten, "A plan waits on its retro"]}
+    do: spawn
+    args: {plan_member: auditor}
 ``` `okt plan show` and
 `okt plan continue` report every gate of an active plan under `gates`, each
 with `satisfied`, its `stage` and `percent` in `details`, and the `fix` while

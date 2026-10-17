@@ -73,6 +73,25 @@ func newAgentSpawnFixture(t *testing.T) agentFixtureSet {
 // bucket with trigger, starting the seats start names when it opens.
 func newAgentTeamFixture(t *testing.T, teamBucket, trigger string, start ...string) agentFixtureSet {
 	t.Helper()
+	return newAgentWorkflowFixture(t, func(bundle *config.Bundle) {
+		for i := range bundle.Workflows[0].Buckets {
+			if bundle.Workflows[0].Buckets[i].Key == teamBucket {
+				bundle.Workflows[0].Buckets[i].Agents = &config.BucketAgentsConfig{
+					Trigger: trigger,
+					Lead:    config.AgentRoleConfig{Command: "okt-start"},
+					Members: []config.AgentRoleConfig{{Key: "security", Command: "okt-start", Persona: "auditor", Brief: "security only"}},
+					Start:   start,
+				}
+			}
+		}
+	})
+}
+
+// newAgentWorkflowFixture seeds a backlog task in a workflow edit declares agents
+// in, with persona auditor beside the binding's, and a fake launcher that
+// records starts and can fail them.
+func newAgentWorkflowFixture(t *testing.T, edit func(*config.Bundle)) agentFixtureSet {
+	t.Helper()
 	t.Setenv("OMAKITEN_HOME", t.TempDir())
 	ctx := context.Background()
 	bundle := agentTestBundle(t)
@@ -81,17 +100,8 @@ func newAgentTeamFixture(t *testing.T, teamBucket, trigger string, start ...stri
 		Defaults:  domain.AgentDefaults{Harness: "fake"},
 		Harnesses: map[string]domain.HarnessSpec{"fake": {Argv: agentArgs("fake-agent", "--", "{prompt}")}},
 	}
-	for i := range bundle.Workflows[0].Buckets {
-		if bundle.Workflows[0].Buckets[i].Key == teamBucket {
-			bundle.Workflows[0].Buckets[i].Agents = &config.BucketAgentsConfig{
-				Trigger: trigger,
-				Lead:    config.AgentRoleConfig{Command: "okt-start"},
-				Members: []config.AgentRoleConfig{{Key: "security", Command: "okt-start", Persona: "auditor", Brief: "security only"}},
-				Start:   start,
-			}
-		}
-	}
 	bundle.Workflows[0].Transitions = append(bundle.Workflows[0].Transitions, config.Transition{From: 2, To: 1})
+	edit(&bundle)
 	dbPath := filepath.Join(t.TempDir(), "omakiten.db")
 	store := snapstore.Open(t, dbPath)
 	if err := store.ImportBundle(ctx, bundle, "test.yaml", "hash"); err != nil {

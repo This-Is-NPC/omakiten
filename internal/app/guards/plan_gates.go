@@ -98,7 +98,7 @@ func (e *Evaluator) EvaluatePlanStage(ctx context.Context, projectID, planID int
 // active plan without recording events. A plan that is not active meets
 // none.
 func (e *Evaluator) PreviewPlanStage(ctx context.Context, projectID, planID int64, stage domain.PlanStage) ([]domain.GuardStatus, error) {
-	return e.previewPlan(ctx, projectID, planID, func(gates *domain.PlanGates) []planGate {
+	return e.previewPlan(ctx, projectID, planID, func(gates *domain.WorkflowPlans) []planGate {
 		if stage == domain.PlanStageComplete {
 			return []planGate{{stage: stage, guards: gates.Complete.Guards}}
 		}
@@ -110,7 +110,7 @@ func (e *Evaluator) PreviewPlanStage(ctx context.Context, projectID, planID int6
 // first, then each progress share, then complete, without recording events.
 // A plan that is not active meets none.
 func (e *Evaluator) PreviewPlanGates(ctx context.Context, projectID, planID int64) ([]domain.GuardStatus, error) {
-	return e.previewPlan(ctx, projectID, planID, func(gates *domain.PlanGates) []planGate {
+	return e.previewPlan(ctx, projectID, planID, func(gates *domain.WorkflowPlans) []planGate {
 		all := []planGate{{stage: domain.PlanStageStart, guards: gates.Start.Guards}}
 		for _, gate := range gates.Progress {
 			all = append(all, planGate{stage: domain.PlanStageProgress, percent: gate.Percent, guards: gate.Guards})
@@ -119,7 +119,7 @@ func (e *Evaluator) PreviewPlanGates(ctx context.Context, projectID, planID int6
 	})
 }
 
-func (e *Evaluator) previewPlan(ctx context.Context, projectID, planID int64, pick func(*domain.PlanGates) []planGate) ([]domain.GuardStatus, error) {
+func (e *Evaluator) previewPlan(ctx context.Context, projectID, planID int64, pick func(*domain.WorkflowPlans) []planGate) ([]domain.GuardStatus, error) {
 	gates := e.planGates()
 	if gates == nil {
 		return nil, nil
@@ -133,7 +133,7 @@ func (e *Evaluator) previewPlan(ctx context.Context, projectID, planID int64, pi
 
 // planGates returns the root workflow's plans block, or nil when it declares
 // no gate.
-func (e *Evaluator) planGates() *domain.PlanGates {
+func (e *Evaluator) planGates() *domain.WorkflowPlans {
 	if e.snap == nil {
 		return nil
 	}

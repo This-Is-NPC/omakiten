@@ -118,6 +118,7 @@ keys:
   cli.agent.spawn.short: "Åpne bucketens agentteam, eller én agent med --command, for en oppgave"
   cli.agent.spawn.flag.task: "oppgave agentene jobber med"
   cli.agent.spawn.flag.team: "aktivt team der --member-plassen åpnes på nytt"
+  cli.agent.spawn.flag.plan: "plan der planplassen --member kjøres på nytt"
   cli.agent.spawn.flag.member: "roster-nøkkel for plassen som åpnes på nytt (lead for lead)"
   cli.agent.spawn.flag.command: "kommando én lead-agent kjører i stedet for bucketens team"
   cli.agent.spawn.flag.harness: "harness-adapter for lead"

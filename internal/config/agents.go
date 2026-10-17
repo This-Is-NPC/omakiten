@@ -190,10 +190,14 @@ func validateAgentAdapters(scope string, s AgentsSettings) error {
 	return validateAgentTimeout(scope+".defaults.timeout", s.Defaults.Timeout)
 }
 
-// validateBucketAgents checks every bucket team of the bundle's workflows
-// against the effective adapters and, when present, the command bindings.
+// validateBucketAgents checks every bucket team and plan seat of the
+// bundle's workflows against the effective adapters and, when present, the
+// command bindings.
 func validateBucketAgents(bundle Bundle) error {
 	for _, wf := range bundle.Workflows {
+		if err := validateAgentSeats(bundle, fmt.Sprintf("workflows.%s.plans.agents", wf.Key), wf.Plans.Agents, map[string]bool{}); err != nil {
+			return err
+		}
 		for _, b := range wf.Buckets {
 			if b.Agents == nil {
 				continue
@@ -217,20 +221,29 @@ func validateBucketTeam(bundle Bundle, scope string, team BucketAgentsConfig) er
 		return err
 	}
 	seen := map[string]bool{domain.AgentLeadKey: true}
-	for i, m := range team.Members {
-		at := fmt.Sprintf("%s.members[%d]", scope, i)
+	if err := validateAgentSeats(bundle, scope+".members", team.Members, seen); err != nil {
+		return err
+	}
+	return validateTeamStart(scope, team.Start, seen)
+}
+
+// validateAgentSeats checks keyed seats, adding each key to seen; a key
+// already in seen is refused.
+func validateAgentSeats(bundle Bundle, scope string, seats []AgentRoleConfig, seen map[string]bool) error {
+	for i, m := range seats {
+		at := fmt.Sprintf("%s[%d]", scope, i)
 		if !agentMemberKey.MatchString(m.Key) {
 			return fmt.Errorf("%s.key: required kebab-case key", at)
 		}
 		if seen[m.Key] {
-			return fmt.Errorf("%s.key: %q is already used in this team", at, m.Key)
+			return fmt.Errorf("%s.key: %q is already used", at, m.Key)
 		}
 		seen[m.Key] = true
 		if err := validateAgentRole(bundle, at, m); err != nil {
 			return err
 		}
 	}
-	return validateTeamStart(scope, team.Start, seen)
+	return nil
 }
 
 // validateTeamStart checks that start lists seats of the team, each once.

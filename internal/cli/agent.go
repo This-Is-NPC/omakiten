@@ -45,7 +45,7 @@ func newAgentSpawnCommand(opts *runtimeOptions) *cobra.Command {
 	var taskID int64
 	var input contract.SpawnAgentsInput
 	cmd := &cobra.Command{
-		Use:   "spawn (--task ID [--command C] | --team T --member KEY) [--harness H] [--model M]",
+		Use:   "spawn (--task ID [--command C] | --team T --member KEY | --plan SLUG --member KEY) [--harness H] [--model M]",
 		Short: opts.t("cli.agent.spawn.short"),
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
@@ -63,12 +63,13 @@ func newAgentSpawnCommand(opts *runtimeOptions) *cobra.Command {
 	}
 	cmd.Flags().Int64Var(&taskID, "task", 0, opts.t("cli.agent.spawn.flag.task"))
 	cmd.Flags().StringVar(&input.TeamID, "team", "", opts.t("cli.agent.spawn.flag.team"))
+	cmd.Flags().StringVar(&input.Plan, "plan", "", opts.t("cli.agent.spawn.flag.plan"))
 	cmd.Flags().StringVar(&input.Member, "member", "", opts.t("cli.agent.spawn.flag.member"))
 	cmd.Flags().StringVar(&input.Command, "command", "", opts.t("cli.agent.spawn.flag.command"))
 	cmd.Flags().StringVar(&input.Harness, "harness", "", opts.t("cli.agent.spawn.flag.harness"))
 	cmd.Flags().StringVar(&input.Model, "model", "", opts.t("cli.agent.spawn.flag.model"))
-	cmd.MarkFlagsMutuallyExclusive("task", "team")
-	cmd.MarkFlagsOneRequired("task", "team")
+	cmd.MarkFlagsMutuallyExclusive("task", "team", "plan")
+	cmd.MarkFlagsOneRequired("task", "team", "plan")
 	return cmd
 }
 

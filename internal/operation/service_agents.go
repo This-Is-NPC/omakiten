@@ -92,10 +92,24 @@ func (s *Service) closeTeam(ctx context.Context, project domain.ProjectContext, 
 	for _, session := range team.Sessions {
 		s.stopSession(session)
 	}
-	if body, err := json.Marshal(map[string]any{"team_id": team.ID, "task_id": team.TaskID, "bucket": team.BucketKey, "reason": reason}); err == nil {
-		_ = s.repo.RecordEntityEvent(ctx, domain.EventEntityTask, team.TaskID, project.ID, domain.EventTypeTeamClosed, string(body))
-	}
+	s.recordTeamEvent(ctx, team, domain.EventTypeTeamClosed, map[string]any{"reason": reason})
 	return s.repo.GetAgentTeam(ctx, team.ID)
+}
+
+// recordTeamEvent records eventType on the team's subject, its plan or its
+// task, with payload naming the team, the subject, and a task team's bucket.
+func (s *Service) recordTeamEvent(ctx context.Context, team domain.AgentTeam, eventType string, payload map[string]any) {
+	payload["team_id"] = team.ID
+	entity, id := domain.EventEntityTask, team.TaskID
+	if team.PlanID > 0 {
+		entity, id = domain.EventEntityPlan, team.PlanID
+		payload["plan_id"] = id
+	} else {
+		payload["task_id"], payload["bucket"] = id, team.BucketKey
+	}
+	if body, err := json.Marshal(payload); err == nil {
+		_ = s.repo.RecordEntityEvent(ctx, entity, id, team.ProjectID, eventType, string(body))
+	}
 }
 
 func (s *Service) CloseTeam(ctx context.Context, input contract.CloseTeamInput) (contract.CloseTeamResponse, error) {
@@ -132,7 +146,7 @@ func (s *Service) SpawnAgents(ctx context.Context, input contract.SpawnAgentsInp
 	if err := s.allow("agent.spawn"); err != nil {
 		return contract.SpawnAgentsResponse{}, err
 	}
-	if strings.TrimSpace(input.TeamID) != "" {
+	if strings.TrimSpace(input.TeamID) != "" || strings.TrimSpace(input.Plan) != "" {
 		return s.respawnMember(ctx, input)
 	}
 	detail, err := s.loadTaskDetail(ctx, input.ProjectSelector, input.TaskID)
@@ -171,17 +185,28 @@ func (s *Service) requestedTeam(task domain.Task, input contract.SpawnAgentsInpu
 	return team, nil
 }
 
-// respawnMember runs one roster seat of an active team again in a new
-// session; the seat's previous session is stopped and becomes replaced.
+// respawnMember runs one seat again in a new session: a roster seat of the
+// active team TeamID, or the plan seat of Plan, opening the plan's team
+// when it has none. The seat's previous session is stopped and becomes
+// replaced.
 func (s *Service) respawnMember(ctx context.Context, input contract.SpawnAgentsInput) (contract.SpawnAgentsResponse, error) {
-	if strings.TrimSpace(input.Member) == "" || strings.TrimSpace(input.Command) != "" {
-		return contract.SpawnAgentsResponse{}, domain.NewError(domain.ErrValidation, "--team runs one roster seat again: pass --member and no --command", nil)
+	teamID, slug := strings.TrimSpace(input.TeamID), strings.TrimSpace(input.Plan)
+	if strings.TrimSpace(input.Member) == "" || strings.TrimSpace(input.Command) != "" || input.TaskID != 0 || (teamID != "") == (slug != "") {
+		return contract.SpawnAgentsResponse{}, domain.NewError(domain.ErrValidation, "--team or --plan runs one seat again: pass one of them with --member, and no --task or --command", nil)
 	}
 	project, err := s.resolveProject(ctx, input.ProjectSelector)
 	if err != nil {
 		return contract.SpawnAgentsResponse{}, err
 	}
-	team, err := s.projectTeam(ctx, project, strings.TrimSpace(input.TeamID))
+	var team domain.AgentTeam
+	if slug != "" {
+		var plan domain.Plan
+		if plan, err = s.newPlanService().GetBySlug(ctx, project, slug); err == nil {
+			team, err = s.openPlanTeam(ctx, project, plan)
+		}
+	} else {
+		team, err = s.projectTeam(ctx, project, teamID)
+	}
 	if err != nil {
 		return contract.SpawnAgentsResponse{}, err
 	}
@@ -193,9 +218,10 @@ func (s *Service) respawnMember(ctx context.Context, input contract.SpawnAgentsI
 	return s.startTeamSeat(ctx, target, true)
 }
 
-// SpawnSeat starts one roster seat of an active team, named by TeamID or as
-// the active team of TaskID, unless the seat already has a session. It is
-// what the spawn hook action runs, so a repeated event starts nothing new.
+// SpawnSeat starts one seat unless it already has a session: a roster seat
+// of the active team TeamID names, or of the active team of TaskID, or the
+// plan seat of PlanID. It is what the spawn hook action runs, so a repeated
+// event starts nothing new.
 func (s *Service) SpawnSeat(ctx context.Context, input contract.SpawnSeatInput) (contract.SpawnAgentsResponse, error) {
 	if err := s.allow("agent.spawn"); err != nil {
 		return contract.SpawnAgentsResponse{}, err
@@ -207,6 +233,11 @@ func (s *Service) SpawnSeat(ctx context.Context, input contract.SpawnSeatInput) 
 	var team domain.AgentTeam
 	if id := strings.TrimSpace(input.TeamID); id != "" {
 		team, err = s.projectTeam(ctx, project, id)
+	} else if input.PlanID > 0 {
+		var plan domain.Plan
+		if plan, err = s.repo.GetPlanByID(ctx, project.ID, input.PlanID); err == nil {
+			team, err = s.openPlanTeam(ctx, project, plan)
+		}
 	} else {
 		var active *domain.AgentTeam
 		active, err = s.activeTeam(ctx, project, input.TaskID)
@@ -232,17 +263,17 @@ func (s *Service) SpawnSeat(ctx context.Context, input contract.SpawnSeatInput) 
 // is left as it is and reported.
 func (s *Service) startTeamSeat(ctx context.Context, target seatTarget, replace bool) (contract.SpawnAgentsResponse, error) {
 	team, role := target.team, target.role
-	out := domain.TeamOutcome{Status: domain.TeamStarted, TeamID: team.ID, TaskID: team.TaskID, Bucket: team.BucketKey, Follow: teamFollow(team.ID, team.TaskID)}
+	out := domain.TeamOutcome{Status: domain.TeamStarted, TeamID: team.ID, TaskID: team.TaskID, PlanID: team.PlanID, Bucket: team.BucketKey, Follow: target.subject.follow(team)}
 	old := teamSeat(team, role.Key)
 	if old.ID != "" && !replace {
 		out.Status = domain.TeamRunning
 		placeSeat(&out, sessionOutcome(old))
 		return contract.SpawnAgentsResponse{Project: projectSummary(target.project), Team: out}, nil
 	}
-	adapters := s.snapshot.For(target.task).AgentAdapters()
+	adapters := s.snapshot.For(target.subject.task).AgentAdapters()
 	seat, plan := s.planSeat(adapters, role, domain.TeamStarted)
 	if seat.Error == nil {
-		seat.Error = s.spawnRefusal(adapters, len(target.roster.Members))
+		seat.Error = s.spawnRefusal(adapters, target.subject.members)
 	}
 	var reserved reservedSeat
 	if seat.Error == nil {
@@ -253,7 +284,7 @@ func (s *Service) startTeamSeat(ctx context.Context, target seatTarget, replace 
 	}
 	if seat.Error == nil {
 		s.stopSession(old)
-		seat = s.launchSeat(ctx, target.project, target.task, target.roster, role, plan, reserved, seat)
+		seat = s.launchSeat(ctx, target.project, team, target.subject, role, plan, reserved, seat)
 	}
 	placeSeat(&out, seat)
 	if seat.Error != nil {
@@ -282,19 +313,49 @@ func teamSeat(team domain.AgentTeam, key string) domain.AgentSession {
 	return domain.AgentSession{}
 }
 
-// seatTarget is the active team, task, roster, and role a seat start runs.
+// seatSubject is what a seat works on: a task, with the bucket team it sits
+// in, or a plan. members counts the seats besides a lead.
+type seatSubject struct {
+	task    domain.Task
+	roster  domain.BucketAgents
+	plan    *domain.PlanShow
+	members int
+}
+
+// follow returns the commands that follow a seat of team.
+func (s seatSubject) follow(team domain.AgentTeam) []string {
+	if s.plan != nil {
+		return []string{"okt team show " + team.ID, "okt plan continue " + s.plan.Plan.Slug}
+	}
+	return teamFollow(team.ID, team.TaskID)
+}
+
+// seatTarget is the active team, subject, and role a seat start runs.
 type seatTarget struct {
 	project domain.ProjectContext
 	team    domain.AgentTeam
-	task    domain.Task
-	roster  domain.BucketAgents
+	subject seatSubject
 	role    domain.AgentRole
 }
 
-// seatTarget resolves the roster seat member of an active team.
+// openPlanTeam returns the active team of an active plan, opening it when
+// the plan has none.
+func (s *Service) openPlanTeam(ctx context.Context, project domain.ProjectContext, plan domain.Plan) (domain.AgentTeam, error) {
+	if plan.Status != domain.PlanStatusActive {
+		return domain.AgentTeam{}, domain.NewError(domain.ErrValidation, "the plan is not active", map[string]any{"plan": plan.Slug, "status": plan.Status})
+	}
+	team, _, err := s.repo.OpenAgentTeam(ctx, domain.AgentTeam{ID: newAgentID("t"), ProjectID: project.ID, PlanID: plan.ID})
+	return team, err
+}
+
+// seatTarget resolves the seat member of an active team: a roster seat of
+// its bucket, or a seat of the workflow's plans block for a plan's team.
 func (s *Service) seatTarget(ctx context.Context, project domain.ProjectContext, team domain.AgentTeam, member string) (seatTarget, error) {
 	if team.Status != domain.TeamStatusActive {
 		return seatTarget{}, domain.NewError(domain.ErrValidation, "the agent team is not active", map[string]any{"team_id": team.ID, "status": team.Status})
+	}
+	if team.PlanID > 0 {
+		return s.planSeatTarget(ctx, project, team, member)
 	}
 	detail, err := s.loadTaskDetail(ctx, contract.ProjectSelector{ProjectID: project.ID}, team.TaskID)
 	if err != nil {
@@ -307,7 +368,32 @@ func (s *Service) seatTarget(ctx context.Context, project domain.ProjectContext,
 	if err != nil {
 		return seatTarget{}, err
 	}
-	return seatTarget{project: project, team: team, task: task, roster: roster, role: role}, nil
+	return seatTarget{project: project, team: team, subject: seatSubject{task: task, roster: roster, members: len(roster.Members)}, role: role}, nil
+}
+
+// planSeatTarget resolves the plan seat member of a plan's active team.
+func (s *Service) planSeatTarget(ctx context.Context, project domain.ProjectContext, team domain.AgentTeam, member string) (seatTarget, error) {
+	plan, err := s.repo.GetPlanByID(ctx, project.ID, team.PlanID)
+	if err != nil {
+		return seatTarget{}, err
+	}
+	if plan.Status != domain.PlanStatusActive {
+		return seatTarget{}, domain.NewError(domain.ErrValidation, "the plan is not active", map[string]any{"plan": plan.Slug, "status": plan.Status})
+	}
+	seats := s.snapshot.Workflow().Plans.Agents
+	role, ok := s.snapshot.Workflow().Plans.Agent(member)
+	if !ok {
+		keys := make([]string, len(seats))
+		for i, seat := range seats {
+			keys[i] = seat.Key
+		}
+		return seatTarget{}, domain.NewError(domain.ErrValidation, "member is not a plan seat of the workflow", map[string]any{"member": member, "plan_seats": keys})
+	}
+	show, err := s.newPlanService().Show(ctx, project, plan.Slug)
+	if err != nil {
+		return seatTarget{}, err
+	}
+	return seatTarget{project: project, team: team, subject: seatSubject{plan: &show, members: len(seats)}, role: role}, nil
 }
 
 // rosterSeat returns the bucket team and the role a member key names in it.
@@ -413,7 +499,7 @@ func (s *Service) spawnTeam(ctx context.Context, project domain.ProjectContext, 
 		return runningTeam(opened)
 	}
 	out.TeamID, out.Follow = opened.ID, teamFollow(opened.ID, task.ID)
-	if perr := s.launchTeam(ctx, project, task, team, opened.ID, seats, plans, starts); perr != nil {
+	if perr := s.launchTeam(ctx, project, task, team, opened, seats, plans, starts); perr != nil {
 		_ = s.repo.FailAgentTeam(ctx, opened.ID)
 		return fail(perr)
 	}
@@ -441,12 +527,13 @@ func startableSeats(seats []domain.MemberOutcome) ([]int, *domain.AgentError) {
 // launches them in parallel, updating seats. It returns why the team
 // fails: the reservation's refusal, or the first error when no seat
 // started.
-func (s *Service) launchTeam(ctx context.Context, project domain.ProjectContext, task domain.Task, team domain.BucketAgents, teamID string, seats []domain.MemberOutcome, plans []agentlaunch.Plan, starts []int) *domain.AgentError {
+func (s *Service) launchTeam(ctx context.Context, project domain.ProjectContext, task domain.Task, team domain.BucketAgents, opened domain.AgentTeam, seats []domain.MemberOutcome, plans []agentlaunch.Plan, starts []int) *domain.AgentError {
 	roles := team.Roles()
+	subject := seatSubject{task: task, roster: team, members: len(team.Members)}
 	reserved := make([]reservedSeat, len(seats))
 	var sessions []reservedSeat
 	for _, i := range starts {
-		if reserved[i], seats[i] = s.seatSession(teamID, roles[i], plans[i], seats[i]); seats[i].Error == nil {
+		if reserved[i], seats[i] = s.seatSession(opened.ID, roles[i], plans[i], seats[i]); seats[i].Error == nil {
 			sessions = append(sessions, reserved[i])
 		}
 	}
@@ -459,7 +546,7 @@ func (s *Service) launchTeam(ctx context.Context, project domain.ProjectContext,
 			wg.Add(1)
 			go func(i int) {
 				defer wg.Done()
-				seats[i] = s.launchSeat(ctx, project, task, team, roles[i], plans[i], reserved[i], seats[i])
+				seats[i] = s.launchSeat(ctx, project, opened, subject, roles[i], plans[i], reserved[i], seats[i])
 			}(i)
 		}
 	}
@@ -526,23 +613,20 @@ func (s *Service) seatSession(teamID string, role domain.AgentRole, plan agentla
 
 // launchSeat records a reserved seat's start, writes its prompt, and
 // starts its supervisor. A seat that cannot start finishes failed at once.
-func (s *Service) launchSeat(ctx context.Context, project domain.ProjectContext, task domain.Task, team domain.BucketAgents, role domain.AgentRole, plan agentlaunch.Plan, reserved reservedSeat, seat domain.MemberOutcome) domain.MemberOutcome {
+func (s *Service) launchSeat(ctx context.Context, project domain.ProjectContext, team domain.AgentTeam, subject seatSubject, role domain.AgentRole, plan agentlaunch.Plan, reserved reservedSeat, seat domain.MemberOutcome) domain.MemberOutcome {
 	session, files := reserved.session, reserved.files
 	// Recorded before the supervisor starts, so its finish always follows.
-	payload := map[string]any{"team_id": session.TeamID, "session_id": session.ID, "member": role.Key, "task_id": task.ID, "harness": plan.Harness, "model": plan.Model, "transcript": files.Transcript}
-	if body, err := json.Marshal(payload); err == nil {
-		_ = s.repo.RecordEntityEvent(ctx, domain.EventEntityTask, task.ID, project.ID, domain.EventTypeAgentSessionStarted, string(body))
-	}
-	if err := s.startSeat(ctx, project, task, session.TeamID, team, role, plan, files); err != nil {
-		s.finishSession(ctx, project.ID, task.ID, session, domain.SessionFailed, nil, err.Error())
+	s.recordTeamEvent(ctx, team, domain.EventTypeAgentSessionStarted, map[string]any{"session_id": session.ID, "member": role.Key, "harness": plan.Harness, "model": plan.Model, "transcript": files.Transcript})
+	if err := s.startSeat(ctx, project, subject, team.ID, role, plan, files); err != nil {
+		s.finishSession(ctx, team, session, domain.SessionFailed, nil, err.Error())
 		seat.Status, seat.Error = domain.SessionFailed, &domain.AgentError{Code: "start_failed", Message: err.Error()}
 	}
 	return seat
 }
 
 // startSeat writes the seat's prompt and starts its supervisor.
-func (s *Service) startSeat(ctx context.Context, project domain.ProjectContext, task domain.Task, teamID string, team domain.BucketAgents, role domain.AgentRole, plan agentlaunch.Plan, files agentlaunch.SessionFiles) error {
-	if err := s.writeSeatPrompt(files.Prompt, task, teamID, team, role, files.Session); err != nil {
+func (s *Service) startSeat(ctx context.Context, project domain.ProjectContext, subject seatSubject, teamID string, role domain.AgentRole, plan agentlaunch.Plan, files agentlaunch.SessionFiles) error {
+	if err := s.writeSeatPrompt(files.Prompt, subject, teamID, role, files.Session); err != nil {
 		return err
 	}
 	storeDir, err := paths.DataDir()
@@ -578,34 +662,71 @@ func agentEnv(sessionID, teamID, member string, plan agentlaunch.Plan) []string 
 }
 
 // writeSeatPrompt writes the seat's prompt file: the resolved command, the
-// task, and the team protocol.
-func (s *Service) writeSeatPrompt(path string, task domain.Task, teamID string, team domain.BucketAgents, role domain.AgentRole, sessionID string) error {
+// task or the plan the seat works on, and the seat's protocol.
+func (s *Service) writeSeatPrompt(path string, subject seatSubject, teamID string, role domain.AgentRole, sessionID string) error {
 	command, err := s.resolveCommand(role.Command, nil, role.Persona)
 	if err != nil {
 		return err
 	}
 	var b strings.Builder
 	b.WriteString(command.Markdown)
-	fmt.Fprintf(&b, "\n\n## Omakiten task\n\nYou work on task #%d %q in bucket %q. Read it with `okt task continue %d`.\n", task.ID, task.Title, task.BucketKey, task.ID)
-	fmt.Fprintf(&b, "\n## Your team seat\n\n- Team: `%s`. Your key: `%s`. Your session: `%s`.\n", teamID, role.Key, sessionID)
-	fmt.Fprintf(&b, "- You run once: do the work through the board, then exit. Your exit code is your session's status.\n")
-	if role.Brief != "" {
-		fmt.Fprintf(&b, "- Brief: %s\n", role.Brief)
+	if subject.plan != nil {
+		writePlanSeat(&b, *subject.plan, teamID, role, sessionID)
+	} else {
+		writeTaskSeat(&b, subject.task, subject.roster, teamID, role, sessionID)
 	}
+	return os.WriteFile(path, []byte(b.String()), 0o600)
+}
+
+// writeSeatRun writes the lines every seat's protocol opens with.
+func writeSeatRun(b *strings.Builder, heading, teamID string, role domain.AgentRole, sessionID string) {
+	fmt.Fprintf(b, "\n## %s\n\n- Team: `%s`. Your key: `%s`. Your session: `%s`.\n", heading, teamID, role.Key, sessionID)
+	fmt.Fprintf(b, "- You run once: do the work through the board, then exit. Your exit code is your session's status.\n")
+	if role.Brief != "" {
+		fmt.Fprintf(b, "- Brief: %s\n", role.Brief)
+	}
+}
+
+// writeTaskSeat writes the task and the team protocol of a bucket team's
+// seat.
+func writeTaskSeat(b *strings.Builder, task domain.Task, team domain.BucketAgents, teamID string, role domain.AgentRole, sessionID string) {
+	fmt.Fprintf(b, "\n\n## Omakiten task\n\nYou work on task #%d %q in bucket %q. Read it with `okt task continue %d`.\n", task.ID, task.Title, task.BucketKey, task.ID)
+	writeSeatRun(b, "Your team seat", teamID, role, sessionID)
 	if role.Key == domain.AgentLeadKey {
 		var keys []string
 		for _, m := range team.Members {
 			keys = append(keys, "`"+m.Key+"`")
 		}
 		if len(keys) > 0 {
-			fmt.Fprintf(&b, "- You lead members %s. Read each `%s<key>` result, waiting for the ones still missing, then decide: `okt wait --task %d --tag '%s*'`.\n", strings.Join(keys, ", "), domain.AgentResultTag, task.ID, domain.AgentResultTag)
+			fmt.Fprintf(b, "- You lead members %s. Read each `%s<key>` result, waiting for the ones still missing, then decide: `okt wait --task %d --tag '%s*'`.\n", strings.Join(keys, ", "), domain.AgentResultTag, task.ID, domain.AgentResultTag)
 		}
 	} else {
-		fmt.Fprintf(&b, "- Publish your result exactly once: `okt comment add %d -a agent -T %s%s -b \"…\"`.\n", task.ID, domain.AgentResultTag, role.Key)
+		fmt.Fprintf(b, "- Publish your result exactly once: `okt comment add %d -a agent -T %s%s -b \"…\"`.\n", task.ID, domain.AgentResultTag, role.Key)
 	}
-	fmt.Fprintf(&b, "- Leave a question for a teammate: `okt comment add %d -a agent -T %s<key> -b \"…\"`. Read the ones left for you: `okt comment list %d --tag %s%s`.\n", task.ID, domain.AgentAddressTag, task.ID, domain.AgentAddressTag, role.Key)
-	fmt.Fprintf(&b, "- See the team: `okt team show %s`.\n", teamID)
-	return os.WriteFile(path, []byte(b.String()), 0o600)
+	fmt.Fprintf(b, "- Leave a question for a teammate: `okt comment add %d -a agent -T %s<key> -b \"…\"`. Read the ones left for you: `okt comment list %d --tag %s%s`.\n", task.ID, domain.AgentAddressTag, task.ID, domain.AgentAddressTag, role.Key)
+	fmt.Fprintf(b, "- See the team: `okt team show %s`.\n", teamID)
+}
+
+// writePlanSeat writes the plan, its goal, waves, and tasks, and the
+// protocol of a plan seat.
+func writePlanSeat(b *strings.Builder, show domain.PlanShow, teamID string, role domain.AgentRole, sessionID string) {
+	plan := show.Plan
+	fmt.Fprintf(b, "\n\n## Omakiten plan\n\nYou work on plan `%s` %q: %d of %d tasks done. Read it with `okt plan continue %s`.\n", plan.Slug, plan.Name, show.DoneCount, show.TotalCount, plan.Slug)
+	if goal := strings.TrimSpace(plan.GoalBody); goal != "" {
+		fmt.Fprintf(b, "\n### Goal\n\n%s\n", goal)
+	}
+	if len(show.Waves) > 0 {
+		b.WriteString("\n### Waves\n")
+		for i, wave := range show.Waves {
+			fmt.Fprintf(b, "\n%d. %s: %d of %d done\n", i+1, wave.Wave.Name, wave.DoneCount, wave.TotalCount)
+			for _, task := range wave.Tasks {
+				fmt.Fprintf(b, "   - #%d %q in `%s`\n", task.TaskID, task.Title, task.BucketKey)
+			}
+		}
+	}
+	writeSeatRun(b, "Your plan seat", teamID, role, sessionID)
+	fmt.Fprintf(b, "- Publish your result on the plan exactly once: `okt comment add --scope plan --plan %s -a agent -T %s%s -b \"…\"`.\n", plan.Slug, domain.AgentResultTag, role.Key)
+	fmt.Fprintf(b, "- See the seat: `okt team show %s`.\n", teamID)
 }
 
 // RunAgentSession is the supervisor of one session: it holds the session's
@@ -657,7 +778,7 @@ func (s *Service) RunAgentSession(ctx context.Context, input contract.RunAgentSe
 	case result.ExitCode != 0:
 		status, message = domain.SessionFailed, fmt.Sprintf("exit status %d", result.ExitCode)
 	}
-	s.finishRun(record, project.ID, team.TaskID, session, status, code, message)
+	s.finishRun(record, team, session, status, code, message)
 	finished, err := s.repo.GetAgentSession(record, session.ID)
 	if err != nil {
 		return contract.RunAgentSessionResponse{}, err
@@ -667,45 +788,39 @@ func (s *Service) RunAgentSession(ctx context.Context, input contract.RunAgentSe
 
 // finishRun finishes a session whose harness ran, then records
 // team.finished when it was the last one running in its team.
-func (s *Service) finishRun(ctx context.Context, projectID, taskID int64, session domain.AgentSession, status string, exitCode *int, message string) {
-	if !s.finishSession(ctx, projectID, taskID, session, status, exitCode, message) {
+func (s *Service) finishRun(ctx context.Context, team domain.AgentTeam, session domain.AgentSession, status string, exitCode *int, message string) {
+	if !s.finishSession(ctx, team, session, status, exitCode, message) {
 		return
 	}
 	team, err := s.repo.GetAgentTeam(ctx, session.TeamID)
 	if err != nil {
 		return
 	}
-	payload := map[string]any{"team_id": team.ID, "task_id": team.TaskID, "bucket": team.BucketKey}
 	counts := map[string]int{domain.SessionDone: 0, domain.SessionFailed: 0}
 	for _, ended := range team.Sessions {
 		if _, ok := counts[ended.Status]; ok {
 			counts[ended.Status]++
 		}
 	}
-	payload["done"], payload["failed"] = counts[domain.SessionDone], counts[domain.SessionFailed]
-	if body, err := json.Marshal(payload); err == nil {
-		_ = s.repo.RecordEntityEvent(ctx, domain.EventEntityTask, team.TaskID, projectID, domain.EventTypeTeamFinished, string(body))
-	}
+	s.recordTeamEvent(ctx, team, domain.EventTypeTeamFinished, map[string]any{"done": counts[domain.SessionDone], "failed": counts[domain.SessionFailed]})
 }
 
 // finishSession records how a running session ended and emits
 // agent.session_finished; a session that already ended is left alone. It
 // reports whether the session's team is left active with nothing running.
-func (s *Service) finishSession(ctx context.Context, projectID, taskID int64, session domain.AgentSession, status string, exitCode *int, message string) bool {
+func (s *Service) finishSession(ctx context.Context, team domain.AgentTeam, session domain.AgentSession, status string, exitCode *int, message string) bool {
 	finished, idle, err := s.repo.FinishAgentSession(ctx, session.ID, status, exitCode, message)
 	if err != nil || !finished {
 		return false
 	}
-	payload := map[string]any{"session_id": session.ID, "team_id": session.TeamID, "member": session.Member, "task_id": taskID, "status": status}
+	payload := map[string]any{"session_id": session.ID, "member": session.Member, "status": status}
 	if exitCode != nil {
 		payload["exit_code"] = *exitCode
 	}
 	if message != "" {
 		payload["error"] = message
 	}
-	if body, err := json.Marshal(payload); err == nil {
-		_ = s.repo.RecordEntityEvent(ctx, domain.EventEntityTask, taskID, projectID, domain.EventTypeAgentSessionFinished, string(body))
-	}
+	s.recordTeamEvent(ctx, team, domain.EventTypeAgentSessionFinished, payload)
 	return idle
 }
 
@@ -727,7 +842,7 @@ func (s *Service) reconcileSessions(ctx context.Context, project domain.ProjectC
 	}
 	for _, stale := range sessions {
 		if !s.launcher.Alive(stale.Session.ID) {
-			s.finishRun(ctx, project.ID, stale.TaskID, stale.Session, domain.SessionFailed, nil, "orphaned: the run ended without its supervisor recording it")
+			s.finishRun(ctx, stale.Team, stale.Session, domain.SessionFailed, nil, "orphaned: the run ended without its supervisor recording it")
 		}
 	}
 }
@@ -776,8 +891,12 @@ func (s *Service) ShowAgent(ctx context.Context, input contract.ShowAgentInput) 
 	if err != nil {
 		return contract.ShowAgentResponse{}, err
 	}
-	resp := contract.ShowAgentResponse{Project: projectSummary(project), Session: session, TaskID: team.TaskID, Bucket: team.BucketKey,
-		Follow: []string{"okt task continue " + strconv.FormatInt(team.TaskID, 10), "okt logs --session " + session.ID, "okt team show " + team.ID}}
+	follow, err := s.teamSubjectFollow(ctx, project, team)
+	if err != nil {
+		return contract.ShowAgentResponse{}, err
+	}
+	resp := contract.ShowAgentResponse{Project: projectSummary(project), Session: session, TaskID: team.TaskID, PlanID: team.PlanID, Bucket: team.BucketKey,
+		Follow: []string{follow[0], "okt logs --session " + session.ID, "okt team show " + team.ID}}
 	last, err := s.repo.LastAgentActivity(ctx, session.ID)
 	if err != nil {
 		return contract.ShowAgentResponse{}, err
@@ -801,10 +920,21 @@ func (s *Service) ShowTeam(ctx context.Context, input contract.ShowTeamInput) (c
 	if err != nil {
 		return contract.ShowTeamResponse{}, err
 	}
-	comments, err := s.newCommentService().List(ctx, project, team.TaskID)
+	comments, err := s.teamComments(ctx, project, team)
 	if err != nil {
 		return contract.ShowTeamResponse{}, err
 	}
+	follow, err := s.teamSubjectFollow(ctx, project, team)
+	if err != nil {
+		return contract.ShowTeamResponse{}, err
+	}
+	results, missing := teamResults(team, comments)
+	return contract.ShowTeamResponse{Project: projectSummary(project), Team: team, Results: results, MissingResults: missing, Follow: follow}, nil
+}
+
+// teamResults returns the review-<key> comments the team's seats published
+// and the members whose session ended done without one.
+func teamResults(team domain.AgentTeam, comments []domain.Comment) ([]contract.TeamResult, []string) {
 	results, missing := []contract.TeamResult{}, []string{}
 	for _, session := range team.Sessions {
 		if session.Status == domain.SessionReplaced {
@@ -821,9 +951,30 @@ func (s *Service) ShowTeam(ctx context.Context, input contract.ShowTeamInput) (c
 			missing = append(missing, session.Member)
 		}
 	}
+	return results, missing
+}
+
+// teamComments returns the comments of the team's subject: its plan's, or
+// its task's.
+func (s *Service) teamComments(ctx context.Context, project domain.ProjectContext, team domain.AgentTeam) ([]domain.Comment, error) {
+	if team.PlanID > 0 {
+		return s.newCommentService().Query(ctx, project, domain.CommentFilter{Scope: domain.CommentScopePlan, ProjectID: project.ID, PlanID: team.PlanID})
+	}
+	return s.newCommentService().List(ctx, project, team.TaskID)
+}
+
+// teamSubjectFollow returns the commands that read the team's subject and
+// wait for its results.
+func (s *Service) teamSubjectFollow(ctx context.Context, project domain.ProjectContext, team domain.AgentTeam) ([]string, error) {
+	if team.PlanID > 0 {
+		plan, err := s.repo.GetPlanByID(ctx, project.ID, team.PlanID)
+		if err != nil {
+			return nil, err
+		}
+		return []string{"okt plan continue " + plan.Slug, "okt comment list --scope plan --plan " + plan.Slug}, nil
+	}
 	id := strconv.FormatInt(team.TaskID, 10)
-	return contract.ShowTeamResponse{Project: projectSummary(project), Team: team, Results: results, MissingResults: missing,
-		Follow: []string{"okt task continue " + id, "okt wait --task " + id + " --tag '" + domain.AgentResultTag + "*'"}}, nil
+	return []string{"okt task continue " + id, "okt wait --task " + id + " --tag '" + domain.AgentResultTag + "*'"}, nil
 }
 
 // projectTeam loads a team and hides teams of other projects.

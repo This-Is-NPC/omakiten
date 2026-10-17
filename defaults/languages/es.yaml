@@ -117,6 +117,7 @@ keys:
   cli.agent.spawn.short: "Abre el equipo de agentes del bucket, o un agente con --command, para una tarea"
   cli.agent.spawn.flag.task: "tarea en la que trabajan los agentes"
   cli.agent.spawn.flag.team: "equipo activo cuyo puesto --member reabrir"
+  cli.agent.spawn.flag.plan: "plan cuyo puesto de plan --member volver a ejecutar"
   cli.agent.spawn.flag.member: "clave del roster del puesto a reabrir (lead para el lead)"
   cli.agent.spawn.flag.command: "comando que ejecuta un agente lead en lugar del equipo del bucket"
   cli.agent.spawn.flag.harness: "adaptador de harness del lead"

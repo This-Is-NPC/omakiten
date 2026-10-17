@@ -117,12 +117,14 @@ type AgentAdapters struct {
 	MaxMembers  int                    `json:"max_members,omitempty"`
 }
 
-// AgentTeam is the set of sessions opened for one task in one bucket.
+// AgentTeam is the set of sessions opened for one task in one bucket, or,
+// with PlanID and no task, for the seats of one plan.
 type AgentTeam struct {
 	ID        string `json:"team_id"`
 	ProjectID int64  `json:"project_id"`
-	TaskID    int64  `json:"task_id"`
-	BucketKey string `json:"bucket"`
+	TaskID    int64  `json:"task_id,omitempty"`
+	PlanID    int64  `json:"plan_id,omitempty"`
+	BucketKey string `json:"bucket,omitempty"`
 	Status    string `json:"status"`
 	// OpenedAfter is the newest event id when the team opened.
 	OpenedAfter int64          `json:"opened_after_event_id"`
@@ -168,10 +170,10 @@ func (e SessionLimitError) Error() string {
 	return fmt.Sprintf("%d sessions are running; preferences allow %d", e.Running, e.Limit)
 }
 
-// TeamSession is a session with the task of its team.
+// TeamSession is a session with its team, without the team's sessions.
 type TeamSession struct {
 	Session AgentSession
-	TaskID  int64
+	Team    AgentTeam
 }
 
 // AgentFallback reports a harness replaced by the user's preference because
@@ -203,12 +205,14 @@ type AgentError struct {
 	PreferencesPath string `json:"preferences_path,omitempty"`
 }
 
-// TeamOutcome reports what a move or spawn did about a bucket's team.
+// TeamOutcome reports what a move or spawn did about a bucket's team, or
+// about a plan's seat.
 type TeamOutcome struct {
 	Status  string          `json:"status"`
 	TeamID  string          `json:"team_id,omitempty"`
-	TaskID  int64           `json:"task_id"`
-	Bucket  string          `json:"bucket"`
+	TaskID  int64           `json:"task_id,omitempty"`
+	PlanID  int64           `json:"plan_id,omitempty"`
+	Bucket  string          `json:"bucket,omitempty"`
 	Lead    MemberOutcome   `json:"lead"`
 	Members []MemberOutcome `json:"members,omitempty"`
 	Spawn   string          `json:"spawn,omitempty"`

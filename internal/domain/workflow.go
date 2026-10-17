@@ -7,7 +7,7 @@ type Workflow struct {
 	Buckets     []Bucket             `json:"buckets,omitempty"`
 	Transitions []WorkflowTransition `json:"transitions,omitempty"`
 	Operations  WorkflowOperations   `json:"operations,omitempty"`
-	Plans       PlanGates            `json:"plans,omitempty"`
+	Plans       WorkflowPlans        `json:"plans,omitempty"`
 	// Defaults declares the workflow-level fallback for task/comment edit
 	// and delete. A nil pointer means "no rule declared at the workflow
 	// level" — bucket overrides are still consulted, and when neither
@@ -124,10 +124,10 @@ type OperationPolicy struct {
 }
 
 // GuardPlanCommentsTagged is the plan guard type: the plan carries at least
-// Count (default 1) comments tagged Tag. It is valid only inside PlanGates.
+// Count (default 1) comments tagged Tag. It is valid only inside WorkflowPlans.
 const GuardPlanCommentsTagged = "plan_comments_tagged"
 
-// PlanStage names a point in a plan's life that PlanGates can gate.
+// PlanStage names a point in a plan's life that WorkflowPlans can gate.
 type PlanStage string
 
 const (
@@ -136,14 +136,26 @@ const (
 	PlanStageComplete PlanStage = "complete"
 )
 
-// PlanGates declares the guards an active plan must meet to start (a claim,
-// or a task of the plan leaving the first bucket), to pass each Progress
-// share of done tasks, and to complete (the move of its last open task into
-// the final bucket, or an edit to done).
-type PlanGates struct {
+// WorkflowPlans declares the guards an active plan must meet to start (a
+// claim, or a task of the plan leaving the first bucket), to pass each
+// Progress share of done tasks, and to complete (the move of its last open
+// task into the final bucket, or an edit to done), and the Agents seats
+// that run for a plan rather than for a task.
+type WorkflowPlans struct {
 	Start    OperationPolicy    `json:"start,omitempty"`
 	Progress []PlanProgressGate `json:"progress,omitempty"`
 	Complete OperationPolicy    `json:"complete,omitempty"`
+	Agents   []AgentRole        `json:"agents,omitempty"`
+}
+
+// Agent returns the plan seat key names.
+func (p WorkflowPlans) Agent(key string) (AgentRole, bool) {
+	for _, role := range p.Agents {
+		if role.Key == key {
+			return role, true
+		}
+	}
+	return AgentRole{}, false
 }
 
 // PlanProgressGate gates the moves that leave more than Percent of a plan's

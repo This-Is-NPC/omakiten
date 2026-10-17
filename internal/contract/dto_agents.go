@@ -8,24 +8,27 @@ import (
 
 // SpawnAgentsInput starts agents for a task. Without Command it starts the
 // team the task's bucket declares; Command starts a team of one lead.
-// TeamID with Member instead reruns that roster seat of an active team.
-// Harness and Model override the started seat's.
+// TeamID with Member instead reruns that roster seat of an active team,
+// and Plan, a plan slug, with Member reruns that plan seat. Harness and
+// Model override the started seat's.
 type SpawnAgentsInput struct {
 	ProjectSelector
 	TaskID  int64  `json:"task_id,omitempty"`
 	TeamID  string `json:"team_id,omitempty"`
+	Plan    string `json:"plan,omitempty"`
 	Member  string `json:"member,omitempty"`
 	Command string `json:"command,omitempty"`
 	Harness string `json:"harness,omitempty"`
 	Model   string `json:"model,omitempty"`
 }
 
-// SpawnSeatInput starts one roster seat of an active team: the team TeamID
-// names, or the active team of TaskID.
+// SpawnSeatInput starts one seat: a roster seat of the team TeamID names,
+// or of the active team of TaskID, or the plan seat of PlanID.
 type SpawnSeatInput struct {
 	ProjectSelector
 	TeamID string `json:"team_id,omitempty"`
 	TaskID int64  `json:"task_id,omitempty"`
+	PlanID int64  `json:"plan_id,omitempty"`
 	Member string `json:"member"`
 }
 
@@ -49,8 +52,9 @@ type AgentActivity struct {
 type ShowAgentResponse struct {
 	Project      ProjectSummary      `json:"project"`
 	Session      domain.AgentSession `json:"session"`
-	TaskID       int64               `json:"task_id"`
-	Bucket       string              `json:"bucket"`
+	TaskID       int64               `json:"task_id,omitempty"`
+	PlanID       int64               `json:"plan_id,omitempty"`
+	Bucket       string              `json:"bucket,omitempty"`
 	LastActivity *AgentActivity      `json:"last_activity,omitempty"`
 	Follow       []string            `json:"follow"`
 }

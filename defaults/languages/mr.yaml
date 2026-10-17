@@ -117,6 +117,7 @@ keys:
   cli.agent.spawn.short: "task साठी bucket ची agent team, किंवा --command चालवणारा एक agent उघडा"
   cli.agent.spawn.flag.task: "ज्या task वर agents काम करतात"
   cli.agent.spawn.flag.team: "सक्रिय team ज्याची --member seat पुन्हा उघडायची"
+  cli.agent.spawn.flag.plan: "ज्या plan ची --member plan seat पुन्हा चालवायची"
   cli.agent.spawn.flag.member: "पुन्हा उघडायच्या seat ची roster key (lead साठी lead)"
   cli.agent.spawn.flag.command: "bucket च्या team ऐवजी एक lead agent चालवणारा command"
   cli.agent.spawn.flag.harness: "lead साठी harness adapter"

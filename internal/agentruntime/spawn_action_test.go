@@ -41,6 +41,36 @@ func TestSpawnHookReachesTheProjectService(t *testing.T) {
 	}
 }
 
+// TestPlanSpawnHookReadsThePlanFromTheEvent verifies a plan_member spawn
+// hook matches guard.violated by stage and takes its plan from the
+// payload's plan_id, so the start reaches the project's service.
+func TestPlanSpawnHookReadsThePlanFromTheEvent(t *testing.T) {
+	ctx := context.Background()
+	rt := openTestRuntime(t)
+	defer func() { _ = rt.Close() }()
+	candidate, err := config.LoadBundle(rt.configPath)
+	if err != nil {
+		t.Fatalf("LoadBundle: %v", err)
+	}
+	on := true
+	candidate.Config.Events.Defaults.Broadcast, candidate.Config.Events.Defaults.Hook, candidate.Config.Events.Defaults.Log = &on, &on, &on
+	candidate.Config.Hooks = []config.HookSpec{{On: domain.EventTypeGuardViolated, When: map[string]string{"stage": "complete"}, Do: config.HookActionSpawn, Args: map[string]any{"plan_member": "auditor"}}}
+	path := filepath.Join(filepath.Dir(rt.configPath), "plan-spawn-hook.yaml")
+	if err := config.SaveBundle(path, candidate); err != nil {
+		t.Fatalf("SaveBundle: %v", err)
+	}
+	if _, err := rt.Cache().Apply(ctx, rt.defaultProjectID, path, nil); err != nil {
+		t.Fatalf("Apply(plan spawn hook) error = %v", err)
+	}
+	if err := rt.store.RecordEntityEvent(ctx, domain.EventEntityPlan, 999, rt.defaultProjectID, domain.EventTypeGuardViolated, `{"stage":"complete","plan_id":999}`); err != nil {
+		t.Fatal(err)
+	}
+	executed := waitForHookExecution(t, rt, `"action":"spawn"`)
+	if !strings.Contains(executed, `"success":false`) || strings.Contains(executed, "carries no") {
+		t.Fatalf("hook.executed = %s, want the service, not the payload, to refuse plan 999", executed)
+	}
+}
+
 // waitForHookExecution returns the payload of the first hook.executed
 // event containing marker.
 func waitForHookExecution(t *testing.T, rt *Runtime, marker string) string {

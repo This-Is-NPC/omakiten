@@ -75,11 +75,13 @@ state with retained metadata under one consistent read snapshot.
 
 ## Agent teams
 
-`agent_teams` records the agents run for one task in one bucket. A partial
-unique index keeps at most one `active` team per project, task, and bucket; a
-team whose lead could not start is `failed`, and a team whose task left the
-bucket or that was closed is `closed`. Both free that slot. Task deletion
-cascades teams.
+`agent_teams` records the agents run for one task in one bucket, or, with
+`plan_id` and no `task_id`, the plan seats run for one plan; a check keeps
+exactly one of the two set. Partial unique indexes keep at most one `active`
+team per project, task, and bucket, and per plan. A team none of whose
+starting seats could start is `failed`, and a team whose task left the
+bucket or that was closed is `closed`. Both free that slot. Task and plan
+deletion cascade teams.
 
 `agent_sessions` holds one row per headless run of a team seat: its member
 key (`lead` or a declared key), command, persona, the resolved harness and

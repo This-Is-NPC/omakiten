@@ -59,7 +59,7 @@ func toDomainWorkflow(wf Workflow) domain.Workflow {
 			Delete:    domain.OperationPolicy{Guards: toDomainGuards(wf.Operations.Delete.Guards, nil)},
 			Unarchive: domain.OperationPolicy{Guards: toDomainGuards(wf.Operations.Unarchive.Guards, nil)},
 		},
-		Plans: toDomainPlanGates(wf.Plans),
+		Plans: toDomainWorkflowPlans(wf.Plans),
 	}
 	if wf.Defaults != nil {
 		out.Defaults = &domain.WorkflowDefaults{
@@ -119,13 +119,16 @@ func toDomainGuards(in []TransitionGuard, _ map[string]Bucket) []domain.Transiti
 	return out
 }
 
-func toDomainPlanGates(in PlanGates) domain.PlanGates {
-	out := domain.PlanGates{
+func toDomainWorkflowPlans(in WorkflowPlans) domain.WorkflowPlans {
+	out := domain.WorkflowPlans{
 		Start:    domain.OperationPolicy{Guards: toDomainGuards(in.Start.Guards, nil)},
 		Complete: domain.OperationPolicy{Guards: toDomainGuards(in.Complete.Guards, nil)},
 	}
 	for _, gate := range in.Progress {
 		out.Progress = append(out.Progress, domain.PlanProgressGate{Percent: gate.Percent, Guards: toDomainGuards(gate.Guards, nil)})
+	}
+	for _, role := range in.Agents {
+		out.Agents = append(out.Agents, toDomainRole(role))
 	}
 	return out
 }

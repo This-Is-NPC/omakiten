@@ -37,7 +37,7 @@ func newPlanGateFixture(t *testing.T) planGateFixture {
 	}
 	workflow := &bundle.Workflows[0]
 	workflow.Transitions = []config.Transition{{From: 1, To: 2}, {From: 2, To: 3}}
-	workflow.Plans = config.PlanGates{
+	workflow.Plans = config.WorkflowPlans{
 		Start:    config.OperationPolicy{Guards: gate("kickoff")},
 		Progress: []config.PlanProgressGate{{Percent: 50, Guards: gate("midpoint")}},
 		Complete: config.OperationPolicy{Guards: gate("retro")},

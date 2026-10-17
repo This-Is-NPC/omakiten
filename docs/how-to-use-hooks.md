@@ -40,6 +40,8 @@ become relative to that package directory.
 
 `do: spawn` with `args: {member: <key>}` starts a seat of the event's agent
 team instead; see [chaining seats with events](how-to-run-agent-teams.md#5-chain-seats-with-events).
+`args: {plan_member: <key>}` starts a seat of the event's plan; see
+[running a seat for a plan](how-to-run-agent-teams.md#6-run-a-seat-for-a-plan).
 
 ## 2. Filter the event
 

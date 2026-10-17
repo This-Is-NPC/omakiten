@@ -75,15 +75,22 @@ func validateHook(i int, h HookSpec, knownEvents map[string]struct{}, isAction H
 }
 
 // HookActionSpawn is the hook action that starts a roster seat of the
-// event's agent team.
+// event's agent team, or a plan seat of the event's plan.
 const HookActionSpawn = "spawn"
 
+// validateSpawnArgs accepts exactly one of args.member and
+// args.plan_member, each a seat key.
 func validateSpawnArgs(i int, args map[string]interface{}) error {
-	member, _ := args["member"].(string)
-	if member != domain.AgentLeadKey && !agentMemberKey.MatchString(member) {
-		return fmt.Errorf("config.hooks[%d]: action spawn requires args.member, a roster key such as lead", i)
+	member, isMember := args["member"].(string)
+	planMember, isPlan := args["plan_member"].(string)
+	switch {
+	case isMember == isPlan:
+	case isMember && (member == domain.AgentLeadKey || agentMemberKey.MatchString(member)):
+		return nil
+	case isPlan && agentMemberKey.MatchString(planMember):
+		return nil
 	}
-	return nil
+	return fmt.Errorf("config.hooks[%d]: action spawn requires one of args.member, a roster key such as lead, or args.plan_member, a plan seat key", i)
 }
 
 func validateHookNotification(i int, h HookSpec, slug string, notifications map[string]Notification) error {
