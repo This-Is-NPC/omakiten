@@ -2,10 +2,12 @@ package operation
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"maps"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -18,6 +20,7 @@ import (
 
 type planGateFixture struct {
 	ctx     context.Context
+	store   *snapstore.Store
 	service *Service
 	tasks   []int64
 }
@@ -49,7 +52,7 @@ func newPlanGateFixture(t *testing.T) planGateFixture {
 	}
 	svc := NewService(store, contract.ProjectSelector{CWD: root})
 	svc.SetSnapshot(store.Snapshot())
-	f := planGateFixture{ctx: ctx, service: svc}
+	f := planGateFixture{ctx: ctx, store: store, service: svc}
 
 	plan := f.createPlan(t, "p")
 	wave, err := svc.AddPlanWave(ctx, contract.AddPlanWaveInput{PlanID: plan, Name: "one"})
@@ -137,6 +140,34 @@ func (f planGateFixture) gateStates(t *testing.T) map[string]bool {
 	return states
 }
 
+// violatedStages returns, oldest first, the stage of each guard.violated
+// event naming plan p at the top level, with the share of a progress gate.
+func (f planGateFixture) violatedStages(t *testing.T) []string {
+	t.Helper()
+	events, err := f.store.ListEvents(f.ctx, domain.EventFilter{})
+	if err != nil {
+		t.Fatalf("ListEvents() error = %v", err)
+	}
+	var stages []string
+	for _, event := range events {
+		var payload struct {
+			Plan    string `json:"plan"`
+			PlanID  int64  `json:"plan_id"`
+			Stage   string `json:"stage"`
+			Percent int    `json:"percent"`
+		}
+		if event.EventType != domain.EventTypeGuardViolated || json.Unmarshal([]byte(event.Payload), &payload) != nil || payload.Plan != "p" || payload.PlanID == 0 {
+			continue
+		}
+		if payload.Percent > 0 {
+			payload.Stage = fmt.Sprintf("%s %d", payload.Stage, payload.Percent)
+		}
+		stages = append(stages, payload.Stage)
+	}
+	slices.Reverse(stages)
+	return stages
+}
+
 func TestPlanShowReportsItsGates(t *testing.T) {
 	f := newPlanGateFixture(t)
 	want := map[string]bool{"start": false, "progress 50": false, "complete": false}
@@ -202,6 +233,9 @@ func TestPlanGatesHoldProgressAndCompletion(t *testing.T) {
 	done := string(domain.PlanStatusDone)
 	_, err := f.service.EditPlan(f.ctx, contract.EditPlanInput{Slug: "p", Status: &done})
 	assertPlanGate(t, err, domain.PlanStageComplete, "retro")
+	if got := f.violatedStages(t); !slices.Equal(got, []string{"progress 50", "complete", "complete"}) {
+		t.Fatalf("guard.violated plan stages = %q, want the progress gate, then complete on the move and on the edit", got)
+	}
 
 	f.comment(t, "retro")
 	if err := f.move(f.tasks[3], "done"); err != nil {

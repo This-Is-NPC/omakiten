@@ -80,7 +80,11 @@ func (e *Evaluator) EvaluatePlanStage(ctx context.Context, projectID, planID int
 		if status.Satisfied {
 			continue
 		}
-		e.EmitViolated(ctx, projectID, domain.EventEntityPlan, planID, operation, status.Type, status.Message, target)
+		if e.events != nil {
+			if body := buildGuardViolatedPayload(ctx, operation, status.Type, status.Message, target, planGateFields(status)); body != "" {
+				_ = e.events.RecordEntityEvent(ctx, domain.EventEntityPlan, planID, projectID, domain.EventTypeGuardViolated, body)
+			}
+		}
 		unmet = append(unmet, status)
 		messages = append(messages, status.Message)
 	}
@@ -175,4 +179,20 @@ func (e *Evaluator) checkPlanCommentsTagged(ctx context.Context, projectID int64
 		Fix:       planCommentFix(ctx, state.Slug, guard.Tag, "<evidence>"),
 		Message:   fmt.Sprintf("%s guard: plan %q has %d comment(s) tagged %q; %s requires at least %d", guard.Type, state.Slug, count, guard.Tag, action, required),
 	}, nil
+}
+
+// planGateFields returns the plan, plan_id, stage, and progress percent a
+// plan gate's status names, or nil for any other guard. guard.violated
+// carries them at the top level, where a hook's when can match them.
+func planGateFields(status domain.GuardStatus) map[string]any {
+	if status.Type != domain.GuardPlanCommentsTagged {
+		return nil
+	}
+	fields := map[string]any{}
+	for _, key := range []string{"plan", "plan_id", "stage", "percent"} {
+		if value, ok := status.Details[key]; ok {
+			fields[key] = value
+		}
+	}
+	return fields
 }

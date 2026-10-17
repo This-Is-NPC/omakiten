@@ -9,6 +9,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"strings"
 
 	"omakiten/internal/activity"
@@ -230,18 +231,25 @@ func (e *Evaluator) EmitViolated(ctx context.Context, projectID int64, entityTyp
 // Falls back to the bare EmitViolated payload when snap is nil
 // (uninitialised tests) so the legacy invariant still holds.
 func (e *Evaluator) EmitViolatedForTask(ctx context.Context, projectID int64, task domain.Task, snap *config.Snapshot, operation, rule, hint string, target map[string]any) {
+	e.emitViolatedForTask(ctx, projectID, task, snap, operation, rule, hint, target, nil)
+}
+
+// emitViolatedForTask is EmitViolatedForTask with fields added at the top
+// level of the payload.
+func (e *Evaluator) emitViolatedForTask(ctx context.Context, projectID int64, task domain.Task, snap *config.Snapshot, operation, rule, hint string, target, fields map[string]any) {
 	if e.events == nil {
 		return
 	}
-	var subject map[string]any
+	subject := map[string]any{}
 	if snap != nil {
 		taskSnap := snap.For(task)
 		kitKey := ""
 		if taskSnap != nil {
 			kitKey = taskSnap.Kit().Key
 		}
-		subject = taskSubjectFields(task, kitKey)
+		maps.Copy(subject, taskSubjectFields(task, kitKey))
 	}
+	maps.Copy(subject, fields)
 	body := buildGuardViolatedPayload(ctx, operation, rule, hint, target, subject)
 	if body == "" {
 		return
@@ -377,7 +385,7 @@ func (e *Evaluator) reportUnmet(ctx context.Context, projectID int64, task domai
 		if status.Satisfied {
 			continue
 		}
-		e.EmitViolatedForTask(ctx, projectID, task, snap, operation, status.Type, status.Message, target)
+		e.emitViolatedForTask(ctx, projectID, task, snap, operation, status.Type, status.Message, target, planGateFields(status))
 		unmet = append(unmet, status)
 		messages = append(messages, status.Message)
 	}
