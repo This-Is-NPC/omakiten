@@ -43,12 +43,14 @@ const (
 	SessionReplaced = "replaced"
 )
 
-// AgentRole is one team seat: the command it runs and the optional harness,
-// model, and timeout that override the adapter defaults, and its brief.
-// Timeout is a Go duration; empty lets the run last until it exits.
+// AgentRole is one seat: the command it runs, the persona that replaces the
+// one the command binds, the optional harness, model, and timeout that
+// override the adapter defaults, and its brief. Timeout is a Go duration;
+// empty lets the run last until it exits.
 type AgentRole struct {
 	Key     string `json:"key"`
 	Command string `json:"command"`
+	Persona string `json:"persona,omitempty"`
 	Harness string `json:"harness,omitempty"`
 	Model   string `json:"model,omitempty"`
 	Timeout string `json:"timeout,omitempty"`

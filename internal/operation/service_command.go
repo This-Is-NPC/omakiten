@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"sort"
 	"strings"
 
@@ -17,8 +18,18 @@ func (s *Service) ResolveCommand(_ context.Context, input contract.ResolveComman
 	if err := s.allow("command.resolve"); err != nil {
 		return contract.ResolveCommandResponse{}, err
 	}
-	name := strings.TrimSpace(input.Name)
+	return s.resolveCommand(strings.TrimSpace(input.Name), invocationArgs(input.Arguments), "")
+}
+
+// resolveCommand composes command name with args. persona, when set,
+// replaces the persona the command binds.
+func (s *Service) resolveCommand(name string, args []contract.InvocationArg, persona string) (contract.ResolveCommandResponse, error) {
 	commands := s.loadCommandCatalog()
+	if binding, ok := commands[name]; ok && persona != "" {
+		commands = maps.Clone(commands)
+		binding.Persona = persona
+		commands[name] = binding
+	}
 	personas := s.loadPersonaCatalog()
 	skills := s.loadSkillCatalog()
 	laws := s.loadLawCatalog()
@@ -27,7 +38,7 @@ func (s *Service) ResolveCommand(_ context.Context, input contract.ResolveComman
 	if s.snapshot != nil {
 		outputLanguage = s.snapshot.AgentOutputLanguage()
 	}
-	return resolveCommandFromCatalog(name, invocationArgs(input.Arguments), commands, personas, skills, laws, templates, outputLanguage)
+	return resolveCommandFromCatalog(name, args, commands, personas, skills, laws, templates, outputLanguage)
 }
 
 // ListCommands returns workflow commands with their skill descriptions.

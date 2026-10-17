@@ -93,7 +93,18 @@ starting it: `data.team` has `status: suggested`, the resolved seats, and the
 current bucket: every seat it starts when it opens, in parallel. A seat that
 cannot start is reported as `failed` while the others keep working; the
 spawn fails only when none of them starts. `command` must be bound in
-`bindings.yaml`; the persona comes from that binding.
+`bindings.yaml`. The seat's prompt takes the persona from that binding, or
+from the seat's own `persona` when it names one:
+
+```yaml
+members:
+  - {key: security, command: okt-task-review, persona: security-auditor}
+```
+
+The seat's `persona` replaces the binding's whole persona: its body, its
+laws, and, for a command that declares no skills of its own, its skill
+repertoire. The command's skills, laws, and templates stay. `data.team`,
+`team show`, and `agent show` report the persona each seat runs.
 
 `start` lists the seats the team starts when it opens; without it, every
 seat starts. A seat left out is `waiting` until a hook starts it, as in

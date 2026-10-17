@@ -76,6 +76,7 @@ func newAgentTeamFixture(t *testing.T, teamBucket, trigger string, start ...stri
 	t.Setenv("OMAKITEN_HOME", t.TempDir())
 	ctx := context.Background()
 	bundle := agentTestBundle(t)
+	bundle.Personas = append(bundle.Personas, config.Persona{Slug: "auditor", Name: "Auditor", Body: "Trust nothing you did not verify.", SkillRepertoire: []string{"okt-start"}})
 	bundle.AgentAdapters = domain.AgentAdapters{
 		Defaults:  domain.AgentDefaults{Harness: "fake"},
 		Harnesses: map[string]domain.HarnessSpec{"fake": {Argv: agentArgs("fake-agent", "--", "{prompt}")}},
@@ -85,7 +86,7 @@ func newAgentTeamFixture(t *testing.T, teamBucket, trigger string, start ...stri
 			bundle.Workflows[0].Buckets[i].Agents = &config.BucketAgentsConfig{
 				Trigger: trigger,
 				Lead:    config.AgentRoleConfig{Command: "okt-start"},
-				Members: []config.AgentRoleConfig{{Key: "security", Command: "okt-start", Brief: "security only"}},
+				Members: []config.AgentRoleConfig{{Key: "security", Command: "okt-start", Persona: "auditor", Brief: "security only"}},
 				Start:   start,
 			}
 		}
@@ -190,6 +191,27 @@ func TestSpawnAgentsStartsTheBucketTeamOnce(t *testing.T) {
 	}
 	if started := countEvents(t, f, domain.EventTypeAgentSessionStarted); started != 2 {
 		t.Fatalf("recorded %d agent.session_started events, want 2", started)
+	}
+}
+
+// TestSeatPersonaReplacesTheCommandPersona verifies a seat's persona
+// replaces the one its command binds in the prompt and the outcome, and a
+// seat without one keeps the binding's.
+func TestSeatPersonaReplacesTheCommandPersona(t *testing.T) {
+	f := newAgentSpawnFixture(t)
+	resp, err := f.service.SpawnAgents(f.ctx, contract.SpawnAgentsInput{TaskID: f.task.ID})
+	if err != nil {
+		t.Fatalf("SpawnAgents() error = %v", err)
+	}
+	member, lead := resp.Team.Members[0], resp.Team.Lead
+	if member.Persona != "auditor" || lead.Persona != "agent" {
+		t.Fatalf("personas = member %q, lead %q; want auditor and the binding's agent", member.Persona, lead.Persona)
+	}
+	assertPromptContains(t, member.SessionID, "## Persona — Auditor", "Trust nothing you did not verify.", "Start work.")
+	assertPromptContains(t, lead.SessionID, "## Persona — Agent")
+	shown, err := f.service.ShowTeam(f.ctx, contract.ShowTeamInput{TeamID: resp.Team.TeamID})
+	if err != nil || teamSeat(shown.Team, "security").Persona != "auditor" {
+		t.Fatalf("ShowTeam() = %+v, %v; want the member's session on persona auditor", shown.Team, err)
 	}
 }
 

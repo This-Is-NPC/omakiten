@@ -366,7 +366,7 @@ func withSeats(out domain.TeamOutcome, seats []domain.MemberOutcome) domain.Team
 }
 
 func (s *Service) planSeat(adapters domain.AgentAdapters, role domain.AgentRole, status string) (domain.MemberOutcome, agentlaunch.Plan) {
-	seat := domain.MemberOutcome{Key: role.Key, Status: status, Command: role.Command, Persona: s.commandPersona(role.Command)}
+	seat := domain.MemberOutcome{Key: role.Key, Status: status, Command: role.Command, Persona: cmp.Or(role.Persona, s.commandPersona(role.Command))}
 	plan, fallback, perr := s.launcher.Resolve(adapters, role)
 	seat.Harness, seat.Model, seat.Fallback, seat.Error = plan.Harness, plan.Model, fallback, perr
 	switch {
@@ -542,7 +542,7 @@ func (s *Service) launchSeat(ctx context.Context, project domain.ProjectContext,
 
 // startSeat writes the seat's prompt and starts its supervisor.
 func (s *Service) startSeat(ctx context.Context, project domain.ProjectContext, task domain.Task, teamID string, team domain.BucketAgents, role domain.AgentRole, plan agentlaunch.Plan, files agentlaunch.SessionFiles) error {
-	if err := s.writeSeatPrompt(ctx, files.Prompt, task, teamID, team, role, files.Session); err != nil {
+	if err := s.writeSeatPrompt(files.Prompt, task, teamID, team, role, files.Session); err != nil {
 		return err
 	}
 	storeDir, err := paths.DataDir()
@@ -579,8 +579,8 @@ func agentEnv(sessionID, teamID, member string, plan agentlaunch.Plan) []string 
 
 // writeSeatPrompt writes the seat's prompt file: the resolved command, the
 // task, and the team protocol.
-func (s *Service) writeSeatPrompt(ctx context.Context, path string, task domain.Task, teamID string, team domain.BucketAgents, role domain.AgentRole, sessionID string) error {
-	command, err := s.ResolveCommand(ctx, contract.ResolveCommandInput{Name: role.Command})
+func (s *Service) writeSeatPrompt(path string, task domain.Task, teamID string, team domain.BucketAgents, role domain.AgentRole, sessionID string) error {
+	command, err := s.resolveCommand(role.Command, nil, role.Persona)
 	if err != nil {
 		return err
 	}

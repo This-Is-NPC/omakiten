@@ -75,10 +75,12 @@ type AgentPreferences struct {
 	MaxMembers     int `yaml:"max_members,omitempty" json:"max_members,omitempty"`
 }
 
-// AgentRoleConfig is one seat of a bucket team.
+// AgentRoleConfig is one seat. Persona, when set, replaces the persona the
+// command binds.
 type AgentRoleConfig struct {
 	Key     string `yaml:"key,omitempty" json:"key,omitempty"`
 	Command string `yaml:"command" json:"command"`
+	Persona string `yaml:"persona,omitempty" json:"persona,omitempty"`
 	Harness string `yaml:"harness,omitempty" json:"harness,omitempty"`
 	Model   string `yaml:"model,omitempty" json:"model,omitempty"`
 	Timeout string `yaml:"timeout,omitempty" json:"timeout,omitempty"`
@@ -175,7 +177,7 @@ func toDomainBucketAgents(c *BucketAgentsConfig) *domain.BucketAgents {
 }
 
 func toDomainRole(r AgentRoleConfig) domain.AgentRole {
-	return domain.AgentRole{Key: r.Key, Command: r.Command, Harness: r.Harness, Model: r.Model, Timeout: r.Timeout, Brief: r.Brief}
+	return domain.AgentRole{Key: r.Key, Command: r.Command, Persona: r.Persona, Harness: r.Harness, Model: r.Model, Timeout: r.Timeout, Brief: r.Brief}
 }
 
 // validateAgentAdapters checks the adapter declarations of one layer.
