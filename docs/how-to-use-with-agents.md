@@ -7,12 +7,12 @@ The integration is one skill, `omakiten`, teaching the installed `okt` CLI.
 It is embedded in the binary. The agent needs shell access to `okt` and the
 project's database and workflow.
 
-The skill covers both board work and configuration. It routes the agent to the
-installed CLI's help, teaches scope and preset-source updates, and includes a
-hook recipe with delivery verification. A hook notification intended for an
-agent needs that agent's receiver; an Omakiten notification card alone does not
-interrupt an agent session. See [hooks](how-to-use-hooks.md) for event and action
-contracts and [preset management](how-to-manage-presets.md) for package updates.
+The skill is short on purpose. It states the rules every session follows and
+where to look: `project resume` and `task continue` for the state of the work,
+`command list` and `command resolve` for the project's workflow, `--help` for
+commands and flags, and `okt docs` for how a capability works. `okt docs list`
+names these guides with the question each answers; `okt docs show <topic>`
+prints one, as shipped with the installed release, without a network.
 
 ## Install the skill
 
