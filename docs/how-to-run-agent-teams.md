@@ -268,8 +268,9 @@ When the move of the plan's last open task into the final bucket meets the
 `complete` gate, the move fails and records `guard.violated` with the
 plan's `plan_id` and `stage: complete`. The hook starts the auditor, which
 publishes `review-auditor` on the plan and exits; the next attempt at the
-move then completes the plan. `okt plan edit --status done` meets the same
-gate and records the same event.
+move then completes the plan. An agent whose move the gate held waits for
+that comment and retries; it does not post the seat's tag itself.
+`okt plan edit --status done` meets the same gate and records the same event.
 
 The seat's prompt carries the plan instead of a task: its goal, each wave
 with its tasks and their buckets, and the command that publishes the
