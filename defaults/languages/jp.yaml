@@ -209,6 +209,8 @@ keys:
   cli.preset.kaiseki.description: "requirements、planning、docs カラムを追加。遷移 guard が厳格。"
   cli.preset.shokunin.title: "職人"
   cli.preset.shokunin.description: "事前リスク分析、ロールバック計画、二重レビューを備えた開発。"
+  cli.preset.orchestra.title: "オーケストラ"
+  cli.preset.orchestra.description: "実装・レビュー・ドキュメント作成を自律 agent チームが担うおまかせ workflow。"
   cli.config.init.short: "公式 preset を user-global または repo-local 環境に展開"
   cli.config.path.short: "アクティブ config 内のドット区切り YAML キーの値を表示"
   cli.config.diff.short: "2 つの config ソースを YAML 構造比較で diff"

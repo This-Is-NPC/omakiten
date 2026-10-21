@@ -211,6 +211,8 @@ keys:
   cli.preset.kaiseki.description: "Fügt requirements-, planning- und docs-Spalten mit strikten Übergangs-guards hinzu."
   cli.preset.shokunin.title: "Handwerker"
   cli.preset.shokunin.description: "Risikobewusste Lieferung mit Vorabanalyse, Rücksetzungsplänen und doppelter Prüfung."
+  cli.preset.orchestra.title: "Orchester"
+  cli.preset.orchestra.description: "Workflow nach Wahl des Küchenchefs, ausgeführt von autonomen Agent-Teams, die implementieren, prüfen und dokumentieren."
   cli.config.init.short: "Materialisiert ein offizielles preset in user-globalem oder repo-lokalem Install"
   cli.config.path.short: "Berichtet den Wert eines dotted YAML-Pfads in der aktiven Config"
   cli.config.diff.short: "Vergleicht zwei Config-Quellen durch strukturellen YAML-Vergleich"

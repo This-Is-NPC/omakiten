@@ -212,6 +212,8 @@ keys:
   cli.preset.kaiseki.description: "Lisää requirements-, planning- ja docs-sarakkeet tiukkojen siirtymä-guardien kera."
   cli.preset.shokunin.title: "Käsityöläinen"
   cli.preset.shokunin.description: "Riskit huomioiva toimitus ennakkoanalyysillä, palautussuunnitelmilla ja kahdella katselmoinnilla."
+  cli.preset.orchestra.title: "Orkesteri"
+  cli.preset.orchestra.description: "Kokin valinta -workflow, jota ajavat itsenäiset agenttitiimit: ne toteuttavat, katselmoivat ja dokumentoivat."
   cli.config.init.short: "Materialisoi virallinen preset käyttäjäglobaaliin tai repo-paikalliseen asennukseen"
   cli.config.path.short: "Raportoi arvo pisteellä erotetussa YAML-avainpolussa aktiivisessa configissa"
   cli.config.diff.short: "Vertaa kahta config-lähdettä YAML-rakenteen mukaan"

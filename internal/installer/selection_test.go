@@ -1,6 +1,7 @@
 package installer
 
 import (
+	"slices"
 	"testing"
 )
 
@@ -32,9 +33,9 @@ func TestResolvePreset_ShellParity(t *testing.T) {
 	}
 }
 
-func TestSupportedPresets_CountMatchesShell(t *testing.T) {
-	const want = 4
-	if got := len(SupportedPresets()); got != want {
-		t.Fatalf("SupportedPresets: got %d entries, want %d (sync with install.sh SUPPORTED_PRESETS)", got, want)
+func TestSupportedPresets_MenuOrder(t *testing.T) {
+	want := []string{"omakase", "izakaya", "kaiseki", "shokunin", "orchestra"}
+	if got := SupportedPresets(); !slices.Equal(got, want) {
+		t.Fatalf("SupportedPresets: got %v want %v", got, want)
 	}
 }

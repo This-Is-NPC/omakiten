@@ -19,6 +19,7 @@ okt preset catalog
 | `omakase` | Development, review, and completion | [okt-workflow-omakase](https://github.com/This-Is-NPC/okt-workflow-omakase) |
 | `kaiseki` | Requirements and planning before delivery | [okt-workflow-kaiseki](https://github.com/This-Is-NPC/okt-workflow-kaiseki) |
 | `shokunin` | Risk evidence and stricter review | [okt-workflow-shokunin](https://github.com/This-Is-NPC/okt-workflow-shokunin) |
+| `orchestra` | Omakase delivered by autonomous agent teams | [okt-workflow-orchestra](https://github.com/This-Is-NPC/okt-workflow-orchestra) |
 
 These are repository sources, each with its own version and declared policy.
 Inspect the installed workflow for the exact buckets and guards; names alone

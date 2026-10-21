@@ -212,6 +212,8 @@ keys:
   cli.preset.kaiseki.description: "Legger til kolonner for requirements, planning og docs med strenge overgangs-guards."
   cli.preset.shokunin.title: "Håndverker"
   cli.preset.shokunin.description: "Risikobevisst levering med forhåndsanalyse, tilbakeføringsplaner og dobbel gjennomgang."
+  cli.preset.orchestra.title: "Orkester"
+  cli.preset.orchestra.description: "Kokkens valg-workflow drevet av autonome agent-team som implementerer, gjennomgår og dokumenterer."
   cli.config.init.short: "Materialisér en offisiell preset inn i den bruker-globale eller repo-lokale installasjonen"
   cli.config.path.short: "Rapportér verdien ved en punktert YAML-nøkkelbane i aktiv config"
   cli.config.diff.short: "Diff to config-kilder via strukturell YAML-sammenligning"

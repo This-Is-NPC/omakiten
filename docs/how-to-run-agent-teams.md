@@ -5,7 +5,9 @@ plan, choose which harness and model each one runs, and see what they did?
 
 Prerequisites: a registered project, a task, and a harness (`claude`,
 `codex`, or `opencode`) on `PATH`. Nothing here runs unless a bucket declares
-a team or you call `okt agent spawn`.
+a team or you call `okt agent spawn`. The official `orchestra` preset declares
+teams for development, review, documentation, and plan audit; the other
+official presets declare none.
 
 Every agent runs once and headless: the harness does its work through the
 board and exits. Nothing stays open. Results and questions are task comments

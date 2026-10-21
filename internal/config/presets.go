@@ -21,6 +21,7 @@ var officialPresets = []Preset{
 	{Name: "izakaya", Repository: "https://github.com/This-Is-NPC/okt-workflow-izakaya.git"},
 	{Name: "kaiseki", Repository: "https://github.com/This-Is-NPC/okt-workflow-kaiseki.git"},
 	{Name: "shokunin", Repository: "https://github.com/This-Is-NPC/okt-workflow-shokunin.git"},
+	{Name: "orchestra", Repository: "https://github.com/This-Is-NPC/okt-workflow-orchestra.git"},
 }
 
 // ListPresets returns the official presets in menu order.
