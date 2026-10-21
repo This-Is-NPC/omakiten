@@ -99,10 +99,15 @@ okt update
 okt setup --update
 ```
 
-The first command updates the installed executable. The second revisits setup
-choices. Setup refreshes pristine preset snapshots from their recorded sources
-and preserves the selected modified preset. Source repositories are needed
-when fetching an update, rather than when running an installed workflow.
+The first command updates the installed executable, then has the new one
+refresh the shipped defaults and integration skills of the active
+installation, whether it selects an installed preset or a managed profile. If
+that refresh fails, the result names the command that repeats it.
+
+The second command revisits setup choices. Setup refreshes pristine preset
+snapshots from their recorded sources and preserves the selected modified
+preset. Source repositories are needed when fetching an update, rather than
+when running an installed workflow.
 
 ### Update trust model
 

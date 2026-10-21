@@ -106,6 +106,21 @@ func RefreshDefaultFiles(rootDir string) error {
 	return nil
 }
 
+// DefaultRefreshRoot returns the install root whose shipped defaults a refresh
+// writes for configPath. A preset selection sits at that root; any other
+// profile lives under its config directory.
+func DefaultRefreshRoot(configPath string) string {
+	if isPresetSelection(configPath) {
+		return filepath.Dir(configPath)
+	}
+	return ConfigRootFromYAMLPath(configPath)
+}
+
+func isPresetSelection(path string) bool {
+	_, selected, err := ResolvePresetSelection(path)
+	return err == nil && selected
+}
+
 // ValidateDefaultRefreshRoot confirms a root selected by a destructive
 // refresh-defaults CLI invocation looks like an existing Omakiten install.
 // Refresh is deliberately not setup: callers must seed an install first.
@@ -133,7 +148,8 @@ func ValidateDefaultRefreshRoot(rootDir, configPath string) error {
 		if err != nil {
 			return err
 		}
-		if !pathWithinDir(configDir, absConfig) {
+		selection := absConfig == filepath.Join(root, PresetSelectionFile) && isPresetSelection(absConfig)
+		if !selection && !pathWithinDir(configDir, absConfig) {
 			return fmt.Errorf("config path %s is outside %s", absConfig, configDir)
 		}
 	}

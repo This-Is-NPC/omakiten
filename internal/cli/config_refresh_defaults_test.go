@@ -52,3 +52,40 @@ func TestConfigRefreshDefaultsRejectsUnsafeConfigDerivedRoot(t *testing.T) {
 	}
 	readBackEquals(t, stale, "must survive\n")
 }
+
+func TestConfigRefreshDefaultsRefreshesTheInstallThatSelectsAPreset(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	root := t.TempDir()
+	dbPath := filepath.Join(t.TempDir(), "omakiten.db")
+	cfgPath := filepath.Join(root, "config.yaml")
+	snapshot := filepath.Join(root, "presets", "abc")
+
+	writeFile(t, filepath.Join(root, "config", "modules", "base-config.yaml"), "stale module\n")
+	writeFile(t, cfgPath, "preset: presets/abc/config/preset.yaml\n")
+	writeFile(t, filepath.Join(snapshot, "config", "preset.yaml"), "version: 1\n")
+
+	out := runCLI(t, dbPath, cfgPath, "config", "refresh-defaults")
+	data := decodeEnvelope(t, out)["data"].(map[string]any)
+	if data["root"] != root || data["refreshed"] != true {
+		t.Fatalf("refresh payload = %v, want root=%s refreshed=true", data, root)
+	}
+	if got := readFile(t, filepath.Join(root, "config", "modules", "base-config.yaml")); got == "stale module\n" {
+		t.Fatal("refresh left the install's shipped module stale")
+	}
+	readBackEquals(t, cfgPath, "preset: presets/abc/config/preset.yaml\n")
+	if _, err := os.Stat(filepath.Join(snapshot, "templates")); !os.IsNotExist(err) {
+		t.Fatalf("refresh wrote defaults into the preset snapshot; err=%v", err)
+	}
+}
+
+func TestUpdateDefaultsManualCommandKeepsAPresetSelection(t *testing.T) {
+	root := t.TempDir()
+	cfgPath := filepath.Join(root, "config.yaml")
+	writeFile(t, filepath.Join(root, "config", "modules", "base-config.yaml"), "module\n")
+	writeFile(t, cfgPath, "preset: presets/abc/config/preset.yaml\n")
+
+	want := "okt --config " + shellQuoteArg(cfgPath) + " config refresh-defaults"
+	if got := updateDefaultsManualCommandForConfig(cfgPath); got != want {
+		t.Fatalf("manual command = %q, want %q", got, want)
+	}
+}
