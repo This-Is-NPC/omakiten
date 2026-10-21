@@ -3,6 +3,9 @@ name: Polish
 native: Polski
 keys:
   cli.knowledge.short: "Read project documentation and API contracts"
+  cli.docs.short: "Czytaj przewodniki Omakiten dołączone do tego okt"
+  cli.docs.list.short: "Wyświetl przewodniki z pytaniem, na które odpowiada każdy"
+  cli.docs.show.short: "Pokaż jeden przewodnik jako Markdown"
   cli.knowledge.validate.short: "Validate project knowledge sources"
   cli.knowledge.list.short: "List project knowledge resources"
   cli.knowledge.show.short: "Show one knowledge resource"

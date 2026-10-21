@@ -3,6 +3,9 @@ name: Marathi
 native: मराठी
 keys:
   cli.knowledge.short: "Read project documentation and API contracts"
+  cli.docs.short: "या okt सोबत आलेले Omakiten मार्गदर्शक वाचा"
+  cli.docs.list.short: "प्रत्येक मार्गदर्शक कोणत्या प्रश्नाचे उत्तर देतो त्यासह यादी दाखवा"
+  cli.docs.show.short: "एक मार्गदर्शक Markdown मध्ये दाखवा"
   cli.knowledge.validate.short: "Validate project knowledge sources"
   cli.knowledge.list.short: "List project knowledge resources"
   cli.knowledge.show.short: "Show one knowledge resource"

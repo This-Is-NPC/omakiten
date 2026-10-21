@@ -3,6 +3,9 @@ name: Turkish
 native: Türkçe
 keys:
   cli.knowledge.short: "Read project documentation and API contracts"
+  cli.docs.short: "Bu okt ile gelen Omakiten kılavuzlarını oku"
+  cli.docs.list.short: "Kılavuzları her birinin yanıtladığı soruyla listele"
+  cli.docs.show.short: "Bir kılavuzu Markdown olarak göster"
   cli.knowledge.validate.short: "Validate project knowledge sources"
   cli.knowledge.list.short: "List project knowledge resources"
   cli.knowledge.show.short: "Show one knowledge resource"

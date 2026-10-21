@@ -3,6 +3,9 @@ name: Russian
 native: Русский
 keys:
   cli.knowledge.short: "Read project documentation and API contracts"
+  cli.docs.short: "Читать руководства Omakiten, поставляемые с этим okt"
+  cli.docs.list.short: "Показать руководства и вопрос, на который отвечает каждое"
+  cli.docs.show.short: "Показать одно руководство в Markdown"
   cli.knowledge.validate.short: "Validate project knowledge sources"
   cli.knowledge.list.short: "List project knowledge resources"
   cli.knowledge.show.short: "Show one knowledge resource"

@@ -67,6 +67,11 @@ agents. Installed preset files describe policy; SQLite holds the work.
 `okt task create --help` explains its flags. The guides teach a task rather
 than reproducing every flag table.
 
+**The guides ship with `okt`.** Every page at the top of this directory is
+embedded in the binary: `okt docs list` names them, and
+`okt docs show <topic>` prints one by its file name without `.md`. Pages under
+`internal/` stay in the repository.
+
 Documentation is hand-written in English. Put usage in the how-to pages,
 terminal behavior in `screens.md`, and contributor constraints in `internal/`.
 Describe current behavior and link to its owner rather

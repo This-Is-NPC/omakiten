@@ -56,6 +56,7 @@ agents working in parallel worktrees reach the same project without
 | `search` | Full-text search across operational records. |
 | `knowledge validate`, `list`, `show`, `search` | Read project interfaces and attached documentation; optionally include declared related projects. |
 | `knowledge export-cli` | Export the executable's command tree as a JSON knowledge inventory. |
+| `docs list`, `show` | Read the user guides shipped with the installed release, by topic. |
 | `error record`, `list` | Record reusable development failures and list them, newest first, optionally by `--tag`. |
 | `solution add`, `confirm`, `list-top` | Fixes, observed outcomes, and ranked reuse. |
 | `progress` | Material progress on a task. |

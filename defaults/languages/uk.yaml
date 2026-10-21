@@ -3,6 +3,9 @@ name: Ukrainian
 native: Українська
 keys:
   cli.knowledge.short: "Read project documentation and API contracts"
+  cli.docs.short: "Читати посібники Omakiten, що постачаються з цим okt"
+  cli.docs.list.short: "Показати посібники та питання, на яке відповідає кожен"
+  cli.docs.show.short: "Показати один посібник у Markdown"
   cli.knowledge.validate.short: "Validate project knowledge sources"
   cli.knowledge.list.short: "List project knowledge resources"
   cli.knowledge.show.short: "Show one knowledge resource"
