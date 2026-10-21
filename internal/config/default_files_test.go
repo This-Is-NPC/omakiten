@@ -163,3 +163,25 @@ func writeConfigTestFile(t *testing.T, path, body string) {
 		t.Fatalf("write %s: %v", path, err)
 	}
 }
+
+func TestDefaultRefreshRootAcceptsOnlyAPresetSelectionAtTheRoot(t *testing.T) {
+	root := t.TempDir()
+	writeConfigTestFile(t, filepath.Join(root, "config", "modules", "base-config.yaml"), "module\n")
+	selection := filepath.Join(root, "config.yaml")
+
+	writeConfigTestFile(t, selection, "version: 1\n")
+	if err := ValidateDefaultRefreshRoot(DefaultRefreshRoot(selection), selection); err == nil {
+		t.Fatal("a root config.yaml that selects no preset was accepted")
+	}
+
+	writeConfigTestFile(t, selection, "preset: presets/abc/config/preset.yaml\n")
+	if got := DefaultRefreshRoot(selection); got != root {
+		t.Fatalf("DefaultRefreshRoot(selection) = %s, want %s", got, root)
+	}
+	if err := ValidateDefaultRefreshRoot(root, selection); err != nil {
+		t.Fatalf("ValidateDefaultRefreshRoot(selection) error = %v", err)
+	}
+	if err := ValidateDefaultRefreshRoot(root, filepath.Join(t.TempDir(), "config.yaml")); err == nil {
+		t.Fatal("a selection outside the root was accepted")
+	}
+}

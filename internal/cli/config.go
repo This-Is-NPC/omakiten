@@ -22,8 +22,7 @@ func updateDefaultsManualCommandForConfig(configPath string) string {
 	if configPath == "" {
 		return updateDefaultsManualCommand
 	}
-	rootDir := config.ConfigRootFromYAMLPath(configPath)
-	if err := config.ValidateDefaultRefreshRoot(rootDir, configPath); err != nil {
+	if err := config.ValidateDefaultRefreshRoot(config.DefaultRefreshRoot(configPath), configPath); err != nil {
 		return "okt setup"
 	}
 	return "okt --config " + shellQuoteArg(configPath) + " config refresh-defaults"
@@ -301,6 +300,7 @@ func runConfigRefreshDefaults(cmd *cobra.Command, opts *runtimeOptions) error {
 		configPath := ""
 		if resolved, err := opts.resolvedConfigPath(); err == nil {
 			configPath = resolved
+			root = config.DefaultRefreshRoot(configPath)
 		} else if opts.configPath != "" || !os.IsNotExist(err) {
 			// Only a missing implicit profile permits refreshing the default root.
 			return nil, err
