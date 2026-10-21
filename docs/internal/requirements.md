@@ -13,6 +13,7 @@ behavior and the owner of each rule, rather than a historical feature ledger.
 | Workflow transitions and permissions come from the active project snapshot. | `internal/app/guards`, `internal/domain/workflow.go` |
 | Task creation reports similar work before a confirmed duplicate creation. | Task intent operations |
 | A plan claim atomically assigns eligible first-bucket work and leaves transitions to workflow guards. | Plan services and SQLite claim transaction |
+| An active plan's start, progress shares, and completion wait on the root workflow's plan gates; done and abandoned plans meet none. | `internal/app/guards` plan gates, plan operations |
 | Errors and solutions are reusable across projects, with actual confirmation outcomes. | Error and solution services |
 
 ## Files, policy, and language

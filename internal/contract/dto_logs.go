@@ -59,6 +59,8 @@ type ListLogsInput struct {
 	Since      string   `json:"since,omitempty"`
 	Limit      int      `json:"limit,omitempty"`
 	Order      string   `json:"order,omitempty"`
+	// Session keeps only rows recorded by that agent session.
+	Session string `json:"session,omitempty"`
 }
 
 // ListLogsResponse is the wire shape `logs.list` returns. Rows is

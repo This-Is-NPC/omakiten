@@ -11,6 +11,7 @@ var _ = mapping([]mappingCase{
 	{"recordError", http.MethodPost, "/api/v1/projects/alpha/errors", `{"description":"D","context":"C","tags":["a"]}`, "RecordError", contract.RecordErrorInput{
 		ProjectSelector: alpha, Description: "D", Context: "C", Tags: []string{"a"},
 	}},
+	{"listErrors", http.MethodGet, "/api/v1/projects/alpha/errors?tag=agent-correction", "", "ListErrors", contract.ListErrorsInput{ProjectSelector: alpha, Tag: "agent-correction"}},
 	{"addSolution", http.MethodPost, "/api/v1/projects/alpha/errors/3/solutions", `{"description":"D","steps":"S","task_id":5}`, "AddSolution", contract.AddSolutionInput{
 		ProjectSelector: alpha, ErrorID: 3, Description: "D", Steps: "S", TaskID: 5,
 	}},
@@ -24,6 +25,11 @@ var _ = mapping([]mappingCase{
 func (f *fakeOps) RecordError(_ context.Context, in contract.RecordErrorInput) (contract.ErrorRecordResponse, error) {
 	f.record("RecordError", in)
 	return contract.ErrorRecordResponse{}, nil
+}
+
+func (f *fakeOps) ListErrors(_ context.Context, in contract.ListErrorsInput) (contract.ErrorsResponse, error) {
+	f.record("ListErrors", in)
+	return contract.ErrorsResponse{}, nil
 }
 
 func (f *fakeOps) AddSolution(_ context.Context, in contract.AddSolutionInput) (contract.SolutionResponse, error) {

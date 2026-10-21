@@ -3,6 +3,7 @@ package sqlite
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"sort"
 	"strings"
 	"time"
@@ -160,6 +161,10 @@ func eventFilterConditions(filter domain.EventFilter, registry *domain.EventRegi
 		conds = append(conds, "id > ?")
 		args = append(args, filter.AfterID)
 	}
+	if filter.AgentSessionID != "" {
+		conds = append(conds, "agent_session_id = ?")
+		args = append(args, filter.AgentSessionID)
+	}
 	return conds, args, false
 }
 
@@ -260,4 +265,20 @@ func (s *Store) EventCategoryCounts(ctx context.Context, projectID int64, since 
 		counts[cat] += n
 	}
 	return counts, rows.Err()
+}
+
+// LatestProjectEventPayload returns the payload of the project's newest event
+// of eventType, or "" when it has none. Project zero matches the events
+// recorded without a project.
+func (s *Store) LatestProjectEventPayload(ctx context.Context, projectID int64, eventType string) (string, error) {
+	var payload string
+	project, args := "project_id IS NULL", []any{eventType}
+	if projectID > 0 {
+		project, args = "project_id = ?", []any{projectID, eventType}
+	}
+	err := s.query(ctx).QueryRowContext(ctx, `SELECT COALESCE(payload, '') FROM events WHERE `+project+` AND event_type = ? ORDER BY id DESC LIMIT 1`, args...).Scan(&payload)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", nil
+	}
+	return payload, err
 }

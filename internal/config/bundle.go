@@ -4,6 +4,8 @@ import (
 	"fmt"
 
 	"gopkg.in/yaml.v3"
+
+	"omakiten/internal/domain"
 )
 
 // Bundle is the in-memory representation of an omakiten config directory.
@@ -12,15 +14,18 @@ import (
 // authoring content. The loader merges them into Bundle; the saver splits them
 // back out.
 type Bundle struct {
-	Version       int            `yaml:"version" json:"version"`
-	Kit           Kit            `yaml:"kit" json:"kit"`
-	Config        Settings       `yaml:"config" json:"config"`
-	SubtaskKit    string         `yaml:"-" json:"subtask_kit,omitempty"`
-	SubtaskBundle *Bundle        `yaml:"-" json:"subtask_bundle,omitempty"`
-	Skills        []Skill        `yaml:"-" json:"skills,omitempty"`
-	Personas      []Persona      `yaml:"-" json:"personas,omitempty"`
-	Laws          []Law          `yaml:"-" json:"laws,omitempty"`
-	Templates     []TaskTemplate `yaml:"-" json:"templates,omitempty"`
+	Version       int      `yaml:"version" json:"version"`
+	Kit           Kit      `yaml:"kit" json:"kit"`
+	Config        Settings `yaml:"config" json:"config"`
+	SubtaskKit    string   `yaml:"-" json:"subtask_kit,omitempty"`
+	SubtaskBundle *Bundle  `yaml:"-" json:"subtask_bundle,omitempty"`
+	// AgentAdapters is the effective agent configuration: Omakiten defaults,
+	// then preferences, then this bundle's config.agents.
+	AgentAdapters domain.AgentAdapters `yaml:"-" json:"-"`
+	Skills        []Skill              `yaml:"-" json:"skills,omitempty"`
+	Personas      []Persona            `yaml:"-" json:"personas,omitempty"`
+	Laws          []Law                `yaml:"-" json:"laws,omitempty"`
+	Templates     []TaskTemplate       `yaml:"-" json:"templates,omitempty"`
 	// All* hold the full on-disk catalog (every preset's entity files),
 	// each entry stamped with Active=true when wired into this bundle.
 	// Runtime resolution uses the picked Skills/Personas/Laws/Templates
@@ -184,6 +189,9 @@ type Settings struct {
 	// frontmatter parsers resolve labels via lookup, renamer edits a
 	// single line in YAML. Required — see Priorities.
 	Severities []SeverityDefinition `yaml:"severities,omitempty" json:"severities,omitempty"`
+	// Agents declares agent adapters and defaults that override the user's
+	// preferences for this workflow.
+	Agents *AgentsSettings `yaml:"agents,omitempty" json:"agents,omitempty"`
 }
 
 // SeverityDefinition is one row of the configurable law-severity table.
@@ -312,6 +320,21 @@ type AgentSettings struct {
 	// SimilarTaskLimit caps how many similar-task hints are surfaced by
 	// `tasks.create_intent`. Required; validator demands > 0.
 	SimilarTaskLimit int `yaml:"similar_task_limit" json:"similar_task_limit"`
+
+	// NextStep holds the next_step_prompt each operation returns. Required;
+	// validator demands every prompt be non-empty.
+	NextStep NextStepPrompts `yaml:"next_step" json:"next_step"`
+}
+
+// NextStepPrompts is the next_step_prompt text per operation. In
+// TaskContinue, `{task_id}` and `{bucket}` expand to the task's id and
+// current bucket key.
+type NextStepPrompts struct {
+	TaskContinue    string `yaml:"task.continue" json:"task.continue"`
+	ProjectOverview string `yaml:"project.overview" json:"project.overview"`
+	ProjectResume   string `yaml:"project.resume" json:"project.resume"`
+	ProjectEdit     string `yaml:"project.edit" json:"project.edit"`
+	EventEmit       string `yaml:"event.emit" json:"event.emit"`
 }
 
 // SQLiteSettings tunes the connection-level SQLite knobs the Store applies
@@ -735,6 +758,7 @@ type Workflow struct {
 	Buckets     []Bucket           `yaml:"buckets" json:"buckets"`
 	Transitions []Transition       `yaml:"transitions" json:"transitions,omitempty"`
 	Operations  WorkflowOperations `yaml:"operations,omitempty" json:"operations,omitempty"`
+	Plans       WorkflowPlans      `yaml:"plans,omitempty" json:"plans,omitempty"`
 	// Defaults declares the workflow-level fallback for task/comment edit
 	// and delete. nil means "no rule declared at this layer" — the
 	// resolver falls through to bucket overrides and finally to the
@@ -758,6 +782,8 @@ type Bucket struct {
 	Name        string             `yaml:"name" json:"name"`
 	Position    int                `yaml:"position" json:"position"`
 	Permissions *BucketPermissions `yaml:"permissions,omitempty" json:"permissions,omitempty"`
+	// Agents is the team a task entering this bucket opens.
+	Agents *BucketAgentsConfig `yaml:"agents,omitempty" json:"agents,omitempty"`
 }
 
 // BucketPermissions wires task/comment CRUD policy per bucket. nil pointers
@@ -774,11 +800,12 @@ type BucketPermissions struct {
 // to the next layer of the resolution chain rather than treating the zero
 // value as "explicit false".
 //
-// Task/Project/Universal are optional scope sub-blocks used by the comment
+// Task/Plan/Project/Universal are optional scope sub-blocks used by the comment
 // entity only: `defaults.comment` may declare per-scope policy as
 //
 //	comment:
 //	  task:      { edit: false, delete: false }
+//	  plan:      { edit: true,  delete: false }
 //	  project:   { edit: true,  delete: false }
 //	  universal: { edit: false, delete: false }
 //
@@ -791,6 +818,7 @@ type EntityPermission struct {
 	Edit      *CommentOpPolicy  `yaml:"edit,omitempty" json:"edit,omitempty"`
 	Delete    *CommentOpPolicy  `yaml:"delete,omitempty" json:"delete,omitempty"`
 	Task      *EntityPermission `yaml:"task,omitempty" json:"task,omitempty"`
+	Plan      *EntityPermission `yaml:"plan,omitempty" json:"plan,omitempty"`
 	Project   *EntityPermission `yaml:"project,omitempty" json:"project,omitempty"`
 	Universal *EntityPermission `yaml:"universal,omitempty" json:"universal,omitempty"`
 }
@@ -886,6 +914,21 @@ type WorkflowOperations struct {
 
 type OperationPolicy struct {
 	Guards []TransitionGuard `yaml:"guards,omitempty" json:"guards,omitempty"`
+}
+
+// WorkflowPlans is the YAML mirror of domain.WorkflowPlans: the guards a
+// plan meets to start, to pass each progress share, and to complete, and
+// the seats that run for a plan.
+type WorkflowPlans struct {
+	Start    OperationPolicy    `yaml:"start,omitempty" json:"start,omitempty"`
+	Progress []PlanProgressGate `yaml:"progress,omitempty" json:"progress,omitempty"`
+	Complete OperationPolicy    `yaml:"complete,omitempty" json:"complete,omitempty"`
+	Agents   []AgentRoleConfig  `yaml:"agents,omitempty" json:"agents,omitempty"`
+}
+
+type PlanProgressGate struct {
+	Percent int               `yaml:"percent" json:"percent"`
+	Guards  []TransitionGuard `yaml:"guards,omitempty" json:"guards,omitempty"`
 }
 
 type TransitionGuard struct {

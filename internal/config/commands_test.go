@@ -25,6 +25,12 @@ config:
     include_workflow_in_continue: true
     next_work_limit: 5
     similar_task_limit: 5
+    next_step:
+      task.continue: "Continue task #{task_id}."
+      project.overview: "Continue a task."
+      project.resume: "Choose a task."
+      project.edit: "Resume the project."
+      event.emit: "Read the event back."
   tui:
     token_badge: { yellow_at: 150, red_at: 400 }
   template_defaults: [task, pr]
@@ -135,6 +141,12 @@ config:
     include_workflow_in_continue: true
     next_work_limit: 5
     similar_task_limit: 5
+    next_step:
+      task.continue: "Continue task #{task_id}."
+      project.overview: "Continue a task."
+      project.resume: "Choose a task."
+      project.edit: "Resume the project."
+      event.emit: "Read the event back."
   tui:
     token_badge: { yellow_at: 150, red_at: 400 }
   template_defaults: [task]
@@ -195,6 +207,12 @@ config:
     include_workflow_in_continue: true
     next_work_limit: 5
     similar_task_limit: 5
+    next_step:
+      task.continue: "Continue task #{task_id}."
+      project.overview: "Continue a task."
+      project.resume: "Choose a task."
+      project.edit: "Resume the project."
+      event.emit: "Read the event back."
   tui:
     token_badge: { yellow_at: 150, red_at: 400 }
   template_defaults: [task]

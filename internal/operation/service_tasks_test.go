@@ -2,6 +2,7 @@ package operation
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -186,4 +187,153 @@ func newAgentFixtureEditLockedToBacklog(t *testing.T) editLockedFixture {
 	})
 
 	return editLockedFixture{ctx: ctx, service: svc, taskID: task.ID}
+}
+
+// TestContinueTaskShowsSubtaskKitWorkflow verifies a sub-task's continue
+// response carries the workflow of the kit that governs it, not the root's.
+func TestContinueTaskShowsSubtaskKitWorkflow(t *testing.T) {
+	ctx := context.Background()
+	bundle := agentTestBundle(t)
+	bundle.SubtaskKit = "sub.yaml"
+	bundle.SubtaskBundle = &config.Bundle{
+		Kit: config.Kit{ID: 200, Key: "sub", Name: "Sub"},
+		Workflows: []config.Workflow{{
+			ID:   200,
+			Key:  "sub",
+			Name: "Sub",
+			Buckets: []config.Bucket{
+				{ID: 901, Key: "todo", Name: "Todo", Position: 1},
+				{ID: 902, Key: "finished", Name: "Finished", Position: 2},
+			},
+			Transitions: []config.Transition{{From: 901, To: 902}},
+		}},
+		Config: config.Settings{Workflow: config.WorkflowSettings{Active: "sub"}},
+	}
+	store := snapstore.Open(t, filepath.Join(t.TempDir(), "omakiten.db"))
+	if err := store.ImportBundle(ctx, bundle, "test.yaml", "hash"); err != nil {
+		t.Fatalf("ImportBundle() error = %v", err)
+	}
+	root := filepath.Join(t.TempDir(), "project")
+	if err := os.MkdirAll(root, 0o755); err != nil {
+		t.Fatalf("MkdirAll(root) error = %v", err)
+	}
+	project, err := store.UpsertProject(ctx, "Kits", "kits", root)
+	if err != nil {
+		t.Fatalf("UpsertProject() error = %v", err)
+	}
+	snap := store.Snapshot()
+	parent, err := store.CreateTask(ctx, project.ID, "Parent", "Root task", domain.Priority(2), "backlog", nil, snap)
+	if err != nil {
+		t.Fatalf("CreateTask(parent) error = %v", err)
+	}
+	subSnap, _ := snap.SubtaskKit()
+	child, err := store.CreateTask(ctx, project.ID, "Child", "Sub-task", domain.Priority(2), "todo", &parent.ID, subSnap)
+	if err != nil {
+		t.Fatalf("CreateTask(child) error = %v", err)
+	}
+	svc := NewService(store, contract.ProjectSelector{CWD: root})
+	svc.SetSnapshot(snap)
+	svc.SetSettings(ServiceSettings{RecentCommentLimit: 5, IncludeWorkflow: true, NextWorkLimit: 5, SimilarTaskLimit: 5})
+
+	for _, tc := range []struct {
+		task domain.Task
+		want string
+	}{{parent, snap.Workflow().Key}, {child, "sub"}} {
+		resp, err := svc.ContinueTask(ctx, contract.ContinueTaskInput{TaskID: tc.task.ID})
+		if err != nil {
+			t.Fatalf("ContinueTask(%d) error = %v", tc.task.ID, err)
+		}
+		if resp.Workflow.Key != tc.want {
+			t.Fatalf("ContinueTask(%d).Workflow.Key = %q, want %q", tc.task.ID, resp.Workflow.Key, tc.want)
+		}
+	}
+}
+
+type guardedTaskFixture struct {
+	ctx     context.Context
+	store   *snapstore.Store
+	service *Service
+	project domain.Project
+	task    domain.Task
+	fix     string
+}
+
+// newGuardedTaskFixture seeds one backlog task whose backlog→dev transition
+// requires a comment tagged self-branch.
+func newGuardedTaskFixture(t *testing.T) guardedTaskFixture {
+	t.Helper()
+	ctx := context.Background()
+	bundle := agentTestBundle(t)
+	bundle.Workflows[0].Transitions[0].Guards = []config.TransitionGuard{{Type: "comments_tagged", Tag: "self-branch", Count: 1}}
+	store := snapstore.Open(t, filepath.Join(t.TempDir(), "omakiten.db"))
+	if err := store.ImportBundle(ctx, bundle, "test.yaml", "hash"); err != nil {
+		t.Fatalf("ImportBundle() error = %v", err)
+	}
+	root := filepath.Join(t.TempDir(), "project")
+	if err := os.MkdirAll(root, 0o755); err != nil {
+		t.Fatalf("MkdirAll(root) error = %v", err)
+	}
+	project, err := store.UpsertProject(ctx, "Guards", "guards", root)
+	if err != nil {
+		t.Fatalf("UpsertProject() error = %v", err)
+	}
+	task, err := store.CreateTask(ctx, project.ID, "Guarded", "Needs evidence", domain.Priority(2), "backlog", nil, store.Snapshot())
+	if err != nil {
+		t.Fatalf("CreateTask() error = %v", err)
+	}
+	svc := NewService(store, contract.ProjectSelector{CWD: root})
+	svc.SetSnapshot(store.Snapshot())
+	svc.SetSettings(ServiceSettings{RecentCommentLimit: 5, IncludeWorkflow: true, NextWorkLimit: 5, SimilarTaskLimit: 5})
+	return guardedTaskFixture{ctx: ctx, store: store, service: svc, project: project, task: task,
+		fix: fmt.Sprintf("okt comment add %d -T self-branch -b '<evidence>'", task.ID)}
+}
+
+// TestMoveDryRunReportsGuardsWithoutRecording verifies a dry-run move reports
+// the unmet guard with its fix, leaves the task in place, and records no
+// guard.violated event.
+func TestMoveDryRunReportsGuardsWithoutRecording(t *testing.T) {
+	f := newGuardedTaskFixture(t)
+	moved, err := f.service.MoveTask(f.ctx, contract.MoveTaskInput{TaskID: f.task.ID, BucketKey: "dev", DryRun: true})
+	if err != nil {
+		t.Fatalf("MoveTask(dry run) error = %v", err)
+	}
+	if !moved.DryRun || moved.Ready == nil || *moved.Ready || moved.Task.BucketKey != "backlog" {
+		t.Fatalf("dry run = %+v, want unchanged backlog task and ready=false", moved)
+	}
+	if len(moved.Guards) != 1 || moved.Guards[0].Satisfied || moved.Guards[0].Fix != f.fix {
+		t.Fatalf("dry run guards = %+v, want one unmet guard with fix %q", moved.Guards, f.fix)
+	}
+	events, err := f.store.ListEvents(f.ctx, domain.EventFilter{ProjectID: f.project.ID})
+	if err != nil {
+		t.Fatalf("ListEvents() error = %v", err)
+	}
+	for _, event := range events {
+		if event.EventType == domain.EventTypeGuardViolated {
+			t.Fatalf("dry run recorded guard.violated: %+v", event)
+		}
+	}
+}
+
+// TestContinueTaskReportsOutgoingGuards verifies the continue workflow block
+// carries guard state and readiness only on transitions leaving the task's
+// current bucket.
+func TestContinueTaskReportsOutgoingGuards(t *testing.T) {
+	f := newGuardedTaskFixture(t)
+	resp, err := f.service.ContinueTask(f.ctx, contract.ContinueTaskInput{TaskID: f.task.ID})
+	if err != nil {
+		t.Fatalf("ContinueTask() error = %v", err)
+	}
+	var outgoing []contract.TransitionSummary
+	for _, transition := range resp.Workflow.Transitions {
+		if transition.From == "backlog" {
+			outgoing = append(outgoing, transition)
+			continue
+		}
+		if transition.Ready != nil || transition.Guards != nil {
+			t.Fatalf("transition %s→%s carries guard state, want only outgoing ones", transition.From, transition.To)
+		}
+	}
+	if len(outgoing) != 1 || outgoing[0].Ready == nil || *outgoing[0].Ready || len(outgoing[0].Guards) != 1 || outgoing[0].Guards[0].Fix != f.fix {
+		t.Fatalf("outgoing transitions = %+v, want one with ready=false and the unmet guard", outgoing)
+	}
 }

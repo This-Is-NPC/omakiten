@@ -417,7 +417,7 @@ func (c *BundleCache) applyLocked(ctx context.Context, projectID int64, configPa
 }
 
 func (c *BundleCache) commitReload(ctx context.Context, projectID int64, old, runtime *ProjectRuntime) {
-	if runtime != nil && runtime.BundleImportedPayload != "" && c.store != nil {
+	if runtime != nil && runtime.BundleImportedPayload != "" && c.store != nil && !c.reloadsLastImport(ctx, projectID, old, runtime) {
 		// bundle.imported is a lifecycle event for the runtime that imported
 		// the bundle. It uses entity_type=system, but that does not make its
 		// project scope global. Zero remains reserved for an explicitly
@@ -427,6 +427,17 @@ func (c *BundleCache) commitReload(ctx context.Context, projectID int64, old, ru
 	if old != nil {
 		c.maybeEmitSubtaskKitNotice(ctx, projectID, old.Snapshot, runtime.Snapshot)
 	}
+}
+
+// reloadsLastImport reports whether a process's first runtime for the
+// project loads exactly the bundle the project last recorded as imported.
+// Such a load restores state rather than importing it.
+func (c *BundleCache) reloadsLastImport(ctx context.Context, projectID int64, old, runtime *ProjectRuntime) bool {
+	if old != nil {
+		return false
+	}
+	last, err := c.store.LatestProjectEventPayload(ctx, projectID, domain.EventTypeBundleImported)
+	return err == nil && last == runtime.BundleImportedPayload
 }
 
 func (c *BundleCache) commitRuntime(ctx context.Context, projectID int64, old, runtime *ProjectRuntime) error {
@@ -597,6 +608,22 @@ func (c *BundleCache) releasePreviousSnapshot(projectID int64) {
 	entry.PreviousSnapshot = nil
 }
 
+// hookActions registers the actions a project's hooks can run: the
+// builtins, the notification card against the active CLI language catalog,
+// and spawn, whose service the caller sets once it is built.
+func hookActions(store *sqlite.Store, snapshot *config.Snapshot) (*hooks.ActionRegistry, *actions.NotificationShowAction, *spawnAction) {
+	notifSnapshot := notificationBundleSnapshot(snapshot)
+	notifSnapshot.Catalog = snapshot.Catalog(config.SurfaceCLI)
+	registry := hooks.NewActionRegistry()
+	actions.RegisterBuiltins(registry)
+	notificationAction := actions.NewNotificationShowAction(notifSnapshot)
+	notificationAction.SetRecorder(store)
+	registry.Register(notificationAction)
+	spawn := &spawnAction{}
+	registry.Register(spawn)
+	return registry, notificationAction, spawn
+}
+
 func buildProjectRuntime(ctx context.Context, store *sqlite.Store, cs *configstore.Adapter, bus events.Bus, configPath string, projectID int64, selector contract.ProjectSelector) (*ProjectRuntime, error) {
 	bundle, bundleHash, enumRegistry, err := app.NewConfigService(cs).Import(activity.WithoutTracking(ctx), configPath)
 	if err != nil {
@@ -626,14 +653,7 @@ func buildProjectRuntime(ctx context.Context, store *sqlite.Store, cs *configsto
 	// snapshots; nothing in the hot path reaches back into the bundle.
 	snapshot := config.BuildSnapshot(bundle)
 
-	notifSnapshot := notificationBundleSnapshot(snapshot)
-	// Resolve hook copy against the active CLI language catalog.
-	notifSnapshot.Catalog = snapshot.Catalog(config.SurfaceCLI)
-	registry := hooks.NewActionRegistry()
-	actions.RegisterBuiltins(registry)
-	notificationAction := actions.NewNotificationShowAction(notifSnapshot)
-	notificationAction.SetRecorder(store)
-	registry.Register(notificationAction)
+	registry, notificationAction, spawn := hookActions(store, snapshot)
 
 	knownEvents := config.KnownEventsFromDefinitions(bundle.Config.Events.Definitions)
 	if err := config.ValidateHooks(bundle.Config.Hooks, knownEvents, func(name string) bool {
@@ -675,6 +695,7 @@ func buildProjectRuntime(ctx context.Context, store *sqlite.Store, cs *configsto
 	// previous pointer continue reading from it until they return.
 
 	svc := operation.NewService(store, selector)
+	spawn.svc = svc
 	// SetSnapshot is the single wiring entry point: the agent service
 	// derives the catalog closures, synonym table, stopword set, and
 	// bundle-scoped EnumRegistry from the per-project Snapshot in one
@@ -698,6 +719,7 @@ func buildProjectRuntime(ctx context.Context, store *sqlite.Store, cs *configsto
 		IncludeWorkflow:          *bundle.Config.Agent.IncludeWorkflowInContinue,
 		NextWorkLimit:            bundle.Config.Agent.NextWorkLimit,
 		SimilarTaskLimit:         bundle.Config.Agent.SimilarTaskLimit,
+		NextStep:                 operation.NextStepPrompts(bundle.Config.Agent.NextStep),
 		SolutionsTopLimitDefault: bundle.Config.Solutions.DefaultTopLimit,
 		SolutionsTopLimitMax:     bundle.Config.Solutions.MaxTopLimit,
 	})

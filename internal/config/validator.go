@@ -218,6 +218,9 @@ func validateBundleSettings(bundle Bundle) error {
 	if err := validateAgentSettings(bundle.Config.Agent); err != nil {
 		return err
 	}
+	if err := validateBucketAgents(bundle); err != nil {
+		return err
+	}
 	if err := validateTUISettings(bundle.Config.TUI); err != nil {
 		return err
 	}
@@ -512,6 +515,17 @@ func validateAgentSettings(m AgentSettings) error {
 	}
 	if m.SimilarTaskLimit <= 0 {
 		return fmt.Errorf("config.agent.similar_task_limit: must be > 0 (see defaults/omakiten.yaml)")
+	}
+	for _, prompt := range []struct{ key, text string }{
+		{"task.continue", m.NextStep.TaskContinue},
+		{"project.overview", m.NextStep.ProjectOverview},
+		{"project.resume", m.NextStep.ProjectResume},
+		{"project.edit", m.NextStep.ProjectEdit},
+		{"event.emit", m.NextStep.EventEmit},
+	} {
+		if strings.TrimSpace(prompt.text) == "" {
+			return fmt.Errorf("config.agent.next_step.%s: required non-empty prompt (see defaults/config/modules/base-config.yaml)", prompt.key)
+		}
 	}
 	return nil
 }
@@ -1044,7 +1058,61 @@ func validateWorkflow(workflow Workflow) error {
 	if err := validatePermissionScopes(workflow); err != nil {
 		return err
 	}
-	return validateWorkflowOperationGuards(workflow, bucketKeySet)
+	if err := validateWorkflowOperationGuards(workflow, bucketKeySet); err != nil {
+		return err
+	}
+	return validatePlanGates(workflow)
+}
+
+// validatePlanGates checks the workflow's plans block: every guard is a plan
+// guard, and each progress gate names a distinct share strictly between 0
+// and 100 (start and complete cover the two ends).
+func validatePlanGates(workflow Workflow) error {
+	stages := []struct {
+		name   string
+		guards []TransitionGuard
+	}{
+		{"plans.start", workflow.Plans.Start.Guards},
+		{"plans.complete", workflow.Plans.Complete.Guards},
+	}
+	seen := map[int]struct{}{}
+	for _, gate := range workflow.Plans.Progress {
+		if gate.Percent < 1 || gate.Percent > 99 {
+			return fmt.Errorf("workflows.%s plans.progress: percent must be between 1 and 99, got %d", workflow.Key, gate.Percent)
+		}
+		if _, dup := seen[gate.Percent]; dup {
+			return fmt.Errorf("workflows.%s plans.progress: duplicated percent %d", workflow.Key, gate.Percent)
+		}
+		seen[gate.Percent] = struct{}{}
+		if len(gate.Guards) == 0 {
+			return fmt.Errorf("workflows.%s plans.progress %d%%: guards is required", workflow.Key, gate.Percent)
+		}
+		stages = append(stages, struct {
+			name   string
+			guards []TransitionGuard
+		}{fmt.Sprintf("plans.progress %d%%", gate.Percent), gate.Guards})
+	}
+	for _, stage := range stages {
+		for _, guard := range stage.guards {
+			if err := validatePlanGuard(workflow.Key, stage.name, guard); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func validatePlanGuard(workflowKey, scope string, guard TransitionGuard) error {
+	if guard.Type != domain.GuardPlanCommentsTagged {
+		return fmt.Errorf("workflows.%s %s: guard type %q is not a plan guard; use %s", workflowKey, scope, guard.Type, domain.GuardPlanCommentsTagged)
+	}
+	if strings.TrimSpace(guard.Tag) == "" {
+		return fmt.Errorf("workflows.%s %s guard %s: tag is required", workflowKey, scope, guard.Type)
+	}
+	if guard.Count < 0 {
+		return fmt.Errorf("workflows.%s %s guard %s: count must be >= 1 when set", workflowKey, scope, guard.Type)
+	}
+	return nil
 }
 
 func validateWorkflowTransitions(workflow Workflow, bucketIDs map[int]struct{}, bucketKeySet map[string]struct{}) error {
@@ -1085,11 +1153,11 @@ func validateWorkflowOperationGuards(workflow Workflow, bucketKeySet map[string]
 }
 
 // validatePermissionScopes enforces the rule that per-scope sub-blocks
-// (task/project/universal) are only meaningful on workflows[].defaults.comment.
+// (task/plan/project/universal) are only meaningful on workflows[].defaults.comment.
 // They are rejected anywhere else: on defaults.task, and on any bucket-level
 // permission block (task or comment) — buckets have no scope dimension, and a
 // scope sub-block there would silently never resolve. The comment scope key
-// set is closed to {task, project, universal}; the strict YAML decoder rejects
+// set is closed to {task, plan, project, universal}; the strict YAML decoder rejects
 // any other key at parse time, so this validator guards the structural
 // placement rather than the key names themselves.
 func validatePermissionScopes(workflow Workflow) error {
@@ -1177,17 +1245,28 @@ func validateCommentTagNames(p *EntityPermission, path string) error {
 			}
 		}
 	}
-	if err := validateCommentTagNames(p.Task, path+".task"); err != nil {
-		return err
+	for _, s := range scopeBlocks(p) {
+		if err := validateCommentTagNames(s.sub, path+"."+s.name); err != nil {
+			return err
+		}
 	}
-	if err := validateCommentTagNames(p.Project, path+".project"); err != nil {
-		return err
-	}
-	return validateCommentTagNames(p.Universal, path+".universal")
+	return nil
+}
+
+// scopeBlock is one per-scope sub-block of a comment permission.
+type scopeBlock struct {
+	name string
+	sub  *EntityPermission
+}
+
+// scopeBlocks lists the per-scope sub-blocks of p in task, plan, project,
+// universal order.
+func scopeBlocks(p *EntityPermission) []scopeBlock {
+	return []scopeBlock{{"task", p.Task}, {"plan", p.Plan}, {"project", p.Project}, {"universal", p.Universal}}
 }
 
 // rejectNestedScopes enforces that a comment scope sub-block (comment.task /
-// .project / .universal) does not itself declare scope sub-blocks. Scope
+// .plan / .project / .universal) does not itself declare scope sub-blocks. Scope
 // resolution (scopeBlock) descends exactly one level, so a nested scope like
 // comment.task.project parses but can never be reached — failing it at load
 // turns a silent no-op into a diagnosable config error.
@@ -1195,14 +1274,7 @@ func rejectNestedScopes(comment *EntityPermission, path string) error {
 	if comment == nil {
 		return nil
 	}
-	for _, s := range []struct {
-		name string
-		sub  *EntityPermission
-	}{
-		{"task", comment.Task},
-		{"project", comment.Project},
-		{"universal", comment.Universal},
-	} {
+	for _, s := range scopeBlocks(comment) {
 		if hasScopeBlocks(s.sub) {
 			return fmt.Errorf("%s.%s: scope sub-blocks must not be nested inside a scope sub-block", path, s.name)
 		}
@@ -1213,7 +1285,7 @@ func rejectNestedScopes(comment *EntityPermission, path string) error {
 // hasScopeBlocks reports whether any per-scope sub-block is declared on the
 // permission. nil is treated as "no sub-blocks".
 func hasScopeBlocks(p *EntityPermission) bool {
-	return p != nil && (p.Task != nil || p.Project != nil || p.Universal != nil)
+	return p != nil && (p.Task != nil || p.Plan != nil || p.Project != nil || p.Universal != nil)
 }
 
 // validateGuards enforces the comments_tagged / comments_min / blockers_in

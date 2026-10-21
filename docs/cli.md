@@ -29,7 +29,10 @@ procedures.
 | `--version`, `-v` | Show the executable version at the root command. |
 
 Without an explicit project, Omakiten resolves the registered root from the
-working directory. Configuration discovery is described in
+working directory. Inside a linked git worktree that matches no registered
+root, it resolves from the same path in the repository's main checkout, so
+agents working in parallel worktrees reach the same project without
+`--project`. Configuration discovery is described in
 [project configuration](how-to-configure-a-project.md).
 
 ## Find the verb
@@ -42,9 +45,9 @@ working directory. Configuration discovery is described in
 | `project relocate --root PATH` | Repair a moved project's registered root; requires `--project` or `--project-id`. See [project configuration](how-to-configure-a-project.md#repair-a-moved-project). |
 | `task create`, `task import`, `task export` | Create work and move structured work documents. |
 | `task show`, `task continue`, `task activity` | Read a task with every comment, recover it for an agent, and read its activity. |
-| `list`, `edit`, `move` | List work, change fields, and request a workflow transition. |
+| `list`, `edit`, `move` | List work, change fields, and request a workflow transition; `move --dry-run` reports the transition's guards without moving; `--no-spawn` keeps an automatic agent team closed. |
 | `assign`, `archive`, `unarchive`, `delete` | Assignment and task lifecycle. |
-| `comment add`, `list`, `edit`, `delete` | Task, project, and universal comments. |
+| `comment add`, `list`, `edit`, `delete` | Task, plan, project, and universal comments. |
 | `depend add`, `remove`, `list` | Explicit task blockers. |
 | `tag add`, `remove`, `list`, `list-all`, `merge` | Task and project tags. |
 | `plan create`, `import`, `export`, `show`, `list`, `edit`, `delete` | Plans and their portable documents. |
@@ -53,12 +56,14 @@ working directory. Configuration discovery is described in
 | `search` | Full-text search across operational records. |
 | `knowledge validate`, `list`, `show`, `search` | Read project interfaces and attached documentation; optionally include declared related projects. |
 | `knowledge export-cli` | Export the executable's command tree as a JSON knowledge inventory. |
-| `error record` | Reusable development failures. |
+| `error record`, `list` | Record reusable development failures and list them, newest first, optionally by `--tag`. |
 | `solution add`, `confirm`, `list-top` | Fixes, observed outcomes, and ranked reuse. |
 | `progress` | Material progress on a task. |
+| `agent spawn`, `agent list`, `agent show`, `team show`, `team close` | Open a task's agent team in terminal panes and inspect its sessions. See [agents](how-to-run-agent-teams.md). |
+| `wait` | Block until a task comment carries a tag matching a glob, such as an agent's `review-*` result. |
 | `emit` | An outside event the workflow declares, from a script or CI job; its hooks run. |
 | `insights summary`, `metrics summary` | Project signals and agent behavior metrics. |
-| `logs` | Inspect the unified event history. |
+| `logs` | Inspect the unified event history; `--session` keeps one agent session's rows. |
 | `workflow show`, `workflow orphans` | Read policy and inspect or rebind stranded bucket identities. |
 | `preset catalog`, `add`, `list`, `use`, `import`, `export` | Discover, capture, select, and share workflow packages. |
 | `config init`, `path`, `show`, `why`, `diff`, `validate` | Initialize and inspect configuration. |

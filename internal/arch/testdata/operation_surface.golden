@@ -1,3 +1,6 @@
+agent.spawn product
+agent.list product
+agent.show product
 command.list product
 command.resolve product
 comment.add product
@@ -9,6 +12,7 @@ db.reindex destructive
 dependency.add product
 dependency.list product
 dependency.remove product
+error.list product
 error.record product
 event.emit product
 insights.summary product
@@ -66,8 +70,11 @@ task.show product
 task.transition product
 task.unarchive product
 task_activity.list product
+team.close product
+team.show product
 template.list product
 template.show product
+wait product
 workflow.show product
 wiring.command_description wiring
 wiring.selector wiring

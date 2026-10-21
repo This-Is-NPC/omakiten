@@ -54,14 +54,24 @@ SELECT COUNT(1) FROM events WHERE entity_type = 'task' AND event_type = 'comment
 // CountTaskCommentsTagged returns the count of distinct comment events on a
 // task that carry the given tag. Used by the comments_tagged workflow guard.
 func (s *Store) CountTaskCommentsTagged(ctx context.Context, projectID, taskID int64, tagName string) (int, error) {
+	return s.countCommentsTagged(ctx, domain.CommentScopeTask, projectID, taskID, tagName)
+}
+
+// CountPlanCommentsTagged returns the count of distinct comment events on a
+// plan that carry the given tag. Used by the plan_comments_tagged plan guard.
+func (s *Store) CountPlanCommentsTagged(ctx context.Context, projectID, planID int64, tagName string) (int, error) {
+	return s.countCommentsTagged(ctx, domain.CommentScopePlan, projectID, planID, tagName)
+}
+
+func (s *Store) countCommentsTagged(ctx context.Context, scope string, projectID, entityID int64, tagName string) (int, error) {
 	var count int
 	if err := s.query(ctx).QueryRowContext(ctx, `
 SELECT COUNT(DISTINCT e.id)
 FROM events e
 JOIN event_tags et ON et.event_id = e.id
 JOIN tags t ON t.id = et.tag_id
-WHERE e.entity_type = 'task' AND e.event_type = 'comment' AND e.project_id = ? AND e.entity_id = ? AND t.name = ?
-`, projectID, taskID, tagName).Scan(&count); err != nil {
+WHERE e.entity_type = ? AND e.event_type = 'comment' AND e.project_id = ? AND e.entity_id = ? AND t.name = ?
+`, scope, projectID, entityID, tagName).Scan(&count); err != nil {
 		return 0, err
 	}
 	return count, nil

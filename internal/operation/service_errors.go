@@ -22,6 +22,25 @@ func (s *Service) RecordError(ctx context.Context, input contract.RecordErrorInp
 	return contract.ErrorRecordResponse{Project: projectSummary(project), Error: errorSummary(record)}, nil
 }
 
+func (s *Service) ListErrors(ctx context.Context, input contract.ListErrorsInput) (contract.ErrorsResponse, error) {
+	if err := s.allow("error.list"); err != nil {
+		return contract.ErrorsResponse{}, err
+	}
+	project, err := s.resolveProject(ctx, input.ProjectSelector)
+	if err != nil {
+		return contract.ErrorsResponse{}, err
+	}
+	records, err := s.newErrorService().List(ctx, project, input.Tag)
+	if err != nil {
+		return contract.ErrorsResponse{}, err
+	}
+	out := make([]contract.ErrorSummary, 0, len(records))
+	for _, record := range records {
+		out = append(out, errorSummary(record))
+	}
+	return contract.ErrorsResponse{Project: projectSummary(project), Errors: out}, nil
+}
+
 func (s *Service) AddSolution(ctx context.Context, input contract.AddSolutionInput) (contract.SolutionResponse, error) {
 	if err := s.allow("solution.add"); err != nil {
 		return contract.SolutionResponse{}, err

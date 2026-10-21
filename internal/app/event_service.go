@@ -64,6 +64,8 @@ type ListEventsParams struct {
 	Since      time.Time
 	Limit      int
 	Order      string
+	// AgentSessionID keeps only rows recorded by that agent session.
+	AgentSessionID string
 }
 
 // ListEvents returns rows from the unified events log for the given
@@ -81,6 +83,7 @@ func (s *EventService) ListEvents(ctx context.Context, project domain.ProjectCon
 		"since":      params.Since,
 		"limit":      params.Limit,
 		"order":      params.Order,
+		"session":    params.AgentSessionID,
 	})
 	defer func() {
 		status := "ok"
@@ -97,11 +100,12 @@ func (s *EventService) ListEvents(ctx context.Context, project domain.ProjectCon
 		order = "desc"
 	}
 	rows, err = s.repo.ListEvents(ctx, domain.EventFilter{
-		ProjectID:  project.ID,
-		Categories: params.Categories,
-		Since:      params.Since,
-		Limit:      params.Limit,
-		Order:      order,
+		ProjectID:      project.ID,
+		Categories:     params.Categories,
+		Since:          params.Since,
+		Limit:          params.Limit,
+		Order:          order,
+		AgentSessionID: params.AgentSessionID,
 	})
 	return
 }

@@ -159,14 +159,17 @@ type GuardEvaluationRepository interface {
 	// finalBucketID; the returned task names the first offender for
 	// the human-readable hint.
 	FirstChildNotInBucket(ctx context.Context, projectID, parentID, finalBucketID int64, buckets domain.BucketResolver) (domain.Task, bool, error)
+	CountPlanCommentsTagged(ctx context.Context, projectID, planID int64, tagName string) (int, error)
+	PlanGateState(ctx context.Context, projectID, planID, finalBucketID int64) (domain.PlanGateState, error)
+	TaskPlanGateState(ctx context.Context, projectID, taskID, finalBucketID int64) (domain.PlanGateState, bool, error)
 }
 
 type CommentRepository interface {
 	// AddComment is the task-scope convenience wrapper kept for existing
 	// callers; it delegates to AddScopedComment with Scope=task.
 	AddComment(ctx context.Context, projectID, taskID int64, body, authorType string, tags []domain.Tag) (domain.Comment, error)
-	// AddScopedComment writes a comment at the requested scope (task, project,
-	// or universal) carrying the optional kind/title/pinned fields.
+	// AddScopedComment writes a comment at the requested scope (task, plan,
+	// project, or universal) carrying the optional kind/title/pinned fields.
 	AddScopedComment(ctx context.Context, w domain.CommentWrite) (domain.Comment, error)
 	ListComments(ctx context.Context, projectID, taskID int64) ([]domain.Comment, error)
 	// QueryComments is the filterable handoff-log surface: list by scope, kind,
@@ -228,11 +231,48 @@ type TagRepository interface {
 	ListErrorTags(ctx context.Context, errorID int64) ([]domain.Tag, error)
 }
 
+// AgentRepository stores agent teams and their sessions. At most one team
+// per task and bucket is active.
+type AgentRepository interface {
+	OpenAgentTeam(ctx context.Context, team domain.AgentTeam) (domain.AgentTeam, bool, error)
+	FailAgentTeam(ctx context.Context, teamID string) error
+	CloseAgentTeam(ctx context.Context, teamID, spared string) (bool, error)
+	ReserveAgentSessions(ctx context.Context, projectID int64, sessions []domain.AgentSession, replaced string, limit int) error
+	SetAgentSessionPID(ctx context.Context, sessionID string, pid int) error
+	FinishAgentSession(ctx context.Context, sessionID, status string, exitCode *int, message string) (finished, idle bool, err error)
+	GetAgentTeam(ctx context.Context, teamID string) (domain.AgentTeam, error)
+	ListAgentTeams(ctx context.Context, projectID int64, filter domain.AgentTeamFilter) ([]domain.AgentTeam, error)
+	GetAgentSession(ctx context.Context, sessionID string) (domain.AgentSession, error)
+	ActiveAgentTeamIDs(ctx context.Context, projectID, taskID int64) ([]string, error)
+	StaleRunningAgentSessions(ctx context.Context, projectID int64, age time.Duration) ([]domain.TeamSession, error)
+	LastAgentActivity(ctx context.Context, sessionID string) (domain.EventRow, error)
+}
+
+// AgentTeams handles the agent teams of a task as it moves. SpawnTeam opens
+// the team a bucket declares; PlanTeam resolves it without opening anything
+// and reports status for every seat; LeaveBucket closes the task's teams in
+// the bucket it left.
+type AgentTeams interface {
+	SpawnTeam(ctx context.Context, project domain.ProjectContext, task domain.Task, team domain.BucketAgents) domain.TeamOutcome
+	PlanTeam(task domain.Task, team domain.BucketAgents, status string) domain.TeamOutcome
+	LeaveBucket(ctx context.Context, project domain.ProjectContext, task domain.Task, bucket string)
+}
+
+// ChangeFeed detects committed writes: DataVersion moves on every external
+// commit and LatestEventID is the newest event id.
+type ChangeFeed interface {
+	DataVersion(ctx context.Context) (int64, error)
+	LatestEventID(ctx context.Context) (int64, error)
+}
+
 type ErrorRepository interface {
 	RecordError(ctx context.Context, projectID int64, description, context string, tags []domain.Tag) (domain.ErrorRecord, error)
 	AddSolution(ctx context.Context, errorID int64, description, steps string, taskID *int64) (domain.Solution, error)
 	ConfirmSolution(ctx context.Context, solutionID int64, success bool) (domain.Solution, error)
 	ListTopSolutions(ctx context.Context, limit int) ([]domain.Solution, error)
+	// ListErrors returns a project's errors newest first with their tags;
+	// a non-empty tagName keeps only errors carrying it.
+	ListErrors(ctx context.Context, projectID int64, tagName string) ([]domain.ErrorRecord, error)
 	// RecordEntityEvent persists a domain event tied to an entity (error,
 	// solution, system) with the agent attribution carried in ctx. ErrorService
 	// calls it after each successful canonical write so /metrics.summary can

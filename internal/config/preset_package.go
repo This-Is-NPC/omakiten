@@ -19,11 +19,12 @@ const MaxPresetBytes = 16 << 20
 
 // PresetManifest identifies a self-contained workflow package and its origin.
 type PresetManifest struct {
-	SchemaVersion int          `yaml:"schema_version" json:"schema_version"`
-	Name          string       `yaml:"name" json:"name"`
-	Version       string       `yaml:"version" json:"version"`
-	Config        string       `yaml:"config" json:"config"`
-	Origin        PresetOrigin `yaml:"origin,omitempty" json:"origin"`
+	SchemaVersion int                `yaml:"schema_version" json:"schema_version"`
+	Name          string             `yaml:"name" json:"name"`
+	Version       string             `yaml:"version" json:"version"`
+	Config        string             `yaml:"config" json:"config"`
+	Origin        PresetOrigin       `yaml:"origin,omitempty" json:"origin"`
+	Requires      PresetRequirements `yaml:"requires,omitempty" json:"requires,omitempty"`
 }
 
 // PresetOrigin records the source snapshot against which edits are compared.
@@ -89,6 +90,9 @@ func (p PresetPackage) validate() error {
 	}
 	if _, ok := p.Files[p.Manifest.Config]; !ok {
 		return fmt.Errorf("preset config %q is missing", p.Manifest.Config)
+	}
+	if err := validatePresetRequirements(p.Manifest.Requires); err != nil {
+		return err
 	}
 	total := 0
 	for path, file := range p.Files {

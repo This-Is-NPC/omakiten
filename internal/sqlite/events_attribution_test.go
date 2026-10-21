@@ -252,3 +252,39 @@ func testRebindOrphanedTasksAttribution(t *testing.T, ctx context.Context, wantM
 		t.Errorf("orphan event attribution = (%q,%q), want (%q,%q)", model, session, wantModel, wantSession)
 	}
 }
+
+// TestEveryEventWriterStampsAttribution verifies comments, entity events and
+// task removals carry the agent session of the context that wrote them.
+func TestEveryEventWriterStampsAttribution(t *testing.T) {
+	ctx := activity.WithAgent(context.Background(), "cli", "okt comment add", "claude-haiku", "sess-agent")
+	store, project := openStoreWithProject(ctx, t)
+	task, err := store.CreateTask(context.Background(), project.ID, "t", "", domain.Priority(2), "backlog", nil, store.snap())
+	if err != nil {
+		t.Fatalf("CreateTask: %v", err)
+	}
+	comment, err := store.AddComment(ctx, project.ID, task.ID, "result", "agent", nil)
+	if err != nil {
+		t.Fatalf("AddComment: %v", err)
+	}
+	entity, err := insertEntityEvent(ctx, store.db, domain.EventEntityTask, task.ID, project.ID, domain.EventTypeTaskAssigned, "{}")
+	if err != nil {
+		t.Fatalf("insertEntityEvent: %v", err)
+	}
+	assert := func(name string, id int64) {
+		t.Helper()
+		var session, model string
+		if err := store.db.QueryRowContext(context.Background(), `SELECT COALESCE(agent_session_id, ''), agent_model FROM events WHERE id = ?`, id).Scan(&session, &model); err != nil {
+			t.Fatalf("%s row: %v", name, err)
+		}
+		if session != "sess-agent" || model != "claude-haiku" {
+			t.Errorf("%s attribution = %q/%q, want sess-agent/claude-haiku", name, session, model)
+		}
+	}
+	assert("comment", comment.ID)
+	assert("entity event", entity.ID)
+	removed, err := store.HardDeleteTask(ctx, project.ID, task.ID, store.snap())
+	if err != nil {
+		t.Fatalf("HardDeleteTask: %v", err)
+	}
+	assert("task removal", removed.ID)
+}

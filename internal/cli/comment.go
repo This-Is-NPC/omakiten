@@ -25,14 +25,15 @@ func newCommentCommand(opts *runtimeOptions) *cobra.Command {
 }
 
 // newCommentAddCommand wires `okt comment add [TASK_ID]` through
-// operation.Service.AddComment. Task scope requires the TASK_ID arg;
-// project/universal scopes must not carry one (enforced by the facade).
+// operation.Service.AddComment. Task scope requires the TASK_ID arg and plan
+// scope --plan; the other scopes carry neither (enforced by the facade).
 func newCommentAddCommand(opts *runtimeOptions) *cobra.Command {
 	var (
 		body   string
 		author string
 		tags   []string
 		scope  string
+		plan   string
 		kind   string
 		title  string
 		pinned bool
@@ -61,6 +62,7 @@ func newCommentAddCommand(opts *runtimeOptions) *cobra.Command {
 				return rt.operationService().AddComment(ctx, contract.AddCommentInput{
 					ProjectSelector: opts.projectSelector(),
 					TaskID:          taskID,
+					PlanSlug:        plan,
 					Scope:           scope,
 					Body:            body,
 					Title:           title,
@@ -76,6 +78,7 @@ func newCommentAddCommand(opts *runtimeOptions) *cobra.Command {
 	add.Flags().StringVarP(&author, "author", "a", "human", opts.t("cli.comment.add.flag.author"))
 	add.Flags().StringArrayVarP(&tags, "tag", "T", nil, opts.t("cli.comment.add.flag.tag"))
 	add.Flags().StringVar(&scope, "scope", "", opts.t("cli.comment.add.flag.scope"))
+	add.Flags().StringVar(&plan, "plan", "", opts.t("cli.comment.add.flag.plan"))
 	add.Flags().StringVar(&kind, "kind", "", opts.t("cli.comment.add.flag.kind"))
 	add.Flags().StringVar(&title, "title", "", opts.t("cli.comment.add.flag.title"))
 	add.Flags().BoolVar(&pinned, "pinned", false, opts.t("cli.comment.add.flag.pinned"))
@@ -89,6 +92,7 @@ func newCommentAddCommand(opts *runtimeOptions) *cobra.Command {
 func newCommentListCommand(opts *runtimeOptions) *cobra.Command {
 	var (
 		scope     string
+		plan      string
 		kind      string
 		tag       string
 		query     string
@@ -121,6 +125,7 @@ func newCommentListCommand(opts *runtimeOptions) *cobra.Command {
 					ProjectSelector: opts.projectSelector(),
 					TaskID:          taskID,
 					CommentID:       commentID,
+					PlanSlug:        plan,
 					Scope:           scope,
 					Kind:            kind,
 					Tag:             tag,
@@ -132,6 +137,7 @@ func newCommentListCommand(opts *runtimeOptions) *cobra.Command {
 		},
 	}
 	list.Flags().StringVar(&scope, "scope", "", opts.t("cli.comment.list.flag.scope"))
+	list.Flags().StringVar(&plan, "plan", "", opts.t("cli.comment.list.flag.plan"))
 	list.Flags().StringVar(&kind, "kind", "", opts.t("cli.comment.list.flag.kind"))
 	list.Flags().StringVarP(&tag, "tag", "T", "", opts.t("cli.comment.list.flag.tag"))
 	list.Flags().StringVar(&query, "query", "", opts.t("cli.comment.list.flag.query"))

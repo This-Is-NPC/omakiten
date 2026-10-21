@@ -246,7 +246,12 @@ func validateManagedConfigProfilePath(path string) (string, error) {
 	}
 	name := strings.TrimSuffix(base, filepath.Ext(base))
 	if _, ok := config.PresetByName(name); !ok || base != name+".yaml" {
-		return "", fmt.Errorf("config requires one of the official managed presets: omakase.yaml, izakaya.yaml, kaiseki.yaml, shokunin.yaml")
+		presets := config.ListPresets()
+		files := make([]string, len(presets))
+		for i, p := range presets {
+			files[i] = p.Name + ".yaml"
+		}
+		return "", fmt.Errorf("config requires one of the official managed presets: %s", strings.Join(files, ", "))
 	}
 	return absolutePath, nil
 }

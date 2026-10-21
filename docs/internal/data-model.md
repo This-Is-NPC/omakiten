@@ -49,7 +49,8 @@ deletion removes project events and work in its protected transaction.
 | `error_tags` | Tags for reusable failures. |
 
 There is one event log. Comments are event records with their content and
-scope; task, project, and universal scope are explicit. Event policy controls
+scope; task, plan, project, and universal scope are explicit, and a plan's
+comments are deleted with the plan. Event policy controls
 logging, broadcast, hook dispatch, visibility, and retention. Cross-project
 readers use each originating project's immutable event registry.
 An outside caller writes only `external.<name>` events its kit declares in the
@@ -72,6 +73,24 @@ in the business tables.
 Import writes both in one transaction. Export combines the current business
 state with retained metadata under one consistent read snapshot.
 
+## Agent teams
+
+`agent_teams` records the agents run for one task in one bucket, or, with
+`plan_id` and no `task_id`, the plan seats run for one plan; a check keeps
+exactly one of the two set. Partial unique indexes keep at most one `active`
+team per project, task, and bucket, and per plan. A team none of whose
+starting seats could start is `failed`, and a team whose task left the
+bucket or that was closed is `closed`. Both free that slot. Task and plan
+deletion cascade teams.
+
+`agent_sessions` holds one row per headless run of a team seat: its member
+key (`lead` or a declared key), command, persona, the resolved harness and
+model, the harness `pid`, the `transcript` path, the harness
+`exit_code`, and `running`, `done`, `failed`, `stopped`, or `replaced`. A
+partial unique index keeps one current session per team seat; running a seat
+again marks its previous session `replaced`. A session's own `okt` calls
+carry its id in `events.agent_session_id`, indexed for per-session reads.
+
 ## Search and recovery
 
 `search_index` is an FTS5 virtual table populated from canonical operational
@@ -81,8 +100,9 @@ post-checks in one transaction. Readers do not see an empty intermediate index.
 
 SQLite enables foreign keys and uses WAL. A live snapshot includes committed
 WAL data. Filesystem-backed opens validate paths and file identity before
-schema or WAL mutation. Supported schema changes are applied transactionally;
-an unsupported database returns a validation error.
+schema or WAL mutation. `PRAGMA user_version` names the schema version. A
+database that exactly matches an earlier version receives every later step in
+one transaction; an unsupported database returns a validation error.
 
 [Backup and recovery](../how-to-back-up-and-recover.md) explains using the
 snapshot commands. [Design](design.md) explains transaction and adapter ownership.

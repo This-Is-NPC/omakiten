@@ -57,7 +57,7 @@ func TestTaskServiceEditReparent(t *testing.T) {
 	a, _ := service.Add(ctx, project.Context(), "A", "", "", "backlog")
 	b, _ := service.Add(ctx, project.Context(), "B", "", "", "backlog")
 
-	if _, err := service.Edit(ctx, project.Context(), b.ID, domain.TaskUpdate{ChangeParent: true, NewParentID: &a.ID}); err != nil {
+	if _, _, err := service.Edit(ctx, project.Context(), b.ID, domain.TaskUpdate{ChangeParent: true, NewParentID: &a.ID}); err != nil {
 		t.Fatalf("Edit(reparent) = %v", err)
 	}
 
@@ -80,7 +80,7 @@ func TestTaskServiceEditRejectsCycle(t *testing.T) {
 	root, _ := service.Add(ctx, project.Context(), "Root", "", "", "backlog")
 	child, _ := service.AddSub(ctx, project.Context(), root.ID, "Child", "", "", "backlog")
 
-	_, err := service.Edit(ctx, project.Context(), root.ID, domain.TaskUpdate{ChangeParent: true, NewParentID: &child.ID})
+	_, _, err := service.Edit(ctx, project.Context(), root.ID, domain.TaskUpdate{ChangeParent: true, NewParentID: &child.ID})
 	if err == nil {
 		t.Fatal("Edit(cycle) error = nil, want validation")
 	}
@@ -97,7 +97,7 @@ func TestTaskServiceEditClearsParent(t *testing.T) {
 	parent, _ := service.Add(ctx, project.Context(), "Parent", "", "", "backlog")
 	child, _ := service.AddSub(ctx, project.Context(), parent.ID, "Child", "", "", "backlog")
 
-	if _, err := service.Edit(ctx, project.Context(), child.ID, domain.TaskUpdate{ChangeParent: true, NewParentID: nil}); err != nil {
+	if _, _, err := service.Edit(ctx, project.Context(), child.ID, domain.TaskUpdate{ChangeParent: true, NewParentID: nil}); err != nil {
 		t.Fatalf("Edit(clear parent) = %v", err)
 	}
 
@@ -229,7 +229,7 @@ func TestTaskServiceMoveSubtaskUsesSubtaskKitTransitions(t *testing.T) {
 		t.Fatalf("AddSub = %v", err)
 	}
 
-	_, err = service.Move(ctx, project.Context(), child.ID, "review")
+	_, _, err = service.Move(ctx, project.Context(), child.ID, "review")
 	if err == nil {
 		t.Fatal("Move(child dev->review) error = nil, want sub-kit transition rejection")
 	}
@@ -256,11 +256,11 @@ func TestTaskServiceEventsCarryDepthMetadata(t *testing.T) {
 	if err != nil {
 		t.Fatalf("AddSub(child) = %v", err)
 	}
-	if _, err := service.Move(ctx, project.Context(), child.ID, "done"); err != nil {
+	if _, _, err := service.Move(ctx, project.Context(), child.ID, "done"); err != nil {
 		t.Fatalf("Move(child todo->done) = %v", err)
 	}
 	renamed := "Child renamed"
-	if _, err := service.Edit(ctx, project.Context(), child.ID, domain.TaskUpdate{Title: &renamed}); err != nil {
+	if _, _, err := service.Edit(ctx, project.Context(), child.ID, domain.TaskUpdate{Title: &renamed}); err != nil {
 		t.Fatalf("Edit(child title) = %v", err)
 	}
 
@@ -361,7 +361,7 @@ func TestTaskDepth_ReparentRecomputesSubtree(t *testing.T) {
 		t.Fatalf("pre-reparent depths off: child=%d grandchild=%d", child.Depth, grandchild.Depth)
 	}
 
-	if _, err := service.Edit(ctx, project.Context(), child.ID, domain.TaskUpdate{ChangeParent: true, NewParentID: &b.ID}); err != nil {
+	if _, _, err := service.Edit(ctx, project.Context(), child.ID, domain.TaskUpdate{ChangeParent: true, NewParentID: &b.ID}); err != nil {
 		t.Fatalf("Edit(reparent child under B) = %v", err)
 	}
 
@@ -426,7 +426,7 @@ func TestTaskServiceEditRejectsReparentUnderArchived(t *testing.T) {
 		t.Fatalf("Archive(candidate) = %v", err)
 	}
 
-	_, err := service.Edit(ctx, project.Context(), target.ID, domain.TaskUpdate{ChangeParent: true, NewParentID: &candidate.ID})
+	_, _, err := service.Edit(ctx, project.Context(), target.ID, domain.TaskUpdate{ChangeParent: true, NewParentID: &candidate.ID})
 	if err == nil {
 		t.Fatal("Edit(reparent under archived) error = nil, want validation")
 	}
@@ -502,7 +502,7 @@ func TestTaskServiceEditReparentRebindsRootToSubFirstBucket(t *testing.T) {
 		t.Fatalf("Add(orphan) = %v", err)
 	}
 
-	got, err := service.Edit(ctx, project.Context(), orphanCandidate.ID, domain.TaskUpdate{ChangeParent: true, NewParentID: &parent.ID})
+	got, _, err := service.Edit(ctx, project.Context(), orphanCandidate.ID, domain.TaskUpdate{ChangeParent: true, NewParentID: &parent.ID})
 	if err != nil {
 		t.Fatalf("Edit(reparent) = %v", err)
 	}
@@ -546,7 +546,7 @@ func TestTaskServiceEditReparentRebindsSubToRootFirstBucket(t *testing.T) {
 		t.Fatalf("setup precondition: child bucket = %q, want done", child.BucketKey)
 	}
 
-	got, err := service.Edit(ctx, project.Context(), child.ID, domain.TaskUpdate{ChangeParent: true, NewParentID: nil})
+	got, _, err := service.Edit(ctx, project.Context(), child.ID, domain.TaskUpdate{ChangeParent: true, NewParentID: nil})
 	if err != nil {
 		t.Fatalf("Edit(clear parent) = %v", err)
 	}
@@ -583,7 +583,7 @@ func TestTaskServiceEditCombinedFieldEditAndReparentReturnsFreshRow(t *testing.T
 	orphanCandidate, _ := service.Add(ctx, project.Context(), "Orphan", "", "", "dev")
 	newTitle := "Renamed"
 
-	got, err := service.Edit(ctx, project.Context(), orphanCandidate.ID, domain.TaskUpdate{
+	got, _, err := service.Edit(ctx, project.Context(), orphanCandidate.ID, domain.TaskUpdate{
 		Title:        &newTitle,
 		ChangeParent: true,
 		NewParentID:  &parent.ID,

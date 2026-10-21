@@ -355,6 +355,9 @@ func (s *Store) DeletePlan(ctx context.Context, projectID, planID int64) (domain
 				}
 				return deletedPlan{}, err
 			}
+			if _, err := tx.ExecContext(ctx, `DELETE FROM events WHERE entity_type = 'plan' AND event_type = 'comment' AND project_id = ? AND entity_id = ?`, projectID, planID); err != nil {
+				return deletedPlan{}, err
+			}
 			if _, err := tx.ExecContext(ctx, `DELETE FROM plans WHERE project_id = ? AND id = ?`, projectID, planID); err != nil {
 				return deletedPlan{}, err
 			}
@@ -1168,20 +1171,11 @@ func (s *Store) beginClaimConnection(ctx context.Context) (*sql.Conn, error) {
 
 func claimWorkflowBuckets(buckets domain.BucketResolver, planID int64) (domain.Bucket, domain.Bucket, error) {
 	workflow := buckets.Workflow()
-	if len(workflow.Buckets) == 0 {
+	first, final, ok := workflow.EdgeBuckets()
+	if !ok {
 		return domain.Bucket{}, domain.Bucket{}, domain.NewError(domain.ErrConfigInvalid,
 			"plans.claim_next requires a workflow with at least 1 bucket",
 			map[string]any{"plan_id": planID, "bucket_count": len(workflow.Buckets)})
-	}
-	first := workflow.Buckets[0]
-	final := workflow.Buckets[0]
-	for _, b := range workflow.Buckets {
-		if b.Position < first.Position {
-			first = b
-		}
-		if b.Position > final.Position {
-			final = b
-		}
 	}
 	return first, final, nil
 }
@@ -1428,6 +1422,42 @@ func (s *Store) planIDForTask(ctx context.Context, projectID, taskID int64) (sql
 	return planID, err
 }
 
+// PlanGateState returns a plan's status with how many of its active tasks
+// sit in finalBucketID out of all of them, for the plan gates. Returns
+// ErrPlanNotFound when the plan is not in the project.
+func (s *Store) PlanGateState(ctx context.Context, projectID, planID, finalBucketID int64) (domain.PlanGateState, error) {
+	state := domain.PlanGateState{PlanID: planID}
+	var status string
+	err := s.query(ctx).QueryRowContext(ctx, `
+SELECT p.slug, p.status,
+  COUNT(t.id),
+  COALESCE(SUM(CASE WHEN COALESCE(t.bucket_id, 0) = ? THEN 1 ELSE 0 END), 0)
+FROM plans p
+LEFT JOIN tasks t ON t.plan_id = p.id AND t.project_id = p.project_id AND t.state = 'active'
+WHERE p.project_id = ? AND p.id = ?
+GROUP BY p.id
+`, finalBucketID, projectID, planID).Scan(&state.Slug, &status, &state.Total, &state.Done)
+	if errors.Is(err, sql.ErrNoRows) {
+		return domain.PlanGateState{}, domain.NewError(domain.ErrPlanNotFound, "plan not found", map[string]any{"project_id": projectID, "plan_id": planID})
+	}
+	state.Status = domain.PlanStatus(status)
+	return state, err
+}
+
+// TaskPlanGateState is PlanGateState for the plan taskID belongs to; ok is
+// false when the task is in no plan.
+func (s *Store) TaskPlanGateState(ctx context.Context, projectID, taskID, finalBucketID int64) (domain.PlanGateState, bool, error) {
+	planID, err := s.planIDForTask(ctx, projectID, taskID)
+	if errors.Is(err, sql.ErrNoRows) || (err == nil && !planID.Valid) {
+		return domain.PlanGateState{}, false, nil
+	}
+	if err != nil {
+		return domain.PlanGateState{}, false, err
+	}
+	state, err := s.PlanGateState(ctx, projectID, planID.Int64, finalBucketID)
+	return state, err == nil, err
+}
+
 func finalizePlanTx(ctx context.Context, tx *sql.Tx, projectID, planID, finalBucketID int64) (planFinalizeResult, error) {
 	var status string
 	if err := tx.QueryRowContext(ctx, `SELECT status FROM plans WHERE id = ? AND project_id = ?`, planID, projectID).Scan(&status); err != nil {
@@ -1515,11 +1545,12 @@ func insertEntityEvent(ctx context.Context, exec dbExecutor, entityType string, 
 		payload = "{}"
 	}
 	var event domain.Event
+	source, entrypoint, agentModel, agentSessionID := agentAttribution(ctx)
 	if err := exec.QueryRowContext(ctx, `
-INSERT INTO events(entity_type, entity_id, project_id, event_type, payload)
-VALUES (?, ?, ?, ?, ?)
+INSERT INTO events(entity_type, entity_id, project_id, event_type, payload, source, entrypoint, agent_model, agent_session_id)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 RETURNING id, entity_type, entity_id, project_id, event_type, COALESCE(body, ''), payload, created_at
-`, entityType, entityID, projectID, eventType, payload).Scan(
+`, entityType, entityID, projectID, eventType, payload, source, entrypoint, agentModel, agentSessionID).Scan(
 		&event.ID, &event.EntityType, &event.EntityID, &event.ProjectID,
 		&event.EventType, &event.Body, &event.Payload, &event.CreatedAt,
 	); err != nil {

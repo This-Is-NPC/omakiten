@@ -1,4 +1,4 @@
-PRAGMA user_version = 2;
+PRAGMA user_version = 3;
 
 CREATE TABLE projects (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -367,3 +367,40 @@ CREATE TABLE document_metadata (
   metadata TEXT NOT NULL,
   CHECK ((task_id IS NULL) != (plan_id IS NULL))
 );
+
+CREATE TABLE agent_teams (
+  id TEXT PRIMARY KEY,
+  project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  task_id INTEGER,
+  plan_id INTEGER REFERENCES plans(id) ON DELETE CASCADE,
+  bucket_key TEXT NOT NULL DEFAULT '',
+  status TEXT NOT NULL CHECK (status IN ('active', 'failed', 'closed')),
+  opened_after INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CHECK ((task_id IS NULL) != (plan_id IS NULL)),
+  FOREIGN KEY (project_id, task_id) REFERENCES tasks(project_id, id) ON DELETE CASCADE
+);
+
+CREATE UNIQUE INDEX idx_agent_teams_active ON agent_teams(project_id, task_id, bucket_key) WHERE status = 'active' AND task_id IS NOT NULL;
+CREATE UNIQUE INDEX idx_agent_teams_plan_active ON agent_teams(plan_id) WHERE status = 'active' AND plan_id IS NOT NULL;
+
+CREATE TABLE agent_sessions (
+  id TEXT PRIMARY KEY,
+  team_id TEXT NOT NULL REFERENCES agent_teams(id) ON DELETE CASCADE,
+  member TEXT NOT NULL,
+  command TEXT NOT NULL,
+  persona TEXT NOT NULL DEFAULT '',
+  harness TEXT NOT NULL,
+  model TEXT NOT NULL DEFAULT '',
+  pid INTEGER NOT NULL DEFAULT 0,
+  transcript TEXT NOT NULL DEFAULT '',
+  status TEXT NOT NULL CHECK (status IN ('running', 'failed', 'done', 'stopped', 'replaced')),
+  exit_code INTEGER,
+  error TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  finished_at TEXT
+);
+
+CREATE UNIQUE INDEX idx_agent_sessions_seat ON agent_sessions(team_id, member) WHERE status != 'replaced';
+
+CREATE INDEX idx_events_agent_session ON events(agent_session_id, id) WHERE agent_session_id IS NOT NULL;

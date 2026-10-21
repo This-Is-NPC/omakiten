@@ -56,6 +56,11 @@ func guidanceForCode(code domain.ErrorCode) contract.Guidance {
 			Message: "The agent intent input is incomplete or invalid.",
 			Actions: []string{"Check required fields and retry with a complete payload."},
 		}
+	case domain.ErrConfirmationRequired:
+		return contract.Guidance{
+			Message: "The request runs or changes something that needs explicit consent.",
+			Actions: []string{"Review the listed details, then repeat the command with --confirm."},
+		}
 	case domain.ErrConfigInvalid:
 		return contract.Guidance{
 			Message: "Omakiten configuration could not be loaded or materialized.",

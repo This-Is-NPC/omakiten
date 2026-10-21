@@ -9,6 +9,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"strings"
 
 	"omakiten/internal/activity"
@@ -65,6 +66,13 @@ type Repository interface {
 	// own promotions, so the parent's guard fires exactly when the
 	// immediate sub-tasks are still open.
 	FirstChildNotInBucket(ctx context.Context, projectID, parentID, finalBucketID int64, buckets domain.BucketResolver) (domain.Task, bool, error)
+	// CountPlanCommentsTagged gates the plan_comments_tagged plan guard.
+	CountPlanCommentsTagged(ctx context.Context, projectID, planID int64, tagName string) (int, error)
+	// PlanGateState and TaskPlanGateState read a plan's status and its done
+	// and total active tasks, done meaning in finalBucketID; ok is false
+	// when the task is in no plan.
+	PlanGateState(ctx context.Context, projectID, planID, finalBucketID int64) (domain.PlanGateState, error)
+	TaskPlanGateState(ctx context.Context, projectID, taskID, finalBucketID int64) (domain.PlanGateState, bool, error)
 }
 
 // EventSink records guard.violated domain events. Telemetry only — emission
@@ -124,9 +132,26 @@ func (e *Evaluator) EvaluateTransitionForTask(ctx context.Context, projectID int
 	if snap == nil {
 		return nil
 	}
-	specs := snap.Guards(fromBucketID, toBucketID)
+	statuses, err := e.transitionStatuses(ctx, projectID, task, fromBucketID, toBucketID, snap)
+	if err != nil {
+		return err
+	}
 	target := map[string]any{"task_id": task.ID, "from_bucket_id": fromBucketID, "to_bucket_id": toBucketID, "to_bucket": targetBucketKey}
-	return e.runGuardsWithSnapshot(ctx, projectID, task, specs, OperationTaskTransition, target, snap)
+	return e.reportUnmet(ctx, projectID, task, snap, OperationTaskTransition, target, statuses)
+}
+
+// transitionStatuses evaluates the guards of the (from, to) transition and
+// then the gates of the task's plan that the move meets.
+func (e *Evaluator) transitionStatuses(ctx context.Context, projectID int64, task domain.Task, fromBucketID, toBucketID int64, snap *config.Snapshot) ([]domain.GuardStatus, error) {
+	statuses, err := e.evaluate(ctx, projectID, task, snap.Guards(fromBucketID, toBucketID), snap)
+	if err != nil {
+		return nil, err
+	}
+	gates, err := e.transitionPlanGates(ctx, projectID, task, fromBucketID, toBucketID, snap)
+	if err != nil {
+		return nil, err
+	}
+	return append(statuses, gates...), nil
 }
 
 // EvaluateOperation runs every guard declared on the named operation against
@@ -206,18 +231,25 @@ func (e *Evaluator) EmitViolated(ctx context.Context, projectID int64, entityTyp
 // Falls back to the bare EmitViolated payload when snap is nil
 // (uninitialised tests) so the legacy invariant still holds.
 func (e *Evaluator) EmitViolatedForTask(ctx context.Context, projectID int64, task domain.Task, snap *config.Snapshot, operation, rule, hint string, target map[string]any) {
+	e.emitViolatedForTask(ctx, projectID, task, snap, operation, rule, hint, target, nil)
+}
+
+// emitViolatedForTask is EmitViolatedForTask with fields added at the top
+// level of the payload.
+func (e *Evaluator) emitViolatedForTask(ctx context.Context, projectID int64, task domain.Task, snap *config.Snapshot, operation, rule, hint string, target, fields map[string]any) {
 	if e.events == nil {
 		return
 	}
-	var subject map[string]any
+	subject := map[string]any{}
 	if snap != nil {
 		taskSnap := snap.For(task)
 		kitKey := ""
 		if taskSnap != nil {
 			kitKey = taskSnap.Kit().Key
 		}
-		subject = taskSubjectFields(task, kitKey)
+		maps.Copy(subject, taskSubjectFields(task, kitKey))
 	}
+	maps.Copy(subject, fields)
 	body := buildGuardViolatedPayload(ctx, operation, rule, hint, target, subject)
 	if body == "" {
 		return
@@ -327,38 +359,128 @@ func operationGuards(workflow domain.Workflow, operation string) []domain.Transi
 
 // runGuardsWithSnapshot is the shared dispatch. Both transition guards and
 // operation guards (archive/delete/unarchive) feed through here so a new guard
-// type only needs one switch arm. operation labels the call site for the
-// guard.violated payload; defaultTarget carries call-site-specific identifiers
-// and is overridden per check when needed.
+// type only needs one switch arm. Every guard is evaluated; each unmet one
+// records its own guard.violated event, and the returned guard_violation lists
+// them all. operation labels the call site for the guard.violated payload;
+// defaultTarget carries call-site-specific identifiers.
 func (e *Evaluator) runGuardsWithSnapshot(ctx context.Context, projectID int64, task domain.Task, specs []domain.TransitionGuard, operation string, defaultTarget map[string]any, snap *config.Snapshot) error {
 	target := map[string]any{"task_id": task.ID}
 	if defaultTarget != nil {
 		target = defaultTarget
 	}
-	for _, guard := range specs {
-		hint := e.resolveHintFrom(snap, guard.Hint)
-		if err := e.runGuard(ctx, projectID, task, guard, hint, operation, target, snap); err != nil {
-			return err
-		}
+	statuses, err := e.evaluate(ctx, projectID, task, specs, snap)
+	if err != nil {
+		return err
 	}
-	return nil
+	return e.reportUnmet(ctx, projectID, task, snap, operation, target, statuses)
 }
 
-func (e *Evaluator) runGuard(ctx context.Context, projectID int64, task domain.Task, guard domain.TransitionGuard, hint, operation string, target map[string]any, snap *config.Snapshot) error {
-	switch guard.Type {
-	case "blockers_in":
-		return e.checkBlockersIn(ctx, projectID, task, guard.Buckets, hint, operation, target, snap)
-	case "comments_min":
-		return e.checkCommentsMin(ctx, projectID, task, guard.Count, hint, operation, target, snap)
-	case "comments_tagged":
-		return e.checkCommentsTagged(ctx, projectID, task, guard.Tag, guard.Count, hint, operation, target, snap)
-	case "wave_gate":
-		return e.checkWaveGate(ctx, projectID, task, hint, operation, target, snap)
-	case "subtasks_complete":
-		return e.checkSubtasksComplete(ctx, projectID, task, hint, operation, target, snap)
-	default:
+// reportUnmet records a guard.violated event for each unmet status and
+// returns the guard_violation listing them all, or nil when every status is
+// met.
+func (e *Evaluator) reportUnmet(ctx context.Context, projectID int64, task domain.Task, snap *config.Snapshot, operation string, target map[string]any, statuses []domain.GuardStatus) error {
+	var unmet []domain.GuardStatus
+	var messages []string
+	for _, status := range statuses {
+		if status.Satisfied {
+			continue
+		}
+		e.emitViolatedForTask(ctx, projectID, task, snap, operation, status.Type, status.Message, target, planGateFields(status))
+		unmet = append(unmet, status)
+		messages = append(messages, status.Message)
+	}
+	if len(unmet) == 0 {
 		return nil
 	}
+	return violation(unmet, messages, map[string]any{"task_id": task.ID})
+}
+
+// violation builds the guard_violation error for unmet statuses: the first
+// one's details, type, hint and fix, ids naming the subject, and the full
+// unmet list.
+func violation(unmet []domain.GuardStatus, messages []string, ids map[string]any) error {
+	details := make(map[string]any, len(unmet[0].Details)+len(ids)+4)
+	for k, v := range unmet[0].Details {
+		details[k] = v
+	}
+	details["guard_type"] = unmet[0].Type
+	for k, v := range ids {
+		details[k] = v
+	}
+	if unmet[0].Hint != "" {
+		details["hint"] = unmet[0].Hint
+	}
+	if unmet[0].Fix != "" {
+		details["fix"] = unmet[0].Fix
+	}
+	details["unmet"] = unmet
+	return domain.NewError(domain.ErrGuardViolation, strings.Join(messages, "; "), details)
+}
+
+// PreviewTransitionForTask reports the state of every guard on the
+// (from, to) transition without recording events. A nil snap falls back to
+// the evaluator's root snapshot.
+func (e *Evaluator) PreviewTransitionForTask(ctx context.Context, projectID int64, task domain.Task, fromBucketID, toBucketID int64, snap *config.Snapshot) ([]domain.GuardStatus, error) {
+	snap = e.resolvedSnapshot(snap)
+	if snap == nil {
+		return nil, nil
+	}
+	return e.transitionStatuses(ctx, projectID, task, fromBucketID, toBucketID, snap)
+}
+
+// evaluate returns the state of each guard of a known type, in declaration
+// order. It records nothing.
+func (e *Evaluator) evaluate(ctx context.Context, projectID int64, task domain.Task, specs []domain.TransitionGuard, snap *config.Snapshot) ([]domain.GuardStatus, error) {
+	var out []domain.GuardStatus
+	for _, guard := range specs {
+		status, known, err := e.check(ctx, projectID, task, guard, snap)
+		if err != nil {
+			return nil, err
+		}
+		if !known {
+			continue
+		}
+		out = append(out, e.finish(snap, guard, status))
+	}
+	return out, nil
+}
+
+// finish stamps the guard type on status and, when it is unmet, folds the
+// resolved hint and the fix into its message; a met status keeps no fix.
+func (e *Evaluator) finish(snap *config.Snapshot, guard domain.TransitionGuard, status domain.GuardStatus) domain.GuardStatus {
+	status.Type = guard.Type
+	if status.Satisfied {
+		status.Fix = ""
+		return status
+	}
+	status.Hint = e.resolveHintFrom(snap, guard.Hint)
+	if status.Hint != "" {
+		status.Message += ". Hint: " + status.Hint
+	}
+	if status.Fix != "" {
+		status.Message += ". Fix: " + status.Fix
+	}
+	return status
+}
+
+// check evaluates one guard. known is false for guard types the evaluator
+// does not implement; those never block.
+func (e *Evaluator) check(ctx context.Context, projectID int64, task domain.Task, guard domain.TransitionGuard, snap *config.Snapshot) (status domain.GuardStatus, known bool, err error) {
+	switch guard.Type {
+	case "blockers_in":
+		status, err = e.checkBlockersIn(ctx, projectID, task, guard.Buckets, snap)
+	case "comments_min":
+		status, err = e.checkCommentsMin(ctx, projectID, task, guard.Count)
+	case "comments_tagged":
+		status, err = e.checkCommentsTagged(ctx, projectID, task, guard.Tag, guard.Count)
+	case "wave_gate":
+		status, err = e.checkWaveGate(ctx, projectID, task, snap)
+	case "subtasks_complete":
+		status, err = e.checkSubtasksComplete(ctx, projectID, task, snap)
+	default:
+		return domain.GuardStatus{}, false, nil
+	}
+	return status, true, err
 }
 
 // resolveHintFrom expands `${{intl:KEY}}` tokens in guard hint strings via the
@@ -376,29 +498,23 @@ func (e *Evaluator) resolveHintFrom(snap *config.Snapshot, hint string) string {
 	return snap.ResolveGuardHint(hint)
 }
 
-func (e *Evaluator) checkWaveGate(ctx context.Context, projectID int64, task domain.Task, hint, operation string, target map[string]any, snap *config.Snapshot) error {
+func (e *Evaluator) checkWaveGate(ctx context.Context, projectID int64, task domain.Task, snap *config.Snapshot) (domain.GuardStatus, error) {
 	pending, err := e.repo.CountPriorWavesPending(ctx, projectID, task.ID, snap)
 	if err != nil {
-		return err
+		return domain.GuardStatus{}, err
 	}
-	if pending == 0 {
-		return nil
-	}
-	msg := fmt.Sprintf("wave_gate guard: %d task(s) pending in prior waves of the same plan", pending)
-	details := map[string]any{"pending": pending}
-	if hint != "" {
-		msg += ". Hint: " + hint
-		details["hint"] = hint
-	}
-	e.EmitViolatedForTask(ctx, projectID, task, snap, operation, "wave_gate", msg, target)
-	return domain.NewError(domain.ErrGuardViolation, msg, details)
+	return domain.GuardStatus{
+		Satisfied: pending == 0,
+		Details:   map[string]any{"pending": pending},
+		Message:   fmt.Sprintf("wave_gate guard: %d task(s) pending in prior waves of the same plan", pending),
+	}, nil
 }
 
-func (e *Evaluator) checkSubtasksComplete(ctx context.Context, projectID int64, task domain.Task, hint, operation string, target map[string]any, snap *config.Snapshot) error {
+func (e *Evaluator) checkSubtasksComplete(ctx context.Context, projectID int64, task domain.Task, snap *config.Snapshot) (domain.GuardStatus, error) {
 	childParentID := task.ID
 	childSnap := snap.For(domain.Task{ParentID: &childParentID})
 	if childSnap == nil {
-		return nil
+		return domain.GuardStatus{Satisfied: true}, nil
 	}
 	finalKey := childSnap.Workflow().FinalBucketKey()
 	finalBucket, ok := childSnap.BucketByKey(finalKey)
@@ -406,94 +522,81 @@ func (e *Evaluator) checkSubtasksComplete(ctx context.Context, projectID int64, 
 		// Workflow without a final bucket cannot evaluate completeness;
 		// treat as satisfied so misconfigured presets don't lock every
 		// transition out.
-		return nil
+		return domain.GuardStatus{Satisfied: true}, nil
 	}
 	open, found, err := e.repo.FirstChildNotInBucket(ctx, projectID, task.ID, finalBucket.ID, childSnap)
 	if err != nil {
-		return err
+		return domain.GuardStatus{}, err
 	}
 	if !found {
-		return nil
+		return domain.GuardStatus{Satisfied: true, Details: map[string]any{"final_bucket": finalKey}}, nil
 	}
-	msg := fmt.Sprintf("subtasks_complete guard: subtask #%d %q is in %q, not %q",
-		open.ID, open.Title, open.BucketKey, finalKey)
-	details := map[string]any{
-		"open_subtask_id":     open.ID,
-		"open_subtask_title":  open.Title,
-		"open_subtask_bucket": open.BucketKey,
-		"final_bucket":        finalKey,
-	}
-	if hint != "" {
-		msg += ". Hint: " + hint
-		details["hint"] = hint
-	}
-	e.EmitViolatedForTask(ctx, projectID, task, snap, operation, "subtasks_complete", msg, target)
-	return domain.NewError(domain.ErrGuardViolation, msg, details)
+	return domain.GuardStatus{
+		Details: map[string]any{
+			"open_subtask_id":     open.ID,
+			"open_subtask_title":  open.Title,
+			"open_subtask_bucket": open.BucketKey,
+			"final_bucket":        finalKey,
+		},
+		Fix:     continueFix(open.ID),
+		Message: fmt.Sprintf("subtasks_complete guard: subtask #%d %q is in %q, not %q", open.ID, open.Title, open.BucketKey, finalKey),
+	}, nil
 }
 
-func (e *Evaluator) checkBlockersIn(ctx context.Context, projectID int64, task domain.Task, allowedKeys []string, hint, operation string, target map[string]any, snap *config.Snapshot) error {
+func (e *Evaluator) checkBlockersIn(ctx context.Context, projectID int64, task domain.Task, allowedKeys []string, snap *config.Snapshot) (domain.GuardStatus, error) {
 	blockers, err := e.repo.ListTaskBlockerBuckets(ctx, projectID, task.ID, snap)
 	if err != nil {
-		return err
+		return domain.GuardStatus{}, err
 	}
 	allowed := make(map[string]struct{}, len(allowedKeys))
 	for _, k := range allowedKeys {
 		allowed[k] = struct{}{}
 	}
 	var pending []string
+	var firstPending int64
 	for _, b := range blockers {
 		if _, ok := allowed[b.BucketKey]; !ok {
+			if firstPending == 0 {
+				firstPending = b.TaskID
+			}
 			pending = append(pending, fmt.Sprintf("#%d %q (in %q)", b.TaskID, b.Title, b.BucketKey))
 		}
 	}
 	if len(pending) == 0 {
-		return nil
+		return domain.GuardStatus{Satisfied: true}, nil
 	}
-	msg := "blockers_in guard: pending blockers: " + strings.Join(pending, ", ")
-	details := map[string]any{"pending_blockers": pending}
-	if hint != "" {
-		msg += ". Hint: " + hint
-		details["hint"] = hint
-	}
-	e.EmitViolatedForTask(ctx, projectID, task, snap, operation, "blockers_in", msg, target)
-	return domain.NewError(domain.ErrGuardViolation, msg, details)
+	return domain.GuardStatus{
+		Details: map[string]any{"pending_blockers": pending},
+		Fix:     continueFix(firstPending),
+		Message: "blockers_in guard: pending blockers: " + strings.Join(pending, ", "),
+	}, nil
 }
 
-func (e *Evaluator) checkCommentsMin(ctx context.Context, projectID int64, task domain.Task, minCount int, hint, operation string, target map[string]any, snap *config.Snapshot) error {
+func (e *Evaluator) checkCommentsMin(ctx context.Context, projectID int64, task domain.Task, minCount int) (domain.GuardStatus, error) {
 	count, err := e.repo.CountTaskComments(ctx, projectID, task.ID)
 	if err != nil {
-		return err
+		return domain.GuardStatus{}, err
 	}
-	if count >= minCount {
-		return nil
-	}
-	msg := fmt.Sprintf("comments_min guard: task has %d comment(s); transition requires at least %d", count, minCount)
-	details := map[string]any{"count": count, "required": minCount}
-	if hint != "" {
-		msg += ". Hint: " + hint
-		details["hint"] = hint
-	}
-	e.EmitViolatedForTask(ctx, projectID, task, snap, operation, "comments_min", msg, target)
-	return domain.NewError(domain.ErrGuardViolation, msg, details)
+	return domain.GuardStatus{
+		Satisfied: count >= minCount,
+		Details:   map[string]any{"count": count, "required": minCount},
+		Fix:       commentFix(ctx, task.ID, "", "<note>"),
+		Message:   fmt.Sprintf("comments_min guard: task has %d comment(s); transition requires at least %d", count, minCount),
+	}, nil
 }
 
-func (e *Evaluator) checkCommentsTagged(ctx context.Context, projectID int64, task domain.Task, tag string, minCount int, hint, operation string, target map[string]any, snap *config.Snapshot) error {
+func (e *Evaluator) checkCommentsTagged(ctx context.Context, projectID int64, task domain.Task, tag string, minCount int) (domain.GuardStatus, error) {
 	if minCount < 1 {
 		minCount = 1
 	}
 	count, err := e.repo.CountTaskCommentsTagged(ctx, projectID, task.ID, tag)
 	if err != nil {
-		return err
+		return domain.GuardStatus{}, err
 	}
-	if count >= minCount {
-		return nil
-	}
-	msg := fmt.Sprintf("comments_tagged guard: task has %d comment(s) tagged %q; transition requires at least %d", count, tag, minCount)
-	details := map[string]any{"count": count, "required": minCount, "tag": tag}
-	if hint != "" {
-		msg += ". Hint: " + hint
-		details["hint"] = hint
-	}
-	e.EmitViolatedForTask(ctx, projectID, task, snap, operation, "comments_tagged", msg, target)
-	return domain.NewError(domain.ErrGuardViolation, msg, details)
+	return domain.GuardStatus{
+		Satisfied: count >= minCount,
+		Details:   map[string]any{"count": count, "required": minCount, "tag": tag},
+		Fix:       commentFix(ctx, task.ID, tag, "<evidence>"),
+		Message:   fmt.Sprintf("comments_tagged guard: task has %d comment(s) tagged %q; transition requires at least %d", count, tag, minCount),
+	}, nil
 }

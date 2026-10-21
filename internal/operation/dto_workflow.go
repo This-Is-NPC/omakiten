@@ -15,3 +15,27 @@ func workflowSummary(workflow domain.Workflow) contract.WorkflowSummary {
 	}
 	return out
 }
+
+// withOutgoingGuards marks the transitions leaving from with their guard
+// state and readiness; guards is keyed by destination bucket key.
+func withOutgoingGuards(summary contract.WorkflowSummary, from string, guards map[string][]domain.GuardStatus) contract.WorkflowSummary {
+	for i, transition := range summary.Transitions {
+		statuses, ok := guards[transition.To]
+		if transition.From != from || !ok {
+			continue
+		}
+		ready := guardsSatisfied(statuses)
+		summary.Transitions[i].Ready = &ready
+		summary.Transitions[i].Guards = statuses
+	}
+	return summary
+}
+
+func guardsSatisfied(statuses []domain.GuardStatus) bool {
+	for _, status := range statuses {
+		if !status.Satisfied {
+			return false
+		}
+	}
+	return true
+}

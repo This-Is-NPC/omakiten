@@ -52,6 +52,27 @@ and `persona` edit through the shared package editor. `template list` and
 Application translations and language preferences are configured through
 Omakiten itself. They do not go in these settings.
 
+### What an agent is told to do next
+
+`agent.next_step` in `settings.yaml` sets the `next_step_prompt` that
+`task continue`, `project overview`, `project resume`, `project edit`, and
+`emit` return. Every key is required:
+
+```yaml
+agent:
+  next_step:
+    task.continue: "Run /example-continue #{task_id}; the task is in {bucket}."
+    project.overview: "Pick a task and continue it."
+    project.resume: "Choose a likely next task or inspect blocked work."
+    project.edit: "Resume the project or continue a task."
+    event.emit: "Read the event back with logs."
+```
+
+In `task.continue`, `{task_id}` and `{bucket}` expand to the task's id and
+current bucket key; the other prompts are returned as written. Use the prompts
+to name the package's own commands, so every agent reading an Omakiten
+response gets the workflow's guidance.
+
 ## 3. Keep the state machine explicit
 
 This is a workflow fragment, to place in an otherwise complete package:
@@ -72,7 +93,8 @@ the creation default; the final ordered bucket represents completion. Moves
 must follow declared transitions.
 
 Task permissions cover edit and delete. Comment permissions cover create,
-edit, and delete, with scope-specific defaults. An explicit `false` blocks;
+edit, and delete, with scope-specific defaults under `defaults.comment.task`,
+`.plan`, `.project`, and `.universal`. An explicit `false` blocks;
 an omitted setting follows the configured fallback chain.
 
 ### Evidence before a move
@@ -89,6 +111,60 @@ Guards can apply to transitions and supported operations. Copy a guard from
 the selected repository to keep its argument shape correct, then change the
 condition and its actionable hint. `${{intl:KEY}}` resolves bundled translation
 text; literal hints are also available.
+
+### Evidence on a plan
+
+A workflow's `plans` block gates the life of every active plan in the project
+on comments posted to the plan itself:
+
+```yaml
+plans:
+  start:
+    guards:
+      - {type: plan_comments_tagged, tag: kickoff, hint: "Post the plan's kickoff first"}
+  progress:
+    - percent: 50
+      guards:
+        - {type: plan_comments_tagged, tag: midpoint-review}
+  complete:
+    guards:
+      - {type: plan_comments_tagged, tag: retro}
+```
+
+| Gate | What it holds back |
+| --- | --- |
+| `start` | `okt plan claim`, and any task of the plan leaving the first bucket. `okt plan assign` stays free, so a plan can be built before it starts. |
+| `progress` | A task entering the final bucket when that leaves more than `percent` of the plan's tasks done. Done is counted over the plan's active tasks at that moment. |
+| `complete` | The move of the plan's last open task into the final bucket, which completes the plan, and `okt plan edit --status done`. |
+
+`plan_comments_tagged` is the only plan guard and is valid only here; `count`
+defaults to 1. Satisfy it with a plan comment:
+
+```bash
+okt comment add --scope plan --plan release-2 -T kickoff -b "Scope agreed"
+```
+
+Plans that are done or abandoned meet no gate, and tasks outside a plan never
+do. A blocked move or claim fails like any guard, naming the stage, the plan,
+and the command that adds the missing comment; `okt move --dry-run` lists the
+plan gates beside the transition guards.
+
+Each unmet plan gate records a `guard.violated` event that carries, at the
+top level, `plan`, `plan_id`, `stage`, and, for a progress gate, `percent`,
+so a hook can react to one gate, for example by starting the plan seat
+that posts the missing comment, as in
+[running a seat for a plan](how-to-run-agent-teams.md#6-run-a-seat-for-a-plan):
+
+```yaml
+hooks:
+  - on: guard.violated
+    when: {stage: complete}
+    do: spawn
+    args: {plan_member: auditor}
+``` `okt plan show` and
+`okt plan continue` report every gate of an active plan under `gates`, each
+with `satisfied`, its `stage` and `percent` in `details`, and the `fix` while
+it is unmet.
 
 Subtask kits declare the workflow at the next task level. Parent links remain
 project-local. Changing kit or bucket identity can require rebinding existing

@@ -9,6 +9,7 @@ func commentSummary(comment domain.Comment) contract.CommentSummary {
 	s := contract.CommentSummary{
 		ID:         comment.ID,
 		TaskID:     comment.TaskID,
+		PlanID:     comment.PlanID,
 		Scope:      comment.Scope,
 		Body:       comment.Body,
 		Title:      comment.Title,

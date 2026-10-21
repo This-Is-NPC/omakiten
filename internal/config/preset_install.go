@@ -55,6 +55,9 @@ func InstallPreset(root string, p PresetPackage) (PresetInstallation, error) {
 	if err := p.validate(); err != nil {
 		return installed, err
 	}
+	if err := checkPresetRequirements(p.Manifest); err != nil {
+		return installed, err
+	}
 	if p.Manifest.Origin.Hash == "" {
 		hash, err := p.contentHash()
 		if err != nil {
@@ -129,6 +132,13 @@ func InstalledPresets(root string) ([]PresetInstallation, error) {
 
 // ActivatePreset selects a stored package after validating its complete bundle.
 func ActivatePreset(root, selector string) (PresetInstallation, error) {
+	return ActivatePresetApproved(root, selector, nil)
+}
+
+// ActivatePresetApproved selects a stored package like ActivatePreset, but
+// first passes the executables the package declares to approve; an error
+// from approve leaves the selection unchanged. A nil approve accepts.
+func ActivatePresetApproved(root, selector string, approve func(PresetInstallation, []string) error) (PresetInstallation, error) {
 	items, err := InstalledPresets(root)
 	if err != nil {
 		return PresetInstallation{}, err
@@ -146,9 +156,18 @@ func ActivatePreset(root, selector string) (PresetInstallation, error) {
 	if selected == nil {
 		return PresetInstallation{}, fmt.Errorf("preset %q is not installed", selector)
 	}
-	path := filepath.Join(selected.Path, filepath.FromSlash(selected.Manifest.Config))
-	if _, err := LoadBundle(path); err != nil {
+	if err := checkPresetRequirements(selected.Manifest); err != nil {
 		return PresetInstallation{}, err
+	}
+	path := filepath.Join(selected.Path, filepath.FromSlash(selected.Manifest.Config))
+	bundle, err := LoadBundle(path)
+	if err != nil {
+		return PresetInstallation{}, err
+	}
+	if approve != nil {
+		if err := approve(*selected, PresetExecutables(bundle)); err != nil {
+			return PresetInstallation{}, err
+		}
 	}
 	if err := writePresetSelection(root, path); err != nil {
 		return PresetInstallation{}, err

@@ -15,7 +15,8 @@ permissions, and guards. Follow the user's request and repository rules.
 
 Start with `okt projects list`, then use `--project <slug>` consistently.
 Read `okt --project <slug> project resume`; for an existing task, also read
-`okt --project <slug> task continue <id>`. Use `okt search` for prior solutions.
+`okt --project <slug> task continue <id>`. Use `okt search` for prior solutions
+and `okt error list --tag <tag>` for recorded failures carrying a tag.
 Register a project with `okt init` when the user asks to track it.
 
 Use `okt --help` and `okt <command> --help` to discover installed capabilities
@@ -27,6 +28,7 @@ instructions; do not assume that an older binary has a newer operation.
 | Tasks, comments, plans, assignment, dependencies | `task`, `comment`, `plan`, `assign`, `depend` |
 | Failures, reusable fixes, progress | `error`, `solution`, `progress` |
 | Active policy, configuration, events | `workflow show`, `config`, `preset`, `logs` |
+| Agents run for a task or a plan | `agent spawn`, `agent show`, `team show`, `team close`, `wait`, `logs --session` |
 | A moved project directory | `project relocate --help`; preserve the existing project id |
 | Local HTTP access or outside events | `serve --help`, `emit --help` |
 | Documentation attached to a project | `knowledge list`, `knowledge search`, `knowledge show` |
@@ -45,8 +47,11 @@ sequence, or parameters from another project.
 
 Use `okt task` to create and inspect work, `okt plan` to organize tasks into
 waves, `okt comment add` to record evidence, and `okt move` to advance work.
-Respect guards and record a handoff with the state, validation, blocker, and
-next action before leaving active work. Use project comments for shared state.
+Respect guards: `okt move <id> --to <bucket> --dry-run` and the `workflow`
+block of `task continue` show each guard's state, and an unmet guard carries a
+`fix` command; replace its placeholder body with real evidence. Record a
+handoff with the state, validation, blocker, and next action before leaving
+active work. Use project comments for shared state.
 
 Tasks and plans can be imported or exported as OKF Markdown with `okt task`
 and `okt plan`; inspect each command's help for file, preview, and overwrite
@@ -110,6 +115,25 @@ A denied move emits `guard.violated`, so it cannot test a `task.moved` hook.
 Check event logging, broadcast, hook gates, and filters if no action appears.
 Keep actions short: one-shot CLI calls wait up to five seconds for hooks.
 Use an isolated `OMAKITEN_HOME` or the repository's `dev_env` for experiments.
+
+## Work beside agent teams
+
+A move into a bucket that declares an agent team returns it in `data.team`.
+`started` means headless agents are already working in the background: keep
+talking with the user and follow them with the `follow` commands; each one
+runs once and exits; a `waiting` seat starts later, from a workflow hook.
+`unconfigured` means no harness was chosen; tell the
+user what `error` says to set. `suggested` lists the `spawn` command to run
+if the user wants the team. Started as a seat yourself, follow the team
+section of your prompt: do the work, publish once with `-T review-<key>`,
+leave questions with `-T to-<key>`, wait with `okt wait`, then exit. Run a
+failed seat again with `okt agent spawn --team <T> --member <key>`; a team
+closes by itself when its task leaves the bucket, or with
+`okt team close <T>`. A plan gate whose comment a plan seat posts, such as
+an auditor's `review-auditor`, starts that seat from a hook when the gate
+holds your move: let the seat post it and retry the move, rather than
+posting it yourself. Run a plan seat again with
+`okt agent spawn --plan <slug> --member <key>`.
 
 ## Read results
 

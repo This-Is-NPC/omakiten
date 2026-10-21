@@ -12,6 +12,7 @@ import (
 // subtasksRepo lets the subtasks_complete tests inject the response of
 // FirstChildNotInBucket without standing up a sqlite store.
 type subtasksRepo struct {
+	noPlanGates
 	openChild     domain.Task
 	hasOpen       bool
 	finalBucketID int64

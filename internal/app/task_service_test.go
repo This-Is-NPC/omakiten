@@ -91,13 +91,13 @@ func TestTaskServiceMove(t *testing.T) {
 
 	service := NewTaskServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot())
 
-	_, err := service.Move(ctx, project.Context(), 0, "dev")
+	_, _, err := service.Move(ctx, project.Context(), 0, "dev")
 	if err == nil {
 		t.Fatal("Move() error = nil, want validation error")
 	}
 	assertCodedError(t, err, domain.ErrValidation)
 
-	_, err = service.Move(ctx, project.Context(), 1, "")
+	_, _, err = service.Move(ctx, project.Context(), 1, "")
 	if err == nil {
 		t.Fatal("Move() error = nil, want validation error")
 	}
@@ -108,7 +108,7 @@ func TestTaskServiceMove(t *testing.T) {
 		t.Fatalf("Add() error = %v", err)
 	}
 
-	moved, err := service.Move(ctx, project.Context(), task.ID, "dev")
+	moved, _, err := service.Move(ctx, project.Context(), task.ID, "dev")
 	if err != nil {
 		t.Fatalf("Move() error = %v", err)
 	}
@@ -124,13 +124,13 @@ func TestTaskServiceEdit(t *testing.T) {
 
 	service := NewTaskServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot())
 
-	_, err := service.Edit(ctx, project.Context(), 0, domain.TaskUpdate{})
+	_, _, err := service.Edit(ctx, project.Context(), 0, domain.TaskUpdate{})
 	if err == nil {
 		t.Fatal("Edit() error = nil, want validation error")
 	}
 	assertCodedError(t, err, domain.ErrValidation)
 
-	_, err = service.Edit(ctx, project.Context(), 1, domain.TaskUpdate{})
+	_, _, err = service.Edit(ctx, project.Context(), 1, domain.TaskUpdate{})
 	if err == nil {
 		t.Fatal("Edit() no changes error = nil, want validation error")
 	}
@@ -142,7 +142,7 @@ func TestTaskServiceEdit(t *testing.T) {
 	}
 
 	title := ""
-	_, err = service.Edit(ctx, project.Context(), task.ID, domain.TaskUpdate{Title: &title})
+	_, _, err = service.Edit(ctx, project.Context(), task.ID, domain.TaskUpdate{Title: &title})
 	if err == nil {
 		t.Fatal("Edit() empty title error = nil, want validation error")
 	}
@@ -150,7 +150,7 @@ func TestTaskServiceEdit(t *testing.T) {
 
 	// Priority id 999 is not in the registered table → must reject.
 	invalidPriority := domain.Priority(999)
-	_, err = service.Edit(ctx, project.Context(), task.ID, domain.TaskUpdate{Priority: &invalidPriority})
+	_, _, err = service.Edit(ctx, project.Context(), task.ID, domain.TaskUpdate{Priority: &invalidPriority})
 	if err == nil {
 		t.Fatal("Edit() invalid priority error = nil, want validation error")
 	}
@@ -160,7 +160,7 @@ func TestTaskServiceEdit(t *testing.T) {
 	newTitle := "Updated"
 	newDesc := "Desc"
 	normalPriority := domain.Priority(2)
-	edited, err := service.Edit(ctx, project.Context(), task.ID, domain.TaskUpdate{
+	edited, _, err := service.Edit(ctx, project.Context(), task.ID, domain.TaskUpdate{
 		Title:       &newTitle,
 		Description: &newDesc,
 		Priority:    &normalPriority,

@@ -41,14 +41,27 @@ or database. `config language show` reports the supported codes.
 ## A move reports `guard_violation`
 
 ```bash
+okt --project example move 42 --to review --dry-run
 okt --project example task continue 42
 okt --project example comment list 42
-okt --project example workflow show
 ```
+
+`move --dry-run` lists every guard on the transition with `satisfied`, its
+counts in `details`, and the hint and `fix` of each unmet one, without moving
+the task or recording `guard.violated`. `task continue` attaches the same
+state, plus `ready`, to each transition leaving the task's current bucket.
 
 Read the failing guard and its hint. It may require review evidence, completed
 children, a dependency in a permitted bucket, or completion of an earlier wave.
 Record the real evidence or resolve the blocker, then repeat the move.
+
+A move checks every guard and records one `guard.violated` per unmet guard.
+The failure lists them all in `details.unmet`; the top-level details describe
+the first: the guard in `guard_type` and the task in `task_id`.
+When one command addresses the gap, `fix` carries it: `okt comment add` with
+the required tag for comment guards, or `okt task continue` on the open
+sub-task or pending blocker. Replace the placeholder body with real evidence.
+`wave_gate` has no `fix`; finish the earlier waves.
 
 An operation permission failure is different: the workflow can forbid editing
 or deleting in a particular bucket. Changing the request's surface does not

@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 
+	"omakiten/internal/agentlaunch"
 	"omakiten/internal/app"
 	"omakiten/internal/config"
 	"omakiten/internal/contract"
@@ -36,6 +37,10 @@ type ServiceSettings struct {
 
 	NextWorkLimit int
 
+	// NextStep is the next_step_prompt per operation. Sourced from
+	// config.agent.next_step (validator-required non-empty).
+	NextStep NextStepPrompts
+
 	// SimilarTaskLimit caps how many similar-task hints flow into
 	// tasks.create_intent / tasks.continue. Sourced from
 	// config.agent.similar_task_limit (validator-required > 0).
@@ -48,6 +53,16 @@ type ServiceSettings struct {
 	// per call and writes these values via SetSolutionsDefaults.
 	SolutionsTopLimitDefault int
 	SolutionsTopLimitMax     int
+}
+
+// NextStepPrompts mirrors config.NextStepPrompts. TaskContinue expands
+// `{task_id}` and `{bucket}`.
+type NextStepPrompts struct {
+	TaskContinue    string
+	ProjectOverview string
+	ProjectResume   string
+	ProjectEdit     string
+	EventEmit       string
 }
 
 type Repository interface {
@@ -65,6 +80,8 @@ type Repository interface {
 	app.OrphanRepository
 	app.SearchRepository
 	app.PlanRepository
+	app.AgentRepository
+	app.ChangeFeed
 }
 
 // TaskTemplateLookup returns the active task template scaffold to embed in
@@ -82,6 +99,8 @@ type TemplateCatalog func() []contract.TemplateSummary
 
 type Service struct {
 	repo               Repository
+	launcher           AgentLauncher
+	spawnBlocked       string
 	selector           contract.ProjectSelector
 	taskTemplateLookup TaskTemplateLookup
 	templateCatalog    TemplateCatalog
@@ -150,6 +169,7 @@ type entityRepos struct {
 func NewService(repo Repository, selector contract.ProjectSelector) *Service {
 	return &Service{
 		repo:     repo,
+		launcher: agentlaunch.New(),
 		selector: selector,
 		now:      time.Now,
 		// settings are zero-valued; SetSettings wires the actual knobs.

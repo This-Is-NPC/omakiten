@@ -2,6 +2,8 @@ package contract
 
 import (
 	"encoding/json"
+
+	"omakiten/internal/domain"
 )
 
 // OptionalInt64 is a tri-state JSON input value for an integer field.
@@ -76,6 +78,8 @@ type ShowTaskResponse struct {
 	Task         TaskSummary         `json:"task"`
 	Dependencies []DependencySummary `json:"dependencies,omitempty"`
 	Comments     []CommentSummary    `json:"comments,omitempty"`
+	// Team is the task's active agent team, when it has one.
+	Team *domain.AgentTeam `json:"team,omitempty"`
 }
 
 type ContinueTaskResponse struct {
@@ -90,6 +94,8 @@ type ContinueTaskResponse struct {
 	// composed command. Empty when unset — consumers treat empty as
 	// "no directive in effect".
 	AgentOutputLanguage string `json:"agent_output_language,omitempty"`
+	// Team is the task's active agent team, when it has one.
+	Team *domain.AgentTeam `json:"team,omitempty"`
 }
 
 type ListTasksInput struct {
@@ -146,11 +152,24 @@ type MoveTaskInput struct {
 	ProjectSelector
 	TaskID    int64  `json:"task_id"`
 	BucketKey string `json:"bucket_key"`
+	// DryRun reports the guards the move would face without moving the
+	// task or recording events.
+	DryRun bool `json:"dry_run,omitempty"`
+	// NoSpawn reports the destination's automatic agent team as skipped
+	// instead of opening it.
+	NoSpawn bool `json:"no_spawn,omitempty"`
 }
 
+// MoveTaskResponse carries the moved task, or on a dry run the unchanged
+// task with Ready and the state of every guard on the transition.
 type MoveTaskResponse struct {
-	Project ProjectSummary `json:"project"`
-	Task    TaskSummary    `json:"task"`
+	Project ProjectSummary       `json:"project"`
+	Task    TaskSummary          `json:"task"`
+	DryRun  bool                 `json:"dry_run,omitempty"`
+	Ready   *bool                `json:"ready,omitempty"`
+	Guards  []domain.GuardStatus `json:"guards,omitempty"`
+	// Team reports the destination bucket's agent team, when it declares one.
+	Team *domain.TeamOutcome `json:"team,omitempty"`
 }
 
 type DeleteTaskInput struct {

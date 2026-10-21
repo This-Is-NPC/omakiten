@@ -63,9 +63,14 @@ func loadBundlePlanSources(path string) (Bundle, *planSourceReader, error) {
 	if err != nil {
 		return Bundle{}, nil, err
 	}
-	physical, _, err := resolvePresetSelectionRaw(path, selection)
+	physical, selected, err := resolvePresetSelectionRaw(path, selection)
 	if err != nil {
 		return Bundle{}, nil, err
+	}
+	if selected {
+		if err := checkSelectedPresetRequirements(physical); err != nil {
+			return Bundle{}, nil, err
+		}
 	}
 
 	raw, err := reader.readFile(physical, MaxWiringFileBytes)
@@ -122,9 +127,14 @@ func (r *planSourceReader) listFiles(dir string, suffixes []string, isCustom boo
 }
 
 func loadBundle(path string, opts loadBundleOptions) (Bundle, error) {
-	physical, _, err := ResolvePresetSelection(path)
+	physical, selected, err := ResolvePresetSelection(path)
 	if err != nil {
 		return Bundle{}, err
+	}
+	if selected {
+		if err := checkSelectedPresetRequirements(physical); err != nil {
+			return Bundle{}, err
+		}
 	}
 	raw, err := readFileBounded(physical, MaxWiringFileBytes)
 	if err != nil {
@@ -172,6 +182,15 @@ func finishBundleLoad(path, rootDir string, wired wiring, importSources []string
 	if err != nil {
 		return Bundle{}, err
 	}
+	if wired.Config.Agents != nil {
+		if err := validateAgentAdapters("config.agents", *wired.Config.Agents); err != nil {
+			return Bundle{}, err
+		}
+	}
+	adapters, err := mergeAgentAdapters(preferences.Agents, wired.Config.Agents)
+	if err != nil {
+		return Bundle{}, err
+	}
 	bundle := Bundle{
 		Version:          wired.Version,
 		Kit:              wired.Kit,
@@ -182,6 +201,7 @@ func finishBundleLoad(path, rootDir string, wired wiring, importSources []string
 		Notifications:    entities.notifications,
 		Languages:        entities.languages,
 		LanguageSettings: preferences.Languages,
+		AgentAdapters:    adapters,
 		ActiveTheme:      theme,
 		ActiveThemePath:  themePath,
 		ActiveThemeErr:   themeErr,

@@ -2,7 +2,7 @@ package operation
 
 import (
 	"context"
-	"fmt"
+	"strconv"
 	"strings"
 
 	"omakiten/internal/app"
@@ -29,20 +29,29 @@ func (s *Service) ContinueTask(ctx context.Context, input contract.ContinueTaskI
 	}
 	var workflowSum contract.WorkflowSummary
 	if includeWorkflow {
-		workflowSum = workflowSummary(s.snapshot.Workflow())
+		guards, err := app.NewTaskServiceFromStore(s.repo, s.registry, s.snapshot).OutgoingGuards(ctx, detail.project, detail.task)
+		if err != nil {
+			return contract.ContinueTaskResponse{}, err
+		}
+		workflowSum = withOutgoingGuards(workflowSummary(s.snapshot.For(detail.task).Workflow()), detail.task.BucketKey, guards)
 	}
 
 	var agentOutputLang string
 	if s.snapshot != nil {
 		agentOutputLang = s.snapshot.AgentOutputLanguage()
 	}
+	team, err := s.activeTeam(ctx, detail.project, detail.task.ID)
+	if err != nil {
+		return contract.ContinueTaskResponse{}, err
+	}
 	return contract.ContinueTaskResponse{
+		Team:                team,
 		Project:             projectSummary(detail.project),
 		Task:                taskSummary(detail.task, s.registry),
 		Workflow:            workflowSum,
 		Dependencies:        dependencySummaries(detail.dependencies),
 		Comments:            s.shapedRecentComments(detail.comments),
-		NextStepPrompt:      fmt.Sprintf("Continue task #%d from this checkpoint, then record material progress with `progress.record`.", detail.task.ID),
+		NextStepPrompt:      strings.NewReplacer("{task_id}", strconv.FormatInt(detail.task.ID, 10), "{bucket}", detail.task.BucketKey).Replace(s.settings.NextStep.TaskContinue),
 		AgentOutputLanguage: agentOutputLang,
 	}, nil
 }
@@ -56,11 +65,16 @@ func (s *Service) ShowTask(ctx context.Context, input contract.ShowTaskInput) (c
 	if err != nil {
 		return contract.ShowTaskResponse{}, err
 	}
+	team, err := s.activeTeam(ctx, detail.project, detail.task.ID)
+	if err != nil {
+		return contract.ShowTaskResponse{}, err
+	}
 	return contract.ShowTaskResponse{
 		Project:      projectSummary(detail.project),
 		Task:         taskSummary(detail.task, s.registry),
 		Dependencies: dependencySummaries(detail.dependencies),
 		Comments:     commentSummaries(detail.comments),
+		Team:         team,
 	}, nil
 }
 
@@ -276,7 +290,7 @@ func (s *Service) EditTask(ctx context.Context, input contract.EditTaskInput) (c
 		update.ChangeParent = true
 		update.NewParentID = input.ParentID.Value
 	}
-	task, err := app.NewTaskServiceFromStore(s.repo, s.registry, s.snapshot).Edit(ctx, project, input.TaskID, update)
+	task, _, err := s.taskService(false).Edit(ctx, project, input.TaskID, update)
 	if err != nil {
 		return contract.EditTaskResponse{}, err
 	}
@@ -291,11 +305,20 @@ func (s *Service) MoveTask(ctx context.Context, input contract.MoveTaskInput) (c
 	if err != nil {
 		return contract.MoveTaskResponse{}, err
 	}
-	task, err := app.NewTaskServiceFromStore(s.repo, s.registry, s.snapshot).Move(ctx, project, input.TaskID, input.BucketKey)
+	tasks := s.taskService(input.NoSpawn)
+	if input.DryRun {
+		task, statuses, team, err := tasks.PreviewMove(ctx, project, input.TaskID, input.BucketKey)
+		if err != nil {
+			return contract.MoveTaskResponse{}, err
+		}
+		ready := guardsSatisfied(statuses)
+		return contract.MoveTaskResponse{Project: projectSummary(project), Task: taskSummary(task, s.registry), DryRun: true, Ready: &ready, Guards: statuses, Team: team}, nil
+	}
+	task, team, err := tasks.Move(ctx, project, input.TaskID, input.BucketKey)
 	if err != nil {
 		return contract.MoveTaskResponse{}, err
 	}
-	return contract.MoveTaskResponse{Project: projectSummary(project), Task: taskSummary(task, s.registry)}, nil
+	return contract.MoveTaskResponse{Project: projectSummary(project), Task: taskSummary(task, s.registry), Team: team}, nil
 }
 
 func (s *Service) DeleteTask(ctx context.Context, input contract.DeleteTaskInput) (contract.DeleteTaskResponse, error) {

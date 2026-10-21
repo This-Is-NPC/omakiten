@@ -10,7 +10,7 @@ import (
 func TestCLIPresetCatalogListsRepositories(t *testing.T) {
 	db := filepath.Join(t.TempDir(), "omakiten.db")
 	output := runCLI(t, db, filepath.Join(t.TempDir(), "config.yaml"), "preset", "catalog")
-	for _, want := range []string{"okt-workflow-omakase.git", "okt-workflow-izakaya.git", "okt-workflow-kaiseki.git", "okt-workflow-shokunin.git", "Chef's choice"} {
+	for _, want := range []string{"okt-workflow-omakase.git", "okt-workflow-izakaya.git", "okt-workflow-kaiseki.git", "okt-workflow-shokunin.git", "okt-workflow-orchestra.git", "Chef's choice"} {
 		if !strings.Contains(output, want) {
 			t.Fatalf("preset catalog output missing %q: %s", want, output)
 		}

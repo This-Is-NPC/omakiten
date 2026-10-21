@@ -69,6 +69,9 @@ func (s *Service) actionHandlers() map[string]actionHandler {
 		"command.list": bindAction(func(ctx context.Context, _ struct{}) (contract.ListCommandsResponse, error) {
 			return s.ListCommands(ctx)
 		}),
+		"agent.list":           bindAction(s.ListAgents),
+		"agent.show":           bindAction(s.ShowAgent),
+		"agent.spawn":          bindAction(s.SpawnAgents),
 		"command.resolve":      bindAction(s.ResolveCommand),
 		"comment.add":          bindAction(s.AddComment),
 		"comment.delete":       bindAction(s.DeleteComment),
@@ -77,6 +80,7 @@ func (s *Service) actionHandlers() map[string]actionHandler {
 		"dependency.add":       bindAction(s.AddDependency),
 		"dependency.list":      bindAction(s.ListDependencies),
 		"dependency.remove":    bindAction(s.RemoveDependency),
+		"error.list":           bindAction(s.ListErrors),
 		"error.record":         bindAction(s.RecordError),
 		"insights.summary":     bindAction(s.InsightsSummary),
 		"law.get":              bindAction(s.ShowLaw),
@@ -128,8 +132,11 @@ func (s *Service) actionHandlers() map[string]actionHandler {
 		"task.transition":    bindAction(s.MoveTask),
 		"task.unarchive":     bindAction(s.UnarchiveTask),
 		"task_activity.list": bindAction(s.ListTaskActivity),
+		"team.close":         bindAction(s.CloseTeam),
+		"team.show":          bindAction(s.ShowTeam),
 		"template.list":      bindAction(s.ListTemplates),
 		"template.show":      bindAction(s.ShowTemplate),
+		"wait":               bindAction(s.Wait),
 		"workflow.show":      bindAction(s.ShowWorkflow),
 	}
 }

@@ -12,7 +12,7 @@ const (
 	SurfaceKindWiring      SurfaceKind = "wiring"
 
 	// CanonicalSurfaceCount is the closed size of operation.Service.
-	CanonicalSurfaceCount = 80
+	CanonicalSurfaceCount = 87
 
 	// DeniedWiringReason is the default reason token for wiring rows.
 	// Stored as an intl token; not resolved at load.
@@ -31,6 +31,9 @@ type SurfaceCensusEntry struct {
 
 // CanonicalSurfaceCensus declares the supported product and wiring operations.
 var CanonicalSurfaceCensus = []SurfaceCensusEntry{
+	{Slug: "agent.spawn", Kind: SurfaceKindProduct},
+	{Slug: "agent.list", Kind: SurfaceKindProduct},
+	{Slug: "agent.show", Kind: SurfaceKindProduct},
 	{Slug: "command.list", Kind: SurfaceKindProduct},
 	{Slug: "command.resolve", Kind: SurfaceKindProduct},
 	{Slug: "comment.add", Kind: SurfaceKindProduct},
@@ -42,6 +45,7 @@ var CanonicalSurfaceCensus = []SurfaceCensusEntry{
 	{Slug: "dependency.add", Kind: SurfaceKindProduct},
 	{Slug: "dependency.list", Kind: SurfaceKindProduct},
 	{Slug: "dependency.remove", Kind: SurfaceKindProduct},
+	{Slug: "error.list", Kind: SurfaceKindProduct},
 	{Slug: "error.record", Kind: SurfaceKindProduct},
 	{Slug: "event.emit", Kind: SurfaceKindProduct},
 	{Slug: "insights.summary", Kind: SurfaceKindProduct},
@@ -99,8 +103,11 @@ var CanonicalSurfaceCensus = []SurfaceCensusEntry{
 	{Slug: "task.transition", Kind: SurfaceKindProduct},
 	{Slug: "task.unarchive", Kind: SurfaceKindProduct},
 	{Slug: "task_activity.list", Kind: SurfaceKindProduct},
+	{Slug: "team.close", Kind: SurfaceKindProduct},
+	{Slug: "team.show", Kind: SurfaceKindProduct},
 	{Slug: "template.list", Kind: SurfaceKindProduct},
 	{Slug: "template.show", Kind: SurfaceKindProduct},
+	{Slug: "wait", Kind: SurfaceKindProduct},
 	{Slug: "workflow.show", Kind: SurfaceKindProduct},
 	{Slug: "wiring.command_description", Kind: SurfaceKindWiring},
 	{Slug: "wiring.selector", Kind: SurfaceKindWiring},

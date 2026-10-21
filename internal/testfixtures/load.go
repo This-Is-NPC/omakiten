@@ -144,6 +144,9 @@ func mergeagentDefaults(cfg *config.Settings, kit config.Settings) {
 	if cfg.Agent.IncludeWorkflowInContinue == nil {
 		cfg.Agent.IncludeWorkflowInContinue = kit.Agent.IncludeWorkflowInContinue
 	}
+	if cfg.Agent.NextStep == (config.NextStepPrompts{}) {
+		cfg.Agent.NextStep = kit.Agent.NextStep
+	}
 }
 
 func mergeTUIDefaults(cfg *config.Settings, kit config.Settings) {

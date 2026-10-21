@@ -52,10 +52,13 @@ func (o *runtimeOptions) t(key string) string {
 }
 
 type runtime struct {
-	store              *sqlite.Store
-	configPath         string
-	dbPath             string
-	repoLocalDir       string
+	store        *sqlite.Store
+	configPath   string
+	dbPath       string
+	repoLocalDir string
+	// spawnBlocked is why agents cannot be spawned from this invocation:
+	// --db and --config select a store a child agent cannot inherit.
+	spawnBlocked       string
 	bus                events.Bus
 	hooksEngine        *hooks.Engine
 	notificationAction *actions.NotificationShowAction
@@ -87,7 +90,12 @@ func (r *runtime) close() {
 // persona list+show, workflow show/orphans) go through this facade
 // rather than constructing parallel app.*Service instances.
 func (r *runtime) operationService() *operation.Service {
-	return r.ProjectRuntime().Service.ForCLI()
+	base := r.ProjectRuntime().Service
+	// Blocked on the runtime's own service, which hook actions share.
+	if r.spawnBlocked != "" {
+		base.BlockAgentSpawn(r.spawnBlocked)
+	}
+	return base.ForCLI()
 }
 
 // activeRegistry returns the EnumRegistry from the BundleCache's active
@@ -127,6 +135,7 @@ type Runners struct {
 
 func NewRootCommand(version string, runners Runners) *cobra.Command {
 	ensurePkgCatalog()
+	config.SetRunningVersion(version)
 	opts := &runtimeOptions{catalog: pkgCatalog}
 	cmd := &cobra.Command{
 		Use:           "okt",
@@ -175,6 +184,7 @@ func addRootCommands(cmd *cobra.Command, opts *runtimeOptions, version string, r
 	cmd.AddCommand(newTaskCommand(opts))
 	cmd.AddCommand(newMetricsCommand(opts))
 	cmd.AddCommand(newErrorCommand(opts))
+	cmd.AddCommand(newAgentCommand(opts), newTeamCommand(opts), newWaitCommand(opts))
 	cmd.AddCommand(newSolutionCommand(opts))
 	cmd.AddCommand(newProjectCommand(opts))
 	cmd.AddCommand(newProjectsCommand(opts))
@@ -225,6 +235,9 @@ func (o *runtimeOptions) open(ctx context.Context, materializeConfig bool) (*run
 	}
 
 	rt := &runtime{store: store, configPath: configPath, dbPath: dbPath, repoLocalDir: repoLocalDir}
+	if o.dbPath != "" || o.configPath != "" {
+		rt.spawnBlocked = o.t("cli.agent.spawn.store_flags")
+	}
 
 	if materializeConfig {
 		if err := rt.materialize(ctx, o, cs); err != nil {

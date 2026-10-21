@@ -7,6 +7,7 @@ type Workflow struct {
 	Buckets     []Bucket             `json:"buckets,omitempty"`
 	Transitions []WorkflowTransition `json:"transitions,omitempty"`
 	Operations  WorkflowOperations   `json:"operations,omitempty"`
+	Plans       WorkflowPlans        `json:"plans,omitempty"`
 	// Defaults declares the workflow-level fallback for task/comment edit
 	// and delete. A nil pointer means "no rule declared at the workflow
 	// level" — bucket overrides are still consulted, and when neither
@@ -66,6 +67,7 @@ type Bucket struct {
 	Name        string             `json:"name"`
 	Position    int                `json:"position"`
 	Permissions *BucketPermissions `json:"permissions,omitempty"`
+	Agents      *BucketAgents      `json:"agents,omitempty"`
 }
 
 // BucketPermissions wires task/comment CRUD policy at the bucket level.
@@ -87,12 +89,13 @@ type EntityPermission struct {
 	Edit   *CommentOpPolicy `json:"edit,omitempty"`
 	Delete *CommentOpPolicy `json:"delete,omitempty"`
 	// Scopes carries optional per-scope sub-blocks for the comment entity
-	// only (task|project|universal). Task scope reuses the flat Edit/Delete
+	// only (task|plan|project|universal). Task scope reuses the flat Edit/Delete
 	// fields for backward-compat: a flat `comment: {edit,delete}` resolves
-	// as the task scope. Project/Universal comments have no bucket, so they
+	// as the task scope. Plan/Project/Universal comments have no bucket, so they
 	// resolve purely at the workflow-defaults level via these sub-blocks.
 	// nil sub-blocks fall through to the implicit `true`.
 	Task      *EntityPermission `json:"task,omitempty"`
+	Plan      *EntityPermission `json:"plan,omitempty"`
 	Project   *EntityPermission `json:"project,omitempty"`
 	Universal *EntityPermission `json:"universal,omitempty"`
 }
@@ -118,6 +121,48 @@ type WorkflowOperations struct {
 
 type OperationPolicy struct {
 	Guards []TransitionGuard `json:"guards,omitempty"`
+}
+
+// GuardPlanCommentsTagged is the plan guard type: the plan carries at least
+// Count (default 1) comments tagged Tag. It is valid only inside WorkflowPlans.
+const GuardPlanCommentsTagged = "plan_comments_tagged"
+
+// PlanStage names a point in a plan's life that WorkflowPlans can gate.
+type PlanStage string
+
+const (
+	PlanStageStart    PlanStage = "start"
+	PlanStageProgress PlanStage = "progress"
+	PlanStageComplete PlanStage = "complete"
+)
+
+// WorkflowPlans declares the guards an active plan must meet to start (a
+// claim, or a task of the plan leaving the first bucket), to pass each
+// Progress share of done tasks, and to complete (the move of its last open
+// task into the final bucket, or an edit to done), and the Agents seats
+// that run for a plan rather than for a task.
+type WorkflowPlans struct {
+	Start    OperationPolicy    `json:"start,omitempty"`
+	Progress []PlanProgressGate `json:"progress,omitempty"`
+	Complete OperationPolicy    `json:"complete,omitempty"`
+	Agents   []AgentRole        `json:"agents,omitempty"`
+}
+
+// Agent returns the plan seat key names.
+func (p WorkflowPlans) Agent(key string) (AgentRole, bool) {
+	for _, role := range p.Agents {
+		if role.Key == key {
+			return role, true
+		}
+	}
+	return AgentRole{}, false
+}
+
+// PlanProgressGate gates the moves that leave more than Percent of a plan's
+// tasks done.
+type PlanProgressGate struct {
+	Percent int               `json:"percent"`
+	Guards  []TransitionGuard `json:"guards,omitempty"`
 }
 
 // ResolveTaskPermission returns the effective task-level (edit, delete)
@@ -231,8 +276,8 @@ func ResolveCommentScopePolicy(defaults *WorkflowDefaults, scope, op string) Com
 		comment = defaults.Comment
 	}
 	switch scope {
-	case CommentScopeProject:
-		return resolveCommentPolicy(scopeOpField(scopeBlock(comment, CommentScopeProject), op))
+	case CommentScopePlan, CommentScopeProject:
+		return resolveCommentPolicy(scopeOpField(scopeBlock(comment, scope), op))
 	case CommentScopeUniversal:
 		return resolveCommentPolicy(scopeOpField(scopeBlock(comment, CommentScopeUniversal), op))
 	default: // task scope (also the implicit/empty fallback)
@@ -253,6 +298,8 @@ func scopeBlock(comment *EntityPermission, scope string) *EntityPermission {
 	switch scope {
 	case CommentScopeTask:
 		return comment.Task
+	case CommentScopePlan:
+		return comment.Plan
 	case CommentScopeProject:
 		return comment.Project
 	case CommentScopeUniversal:
@@ -423,16 +470,26 @@ func entityField(task, comment *EntityPermission, f permField) *CommentOpPolicy 
 // bucket name. Returns "" when the workflow has no buckets so callers
 // can fall back to a degraded count.
 func (w Workflow) FinalBucketKey() string {
+	_, final, _ := w.EdgeBuckets()
+	return final.Key
+}
+
+// EdgeBuckets returns the lowest-position (first) and highest-position
+// (final) buckets. ok is false when the workflow has no buckets.
+func (w Workflow) EdgeBuckets() (first, final Bucket, ok bool) {
 	if len(w.Buckets) == 0 {
-		return ""
+		return Bucket{}, Bucket{}, false
 	}
-	final := w.Buckets[0]
+	first, final = w.Buckets[0], w.Buckets[0]
 	for _, b := range w.Buckets {
+		if b.Position < first.Position {
+			first = b
+		}
 		if b.Position > final.Position {
 			final = b
 		}
 	}
-	return final.Key
+	return first, final, true
 }
 
 type WorkflowTransition struct {

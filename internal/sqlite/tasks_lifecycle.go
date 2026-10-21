@@ -55,11 +55,12 @@ func (s *Store) HardDeleteTask(ctx context.Context, projectID, taskID int64, buc
 
 	var event domain.Event
 	if s.shouldLogEvent(projectID, domain.EventTypeTaskRemoved) {
+		source, entrypoint, agentModel, agentSessionID := agentAttribution(ctx)
 		if err := tx.QueryRowContext(ctx, `
-INSERT INTO events(entity_type, project_id, event_type, body, payload)
-VALUES ('system', ?, ?, '', ?)
+INSERT INTO events(entity_type, project_id, event_type, body, payload, source, entrypoint, agent_model, agent_session_id)
+VALUES ('system', ?, ?, '', ?, ?, ?, ?, ?)
 RETURNING id, entity_type, COALESCE(entity_id, 0), project_id, event_type, body, payload, created_at
-`, projectID, domain.EventTypeTaskRemoved, payload).Scan(
+`, projectID, domain.EventTypeTaskRemoved, payload, source, entrypoint, agentModel, agentSessionID).Scan(
 			&event.ID, &event.EntityType, &event.EntityID, &event.ProjectID,
 			&event.EventType, &event.Body, &event.Payload, &event.CreatedAt,
 		); err != nil {

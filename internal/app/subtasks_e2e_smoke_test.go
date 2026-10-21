@@ -70,7 +70,7 @@ func addSubtask(t *testing.T, ctx context.Context, service *TaskService, project
 }
 
 func assertSubtasksGuard(t *testing.T, ctx context.Context, service *TaskService, project domain.ProjectContext, parentID int64, children []domain.Task) {
-	_, err := service.Move(ctx, project, parentID, "review")
+	_, _, err := service.Move(ctx, project, parentID, "review")
 	if err == nil {
 		t.Fatal("Move(parent dev→review) error = nil, want guard violation")
 	}
@@ -95,17 +95,17 @@ func walkTasksToDone(t *testing.T, ctx context.Context, service *TaskService, pr
 
 func walkTaskToDone(t *testing.T, ctx context.Context, service *TaskService, project domain.ProjectContext, taskID int64, label string) {
 	for _, bucket := range []string{"dev", "review", "done"} {
-		if _, err := service.Move(ctx, project, taskID, bucket); err != nil {
+		if _, _, err := service.Move(ctx, project, taskID, bucket); err != nil {
 			t.Fatalf("Move(%s -> %s) = %v", label, bucket, err)
 		}
 	}
 }
 
 func closeParent(t *testing.T, ctx context.Context, service *TaskService, project domain.ProjectContext, parentID int64) {
-	if _, err := service.Move(ctx, project, parentID, "review"); err != nil {
+	if _, _, err := service.Move(ctx, project, parentID, "review"); err != nil {
 		t.Fatalf("Move(parent dev→review) after children done = %v", err)
 	}
-	if _, err := service.Move(ctx, project, parentID, "done"); err != nil {
+	if _, _, err := service.Move(ctx, project, parentID, "done"); err != nil {
 		t.Fatalf("Move(parent review→done) = %v", err)
 	}
 }
@@ -143,10 +143,10 @@ func TestSubtasksCompleteUsesSubtaskKitFinalBucket(t *testing.T) {
 	if child.BucketKey != "dev" {
 		t.Fatalf("child.BucketKey = %q, want sub-kit first bucket dev", child.BucketKey)
 	}
-	if _, err := service.Move(ctx, project.Context(), child.ID, "done"); err != nil {
+	if _, _, err := service.Move(ctx, project.Context(), child.ID, "done"); err != nil {
 		t.Fatalf("Move(child dev->done in sub-kit) = %v", err)
 	}
-	if _, err := service.Move(ctx, project.Context(), parent.ID, "review"); err != nil {
+	if _, _, err := service.Move(ctx, project.Context(), parent.ID, "review"); err != nil {
 		t.Fatalf("Move(parent dev->review) after child reached sub-kit done = %v", err)
 	}
 }

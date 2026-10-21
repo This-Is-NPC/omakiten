@@ -58,6 +58,13 @@ func applyTestBundle() config.Bundle {
 				IncludeWorkflowInContinue: &tru,
 				NextWorkLimit:             5,
 				SimilarTaskLimit:          5,
+				NextStep: config.NextStepPrompts{
+					TaskContinue:    "Continue task #{task_id}.",
+					ProjectOverview: "Continue a task.",
+					ProjectResume:   "Choose a task.",
+					ProjectEdit:     "Resume the project.",
+					EventEmit:       "Read the event back.",
+				},
 			},
 			TUI:              config.TUISettings{TokenBadge: config.TokenBadgeThresholds{YellowAt: 150, RedAt: 400}},
 			TemplateDefaults: []string{"task"},

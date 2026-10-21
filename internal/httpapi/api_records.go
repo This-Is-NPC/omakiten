@@ -10,6 +10,7 @@ import (
 // RecordOperations records errors, their solutions, and task progress.
 type RecordOperations interface {
 	RecordError(ctx context.Context, input contract.RecordErrorInput) (contract.ErrorRecordResponse, error)
+	ListErrors(ctx context.Context, input contract.ListErrorsInput) (contract.ErrorsResponse, error)
 	AddSolution(ctx context.Context, input contract.AddSolutionInput) (contract.SolutionResponse, error)
 	ConfirmSolution(ctx context.Context, input contract.ConfirmSolutionInput) (contract.SolutionResponse, error)
 	ListTopSolutions(ctx context.Context, input contract.ListTopSolutionsInput) (contract.TopSolutionsResponse, error)
@@ -44,11 +45,17 @@ type ProgressBody struct {
 	Priority     *string `json:"priority,omitempty"`
 	MoveToBucket string  `json:"move_to_bucket,omitempty"`
 	Comment      string  `json:"comment,omitempty"`
+	// NoSpawn reports the destination's automatic agent team as skipped.
+	NoSpawn bool `json:"no_spawn,omitempty"`
 }
 
 func (s *Server) recordRoutes() []route {
 	return []route{
 		command("recordError", http.MethodPost, projectPath+"/errors", "error.record", "Record an error met while working.", []param{projectParam}, s.recordError),
+		query("listErrors", http.MethodGet, projectPath+"/errors", "error.list", "A project's errors, newest first.", []param{
+			projectParam,
+			queryParam("tag", "Keep only errors carrying this tag.", stringSchema),
+		}, s.listErrors),
 		command("addSolution", http.MethodPost, projectPath+"/errors/{error}/solutions", "solution.add", "Add a solution to a recorded error.", []param{
 			projectParam,
 			pathParam("error", "Error id.", idSchema),
@@ -71,6 +78,14 @@ func (s *Server) recordError(r *http.Request, body ErrorBody) (contract.ErrorRec
 		return contract.ErrorRecordResponse{}, err
 	}
 	return ops.RecordError(r.Context(), contract.RecordErrorInput{ProjectSelector: selector, Description: body.Description, Context: body.Context, Tags: body.Tags})
+}
+
+func (s *Server) listErrors(r *http.Request) (contract.ErrorsResponse, error) {
+	ops, selector, err := s.project(r)
+	if err != nil {
+		return contract.ErrorsResponse{}, err
+	}
+	return ops.ListErrors(r.Context(), contract.ListErrorsInput{ProjectSelector: selector, Tag: r.URL.Query().Get("tag")})
 }
 
 func (s *Server) addSolution(r *http.Request, body SolutionBody) (contract.SolutionResponse, error) {
@@ -123,5 +138,6 @@ func (s *Server) recordProgress(r *http.Request, body ProgressBody) (contract.Re
 		MoveToBucket:    body.MoveToBucket,
 		Comment:         body.Comment,
 		AuthorType:      "human",
+		NoSpawn:         body.NoSpawn,
 	})
 }

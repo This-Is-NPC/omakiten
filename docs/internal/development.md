@@ -16,13 +16,14 @@ git config core.hooksPath scripts/hooks
 implement the jobs; mise, hooks, and CI consume those jobs. Use
 `mise tasks ls` and `mise tasks info NAME` to inspect the current tasks.
 
-The development and release toolchains use Go 1.26.9. This version fixes the
+The development and release toolchains use Go 1.26.10. This version fixes the
 October 2026 advisories affecting HTTP, TLS, MIME header parsing, HTML template
-escaping, and Windows root-directory operations. `golang.org/x/net` v0.60.0
+escaping, Windows root-directory operations, and x509 certificate verification
+([GO-2026-6809](https://pkg.go.dev/vuln/GO-2026-6809)). `golang.org/x/net` v0.60.0
 fixes the corresponding HTTP/2 implementation used by dependencies. Keep the
 Go pin in `.mise.toml` and both release workflow jobs aligned; run
 `mise run vuln` after changing either the toolchain or dependency versions.
-See the [Go release notes](https://go.dev/doc/devel/release#go1.26.9) and
+See the [Go release notes](https://go.dev/doc/devel/release#go1.26.10) and
 [HTTP/2 advisory](https://pkg.go.dev/vuln/GO-2026-6617).
 
 After upgrading from Go 1.25, rebuild an existing scanner installation with

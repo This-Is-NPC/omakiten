@@ -10,4 +10,4 @@ laws:
 **Production-grade gaps** — what the spike DOESN'T cover yet:
 - <error handling, observability, scale, security, …>
 
-**Suggested followup** — <new task title / scope / preset suited (omakase / kaiseki / shokunin)>
+**Suggested followup** — <new task title / scope / preset suited (omakase / izakaya / kaiseki / shokunin / orchestra)>

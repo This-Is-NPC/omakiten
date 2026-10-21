@@ -59,6 +59,7 @@ func toDomainWorkflow(wf Workflow) domain.Workflow {
 			Delete:    domain.OperationPolicy{Guards: toDomainGuards(wf.Operations.Delete.Guards, nil)},
 			Unarchive: domain.OperationPolicy{Guards: toDomainGuards(wf.Operations.Unarchive.Guards, nil)},
 		},
+		Plans: toDomainWorkflowPlans(wf.Plans),
 	}
 	if wf.Defaults != nil {
 		out.Defaults = &domain.WorkflowDefaults{
@@ -76,6 +77,7 @@ func toDomainWorkflow(wf Workflow) domain.Workflow {
 			Name:        b.Name,
 			Position:    b.Position,
 			Permissions: toDomainBucketPerms(b.Permissions),
+			Agents:      toDomainBucketAgents(b.Agents),
 		})
 	}
 
@@ -117,6 +119,20 @@ func toDomainGuards(in []TransitionGuard, _ map[string]Bucket) []domain.Transiti
 	return out
 }
 
+func toDomainWorkflowPlans(in WorkflowPlans) domain.WorkflowPlans {
+	out := domain.WorkflowPlans{
+		Start:    domain.OperationPolicy{Guards: toDomainGuards(in.Start.Guards, nil)},
+		Complete: domain.OperationPolicy{Guards: toDomainGuards(in.Complete.Guards, nil)},
+	}
+	for _, gate := range in.Progress {
+		out.Progress = append(out.Progress, domain.PlanProgressGate{Percent: gate.Percent, Guards: toDomainGuards(gate.Guards, nil)})
+	}
+	for _, role := range in.Agents {
+		out.Agents = append(out.Agents, toDomainRole(role))
+	}
+	return out
+}
+
 func toDomainPermission(in *EntityPermission) *domain.EntityPermission {
 	if in == nil {
 		return nil
@@ -126,6 +142,7 @@ func toDomainPermission(in *EntityPermission) *domain.EntityPermission {
 		Edit:      toDomainCommentPolicy(in.Edit),
 		Delete:    toDomainCommentPolicy(in.Delete),
 		Task:      toDomainPermission(in.Task),
+		Plan:      toDomainPermission(in.Plan),
 		Project:   toDomainPermission(in.Project),
 		Universal: toDomainPermission(in.Universal),
 	}
@@ -255,6 +272,8 @@ type Snapshot struct {
 	themeErr        error
 
 	warnings []SourceWarning
+
+	agentAdapters domain.AgentAdapters
 }
 
 // BuildSnapshot inflates a Bundle into the immutable Snapshot. Construct
@@ -277,6 +296,7 @@ func newSnapshot(bundle Bundle) *Snapshot {
 	return &Snapshot{
 		kit:                bundle.Kit,
 		subtaskKitPath:     bundle.SubtaskKit,
+		agentAdapters:      bundle.AgentAdapters,
 		bucketByID:         map[int64]domain.Bucket{},
 		bucketByKey:        map[string]domain.Bucket{},
 		transitionsByPair:  map[transitionKey]transitionEntry{},
@@ -737,6 +757,14 @@ func (s *Snapshot) Catalog(surface Surface) *Catalog {
 // not the discovered catalog.
 func (s *Snapshot) AgentOutputLanguage() string {
 	return s.agentOutputLang
+}
+
+// AgentAdapters returns the effective agent adapters, defaults, and limits.
+func (s *Snapshot) AgentAdapters() domain.AgentAdapters {
+	if s == nil {
+		return domain.AgentAdapters{}
+	}
+	return s.agentAdapters
 }
 
 // ResolveGuardHint expands `${{intl:KEY}}` tokens inside a guard hint

@@ -1,5 +1,7 @@
 package contract
 
+import "omakiten/internal/domain"
+
 // PlanSummary is the delivery contract for a plan row. GoalBody is omitted
 // from list views (zero-value json:"omitempty") so dashboards stay
 // compact; the show / get endpoints will fold it back in.
@@ -57,6 +59,9 @@ type ShowPlanResponse struct {
 	TotalCount   int            `json:"total_count"`
 	Percent      int            `json:"percent"`
 	ActiveWaveID int64          `json:"active_wave_id,omitempty"`
+	// Gates is the state of every plan gate of the workflow while the plan
+	// is active; each status's details name its stage.
+	Gates []domain.GuardStatus `json:"gates,omitempty"`
 }
 
 // PlanWaveView pairs a wave with its task list and per-wave counts.
@@ -234,12 +239,14 @@ type ContinuePlanInput struct {
 // inspect goal_body, the wave layout, and the candidate task before
 // committing to a claim.
 type ContinuePlanResponse struct {
-	Project       ProjectSummary `json:"project"`
-	Plan          PlanSummary    `json:"plan"`
-	Waves         []PlanWaveView `json:"waves"`
-	DoneCount     int            `json:"done_count"`
-	TotalCount    int            `json:"total_count"`
-	Percent       int            `json:"percent"`
-	ActiveWaveID  int64          `json:"active_wave_id,omitempty"`
-	NextClaimable *PlanTaskRow   `json:"next_claimable,omitempty"`
+	Project      ProjectSummary `json:"project"`
+	Plan         PlanSummary    `json:"plan"`
+	Waves        []PlanWaveView `json:"waves"`
+	DoneCount    int            `json:"done_count"`
+	TotalCount   int            `json:"total_count"`
+	Percent      int            `json:"percent"`
+	ActiveWaveID int64          `json:"active_wave_id,omitempty"`
+	// Gates mirrors ShowPlanResponse.Gates.
+	Gates         []domain.GuardStatus `json:"gates,omitempty"`
+	NextClaimable *PlanTaskRow         `json:"next_claimable,omitempty"`
 }

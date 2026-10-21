@@ -36,6 +36,10 @@ const (
 	ErrSearchIndexInvalid        ErrorCode = "search_index_invalid"
 	ErrOperationDenied           ErrorCode = "operation_denied"
 	ErrRateLimited               ErrorCode = "rate_limited"
+	ErrAgentNotFound             ErrorCode = "agent_not_found"
+	ErrConfirmationRequired      ErrorCode = "confirmation_required"
+	ErrAgentSpawnFailed          ErrorCode = "agent_spawn_failed"
+	ErrAgentUnconfigured         ErrorCode = "agent_unconfigured"
 )
 
 type CodedError struct {

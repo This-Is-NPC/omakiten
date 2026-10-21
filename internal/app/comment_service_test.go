@@ -228,7 +228,7 @@ func addAndDenyDevComment(t *testing.T, ctx context.Context, taskSvc *TaskServic
 	if err != nil {
 		t.Fatalf("Add(dev task) = %v", err)
 	}
-	if _, err := taskSvc.Move(ctx, project, task.ID, "dev"); err != nil {
+	if _, _, err := taskSvc.Move(ctx, project, task.ID, "dev"); err != nil {
 		t.Fatalf("Move(dev task -> dev) = %v", err)
 	}
 	comment, err := service.AddScoped(ctx, project, domain.CommentWrite{Scope: domain.CommentScopeTask, TaskID: task.ID, Body: "dev note"})

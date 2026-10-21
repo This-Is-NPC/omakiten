@@ -21,6 +21,13 @@ agent:
   include_workflow_in_continue: true # ship workflow block in tasks.continue
   next_work_limit: 5                 # > 0; "likely next work" suggestions
   similar_task_limit: 5              # > 0; similar-task hints on create_intent
+  # next_step_prompt per operation; task.continue expands {task_id} and {bucket}
+  next_step:
+    task.continue: "Continue task #{task_id} from this checkpoint, then record material progress with `progress.record`."
+    project.overview: "Omakiten is ready. Ask for task details, continue the latest checkpoint, or create a new task intent."
+    project.resume: "Choose a likely next task, inspect blocked work, or continue one with `task.continue`."
+    project.edit: "Project description updated. Ask for the overview, resume the project, or continue a task."
+    event.emit: "Event recorded; the hooks declared on it run now. Read it back with logs.list."
 theme:
   active: omakiten
 # tui tunes terminal UI presentation. token_badge controls the colored TOKENS:N
@@ -220,6 +227,22 @@ events:
       category: tag-dep
       display: "dependency removed"
       formatter: dependency.removed
+    agent.session_started:
+      category: task
+      display: "agent session started"
+      formatter: agent.session_started
+    agent.session_finished:
+      category: task
+      display: "agent session finished"
+      formatter: agent.session_finished
+    team.closed:
+      category: task
+      display: "agent team closed"
+      formatter: team.closed
+    team.finished:
+      category: task
+      display: "agent team finished"
+      formatter: team.finished
     guard.violated:
       category: guard
       display: "guard violated"

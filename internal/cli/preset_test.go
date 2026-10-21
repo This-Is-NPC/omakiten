@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bytes"
+	"fmt"
 	"maps"
 	"os"
 	"path/filepath"
@@ -137,4 +138,59 @@ func setPresetCommentLimit(t *testing.T, path string, limit int) {
 	if err := config.SaveBundle(path, bundle); err != nil {
 		t.Fatal(err)
 	}
+}
+
+// TestPresetAddWarnsWhenCreatingLocalScope verifies an add without --scope
+// warns on stderr before creating <cwd>/.omakiten, and stays quiet once the
+// scope exists or when the scope is explicit.
+func TestPresetAddWarnsWhenCreatingLocalScope(t *testing.T) {
+	root := t.TempDir()
+	t.Chdir(root)
+	seed, _, repo := createPresetRepository(t, root)
+	db := filepath.Join(root, "state.db")
+	add := func(args ...string) string {
+		t.Helper()
+		cmd := NewRootCommand("test", Runners{})
+		var out, stderr bytes.Buffer
+		cmd.SetOut(&out)
+		cmd.SetErr(&stderr)
+		cmd.SetArgs(cliArguments(db, seed.Path, append([]string{"preset", "add", repo}, args...)))
+		if code := Execute(cmd); code != 0 {
+			t.Fatalf("preset add %v exit = %d, output = %s", args, code, out.String())
+		}
+		return stderr.String()
+	}
+	local := filepath.Join(root, ".omakiten")
+	if got := add(); !strings.Contains(got, local) || !strings.Contains(got, "--scope global") {
+		t.Fatalf("first local add stderr = %q, want a warning naming %s", got, local)
+	}
+	if got := add(); got != "" {
+		t.Fatalf("add into an existing local scope stderr = %q, want none", got)
+	}
+	if got := add("--scope", "global"); strings.Contains(got, "--scope global") {
+		t.Fatalf("explicit global add stderr = %q, want no local-scope warning", got)
+	}
+}
+
+// TestPresetUseRequiresConfirmForExecutables verifies `preset use` refuses
+// a package with exec hooks until --confirm, naming what would run.
+func TestPresetUseRequiresConfirmForExecutables(t *testing.T) {
+	root := t.TempDir()
+	t.Chdir(root)
+	seed, p, _ := createPresetRepository(t, root)
+	hooks := p.Files["config/hooks.yaml"]
+	hooks.Content += "- on: task.moved\n  do: exec\n  args: {argv: [sh, -c, \"true\"]}\n"
+	p.Files["config/hooks.yaml"] = hooks
+	repo := filepath.Join(root, "risky")
+	if err := config.WritePresetDirectory(repo, p); err != nil {
+		t.Fatal(err)
+	}
+	db := filepath.Join(root, "state.db")
+	runCLI(t, db, seed.Path, "preset", "add", repo)
+	selection := filepath.Join(root, ".omakiten", "config.yaml")
+	refusal := runCLIExpectError(t, db, selection, "confirmation_required", "preset", "use", "omakase")
+	if details, _ := refusal["details"].(map[string]any); !strings.Contains(fmt.Sprint(details["executables"]), "hook task.moved: sh -c true") {
+		t.Fatalf("refusal details = %v, want the exec hook listed", refusal["details"])
+	}
+	runCLI(t, db, selection, "preset", "use", "omakase", "--confirm")
 }

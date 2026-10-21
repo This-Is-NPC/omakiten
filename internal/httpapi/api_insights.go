@@ -28,6 +28,7 @@ func (s *Server) insightRoutes() []route {
 			queryParam("since", "Window such as `24h` or `7d`.", stringSchema),
 			queryParam("limit", "Row cap.", intSchema),
 			queryParam("order", "`asc` or `desc` (default).", stringSchema),
+			queryParam("session", "Agent session whose rows to keep.", stringSchema),
 		}, s.listLogs),
 		query("getInsights", http.MethodGet, projectPath+"/insights", "insights.summary", "Today's insights for a project.", []param{
 			projectParam,
@@ -63,6 +64,7 @@ func (s *Server) listLogs(r *http.Request) (contract.ListLogsResponse, error) {
 		Since:           r.URL.Query().Get("since"),
 		Limit:           limit,
 		Order:           r.URL.Query().Get("order"),
+		Session:         r.URL.Query().Get("session"),
 	})
 }
 

@@ -26,6 +26,7 @@ func newProgressRecordCommand(opts *runtimeOptions) *cobra.Command {
 		moveToBucket string
 		comment      string
 		authorType   string
+		noSpawn      bool
 	)
 	cmd := &cobra.Command{
 		Use:   "record",
@@ -44,6 +45,7 @@ func newProgressRecordCommand(opts *runtimeOptions) *cobra.Command {
 					MoveToBucket:    moveToBucket,
 					Comment:         comment,
 					AuthorType:      authorType,
+					NoSpawn:         noSpawn,
 				}
 				if cmd.Flags().Changed("title") {
 					input.Title = &title
@@ -64,6 +66,7 @@ func newProgressRecordCommand(opts *runtimeOptions) *cobra.Command {
 	cmd.Flags().StringVar(&priority, "priority", "", opts.t("cli.progress.record.flag.priority"))
 	cmd.Flags().StringVar(&moveToBucket, "move-to-bucket", "", opts.t("cli.progress.record.flag.move-to-bucket"))
 	cmd.Flags().StringVar(&comment, "comment", "", opts.t("cli.progress.record.flag.comment"))
+	cmd.Flags().BoolVar(&noSpawn, "no-spawn", false, opts.t("cli.task.move.flag.no-spawn"))
 	cmd.Flags().StringVar(&authorType, "author-type", "", opts.t("cli.progress.record.flag.author-type"))
 	_ = cmd.MarkFlagRequired("task-id")
 	return cmd

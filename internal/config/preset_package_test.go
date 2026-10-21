@@ -3,9 +3,11 @@ package config_test
 import (
 	"bytes"
 	"context"
+	"errors"
 	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -201,4 +203,49 @@ func assertPresetSelection(t *testing.T, path string, want []byte) {
 	if err != nil || !bytes.Equal(got, want) {
 		t.Fatalf("preset selection changed after rejection: %v", err)
 	}
+}
+
+// TestPresetUseListsExecutablesForApproval verifies activation hands the
+// package's exec hooks to approve and leaves the selection unchanged when
+// approve refuses.
+func TestPresetUseListsExecutablesForApproval(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	base := presetFixture(t)
+	installed, err := config.InstallPreset(root, base)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := config.ActivatePreset(root, installed.ID); err != nil {
+		t.Fatal(err)
+	}
+	selection := filepath.Join(root, config.PresetSelectionFile)
+	before, err := os.ReadFile(selection)
+	if err != nil {
+		t.Fatal(err)
+	}
+	risky := base
+	risky.Manifest.Name = "risky"
+	risky.Files = maps.Clone(base.Files)
+	hooks, ok := risky.Files["config/hooks.yaml"]
+	if !ok {
+		t.Fatalf("fixture has no config/hooks.yaml: %v", slices.Sorted(maps.Keys(risky.Files)))
+	}
+	hooks.Content += "- on: task.moved\n  do: exec\n  args: {argv: [sh, -c, \"true\"]}\n"
+	risky.Files["config/hooks.yaml"] = hooks
+	if _, err := config.InstallPreset(root, risky); err != nil {
+		t.Fatal(err)
+	}
+	var seen []string
+	refused := errors.New("refused")
+	if _, err := config.ActivatePresetApproved(root, "risky", func(_ config.PresetInstallation, executables []string) error {
+		seen = executables
+		return refused
+	}); !errors.Is(err, refused) {
+		t.Fatalf("ActivatePresetApproved() error = %v, want the approval error", err)
+	}
+	if !slices.Contains(seen, "hook task.moved: sh -c true") {
+		t.Fatalf("executables = %q, want the exec hook", seen)
+	}
+	assertPresetSelection(t, selection, before)
 }

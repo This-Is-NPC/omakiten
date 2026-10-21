@@ -55,6 +55,12 @@ func (r *Resolver) Resolve(ctx context.Context, opts ResolveOptions) (domain.Pro
 		return domain.ProjectContext{}, err
 	}
 	if len(projects) == 0 {
+		projects, err = r.findFromMainCheckout(ctx, absCWD)
+		if err != nil {
+			return domain.ProjectContext{}, err
+		}
+	}
+	if len(projects) == 0 {
 		return domain.ProjectContext{}, domain.NewError(domain.ErrProjectNotFound, "no registered project matches current directory", map[string]any{"cwd": absCWD})
 	}
 	sort.SliceStable(projects, func(i, j int) bool {
@@ -62,4 +68,14 @@ func (r *Resolver) Resolve(ctx context.Context, opts ResolveOptions) (domain.Pro
 	})
 
 	return projects[0].Context(), nil
+}
+
+// findFromMainCheckout matches a cwd inside a linked git worktree
+// against the registered roots of the repository's main checkout.
+func (r *Resolver) findFromMainCheckout(ctx context.Context, cwd string) ([]domain.Project, error) {
+	mapped, ok := mainCheckoutPath(cwd)
+	if !ok {
+		return nil, nil
+	}
+	return r.repo.FindProjectsContainingPath(ctx, mapped)
 }

@@ -224,6 +224,16 @@ func TestResolveCommentScopePermission(t *testing.T) {
 			}},
 			scope: CommentScopeUniversal, op: CommentOpDelete, want: true,
 		},
+		"plan create explicit false": {
+			defaults: &WorkflowDefaults{Comment: &EntityPermission{
+				Plan: &EntityPermission{Create: boolPtr(false)},
+			}},
+			scope: CommentScopePlan, op: CommentOpCreate, want: false,
+		},
+		"plan ignores task chain": {
+			defaults: &WorkflowDefaults{Comment: &EntityPermission{Edit: boolPtr(false)}},
+			scope:    CommentScopePlan, op: CommentOpEdit, want: true,
+		},
 		// no defaults block — implicit allow everywhere.
 		"nil defaults task edit": {
 			defaults: nil, scope: CommentScopeTask, op: CommentOpEdit, want: true,

@@ -19,6 +19,7 @@ okt preset catalog
 | `omakase` | Development, review, and completion | [okt-workflow-omakase](https://github.com/This-Is-NPC/okt-workflow-omakase) |
 | `kaiseki` | Requirements and planning before delivery | [okt-workflow-kaiseki](https://github.com/This-Is-NPC/okt-workflow-kaiseki) |
 | `shokunin` | Risk evidence and stricter review | [okt-workflow-shokunin](https://github.com/This-Is-NPC/okt-workflow-shokunin) |
+| `orchestra` | Omakase delivered by autonomous agent teams | [okt-workflow-orchestra](https://github.com/This-Is-NPC/okt-workflow-orchestra) |
 
 These are repository sources, each with its own version and declared policy.
 Inspect the installed workflow for the exact buckets and guards; names alone
@@ -37,8 +38,17 @@ okt --project example config validate
 without activating. `use` selects an installed name or complete content id;
 use the id when several revisions have the same name.
 
+A package that declares `exec` hooks, agent adapters, or bucket agent teams
+runs programs on your machine. `use` then refuses with
+`confirmation_required` and lists them in `details.executables`; review the
+list and repeat with `--confirm`. `okt setup --preset` is the explicit choice
+of a catalog package and does not ask again.
+
 The default scope is local to the project. `--scope global` on scoped preset
-commands operates on the user installation. Global setup can select a preset
+commands operates on the user installation. Without `--project`, the local
+scope is `.omakiten/` in the current directory; `add` and `import` without an
+explicit `--scope` warn on stderr when they would create it, because that
+directory may not be a project root. Global setup can select a preset
 with `okt setup --preset omakase`.
 
 Fetching a repository needs Git and access to that source. Runtime use and
@@ -72,7 +82,16 @@ schema_version: 1
 name: example
 version: 0.1.0
 config: config/preset.yaml
+requires:
+  okt: 0.37.0
 ```
+
+`requires.okt` is optional and names the oldest okt release, as `X.Y.Z`,
+that understands the package. A release executable older than it refuses to
+install, select, or load the package with
+`preset "example" requires okt >= 0.37.0 (running 0.36.0)`; update okt first.
+Development and untagged builds skip the check. Executables released before
+the field existed reject it as an unknown manifest field.
 
 Additional files, including scripts for hooks, can belong to the package.
 Paths must be canonical relative paths and files must be regular files.

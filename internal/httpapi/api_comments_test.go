@@ -12,6 +12,10 @@ var _ = mapping([]mappingCase{
 	{"addTaskComment", http.MethodPost, "/api/v1/projects/alpha/tasks/5/comments", `{"body":"B","title":"Ti","kind":"note","pinned":true,"tags":["a"],"template_slug":"tpl"}`, "AddComment", contract.AddCommentInput{
 		ProjectSelector: alpha, TaskID: 5, Body: "B", Title: "Ti", Kind: "note", Pinned: true, AuthorType: "human", Tags: []string{"a"}, TemplateSlug: "tpl",
 	}},
+	{"listPlanComments", http.MethodGet, "/api/v1/projects/alpha/plans/p1/comments", "", "ListComments", contract.ListCommentsInput{ProjectSelector: alpha, Scope: "plan", PlanSlug: "p1"}},
+	{"addPlanComment", http.MethodPost, "/api/v1/projects/alpha/plans/p1/comments", `{"body":"B","tags":["kickoff"]}`, "AddComment", contract.AddCommentInput{
+		ProjectSelector: alpha, Scope: "plan", PlanSlug: "p1", Body: "B", AuthorType: "human", Tags: []string{"kickoff"},
+	}},
 	{"editComment", http.MethodPatch, "/api/v1/projects/alpha/comments/9", `{"title":"Ti","pinned":false,"tags":[]}`, "EditComment", contract.EditCommentInput{
 		ProjectSelector: alpha, CommentID: 9, Title: ptr("Ti"), Pinned: ptr(false), Tags: []string{},
 	}},

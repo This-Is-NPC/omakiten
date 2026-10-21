@@ -183,11 +183,36 @@ func (s *TaskService) List(ctx context.Context, project domain.ProjectContext, f
 	return
 }
 
-func (s *TaskService) Move(ctx context.Context, project domain.ProjectContext, taskID int64, targetBucketKey string) (domain.Task, error) {
+// Move moves the task and reports the destination bucket's agent team.
+func (s *TaskService) Move(ctx context.Context, project domain.ProjectContext, taskID int64, targetBucketKey string) (domain.Task, *domain.TeamOutcome, error) {
 	return s.workflow.MoveTask(ctx, project, taskID, targetBucketKey)
 }
 
-func (s *TaskService) Edit(ctx context.Context, project domain.ProjectContext, taskID int64, update domain.TaskUpdate) (task domain.Task, err error) {
+// WithAgentTeams attaches the handler moves use for bucket agent teams.
+func (s *TaskService) WithAgentTeams(teams AgentTeams) *TaskService {
+	s.workflow.WithAgentTeams(teams)
+	return s
+}
+
+// PreviewMove reports the guards and agent team a move would meet without
+// moving the task.
+func (s *TaskService) PreviewMove(ctx context.Context, project domain.ProjectContext, taskID int64, targetBucketKey string) (domain.Task, []domain.GuardStatus, *domain.TeamOutcome, error) {
+	task, statuses, team, err := s.workflow.PreviewMove(ctx, project, taskID, targetBucketKey)
+	if err != nil {
+		return domain.Task{}, nil, nil, err
+	}
+	return s.withResolvedBucketKey(task), statuses, team, nil
+}
+
+// OutgoingGuards reports the guard state of every transition leaving the
+// task's current bucket, keyed by destination bucket key.
+func (s *TaskService) OutgoingGuards(ctx context.Context, project domain.ProjectContext, task domain.Task) (map[string][]domain.GuardStatus, error) {
+	return s.workflow.OutgoingGuards(ctx, project, task)
+}
+
+// Edit applies the update; when it moves the task, team reports the
+// destination bucket's agent team.
+func (s *TaskService) Edit(ctx context.Context, project domain.ProjectContext, taskID int64, update domain.TaskUpdate) (task domain.Task, team *domain.TeamOutcome, err error) {
 	finish := activity.Track(ctx, "app.TaskService.Edit", project, map[string]any{"task_id": taskID})
 	defer func() {
 		status := "ok"
@@ -216,37 +241,38 @@ func (s *TaskService) Edit(ctx context.Context, project domain.ProjectContext, t
 		}
 	}
 
-	task, err = s.applyTaskEdit(ctx, project, taskID, update, hasFieldEdit, before)
+	task, team, err = s.applyTaskEdit(ctx, project, taskID, update, hasFieldEdit, before)
 
 	return
 }
 
-func (s *TaskService) applyTaskEdit(ctx context.Context, project domain.ProjectContext, taskID int64, update domain.TaskUpdate, hasFieldEdit bool, before domain.Task) (domain.Task, error) {
+func (s *TaskService) applyTaskEdit(ctx context.Context, project domain.ProjectContext, taskID int64, update domain.TaskUpdate, hasFieldEdit bool, before domain.Task) (domain.Task, *domain.TeamOutcome, error) {
 	var task domain.Task
+	var team *domain.TeamOutcome
 	var err error
 	if update.BucketKey != "" {
-		task, err = s.workflow.MoveTask(ctx, project, taskID, update.BucketKey)
+		task, team, err = s.workflow.MoveTask(ctx, project, taskID, update.BucketKey)
 		if err != nil {
-			return domain.Task{}, err
+			return domain.Task{}, nil, err
 		}
 	}
 	if hasFieldEdit {
 		task, err = s.persistTaskFields(ctx, project, taskID, update, before)
 		if err != nil {
-			return domain.Task{}, err
+			return domain.Task{}, nil, err
 		}
 	}
 	if update.ChangeParent {
 		if err := s.applyParentChange(ctx, project, taskID, update.NewParentID); err != nil {
-			return domain.Task{}, err
+			return domain.Task{}, nil, err
 		}
 		// Re-read because a parent change can recompute depth and rebind the bucket.
 		task, err = s.taskByID(ctx, project, taskID)
 		if err != nil {
-			return domain.Task{}, err
+			return domain.Task{}, nil, err
 		}
 	}
-	return task, nil
+	return task, team, nil
 }
 
 func (s *TaskService) normalizeTaskEdit(update domain.TaskUpdate) (domain.TaskUpdate, bool, error) {

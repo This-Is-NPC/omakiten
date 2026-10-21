@@ -56,10 +56,11 @@ func (s *Service) ListLogs(ctx context.Context, input contract.ListLogsInput) (c
 	}
 
 	rows, err := app.NewEventService(s.repo).ListEvents(ctx, project, app.ListEventsParams{
-		Categories: categories,
-		Since:      since,
-		Limit:      input.Limit,
-		Order:      input.Order,
+		Categories:     categories,
+		Since:          since,
+		Limit:          input.Limit,
+		Order:          input.Order,
+		AgentSessionID: strings.TrimSpace(input.Session),
 	})
 	if err != nil {
 		return contract.ListLogsResponse{}, err

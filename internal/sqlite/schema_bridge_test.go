@@ -58,8 +58,8 @@ func assertV030BridgeMarker(t *testing.T, ctx context.Context, db schemaQueryer)
 	if err := db.QueryRowContext(ctx, "PRAGMA user_version").Scan(&userVersion); err != nil {
 		t.Fatalf("user_version: %v", err)
 	}
-	if userVersion != 2 {
-		t.Fatalf("user_version = %d, want 2", userVersion)
+	if userVersion != 3 {
+		t.Fatalf("user_version = %d, want 3", userVersion)
 	}
 	var migrationTables int
 	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'schema_migrations'`).Scan(&migrationTables); err != nil {
@@ -147,8 +147,8 @@ func TestOpenBridgeCancellationAfterCommitDoesNotReportDurableFailure(t *testing
 	if err := db.QueryRowContext(context.Background(), "PRAGMA user_version").Scan(&userVersion); err != nil {
 		t.Fatalf("user_version after committed cancellation: %v", err)
 	}
-	if userVersion != 2 {
-		t.Fatalf("user_version after committed cancellation = %d, want 2", userVersion)
+	if userVersion != 3 {
+		t.Fatalf("user_version after committed cancellation = %d, want 3", userVersion)
 	}
 }
 
@@ -331,7 +331,7 @@ func seedV030ReleaseDatabase(t *testing.T, path string, quoted bool) {
 		t.Fatalf("seed sql.Open: %v", err)
 	}
 	defer func() { _ = db.Close() }()
-	schema := schemaSQL
+	schema := schemaThrough(1)
 	if quoted {
 		for _, name := range []string{"projects", "tasks", "events", "tags", "task_tags", "project_tags", "errors", "solutions", "error_tags", "event_tags", "task_dependencies", "plans", "plan_waves"} {
 			schema = strings.ReplaceAll(schema, "CREATE TABLE "+name, `CREATE TABLE "`+name+`"`)
@@ -341,7 +341,7 @@ func seedV030ReleaseDatabase(t *testing.T, path string, quoted bool) {
 	if _, err := db.Exec(schema); err != nil {
 		t.Fatalf("seed current schema: %v", err)
 	}
-	if _, err := db.Exec(`DROP TABLE document_metadata; PRAGMA user_version = 0`); err != nil {
+	if _, err := db.Exec(`PRAGMA user_version = 0`); err != nil {
 		t.Fatalf("seed user_version: %v", err)
 	}
 	if _, err := db.Exec(`CREATE TABLE "schema_migrations" (
@@ -363,7 +363,7 @@ func seedV030WALDatabase(t *testing.T, path string, mutate func(*testing.T, *sql
 	if err != nil {
 		t.Fatalf("WAL seed sql.Open: %v", err)
 	}
-	if _, err := db.Exec(schemaSQL); err != nil {
+	if _, err := db.Exec(schemaThrough(1)); err != nil {
 		_ = db.Close()
 		t.Fatalf("WAL seed schema: %v", err)
 	}
@@ -375,7 +375,7 @@ func seedV030WALDatabase(t *testing.T, path string, mutate func(*testing.T, *sql
 		_ = db.Close()
 		t.Fatalf("WAL seed autocheckpoint: %v", err)
 	}
-	if _, err := db.Exec(`DROP TABLE document_metadata; PRAGMA user_version = 0`); err != nil {
+	if _, err := db.Exec(`PRAGMA user_version = 0`); err != nil {
 		_ = db.Close()
 		t.Fatalf("WAL seed user_version: %v", err)
 	}
