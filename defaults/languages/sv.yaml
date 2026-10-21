@@ -3,6 +3,9 @@ name: Swedish
 native: Svenska
 keys:
   cli.knowledge.short: "Read project documentation and API contracts"
+  cli.docs.short: "Läs Omakiten-guiderna som följer med denna okt"
+  cli.docs.list.short: "Lista guiderna med frågan som var och en besvarar"
+  cli.docs.show.short: "Visa en guide som Markdown"
   cli.knowledge.validate.short: "Validate project knowledge sources"
   cli.knowledge.list.short: "List project knowledge resources"
   cli.knowledge.show.short: "Show one knowledge resource"

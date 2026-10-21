@@ -3,6 +3,9 @@ name: Simplified Chinese
 native: 简体中文
 keys:
   cli.knowledge.short: "Read project documentation and API contracts"
+  cli.docs.short: "阅读随此 okt 附带的 Omakiten 指南"
+  cli.docs.list.short: "列出指南及每篇回答的问题"
+  cli.docs.show.short: "以 Markdown 显示一篇指南"
   cli.knowledge.validate.short: "Validate project knowledge sources"
   cli.knowledge.list.short: "List project knowledge resources"
   cli.knowledge.show.short: "Show one knowledge resource"

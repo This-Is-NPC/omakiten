@@ -3,6 +3,9 @@ name: Finnish
 native: Suomi
 keys:
   cli.knowledge.short: "Read project documentation and API contracts"
+  cli.docs.short: "Lue tämän okt:n mukana tulevat Omakiten-oppaat"
+  cli.docs.list.short: "Listaa oppaat ja kysymys, johon kukin vastaa"
+  cli.docs.show.short: "Näytä yksi opas Markdownina"
   cli.knowledge.validate.short: "Validate project knowledge sources"
   cli.knowledge.list.short: "List project knowledge resources"
   cli.knowledge.show.short: "Show one knowledge resource"

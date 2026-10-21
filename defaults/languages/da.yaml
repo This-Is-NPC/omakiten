@@ -3,6 +3,9 @@ name: Danish
 native: Dansk
 keys:
   cli.knowledge.short: "Read project documentation and API contracts"
+  cli.docs.short: "Læs Omakiten-guiderne, der følger med denne okt"
+  cli.docs.list.short: "Vis guiderne med det spørgsmål, hver besvarer"
+  cli.docs.show.short: "Vis én guide som Markdown"
   cli.knowledge.validate.short: "Validate project knowledge sources"
   cli.knowledge.list.short: "List project knowledge resources"
   cli.knowledge.show.short: "Show one knowledge resource"

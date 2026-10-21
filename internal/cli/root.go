@@ -194,6 +194,7 @@ func addRootCommands(cmd *cobra.Command, opts *runtimeOptions, version string, r
 	cmd.AddCommand(newTemplateCommand(opts))
 	cmd.AddCommand(newSearchCommand(opts))
 	cmd.AddCommand(newKnowledgeCommand(opts))
+	cmd.AddCommand(newDocsCommand(opts))
 	cmd.AddCommand(newTagCommand(opts))
 	cmd.AddCommand(newTUICommand(opts, version, runners.Interactive))
 	cmd.AddCommand(newServeCommand(opts, version, runners.Serve))

@@ -3,6 +3,9 @@ name: Hindi
 native: हिन्दी
 keys:
   cli.knowledge.short: "Read project documentation and API contracts"
+  cli.docs.short: "इस okt के साथ आए Omakiten गाइड पढ़ें"
+  cli.docs.list.short: "गाइड और हर एक जिस प्रश्न का उत्तर देती है, उनकी सूची दिखाएँ"
+  cli.docs.show.short: "एक गाइड Markdown में दिखाएँ"
   cli.knowledge.validate.short: "Validate project knowledge sources"
   cli.knowledge.list.short: "List project knowledge resources"
   cli.knowledge.show.short: "Show one knowledge resource"

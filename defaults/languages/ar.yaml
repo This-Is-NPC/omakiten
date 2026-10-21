@@ -3,6 +3,9 @@ name: Arabic
 native: العربية
 keys:
   cli.knowledge.short: "Read project documentation and API contracts"
+  cli.docs.short: "اقرأ أدلة Omakiten المرفقة مع هذا okt"
+  cli.docs.list.short: "اعرض الأدلة مع السؤال الذي يجيب عنه كل منها"
+  cli.docs.show.short: "اعرض دليلًا واحدًا بصيغة Markdown"
   cli.knowledge.validate.short: "Validate project knowledge sources"
   cli.knowledge.list.short: "List project knowledge resources"
   cli.knowledge.show.short: "Show one knowledge resource"

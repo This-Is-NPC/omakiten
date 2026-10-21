@@ -3,6 +3,9 @@ name: Korean
 native: 한국어
 keys:
   cli.knowledge.short: "Read project documentation and API contracts"
+  cli.docs.short: "이 okt 에 포함된 Omakiten 가이드 읽기"
+  cli.docs.list.short: "각 가이드가 답하는 질문과 함께 목록 표시"
+  cli.docs.show.short: "가이드 하나를 Markdown 으로 표시"
   cli.knowledge.validate.short: "Validate project knowledge sources"
   cli.knowledge.list.short: "List project knowledge resources"
   cli.knowledge.show.short: "Show one knowledge resource"

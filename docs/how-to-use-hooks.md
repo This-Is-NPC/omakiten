@@ -54,8 +54,9 @@ hooks:
     do: noop
 ```
 
-All conditions must match. Use the payload seen in `okt logs` to choose the
-keys and values. Hooks are project-scoped; another project's event does not
+All conditions must match. `when` reads the payload, such as `from`, `to`,
+and `subject_task_id`, not envelope fields such as `entity_id`. Use the
+payload seen in `okt logs` to choose the keys and values. Hooks are project-scoped; another project's event does not
 run this project's action. Intentionally global events have explicit scope.
 
 ## 3. Show a notification
@@ -131,6 +132,12 @@ okt --project example logs
 Look for the triggering event and `hook.executed`. A matching admitted action
 records its result; a hook that did not match has no execution record. Check
 the event policy's logging, broadcast, and hook gates if the action never ran.
+
+Try a hook under an isolated `OMAKITEN_HOME`, or the checkout's `dev_env/`,
+before selecting it for real work. Trigger it with an operation that succeeds:
+a move refused by a guard records `guard.violated`, not `task.moved`. Then
+check the receiver's own output; `hook.executed` proves the program ran, not
+that its target received the event.
 
 A reload stops admission and cancels active work. A process that exits, a
 one-shot CLI call included, stops admission and lets the admitted actions
