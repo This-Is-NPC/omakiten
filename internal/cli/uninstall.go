@@ -141,6 +141,11 @@ func uninstallFiles(ctx context.Context, home string) (map[string]any, error) {
 	if err != nil {
 		return nil, domain.NewError(domain.ErrUninstallFailed, err.Error(), map[string]any{"binary": binaryPath})
 	}
+	serverPath := lifecycle.ServerBinaryPath(home)
+	serverRemoved, err := lifecycle.RemoveBinary(serverPath)
+	if err != nil {
+		return nil, domain.NewError(domain.ErrUninstallFailed, err.Error(), map[string]any{"binary": serverPath})
+	}
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -154,11 +159,13 @@ func uninstallFiles(ctx context.Context, home string) (map[string]any, error) {
 		return nil, err
 	}
 	result := map[string]any{
-		"skills_removed": skillsRemoved,
-		"code":           "uninstall_completed",
-		"binary_path":    binaryPath,
-		"binary_removed": binaryRemoved,
-		"wrappers":       wrappersRemoved,
+		"skills_removed":        skillsRemoved,
+		"code":                  "uninstall_completed",
+		"binary_path":           binaryPath,
+		"binary_removed":        binaryRemoved,
+		"server_binary_path":    serverPath,
+		"server_binary_removed": serverRemoved,
+		"wrappers":              wrappersRemoved,
 	}
 
 	return result, nil

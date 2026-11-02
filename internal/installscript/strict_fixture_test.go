@@ -431,18 +431,27 @@ func pathWithout(t *testing.T, tool string) string {
 	return strings.Join(kept, string(os.PathListSeparator))
 }
 
-// buildTarArchive returns a .tar.gz holding an executable `okt` stub.
+// buildTarArchive returns a .tar.gz holding executable `okt` and `okt-server`
+// stubs, the layout of every release since 0.39.0.
 func buildTarArchive(t *testing.T, marker string) []byte {
 	t.Helper()
-	stub := oktStub(marker)
+	return buildTarArchiveOf(t, marker, true)
+}
+
+// buildTarArchiveOf returns a .tar.gz holding an `okt` stub and, when
+// withServer is set, an `okt-server` stub.
+func buildTarArchiveOf(t *testing.T, marker string, withServer bool) []byte {
+	t.Helper()
 	var buf bytes.Buffer
 	gz := gzip.NewWriter(&buf)
 	tw := tar.NewWriter(gz)
-	if err := tw.WriteHeader(&tar.Header{Name: "okt", Mode: 0o755, Size: int64(len(stub))}); err != nil {
-		t.Fatalf("tar header: %v", err)
-	}
-	if _, err := tw.Write([]byte(stub)); err != nil {
-		t.Fatalf("tar write: %v", err)
+	for _, entry := range archiveEntries(marker, withServer, "") {
+		if err := tw.WriteHeader(&tar.Header{Name: entry.name, Mode: 0o755, Size: int64(len(entry.body))}); err != nil {
+			t.Fatalf("tar header: %v", err)
+		}
+		if _, err := tw.Write([]byte(entry.body)); err != nil {
+			t.Fatalf("tar write: %v", err)
+		}
 	}
 	if err := tw.Close(); err != nil {
 		t.Fatalf("tar close: %v", err)
@@ -453,27 +462,46 @@ func buildTarArchive(t *testing.T, marker string) []byte {
 	return buf.Bytes()
 }
 
-// buildZipArchive returns a .zip holding an executable `okt.exe` stub. The
-// entry carries mode 0755 so PowerShell's Expand-Archive restores the exec bit
-// when these fixtures run under pwsh on a Unix host.
+// buildZipArchive returns a .zip holding executable `okt.exe` and
+// `okt-server.exe` stubs. Entries carry mode 0755 so PowerShell's
+// Expand-Archive restores the exec bit when these fixtures run under pwsh on a
+// Unix host.
 func buildZipArchive(t *testing.T, marker string) []byte {
 	t.Helper()
-	stub := oktStub(marker)
+	return buildZipArchiveOf(t, marker, true)
+}
+
+// buildZipArchiveOf returns a .zip holding an `okt.exe` stub and, when
+// withServer is set, an `okt-server.exe` stub.
+func buildZipArchiveOf(t *testing.T, marker string, withServer bool) []byte {
+	t.Helper()
 	var buf bytes.Buffer
 	zw := zip.NewWriter(&buf)
-	header := &zip.FileHeader{Name: "okt.exe", Method: zip.Deflate}
-	header.SetMode(0o755)
-	w, err := zw.CreateHeader(header)
-	if err != nil {
-		t.Fatalf("zip header: %v", err)
-	}
-	if _, err := w.Write([]byte(stub)); err != nil {
-		t.Fatalf("zip write: %v", err)
+	for _, entry := range archiveEntries(marker, withServer, ".exe") {
+		header := &zip.FileHeader{Name: entry.name, Method: zip.Deflate}
+		header.SetMode(0o755)
+		w, err := zw.CreateHeader(header)
+		if err != nil {
+			t.Fatalf("zip header: %v", err)
+		}
+		if _, err := w.Write([]byte(entry.body)); err != nil {
+			t.Fatalf("zip write: %v", err)
+		}
 	}
 	if err := zw.Close(); err != nil {
 		t.Fatalf("zip close: %v", err)
 	}
 	return buf.Bytes()
+}
+
+type archiveEntry struct{ name, body string }
+
+func archiveEntries(marker string, withServer bool, suffix string) []archiveEntry {
+	entries := []archiveEntry{{"okt" + suffix, oktStub(marker)}}
+	if withServer {
+		entries = append(entries, archiveEntry{"okt-server" + suffix, "#!/bin/sh\necho '" + marker + " (server stub)'\n"})
+	}
+	return entries
 }
 
 func oktStub(marker string) string {
@@ -490,7 +518,7 @@ func oktStub(marker string) string {
 // reached the user's PATH.
 func assertNoBinary(t *testing.T, installDir string, out string) {
 	t.Helper()
-	for _, name := range []string{"okt", "okt.exe"} {
+	for _, name := range []string{"okt", "okt.exe", "okt-server", "okt-server.exe"} {
 		if _, err := os.Stat(filepath.Join(installDir, name)); !os.IsNotExist(err) {
 			t.Fatalf("strict mode placed %s in the install dir despite a failed verification (stat err = %v)\noutput:\n%s", name, err, out)
 		}

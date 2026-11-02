@@ -37,9 +37,11 @@ foreach ($p in $profiles) {
   Remove-OktWrapperFrom -ProfilePath $p
 }
 
-if (Test-Path "$InstallDir\okt.exe") {
-  Remove-Item "$InstallDir\okt.exe" -Force
-  Write-Host "=> Removed $InstallDir\okt.exe"
+foreach ($bin in @("okt.exe", "okt-server.exe")) {
+  if (Test-Path "$InstallDir\$bin") {
+    Remove-Item "$InstallDir\$bin" -Force
+    Write-Host "=> Removed $InstallDir\$bin"
+  }
 }
 
 Write-Host "=> Done. Open a new PowerShell session for the wrapper change to take effect."

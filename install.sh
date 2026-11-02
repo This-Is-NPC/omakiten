@@ -45,6 +45,17 @@ case "${VERIFY_MODE}" in
     ;;
 esac
 
+# OKT_INSTALL_SERVER=1 also installs okt-server, the sync server shipped in the
+# same verified archive.
+INSTALL_SERVER="${OKT_INSTALL_SERVER:-0}"
+case "${INSTALL_SERVER}" in
+  0|1) ;;
+  *)
+    echo "error: OKT_INSTALL_SERVER must be '0' or '1' (got '${INSTALL_SERVER}')" >&2
+    exit 1
+    ;;
+esac
+
 # --- pinned release trust anchors ------------------------------------------
 #
 # These four values are the shell twin of the constants compiled into
@@ -629,15 +640,26 @@ main() {
   fi
 
   tar -xzf "${tmpdir}/${asset}" -C "${tmpdir}"
+  if [ "${INSTALL_SERVER}" = "1" ] && [ ! -f "${tmpdir}/okt-server" ]; then
+    echo "error: okt v${tag} does not ship okt-server; it is in releases from 0.39.0" >&2
+    rm -rf "${tmpdir}"
+    exit 1
+  fi
 
   mkdir -p "${INSTALL_DIR}"
   install -m 755 "${tmpdir}/okt" "${INSTALL_DIR}/okt"
+  if [ "${INSTALL_SERVER}" = "1" ]; then
+    install -m 755 "${tmpdir}/okt-server" "${INSTALL_DIR}/okt-server"
+  fi
 
   rm -rf "${tmpdir}"
 
   ensure_path
 
   echo "=> Installed $("${INSTALL_DIR}/okt" --version)"
+  if [ "${INSTALL_SERVER}" = "1" ]; then
+    echo "=> Installed okt-server $("${INSTALL_DIR}/okt-server" --version)"
+  fi
 
   # Hand off to the Go picker. When a TTY is reachable we redirect stdin
   # to it so curl|bash users see the bubbletea screens; when none is

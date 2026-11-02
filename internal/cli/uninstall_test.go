@@ -17,6 +17,24 @@ import (
 	"omakiten/internal/paths"
 )
 
+// TestRunUninstall_RemovesServerBesideBinary covers an install made with
+// OKT_INSTALL_SERVER=1: okt-server sits beside okt and goes with it.
+func TestRunUninstall_RemovesServerBesideBinary(t *testing.T) {
+	home := seedFakeInstall(t)
+	server := lifecycle.ServerBinaryPath(home)
+	if err := os.WriteFile(server, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+		t.Fatalf("seed server binary: %v", err)
+	}
+
+	payload := decodeEnvelope(t, runCLI(t, "", "", "uninstall", "--yes"))["data"].(map[string]any)
+	if payload["server_binary_removed"] != true || payload["server_binary_path"] != server {
+		t.Fatalf("server binary: got removed=%v path=%v, want true %s", payload["server_binary_removed"], payload["server_binary_path"], server)
+	}
+	if _, err := os.Stat(server); !os.IsNotExist(err) {
+		t.Fatalf("okt-server still present at %s: %v", server, err)
+	}
+}
+
 // TestRunUninstall_DefaultPreservesDataAndConfig walks the AC §2 default:
 // no purge flags → binary + wrappers removed, data + config left intact.
 func TestRunUninstall_DefaultPreservesDataAndConfig(t *testing.T) {
@@ -28,6 +46,9 @@ func TestRunUninstall_DefaultPreservesDataAndConfig(t *testing.T) {
 	}
 	if payload["binary_removed"] != true {
 		t.Fatalf("binary_removed: got %v want true", payload["binary_removed"])
+	}
+	if payload["server_binary_removed"] != false {
+		t.Fatalf("server_binary_removed: got %v want false without an okt-server", payload["server_binary_removed"])
 	}
 	wrappers := payload["wrappers"].([]any)
 	if len(wrappers) != 1 {
