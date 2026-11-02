@@ -1,8 +1,11 @@
 package domain
 
 import (
+	"encoding/json"
 	"math"
+	"reflect"
 	"sort"
+	"strings"
 	"testing"
 
 	"github.com/google/uuid"
@@ -176,5 +179,49 @@ func TestParseSyncScope(t *testing.T) {
 		if _, err := ParseSyncScope(in); err == nil {
 			t.Errorf("ParseSyncScope(%q) accepted", in)
 		}
+	}
+}
+
+func TestSyncTypesJSONRoundTrip(t *testing.T) {
+	dev := NewUID()
+	in := SyncProject{
+		ID:         7,
+		Info:       SyncProjectInfo{UID: NewUID(), Name: "N", Slug: "n", Description: "d", KitKey: "k"},
+		PushedHLC:  "h",
+		PullCursor: 9,
+	}
+	raw, err := json.Marshal(in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, key := range []string{`"pushed_hlc"`, `"pull_cursor"`, `"kit_key"`, `"uid"`} {
+		if !strings.Contains(string(raw), key) {
+			t.Errorf("missing %s in %s", key, raw)
+		}
+	}
+	var out SyncProject
+	if err := json.Unmarshal(raw, &out); err != nil || out != in {
+		t.Fatalf("round trip = %+v, %v", out, err)
+	}
+
+	change := SyncChange{Table: "tasks", RowUID: "r", Op: SyncOpUpsert, HLC: "h", Device: dev, Data: map[string]any{"title": "x"}}
+	raw, err = json.Marshal(change)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, key := range []string{`"row_uid"`, `"op":"upsert"`, `"device"`, `"data"`} {
+		if !strings.Contains(string(raw), key) {
+			t.Errorf("missing %s in %s", key, raw)
+		}
+	}
+	var back SyncChange
+	if err := json.Unmarshal(raw, &back); err != nil || !reflect.DeepEqual(back, change) {
+		t.Fatalf("round trip = %+v, %v", back, err)
+	}
+
+	report := SyncReport{Projects: []SyncProjectReport{{Slug: "s", Pushed: 1, Pulled: 2}}}
+	raw, _ = json.Marshal(report)
+	if string(raw) != `{"projects":[{"slug":"s","pushed":1,"pulled":2}]}` {
+		t.Fatalf("report json = %s", raw)
 	}
 }

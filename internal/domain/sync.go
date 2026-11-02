@@ -155,3 +155,57 @@ func syncInvalid(field, value, reason string) error {
 		fmt.Sprintf("invalid %s %q: %s", field, value, reason),
 		map[string]any{"field": field, "value": value})
 }
+
+// SyncOp is the kind of row change a SyncChange carries.
+type SyncOp string
+
+const (
+	SyncOpUpsert SyncOp = "upsert"
+	SyncOpDelete SyncOp = "delete"
+)
+
+// SyncTables lists the synced tables in apply order: parents before children.
+var SyncTables = []string{
+	"projects", "plans", "plan_waves", "tasks", "errors", "solutions", "events",
+	"task_dependencies", "task_tags", "error_tags", "event_tags",
+}
+
+// SyncChange is one row version on the wire. Data holds column values with
+// every foreign key x_id sent as x_uid (tags as tag_name).
+type SyncChange struct {
+	Table  string         `json:"table"`
+	RowUID string         `json:"row_uid"`
+	Op     SyncOp         `json:"op"`
+	HLC    string         `json:"hlc"`
+	Device UID            `json:"device"`
+	Data   map[string]any `json:"data,omitempty"`
+}
+
+// SyncProjectInfo is the identity and shared fields of a synced project.
+type SyncProjectInfo struct {
+	UID         UID    `json:"uid"`
+	Name        string `json:"name"`
+	Slug        string `json:"slug"`
+	Description string `json:"description"`
+	KitKey      string `json:"kit_key"`
+}
+
+// SyncProject is a local synced project with its replication cursors.
+type SyncProject struct {
+	ID         int64           `json:"id"`
+	Info       SyncProjectInfo `json:"info"`
+	PushedHLC  string          `json:"pushed_hlc"`
+	PullCursor int64           `json:"pull_cursor"`
+}
+
+// SyncProjectReport counts the changes one sync moved for a project.
+type SyncProjectReport struct {
+	Slug   string `json:"slug"`
+	Pushed int    `json:"pushed"`
+	Pulled int    `json:"pulled"`
+}
+
+// SyncReport is the outcome of one sync run.
+type SyncReport struct {
+	Projects []SyncProjectReport `json:"projects"`
+}
