@@ -26,7 +26,7 @@ env = { OKT_REQUIRE_PWSH = "1", OKT_REQUIRE_REAL_COSIGN = "1" }
 run = "scripts/test.sh"
 
 [tasks.build]
-description = "Build okt into .tmp/build/ with the current git version"
+description = "Build okt and okt-server into .tmp/build/ with the current git version"
 run = "scripts/build.sh"
 
 [tasks."knowledge:inventory"]
@@ -129,6 +129,10 @@ run = "scripts/test-profile.sh"
 [tasks."scripts:check"]
 description = "Check shell syntax and portability across tracked shell scripts"
 run = "scripts/check-scripts.sh"
+
+[tasks."test:sync-e2e"]
+description = "Run the container end-to-end sync scenario (one server, two clients) with Docker; outputs under .tmp/sync-e2e"
+run = "scripts/sync-e2e.sh"
 
 [tasks."test:coverage-checker"]
 description = "Run focused coverage-checker grammar, freshness, and boundary fixtures"

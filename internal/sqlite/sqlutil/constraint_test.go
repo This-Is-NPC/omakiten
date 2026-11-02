@@ -156,3 +156,40 @@ func TestMapSQLiteError_NonConstraintPassthrough(t *testing.T) {
 		})
 	}
 }
+
+func TestMapSQLiteError_TriggerAbort(t *testing.T) {
+	ctx := context.Background()
+	db := openMemDB(t)
+	for _, stmt := range []string{
+		`CREATE TABLE guarded (id INTEGER PRIMARY KEY, label TEXT)`,
+		`CREATE TRIGGER guarded_guard BEFORE INSERT ON guarded BEGIN SELECT RAISE(ABORT, 'refused'); END`,
+	} {
+		if _, err := db.ExecContext(ctx, stmt); err != nil {
+			t.Fatalf("%s: %v", stmt, err)
+		}
+	}
+	_, err := db.ExecContext(ctx, `INSERT INTO guarded(label) VALUES ('x')`)
+	if err == nil {
+		t.Fatal("expected the trigger to abort")
+	}
+	var ce *sqlutil.ConstraintError
+	if !errors.As(sqlutil.MapSQLiteError(err), &ce) {
+		t.Fatalf("RAISE(ABORT) did not map to *ConstraintError: %v", err)
+	}
+}
+
+func TestMapSQLiteError_PrimaryKey(t *testing.T) {
+	ctx := context.Background()
+	db := openMemDB(t)
+	if _, err := db.ExecContext(ctx, `CREATE TABLE keyed (a TEXT, b TEXT, PRIMARY KEY (a, b)) WITHOUT ROWID`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ExecContext(ctx, `INSERT INTO keyed VALUES ('x', 'y')`); err != nil {
+		t.Fatal(err)
+	}
+	_, err := db.ExecContext(ctx, `INSERT INTO keyed VALUES ('x', 'y')`)
+	var ce *sqlutil.ConstraintError
+	if !errors.As(sqlutil.MapSQLiteError(err), &ce) || ce.Violation != sqlutil.ViolationUnique {
+		t.Fatalf("primary key violation = %v", err)
+	}
+}

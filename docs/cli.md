@@ -41,8 +41,11 @@ agents working in parallel worktrees reach the same project without
 | --- | --- |
 | `setup`, `update`, `uninstall` | Install choices, executable updates, and removal. |
 | `init`, `projects list`, `projects delete` | Register, discover, and remove projects. |
-| `project overview`, `project resume`, `project edit` | Read project state, recover context, and edit its description. |
+| `project overview`, `project resume`, `project edit` | Read project state, recover context, and edit its description or sync scope (`project edit --description <text>`, `--sync-scope local|synced`; either flag alone is enough, `local` is the default). |
 | `project relocate --root PATH` | Repair a moved project's registered root; requires `--project` or `--project-id`. See [project configuration](how-to-configure-a-project.md#repair-a-moved-project). |
+| `remote set <url>`, `remote show`, `remote projects` | Store the sync server URL, show it, and list the projects the server holds. |
+| `sync` | Push local changes then pull remote ones for every project whose sync scope is `synced`; `--project <slug>` limits it to one. Returns `{"projects":[{"slug","pushed","pulled","rejected","error"}]}`. A failing project does not stop the others; when any project has an `error` the command exits non-zero with a `sync_failed` error whose `details.projects` holds the same report. Push pages halve when the server answers `body_too_large`, and a pull that makes no progress fails. |
+| `projects clone <uid> --root PATH` | Create a synced local project from a server project (`uid` from `remote projects`) rooted at the absolute, existing directory `PATH`, and pull its rows. If the pull fails the project exists locally: finish with `okt sync --project <slug>`; cloning the same uid again is refused. Both machines must run the same workflow kit. |
 | `task create`, `task import`, `task export` | Create work and move structured work documents. |
 | `task show`, `task continue`, `task activity` | Read a task with every comment, recover it for an agent, and read its activity. |
 | `list`, `edit`, `move` | List work, change fields, and request a workflow transition; `move --dry-run` reports the transition's guards without moving; `--no-spawn` keeps an automatic agent team closed. |
@@ -76,6 +79,10 @@ agents working in parallel worktrees reach the same project without
 | `completion` | Shell completion from the command tree. |
 | `tui` | Open the interactive terminal. |
 | `serve` | Serve every project to graphical clients over a [local HTTP API](how-to-run-the-local-api.md). |
+
+The sync token comes from the `OMAKITEN_SYNC_TOKEN` environment variable, else from the
+file `sync.token` in the Omakiten data directory. On Unix the file must not be readable by
+group or others (`chmod 600`). Plain `http://` is accepted only for loopback hosts unless `OMAKITEN_SYNC_INSECURE=1` is set; the client never follows redirects. The sync operations are not served by the local HTTP API.
 
 ## Read the result
 

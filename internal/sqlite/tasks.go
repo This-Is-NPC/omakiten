@@ -58,10 +58,10 @@ func (s *Store) CreateTask(ctx context.Context, projectID int64, title, descript
 			// of truth for `subject_depth` event payloads so every
 			// INSERT path must keep it in lockstep with parent_id.
 			row := tx.QueryRowContext(ctx, `
-INSERT INTO tasks(project_id, bucket_id, title, description, priority_id, parent_id, depth)
-VALUES (?, ?, ?, ?, ?, ?, COALESCE((SELECT depth + 1 FROM tasks WHERE id = ?), 0))
+INSERT INTO tasks(project_id, bucket_id, title, description, priority_id, parent_id, depth, uid)
+VALUES (?, ?, ?, ?, ?, ?, COALESCE((SELECT depth + 1 FROM tasks WHERE id = ?), 0), ?)
 RETURNING id, project_id, bucket_id, title, description, priority_id, state, created_at, parent_id, depth
-`, projectID, bucketID, title, description, int(priority), parentArg, parentArg)
+`, projectID, bucketID, title, description, int(priority), parentArg, parentArg, string(domain.NewUID()))
 			return scanTask(row, bucketKey)
 		},
 		Payload: func(task domain.Task) (string, error) {

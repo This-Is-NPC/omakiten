@@ -21,10 +21,12 @@ const modulePath = "omakiten/"
 
 // rule expresses one forbidden import edge: every package whose import path
 // matches `from` (prefix-match) must not import any path starting with one
-// of the prefixes in `forbidden`.
+// of the prefixes in `forbidden`, unless the import also starts with one of
+// the prefixes in `allowed`.
 type rule struct {
 	from      string
 	forbidden []string
+	allowed   []string
 	reason    string
 }
 
@@ -82,6 +84,15 @@ var hexagonalRules = []rule{
 	{from: "internal/config", forbidden: []string{"internal/tui", "internal/cli", "internal/terminal", "internal/httpapi", "internal/daemon"}, reason: "configuration is independent of delivery"},
 	{from: "internal/app", forbidden: []string{"internal/recovery", "internal/terminal", "internal/hooks"}, reason: "application services use adapter ports"},
 	{from: "internal/operation", forbidden: []string{"internal/tui", "internal/cli", "internal/terminal", "internal/httpapi", "internal/daemon"}, reason: "operations are independent of their consumers"},
+	{from: "internal/syncproto", forbidden: []string{"internal/"}, allowed: []string{"internal/domain"}, reason: "the sync wire contract depends on domain types alone"},
+	{from: "internal/app", forbidden: []string{"internal/syncproto", "internal/syncclient", "internal/syncserver"}, reason: "app declares sync ports; the wire and its transports implement them"},
+	{from: "internal/syncserver", forbidden: append([]string{"internal/app", "internal/syncclient"}, syncTransportForbidden...), reason: "the sync server speaks the wire contract over domain types and nothing else"},
+	{from: "internal/syncclient", forbidden: append([]string{"internal/syncserver"}, syncTransportForbidden...), reason: "the sync client implements the app port over the wire contract; it reaches no other adapter"},
+}
+
+// syncTransportForbidden lists the layers neither sync transport may import.
+var syncTransportForbidden = []string{
+	"internal/cli", "internal/tui", "internal/sqlite", "internal/operation", "internal/agentruntime",
 }
 
 // The HTTP adapter reaches runtimes and storage only through its ports.
@@ -416,7 +427,7 @@ func scanHexImport(relSlash, pkgRel, raw string, rules []rule, scan *boundarySca
 			continue
 		}
 		for _, forbidden := range r.forbidden {
-			if strings.HasPrefix(importedRel, forbidden) {
+			if strings.HasPrefix(importedRel, forbidden) && !hasAnyPrefix(importedRel, r.allowed) {
 				scan.violations = append(scan.violations, formatViolation(relSlash, raw, r))
 			}
 		}
@@ -425,4 +436,13 @@ func scanHexImport(relSlash, pkgRel, raw string, rules []rule, scan *boundarySca
 
 func formatViolation(filePath, importPath string, r rule) string {
 	return filePath + " imports " + importPath + " — forbidden by `" + r.from + "`: " + r.reason
+}
+
+func hasAnyPrefix(s string, prefixes []string) bool {
+	for _, p := range prefixes {
+		if strings.HasPrefix(s, p) {
+			return true
+		}
+	}
+	return false
 }

@@ -34,10 +34,10 @@ func (s *Store) CreatePlan(ctx context.Context, projectID int64, slug, name, goa
 		EntityID:   func(p domain.Plan) int64 { return p.ID },
 		Mutate: func(ctx context.Context, tx *sql.Tx) (domain.Plan, error) {
 			row := tx.QueryRowContext(ctx, `
-INSERT INTO plans(project_id, slug, name, goal_body)
-VALUES (?, ?, ?, ?)
+INSERT INTO plans(project_id, slug, name, goal_body, uid)
+VALUES (?, ?, ?, ?, ?)
 RETURNING id, project_id, slug, name, goal_body, status, created_at, updated_at, completed_at
-`, projectID, slug, name, goalBody)
+`, projectID, slug, name, goalBody, string(domain.NewUID()))
 			plan, err := sqlutil.ScanRow(row, decodePlan)
 			if err != nil {
 				var ce *sqlutil.ConstraintError
@@ -570,9 +570,9 @@ func addPlanWaveTx(ctx context.Context, tx *sql.Tx, projectID, planID int64, nam
 	}
 
 	row := tx.QueryRowContext(ctx, `
-INSERT INTO plan_waves(plan_id, name, position) VALUES (?, ?, ?)
+INSERT INTO plan_waves(plan_id, name, position, uid) VALUES (?, ?, ?, ?)
 RETURNING id, plan_id, name, position
-`, planID, name, position)
+`, planID, name, position, string(domain.NewUID()))
 	var wave domain.PlanWave
 	if err := row.Scan(&wave.ID, &wave.PlanID, &wave.Name, &wave.Position); err != nil {
 		var ce *sqlutil.ConstraintError
@@ -1318,7 +1318,7 @@ func (s *Store) AssignTask(ctx context.Context, projectID, taskID int64, assigne
 }
 
 func (s *Store) probeTaskAssignment(ctx context.Context, projectID, taskID int64, assignee string, buckets domain.BucketResolver) (domain.Task, string, bool, error) {
-	tx, err := s.beginTransaction(ctx)
+	tx, err := s.beginReadTransaction(ctx)
 	if err != nil {
 		return domain.Task{}, "", false, err
 	}
@@ -1546,11 +1546,15 @@ func insertEntityEvent(ctx context.Context, exec dbExecutor, entityType string, 
 	}
 	var event domain.Event
 	source, entrypoint, agentModel, agentSessionID := agentAttribution(ctx)
+	stamp, err := stampEvent(ctx, exec)
+	if err != nil {
+		return domain.Event{}, fmt.Errorf("record %s event: %w", eventType, err)
+	}
 	if err := exec.QueryRowContext(ctx, `
-INSERT INTO events(entity_type, entity_id, project_id, event_type, payload, source, entrypoint, agent_model, agent_session_id)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+INSERT INTO events(entity_type, entity_id, project_id, event_type, payload, source, entrypoint, agent_model, agent_session_id, uid, hlc, device_id, actor_id)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 RETURNING id, entity_type, entity_id, project_id, event_type, COALESCE(body, ''), payload, created_at
-`, entityType, entityID, projectID, eventType, payload, source, entrypoint, agentModel, agentSessionID).Scan(
+`, entityType, entityID, projectID, eventType, payload, source, entrypoint, agentModel, agentSessionID, stamp.UID, stamp.HLC, stamp.Device, stamp.Actor).Scan(
 		&event.ID, &event.EntityType, &event.EntityID, &event.ProjectID,
 		&event.EventType, &event.Body, &event.Payload, &event.CreatedAt,
 	); err != nil {

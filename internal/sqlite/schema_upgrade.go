@@ -9,15 +9,19 @@ import (
 
 // schemaStep is the part of schema.sql a schema version adds. Its statements
 // start at marker and run to the next step's marker or the end of the file.
+// backfill, when set, writes the data SQL cannot produce; it runs in the same
+// transaction right after the step's statements.
 type schemaStep struct {
-	version int
-	marker  string
+	version  int
+	marker   string
+	backfill func(ctx context.Context, db schemaExecutor) error
 }
 
 // schemaSteps lists, in order, the additions after the version 1 baseline.
 var schemaSteps = []schemaStep{
 	{version: 2, marker: "CREATE TABLE document_metadata"},
 	{version: 3, marker: "CREATE TABLE agent_teams"},
+	{version: 4, marker: "CREATE TABLE sync_identity", backfill: backfillSyncIdentity},
 }
 
 // schemaThrough returns the statements of the schema at version.
@@ -53,6 +57,11 @@ func applySchemaSteps(ctx context.Context, db schemaExecutor, version int) error
 		}
 		if _, err := db.ExecContext(ctx, stepSQL(i)); err != nil {
 			return fmt.Errorf("add schema version %d: %w", step.version, err)
+		}
+		if step.backfill != nil {
+			if err := step.backfill(ctx, db); err != nil {
+				return fmt.Errorf("backfill schema version %d: %w", step.version, err)
+			}
 		}
 		if _, err := db.ExecContext(ctx, fmt.Sprintf("PRAGMA user_version = %d", step.version)); err != nil {
 			return fmt.Errorf("set schema version %d: %w", step.version, err)

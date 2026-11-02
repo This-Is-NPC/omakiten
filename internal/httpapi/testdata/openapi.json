@@ -955,12 +955,16 @@
           },
           "project": {
             "$ref": "#/components/schemas/contract.ProjectSummary"
+          },
+          "sync_scope": {
+            "type": "string"
           }
         },
         "required": [
           "description",
           "next_step_prompt",
-          "project"
+          "project",
+          "sync_scope"
         ],
         "type": "object"
       },
@@ -1946,13 +1950,17 @@
           },
           "slug": {
             "type": "string"
+          },
+          "sync_scope": {
+            "type": "string"
           }
         },
         "required": [
           "id",
           "name",
           "root_path",
-          "slug"
+          "slug",
+          "sync_scope"
         ],
         "type": "object"
       },
@@ -3564,6 +3572,9 @@
           },
           "slug": {
             "type": "string"
+          },
+          "sync_scope": {
+            "type": "string"
           }
         },
         "required": [
@@ -3571,7 +3582,8 @@
           "id",
           "name",
           "root_path",
-          "slug"
+          "slug",
+          "sync_scope"
         ],
         "type": "object"
       },
@@ -3931,11 +3943,11 @@
         "properties": {
           "description": {
             "type": "string"
+          },
+          "sync_scope": {
+            "type": "string"
           }
         },
-        "required": [
-          "description"
-        ],
         "type": "object"
       },
       "httpapi.EditTaskBody": {

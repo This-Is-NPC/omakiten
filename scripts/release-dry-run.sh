@@ -71,4 +71,19 @@ go run ./cmd/okt-release-metadata verify \
   --manifest "$manifest" \
   --provenance-bundle "$provenance_bundle"
 
-printf 'release dry run passed: 6 archives, manifest, 3 signature bundles, and SLSA provenance are digest-consistent\n'
+for archive in "$dist"/*.tar.gz; do
+  entries="$(tar -tzf "$archive")"
+  if ! grep -qx okt <<<"$entries" || ! grep -qx okt-server <<<"$entries"; then
+    printf '%s lacks okt or okt-server\n' "$archive" >&2
+    exit 1
+  fi
+done
+for archive in "$dist"/*.zip; do
+  entries="$(unzip -Z1 "$archive")"
+  if ! grep -qx okt.exe <<<"$entries" || ! grep -qx okt-server.exe <<<"$entries"; then
+    printf '%s lacks okt.exe or okt-server.exe\n' "$archive" >&2
+    exit 1
+  fi
+done
+
+printf 'release dry run passed: 6 archives with okt and okt-server, manifest, 3 signature bundles, and SLSA provenance are digest-consistent\n'

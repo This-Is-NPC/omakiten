@@ -1,6 +1,7 @@
 package operation
 
 import (
+	"errors"
 	"strings"
 	"testing"
 
@@ -10,15 +11,15 @@ import (
 
 // TestEditProjectPersistsAndEmitsProjectUpdated locks the restored
 // description write path: EditProject must persist through the store's
-// UpdateProjectDescription method and emit a project.updated audit
+// UpdateProject method and emit a project.updated audit
 // event keyed by the project id with a description from→to payload.
 func TestEditProjectPersistsAndEmitsProjectUpdated(t *testing.T) {
 	fixture := newAgentFixture(t)
 
-	const want = "A backlog management tool for AI-driven workflows."
+	want := "A backlog management tool for AI-driven workflows."
 	resp, err := fixture.service.EditProject(fixture.ctx, contract.EditProjectInput{
 		ProjectSelector: contract.ProjectSelector{ProjectID: fixture.projectA.ID},
-		Description:     want,
+		Description:     &want,
 	})
 	if err != nil {
 		t.Fatalf("EditProject() error = %v", err)
@@ -31,7 +32,7 @@ func TestEditProjectPersistsAndEmitsProjectUpdated(t *testing.T) {
 	}
 
 	// Persisted: a fresh read of the row through the store returns the
-	// new description (proves UpdateProjectDescription committed, not
+	// new description (proves UpdateProject committed, not
 	// just that the DTO echoed the input).
 	persisted, err := fixture.store.FindProjectByID(fixture.ctx, fixture.projectA.ID)
 	if err != nil {
@@ -74,10 +75,11 @@ func TestEditProjectPersistsAndEmitsProjectUpdated(t *testing.T) {
 // project, so writing "" is a no-op).
 func TestEditProjectNoChangeSkipsEvent(t *testing.T) {
 	fixture := newAgentFixture(t)
+	empty := ""
 
 	if _, err := fixture.service.EditProject(fixture.ctx, contract.EditProjectInput{
 		ProjectSelector: contract.ProjectSelector{ProjectID: fixture.projectA.ID},
-		Description:     "",
+		Description:     &empty,
 	}); err != nil {
 		t.Fatalf("EditProject() error = %v", err)
 	}
@@ -89,6 +91,48 @@ func TestEditProjectNoChangeSkipsEvent(t *testing.T) {
 	for _, row := range rows {
 		if row.EventType == domain.EventTypeProjectUpdated {
 			t.Fatalf("unexpected %s event emitted for a no-op edit", domain.EventTypeProjectUpdated)
+		}
+	}
+}
+
+// TestEditProjectSyncScope locks the scope write path: a valid scope is
+// persisted and recorded in the event payload, an invalid or missing edit is
+// refused with a validation error.
+func TestEditProjectSyncScope(t *testing.T) {
+	fixture := newAgentFixture(t)
+	selector := contract.ProjectSelector{ProjectID: fixture.projectA.ID}
+	synced := "synced"
+
+	resp, err := fixture.service.EditProject(fixture.ctx, contract.EditProjectInput{ProjectSelector: selector, SyncScope: &synced})
+	if err != nil {
+		t.Fatalf("EditProject() error = %v", err)
+	}
+	if resp.SyncScope != domain.SyncScopeSynced || resp.Project.SyncScope != domain.SyncScopeSynced {
+		t.Fatalf("EditProject() scope = %q / %q, want synced", resp.SyncScope, resp.Project.SyncScope)
+	}
+	rows, err := fixture.store.ListEvents(fixture.ctx, domain.EventFilter{ProjectID: fixture.projectA.ID})
+	if err != nil {
+		t.Fatalf("ListEvents() error = %v", err)
+	}
+	found := false
+	for _, row := range rows {
+		if row.EventType == domain.EventTypeProjectUpdated && strings.Contains(row.Payload, `"sync_scope":{"from":"local","to":"synced"}`) {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("no %s event with a sync_scope delta; rows = %#v", domain.EventTypeProjectUpdated, rows)
+	}
+
+	bad := "everywhere"
+	for name, input := range map[string]contract.EditProjectInput{
+		"invalid scope": {ProjectSelector: selector, SyncScope: &bad},
+		"empty edit":    {ProjectSelector: selector},
+	} {
+		_, err := fixture.service.EditProject(fixture.ctx, input)
+		var coded *domain.CodedError
+		if !errors.As(err, &coded) || coded.Code != domain.ErrValidation {
+			t.Fatalf("%s: error = %v, want validation error", name, err)
 		}
 	}
 }

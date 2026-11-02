@@ -8,10 +8,15 @@ import (
 	"omakiten/internal/domain"
 )
 
+var (
+	boardForAgents = "Board for agents"
+	synced         = "synced"
+)
+
 var _ = mapping([]mappingCase{
 	{"listProjects", http.MethodGet, "/api/v1/projects", "", "ListProjects", nil},
 	{"getProject", http.MethodGet, "/api/v1/projects/alpha", "", "Overview", contract.OverviewInput{ProjectSelector: alpha}},
-	{"editProject", http.MethodPatch, "/api/v1/projects/alpha", `{"description":"Board for agents"}`, "EditProject", contract.EditProjectInput{ProjectSelector: alpha, Description: "Board for agents"}},
+	{"editProject", http.MethodPatch, "/api/v1/projects/alpha", `{"description":"Board for agents","sync_scope":"synced"}`, "EditProject", contract.EditProjectInput{ProjectSelector: alpha, Description: &boardForAgents, SyncScope: &synced}},
 	{"relocateProject", http.MethodPost, "/api/v1/projects/alpha/relocate", `{"root_path":"/work/alpha"}`, "RelocateProject", contract.RelocateProjectInput{ProjectSelector: alpha, RootPath: "/work/alpha"}},
 	{"deleteProject", http.MethodDelete, "/api/v1/projects/alpha?confirmed=true", "", "RemoveProject", contract.RemoveProjectInput{ProjectSelector: alpha, Confirmed: true}},
 	{"resumeProject", http.MethodGet, "/api/v1/projects/alpha/resume", "", "ResumeProject", contract.ResumeProjectInput{ProjectSelector: alpha}},

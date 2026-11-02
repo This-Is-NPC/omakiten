@@ -50,3 +50,32 @@ func TestCLIProjectOverviewResumeEdit(t *testing.T) {
 		t.Fatalf("overview after edit missing project: %s", overview2)
 	}
 }
+
+func TestCLIProjectEditSyncScope(t *testing.T) {
+	tmp := t.TempDir()
+	dbPath := filepath.Join(tmp, "omakiten.db")
+	configPath := filepath.Join(tmp, "config", "omakase.yaml")
+	projectRoot := filepath.Join(tmp, "project")
+	if err := os.MkdirAll(projectRoot, 0o755); err != nil {
+		t.Fatalf("MkdirAll(projectRoot) error = %v", err)
+	}
+	t.Chdir(projectRoot)
+
+	runCLI(t, dbPath, configPath, "init", "--name", "Project", "--slug", "project")
+	if overview := runCLI(t, dbPath, configPath, "project", "overview"); !strings.Contains(overview, `"sync_scope":"local"`) {
+		t.Fatalf("new project is not local: %s", overview)
+	}
+
+	runCLI(t, dbPath, configPath, "project", "edit", "--sync-scope", "synced")
+	if overview := runCLI(t, dbPath, configPath, "project", "overview"); !strings.Contains(overview, `"sync_scope":"synced"`) {
+		t.Fatalf("overview does not show synced: %s", overview)
+	}
+
+	edit := runCLI(t, dbPath, configPath, "project", "edit", "--description", "only text")
+	if !strings.Contains(edit, `"sync_scope":"synced"`) || !strings.Contains(edit, `"description":"only text"`) {
+		t.Fatalf("description-only edit changed scope or lost text: %s", edit)
+	}
+
+	runCLIExpectError(t, dbPath, configPath, "validation_error", "project", "edit", "--sync-scope", "everywhere")
+	runCLIExpectError(t, dbPath, configPath, "validation_error", "project", "edit")
+}

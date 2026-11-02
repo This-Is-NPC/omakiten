@@ -11,12 +11,10 @@ import (
 	"omakiten/internal/sqlite/sqlutil"
 )
 
-// toolCallEventTypeList is the SQL-friendly form of the canonical
-// tool-call event_type vocabulary. Readers filter via `event_type IN
-// (...)` so legacy rows that the migration left under 'operation' (a
-// those are stale fixtures, not real activity, and would distort the
-// logs view.
-const toolCallEventTypeList = "'cli.tool_call', 'tui.tool_call'"
+// toolCallEventTypeList selects the tool-call event types from the view the
+// sync capture triggers share, so readers and capture agree on what an
+// activity log is. Readers filter via `event_type IN (...)`.
+const toolCallEventTypeList = "SELECT event_type FROM sync_activity_event_types"
 
 // toolCallPayload builds the canonical payload JSON written alongside
 // every BeginActivityLog row. Keys mirror the discrete columns so hooks
@@ -88,14 +86,20 @@ func (s *Store) BeginActivityLog(ctx context.Context, log any) (int64, error) {
 	if err != nil {
 		return 0, fmt.Errorf("encode activity log payload: %w", err)
 	}
-	row := s.query(ctx).QueryRowContext(ctx, `
-INSERT INTO events(entity_type, project_id, project_slug, event_type, payload, source, entrypoint, operation, status, agent_model, agent_session_id, created_at)
-VALUES ('system', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-RETURNING id
-`, projectID, projectSlug, eventType, payload, string(activityLog.Source), activityLog.Entrypoint, activityLog.Operation, activityLog.Status, activityLog.AgentModel, sessionID)
-
 	var id int64
-	if err := row.Scan(&id); err != nil {
+	err = s.WithinTransaction(ctx, func(ctx context.Context) error {
+		exec := s.query(ctx)
+		stamp, err := stampEvent(ctx, exec)
+		if err != nil {
+			return err
+		}
+		return exec.QueryRowContext(ctx, `
+INSERT INTO events(entity_type, project_id, project_slug, event_type, payload, source, entrypoint, operation, status, agent_model, agent_session_id, created_at, uid, hlc, device_id, actor_id)
+VALUES ('system', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, ?, ?, ?, ?)
+RETURNING id
+`, projectID, projectSlug, eventType, payload, string(activityLog.Source), activityLog.Entrypoint, activityLog.Operation, activityLog.Status, activityLog.AgentModel, sessionID, stamp.UID, stamp.HLC, stamp.Device, stamp.Actor).Scan(&id)
+	})
+	if err != nil {
 		return 0, fmt.Errorf("begin activity log: %w", err)
 	}
 	// Prune synchronously after insert; cleanup is fast on local SQLite.

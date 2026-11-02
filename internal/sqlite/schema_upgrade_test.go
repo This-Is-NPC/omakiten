@@ -2,7 +2,9 @@ package sqlite
 
 import (
 	"context"
+	"database/sql"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -13,6 +15,7 @@ func TestSchemaUpgradePreservesWork(t *testing.T) {
 	for name, downgrade := range map[string]string{
 		"version 1": "DROP TABLE agent_sessions; DROP TABLE agent_teams; DROP INDEX idx_events_agent_session; DROP TABLE document_metadata; PRAGMA user_version = 1",
 		"version 2": "DROP TABLE agent_sessions; DROP TABLE agent_teams; DROP INDEX idx_events_agent_session; PRAGMA user_version = 2",
+		"version 3": "PRAGMA user_version = 3",
 	} {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
@@ -20,6 +23,39 @@ func TestSchemaUpgradePreservesWork(t *testing.T) {
 		})
 	}
 }
+
+// dropSyncIdentitySQL turns a current database into its version 3 shape; the
+// capture triggers go first because they name the columns it drops.
+func dropSyncIdentitySQL(t *testing.T, db *sql.DB) string {
+	t.Helper()
+	rows, err := db.Query(`SELECT 'DROP TRIGGER ' || name || ';' FROM sqlite_master WHERE type = 'trigger' AND name LIKE 'sync\_capture\_%' ESCAPE '\'`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = rows.Close() }()
+	var drops strings.Builder
+	for rows.Next() {
+		var drop string
+		if err := rows.Scan(&drop); err != nil {
+			t.Fatal(err)
+		}
+		drops.WriteString(drop)
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatal(err)
+	}
+	return drops.String() + dropSyncObjectsSQL
+}
+
+const dropSyncObjectsSQL = `DROP VIEW sync_capture_projects; DROP VIEW sync_activity_event_types; DROP TABLE sync_rows; DROP TABLE sync_projects; DROP TABLE sync_inbox; DROP TABLE sync_identity;
+DROP INDEX idx_projects_uid; DROP INDEX idx_tasks_uid; DROP INDEX idx_events_uid; DROP INDEX idx_errors_uid;
+DROP INDEX idx_solutions_uid; DROP INDEX idx_plans_uid; DROP INDEX idx_plan_waves_uid;
+ALTER TABLE projects DROP COLUMN uid; ALTER TABLE tasks DROP COLUMN uid; ALTER TABLE events DROP COLUMN uid;
+ALTER TABLE errors DROP COLUMN uid; ALTER TABLE solutions DROP COLUMN uid; ALTER TABLE plans DROP COLUMN uid;
+ALTER TABLE plan_waves DROP COLUMN uid;
+ALTER TABLE events DROP COLUMN hlc; ALTER TABLE events DROP COLUMN device_id; ALTER TABLE events DROP COLUMN actor_id;
+ALTER TABLE projects DROP COLUMN sync_scope;
+`
 
 // assertUpgradeFrom seeds a plan, applies downgrade, reopens, and checks the
 // plan survives on the current schema.
@@ -39,7 +75,7 @@ func assertUpgradeFrom(t *testing.T, downgrade string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.db.ExecContext(ctx, downgrade); err != nil {
+	if _, err := store.db.ExecContext(ctx, dropSyncIdentitySQL(t, store.db)+downgrade); err != nil {
 		t.Fatal(err)
 	}
 	if err := store.Close(); err != nil {

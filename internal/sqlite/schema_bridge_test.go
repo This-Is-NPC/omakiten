@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -58,8 +59,8 @@ func assertV030BridgeMarker(t *testing.T, ctx context.Context, db schemaQueryer)
 	if err := db.QueryRowContext(ctx, "PRAGMA user_version").Scan(&userVersion); err != nil {
 		t.Fatalf("user_version: %v", err)
 	}
-	if userVersion != 3 {
-		t.Fatalf("user_version = %d, want 3", userVersion)
+	if userVersion != 4 {
+		t.Fatalf("user_version = %d, want 4", userVersion)
 	}
 	var migrationTables int
 	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'schema_migrations'`).Scan(&migrationTables); err != nil {
@@ -147,8 +148,8 @@ func TestOpenBridgeCancellationAfterCommitDoesNotReportDurableFailure(t *testing
 	if err := db.QueryRowContext(context.Background(), "PRAGMA user_version").Scan(&userVersion); err != nil {
 		t.Fatalf("user_version after committed cancellation: %v", err)
 	}
-	if userVersion != 3 {
-		t.Fatalf("user_version after committed cancellation = %d, want 3", userVersion)
+	if userVersion != 4 {
+		t.Fatalf("user_version after committed cancellation = %d, want 4", userVersion)
 	}
 }
 
@@ -547,6 +548,10 @@ func bridgeSequenceSnapshotFromDB(t *testing.T, db *sql.DB) string {
 	return snapshot.String()
 }
 
+// syncColumns are the columns schema version 4 adds; the bridge snapshot
+// compares only the version 3 columns.
+var syncColumns = []string{"uid", "hlc", "device_id", "actor_id", "sync_scope"}
+
 func appendBridgeTableSnapshot(t *testing.T, db *sql.DB, snapshot *strings.Builder, table string) {
 	t.Helper()
 	rows, err := db.Query(`SELECT * FROM "` + table + `" ORDER BY rowid`)
@@ -558,7 +563,8 @@ func appendBridgeTableSnapshot(t *testing.T, db *sql.DB, snapshot *strings.Build
 	if err != nil {
 		t.Fatalf("snapshot columns %s: %v", table, err)
 	}
-	fmt.Fprintf(snapshot, "%s(%d):", table, len(columns))
+	baseline := baselineColumns(columns)
+	fmt.Fprintf(snapshot, "%s(%d):", table, countTrue(baseline))
 	for rows.Next() {
 		values := make([]any, len(columns))
 		pointers := make([]any, len(columns))
@@ -568,10 +574,34 @@ func appendBridgeTableSnapshot(t *testing.T, db *sql.DB, snapshot *strings.Build
 		if err := rows.Scan(pointers...); err != nil {
 			t.Fatalf("snapshot row %s: %v", table, err)
 		}
-		fmt.Fprintf(snapshot, "%#v;", values)
+		row := make([]any, 0, len(values))
+		for index, value := range values {
+			if baseline[index] {
+				row = append(row, value)
+			}
+		}
+		fmt.Fprintf(snapshot, "%#v;", row)
 	}
 	if err := rows.Err(); err != nil {
 		t.Fatalf("snapshot rows %s: %v", table, err)
 	}
 	snapshot.WriteByte('\n')
+}
+
+func baselineColumns(columns []string) []bool {
+	baseline := make([]bool, len(columns))
+	for index, column := range columns {
+		baseline[index] = !slices.Contains(syncColumns, column)
+	}
+	return baseline
+}
+
+func countTrue(flags []bool) int {
+	count := 0
+	for _, flag := range flags {
+		if flag {
+			count++
+		}
+	}
+	return count
 }

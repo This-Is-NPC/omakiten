@@ -26,7 +26,8 @@ func TestForeignKeysEnforcedOnEveryConnection(t *testing.T) {
 		t.Fatalf("pin first connection: %v", err)
 	}
 	defer func() { _ = busyConn.Close() }()
-	busyTx, err := busyConn.BeginTx(ctx, nil)
+	// Read-only stays deferred, so it pins the connection without taking the write lock.
+	busyTx, err := busyConn.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
 	if err != nil {
 		t.Fatalf("begin holding tx: %v", err)
 	}
@@ -74,7 +75,8 @@ func TestBusyTimeoutAndSyncOnEveryConnection(t *testing.T) {
 		t.Fatalf("pin first connection: %v", err)
 	}
 	defer func() { _ = busyConn.Close() }()
-	busyTx, err := busyConn.BeginTx(ctx, nil)
+	// Read-only stays deferred, so it pins the connection without taking the write lock.
+	busyTx, err := busyConn.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
 	if err != nil {
 		t.Fatalf("begin holding tx: %v", err)
 	}
@@ -139,7 +141,8 @@ func TestDeletePlanCascadesOnColdConnection(t *testing.T) {
 		t.Fatalf("pin first connection: %v", err)
 	}
 	defer func() { _ = busyConn.Close() }()
-	busyTx, err := busyConn.BeginTx(ctx, nil)
+	// Read-only stays deferred, so it pins the connection without taking the write lock.
+	busyTx, err := busyConn.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
 	if err != nil {
 		t.Fatalf("begin holding tx: %v", err)
 	}

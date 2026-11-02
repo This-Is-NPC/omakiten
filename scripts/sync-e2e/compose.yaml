@@ -1,0 +1,53 @@
+name: okt-sync-e2e
+
+x-client: &client
+  build:
+    context: ../../.tmp/sync-e2e/bin
+    dockerfile: ../../../scripts/sync-e2e/Dockerfile
+  image: okt-sync-e2e
+  command: ["sleep", "infinity"]
+  networks: [sync]
+  depends_on:
+    server:
+      condition: service_healthy
+
+services:
+  server:
+    build:
+      context: ../../.tmp/sync-e2e/bin
+      dockerfile: ../../../scripts/sync-e2e/Dockerfile
+    image: okt-sync-e2e
+    command: ["okt-server", "--listen", "0.0.0.0:8787", "--db", "/data/server.db", "--token-file", "/run/okt-token"]
+    volumes:
+      - server-data:/data
+      - ../../.tmp/sync-e2e/token:/run/okt-token:ro
+    networks: [sync]
+    healthcheck:
+      test: ["CMD", "nc", "-z", "127.0.0.1", "8787"]
+      interval: 1s
+      timeout: 2s
+      retries: 30
+
+  a:
+    <<: *client
+    tmpfs: [/home/a, /work]
+    environment: &client-env
+      HOME: /home/a
+      OMAKITEN_HOME: /home/a/omakiten
+      OMAKITEN_SYNC_TOKEN: ${OKT_E2E_TOKEN:?set by scripts/sync-e2e.sh}
+      OMAKITEN_SYNC_INSECURE: "1"
+
+  b:
+    <<: *client
+    tmpfs: [/home/b, /work]
+    environment:
+      <<: *client-env
+      HOME: /home/b
+      OMAKITEN_HOME: /home/b/omakiten
+
+networks:
+  sync:
+    internal: true
+
+volumes:
+  server-data:

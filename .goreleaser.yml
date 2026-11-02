@@ -25,10 +25,26 @@ builds:
     goarch:
       - amd64
       - arm64
+  - id: okt-server
+    main: ./cmd/okt-server
+    binary: okt-server
+    env:
+      - CGO_ENABLED=0
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w -X main.version={{.Version}}
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
 
 archives:
   - id: okt
-    ids: [okt]
+    ids: [okt, okt-server]
     name_template: 'okt_{{ title .Os }}_{{ if eq .Arch "amd64" }}x86_64{{ else }}{{ .Arch }}{{ end }}'
     formats: [tar.gz]
     format_overrides:

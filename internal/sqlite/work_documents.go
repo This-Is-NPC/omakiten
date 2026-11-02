@@ -53,7 +53,7 @@ func (s *Store) ReadWorkRecord(ctx context.Context, projectID int64, slug string
 			return record, e
 		}
 		ownerID = taskID
-		query = "WITH RECURSIVE members(id) AS (SELECT ? UNION ALL SELECT tasks.id FROM tasks JOIN members ON tasks.parent_id=members.id WHERE tasks.project_id=?) SELECT id, 0, COALESCE(plan_id, 0), COALESCE(assigned_to, '') FROM tasks WHERE id IN (SELECT id FROM members) ORDER BY depth, id"
+		query = "WITH RECURSIVE members(id) AS (SELECT ? UNION SELECT tasks.id FROM tasks JOIN members ON tasks.parent_id=members.id WHERE tasks.project_id=?) SELECT id, 0, COALESCE(plan_id, 0), COALESCE(assigned_to, '') FROM tasks WHERE id IN (SELECT id FROM members) ORDER BY depth, id"
 	}
 	if err != nil {
 		return record, err

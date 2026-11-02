@@ -22,7 +22,8 @@ type ProjectOperations interface {
 
 // EditProjectBody is the editProject request body.
 type EditProjectBody struct {
-	Description string `json:"description"`
+	Description *string `json:"description,omitempty"`
+	SyncScope   *string `json:"sync_scope,omitempty"`
 }
 
 // RelocateProjectBody is the registration repair request body.
@@ -63,7 +64,7 @@ func (s *Server) editProject(r *http.Request, body EditProjectBody) (contract.Ed
 	if err != nil {
 		return contract.EditProjectResponse{}, err
 	}
-	return ops.EditProject(r.Context(), contract.EditProjectInput{ProjectSelector: selector, Description: body.Description})
+	return ops.EditProject(r.Context(), contract.EditProjectInput{ProjectSelector: selector, Description: body.Description, SyncScope: body.SyncScope})
 }
 
 func (s *Server) relocateProject(r *http.Request, body RelocateProjectBody) (contract.RelocateProjectResponse, error) {

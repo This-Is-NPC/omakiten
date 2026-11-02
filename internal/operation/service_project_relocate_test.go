@@ -15,7 +15,8 @@ import (
 
 func TestRelocateProjectPreservesWorkAfterDirectoryMove(t *testing.T) {
 	f := newAgentFixture(t)
-	if _, err := f.store.UpdateProjectDescription(f.ctx, f.projectA.ID, "Preserved description"); err != nil {
+	description := "Preserved description"
+	if _, err := f.store.UpdateProject(f.ctx, f.projectA.ID, domain.ProjectPatch{Description: &description}); err != nil {
 		t.Fatal(err)
 	}
 	root := filepath.Join(t.TempDir(), "moved")

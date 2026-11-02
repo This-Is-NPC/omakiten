@@ -79,7 +79,7 @@ func (f fakeProjectRepo) DeleteProject(context.Context, int64) error {
 	return nil
 }
 
-func (f fakeProjectRepo) UpdateProjectDescription(context.Context, int64, string) (domain.Project, error) {
+func (f fakeProjectRepo) UpdateProject(context.Context, int64, domain.ProjectPatch) (domain.Project, error) {
 	return domain.Project{}, nil
 }
 

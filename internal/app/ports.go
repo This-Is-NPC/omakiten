@@ -15,6 +15,8 @@ type DocumentRepository interface {
 	DependencyRepository
 	TagRepository
 	WithinTransaction(context.Context, func(context.Context) error) error
+	// WithinReadTransaction runs pure reads in one read-only snapshot.
+	WithinReadTransaction(context.Context, func(context.Context) error) error
 	ReadWorkRecord(context.Context, int64, string, int64, domain.BucketResolver) (domain.WorkRecord, error)
 	SaveWorkMetadata(context.Context, string, int64, []byte) error
 }
@@ -42,12 +44,10 @@ type ProjectRepository interface {
 	// project_id set) are explicitly removed because events has no FK
 	// to projects — leaving them would orphan the activity feed.
 	DeleteProject(ctx context.Context, projectID int64) error
-	// UpdateProjectDescription persists a new description onto a live
-	// (non-archived) project and returns the refreshed row. The
-	// projects.description is part of the current schema but
-	// had no write path until this restored it. An unknown or archived
-	// id matches no row and surfaces ErrProjectNotFound.
-	UpdateProjectDescription(ctx context.Context, id int64, description string) (domain.Project, error)
+	// UpdateProject applies the non-nil patch fields to a live
+	// (non-archived) project and returns the refreshed row. An unknown or
+	// archived id matches no row and surfaces ErrProjectNotFound.
+	UpdateProject(ctx context.Context, id int64, patch domain.ProjectPatch) (domain.Project, error)
 	// UpdateProjectRootPath compares the previous root and commits the path and audit event together.
 	UpdateProjectRootPath(ctx context.Context, id int64, previousRoot, root string) (domain.Project, error)
 }

@@ -13,6 +13,9 @@ where to look: `project resume` and `task continue` for the state of the work,
 commands and flags, and `okt docs` for how a capability works. `okt docs list`
 names these guides with the question each answers; `okt docs show <topic>`
 prints one, as shipped with the installed release, without a network.
+It also tells the agent that a project may be synced across machines and
+that `okt sync`, `okt remote set`, and sync-scope changes run only when the
+user asks, because they send board data off the machine.
 
 ## Install the skill
 

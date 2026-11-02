@@ -37,10 +37,10 @@ func (s *Store) RecordError(ctx context.Context, projectID int64, description, e
 	}
 	source, entrypoint, agentModel, agentSessionID := agentAttribution(ctx)
 	row := tx.QueryRowContext(ctx, `
-INSERT INTO errors(description, context, project_id, source, entrypoint, agent_model, agent_session_id)
-VALUES (?, ?, ?, ?, ?, ?, ?)
+INSERT INTO errors(description, context, project_id, source, entrypoint, agent_model, agent_session_id, uid)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 RETURNING id, description, context, COALESCE(project_id, 0), created_at, COALESCE(source, ''), COALESCE(entrypoint, ''), COALESCE(agent_model, ''), COALESCE(agent_session_id, '')
-`, description, errContext, projectIDArg, source, entrypoint, agentModel, agentSessionID)
+`, description, errContext, projectIDArg, source, entrypoint, agentModel, agentSessionID, string(domain.NewUID()))
 	if err := row.Scan(&record.ID, &record.Description, &record.Context, &record.ProjectID, &record.CreatedAt, &record.Source, &record.Entrypoint, &record.AgentModel, &record.AgentSessionID); err != nil {
 		return domain.ErrorRecord{}, err
 	}
@@ -145,10 +145,10 @@ func (s *Store) AddSolution(ctx context.Context, errorID int64, description, ste
 	}
 	source, entrypoint, agentModel, agentSessionID := agentAttribution(ctx)
 	row := s.query(ctx).QueryRowContext(ctx, `
-INSERT INTO solutions(error_id, description, steps, task_id, source, entrypoint, agent_model, agent_session_id)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+INSERT INTO solutions(error_id, description, steps, task_id, source, entrypoint, agent_model, agent_session_id, uid)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 RETURNING id, error_id, description, steps, success, task_id, COALESCE(tried_at, ''), created_at, likes, COALESCE(source, ''), COALESCE(entrypoint, ''), COALESCE(agent_model, ''), COALESCE(agent_session_id, '')
-`, errorID, description, steps, taskID, source, entrypoint, agentModel, agentSessionID)
+`, errorID, description, steps, taskID, source, entrypoint, agentModel, agentSessionID, string(domain.NewUID()))
 	return scanSolution(row)
 }
 

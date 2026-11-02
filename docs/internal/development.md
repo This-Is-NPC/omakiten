@@ -64,7 +64,7 @@ flow, rather than as a prerequisite for every code change.
 | Task | Purpose |
 | --- | --- |
 | `fmt`, `fmt:check` | Format sources or check formatting. |
-| `build` | Build `.tmp/build/okt` with the current Git version. |
+| `build` | Build `.tmp/build/okt` and `.tmp/build/okt-server` with the current Git version. |
 | `test` | Run all packages with real Cosign and PowerShell installer assurance, enforce coverage, then run concurrency/race checks. |
 | `lint` | Run the pinned Go linter. |
 | `vuln` | Scan Go dependencies for known vulnerabilities. |
@@ -72,6 +72,7 @@ flow, rather than as a prerequisite for every code change.
 | `workspace:check` | Reject generated artifacts outside the allowed output and state directories. |
 | `test:installer` | Exercise setup, wrappers, uninstall, and installer assurance. |
 | `test:cross-build` | Compile filesystem safety tests for supported targets. |
+| `test:sync-e2e` | Build `okt` and `okt-server` for Linux and run the two-client sync scenario in Docker containers (needs Docker; outputs under `.tmp/sync-e2e`). It is not part of `check`. |
 | `test:coverage-checker` | Exercise coverage profile validation. |
 | `gallery`, `gallery:dump` | Inspect or dump component presentations. |
 | `test:profile` | Produce a focused benchmark's binary and profiles under `.tmp/profiles/`. |
@@ -153,7 +154,9 @@ preferences are described in the [language guide](../how-to-change-appearance-an
 Release-please derives release notes and version changes from Conventional
 Commits. Edit generated changelog text only in its release PR. GoReleaser,
 release metadata, signing, and installer assurance are wired by
-`.github/workflows/release.yml` and the release scripts.
+`.github/workflows/release.yml` and the release scripts. Each release
+archive carries both `okt` and `okt-server`, so the signed archive matrix
+stays the same; the installers and `okt update` extract only `okt`.
 
 The release workflow prepares a draft and creates its tag at the draft's
 exact source commit before building. It publishes only after signing and

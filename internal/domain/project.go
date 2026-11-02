@@ -1,11 +1,18 @@
 package domain
 
 type Project struct {
-	ID          int64  `json:"id"`
-	Name        string `json:"name"`
-	Slug        string `json:"slug"`
-	RootPath    string `json:"root_path"`
-	Description string `json:"description"`
+	ID          int64     `json:"id"`
+	Name        string    `json:"name"`
+	Slug        string    `json:"slug"`
+	RootPath    string    `json:"root_path"`
+	Description string    `json:"description"`
+	SyncScope   SyncScope `json:"sync_scope"`
+}
+
+// ProjectPatch carries the optional project edits; a nil field is left untouched.
+type ProjectPatch struct {
+	Description *string
+	SyncScope   *SyncScope
 }
 
 // ProjectDeleteCounters is the per-table row-count snapshot the
@@ -27,11 +34,12 @@ type ProjectDeleteCounters struct {
 }
 
 type ProjectContext struct {
-	ID          int64  `json:"id"`
-	Name        string `json:"name"`
-	Slug        string `json:"slug"`
-	RootPath    string `json:"root_path"`
-	Description string `json:"description"`
+	ID          int64     `json:"id"`
+	Name        string    `json:"name"`
+	Slug        string    `json:"slug"`
+	RootPath    string    `json:"root_path"`
+	Description string    `json:"description"`
+	SyncScope   SyncScope `json:"sync_scope"`
 }
 
 func (p Project) Context() ProjectContext {

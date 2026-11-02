@@ -94,11 +94,15 @@ func (s *Store) AddScopedComment(ctx context.Context, w domain.CommentWrite) (do
 	var id int64
 	var createdAt string
 	source, entrypoint, agentModel, agentSessionID := agentAttribution(ctx)
+	stamp, err := stampEvent(ctx, tx)
+	if err != nil {
+		return domain.Comment{}, err
+	}
 	if err := tx.QueryRowContext(ctx, `
-INSERT INTO events(entity_type, entity_id, project_id, event_type, body, title, kind, pinned, author_type, source, entrypoint, agent_model, agent_session_id)
-VALUES (?, ?, ?, 'comment', ?, ?, ?, ?, ?, ?, ?, ?, ?)
+INSERT INTO events(entity_type, entity_id, project_id, event_type, body, title, kind, pinned, author_type, source, entrypoint, agent_model, agent_session_id, uid, hlc, device_id, actor_id)
+VALUES (?, ?, ?, 'comment', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 RETURNING id, created_at
-`, scope, entityIDArg, projectIDArg, w.Body, titleArg, kindArg, boolToInt(w.Pinned), w.AuthorType, source, entrypoint, agentModel, agentSessionID).Scan(&id, &createdAt); err != nil {
+`, scope, entityIDArg, projectIDArg, w.Body, titleArg, kindArg, boolToInt(w.Pinned), w.AuthorType, source, entrypoint, agentModel, agentSessionID, stamp.UID, stamp.HLC, stamp.Device, stamp.Actor).Scan(&id, &createdAt); err != nil {
 		return domain.Comment{}, err
 	}
 
@@ -581,7 +585,7 @@ DELETE FROM events WHERE id = ? AND event_type = 'comment'
 // project filter only constrains task/project-scoped rows because universal
 // comments carry a NULL project_id.
 func (s *Store) CommentByID(ctx context.Context, projectID, commentID int64) (domain.Comment, error) {
-	tx, err := s.beginTransaction(ctx)
+	tx, err := s.beginReadTransaction(ctx)
 	if err != nil {
 		return domain.Comment{}, err
 	}

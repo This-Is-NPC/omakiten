@@ -12,47 +12,70 @@ import (
 )
 
 func (s *Store) UpsertProject(ctx context.Context, name, slug, rootPath string) (domain.Project, error) {
-	row := s.query(ctx).QueryRowContext(ctx, `
-INSERT INTO projects(name, slug, root_path, updated_at)
-VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+	return s.scanProject(s.query(ctx).QueryRowContext(ctx, `
+INSERT INTO projects(uid, name, slug, root_path, updated_at)
+VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
 ON CONFLICT(root_path) DO UPDATE SET
   name = excluded.name,
   slug = excluded.slug,
   updated_at = CURRENT_TIMESTAMP
-RETURNING id, name, slug, root_path
-`, name, slug, rootPath)
-
-	var project domain.Project
-	if err := row.Scan(&project.ID, &project.Name, &project.Slug, &project.RootPath); err != nil {
-		return domain.Project{}, err
-	}
-	return project, nil
+RETURNING `+projectColumns, domain.NewUID(), name, slug, rootPath))
 }
 
-// UpdateProjectDescription persists a new description onto a live
-// (non-archived) project and returns the refreshed row. The
-// projects.description is part of the current schema and has
-// no write path; this restores it. An unknown or archived id matches
+// UpdateProject applies the non-nil patch fields to a live (non-archived)
+// project and returns the refreshed row. An unknown or archived id matches
 // no row, surfacing ErrProjectNotFound via scanProject's sql.ErrNoRows
-// branch.
-func (s *Store) UpdateProjectDescription(ctx context.Context, id int64, description string) (domain.Project, error) {
-	return s.scanProject(s.query(ctx).QueryRowContext(ctx, `
-UPDATE projects SET description = ?, updated_at = CURRENT_TIMESTAMP
+// branch. Switching the scope from local to synced records every existing row
+// of the project for the next push.
+func (s *Store) UpdateProject(ctx context.Context, id int64, patch domain.ProjectPatch) (project domain.Project, err error) {
+	err = s.WithinTransaction(ctx, func(ctx context.Context) error {
+		var before domain.SyncScope
+		if patch.SyncScope != nil {
+			// A write returns the scope the update replaces and takes the write lock first.
+			before, err = s.currentScope(ctx, id)
+			if err != nil {
+				return err
+			}
+		}
+		project, err = s.scanProject(s.query(ctx).QueryRowContext(ctx, `
+UPDATE projects SET
+  description = COALESCE(?, description),
+  sync_scope = COALESCE(?, sync_scope),
+  updated_at = CURRENT_TIMESTAMP
 WHERE id = ? AND archived_at IS NULL
-RETURNING id, name, slug, root_path, description
-`, description, id))
+RETURNING `+projectColumns, patch.Description, patch.SyncScope, id))
+		if err != nil {
+			return err
+		}
+		if before == domain.SyncScopeLocal && project.SyncScope == domain.SyncScopeSynced {
+			return s.enqueueProject(ctx, id)
+		}
+		return nil
+	})
+	return project, err
+}
+
+// currentScope returns the sync scope of a live project through a no-op write.
+func (s *Store) currentScope(ctx context.Context, id int64) (domain.SyncScope, error) {
+	var scope domain.SyncScope
+	err := s.query(ctx).QueryRowContext(ctx,
+		`UPDATE projects SET sync_scope = sync_scope WHERE id = ? AND archived_at IS NULL RETURNING sync_scope`, id).Scan(&scope)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", domain.NewError(domain.ErrProjectNotFound, "project not found", nil)
+	}
+	return scope, err
 }
 
 func (s *Store) FindProjectByID(ctx context.Context, id int64) (domain.Project, error) {
-	return s.scanProject(s.query(ctx).QueryRowContext(ctx, "SELECT id, name, slug, root_path, description FROM projects WHERE id = ? AND archived_at IS NULL", id))
+	return s.scanProject(s.query(ctx).QueryRowContext(ctx, "SELECT "+projectColumns+" FROM projects WHERE id = ? AND archived_at IS NULL", id))
 }
 
 func (s *Store) FindProjectBySlug(ctx context.Context, slug string) (domain.Project, error) {
-	return s.scanProject(s.query(ctx).QueryRowContext(ctx, "SELECT id, name, slug, root_path, description FROM projects WHERE slug = ? AND archived_at IS NULL", slug))
+	return s.scanProject(s.query(ctx).QueryRowContext(ctx, "SELECT "+projectColumns+" FROM projects WHERE slug = ? AND archived_at IS NULL", slug))
 }
 
 func (s *Store) ListProjects(ctx context.Context) ([]domain.Project, error) {
-	rows, err := s.query(ctx).QueryContext(ctx, "SELECT id, name, slug, root_path, description FROM projects WHERE archived_at IS NULL ORDER BY LOWER(name), id")
+	rows, err := s.query(ctx).QueryContext(ctx, "SELECT "+projectColumns+" FROM projects WHERE archived_at IS NULL ORDER BY LOWER(name), id")
 	if err != nil {
 		return nil, err
 	}
@@ -60,8 +83,8 @@ func (s *Store) ListProjects(ctx context.Context) ([]domain.Project, error) {
 
 	var projects []domain.Project
 	for rows.Next() {
-		var project domain.Project
-		if err := rows.Scan(&project.ID, &project.Name, &project.Slug, &project.RootPath, &project.Description); err != nil {
+		project, err := scanProjectRow(rows)
+		if err != nil {
 			return nil, err
 		}
 		projects = append(projects, project)
@@ -70,7 +93,7 @@ func (s *Store) ListProjects(ctx context.Context) ([]domain.Project, error) {
 }
 
 func (s *Store) FindProjectsContainingPath(ctx context.Context, path string) ([]domain.Project, error) {
-	rows, err := s.query(ctx).QueryContext(ctx, "SELECT id, name, slug, root_path FROM projects WHERE archived_at IS NULL ORDER BY length(root_path) DESC")
+	rows, err := s.query(ctx).QueryContext(ctx, "SELECT "+projectColumns+" FROM projects WHERE archived_at IS NULL ORDER BY length(root_path) DESC")
 	if err != nil {
 		return nil, err
 	}
@@ -78,8 +101,8 @@ func (s *Store) FindProjectsContainingPath(ctx context.Context, path string) ([]
 
 	var projects []domain.Project
 	for rows.Next() {
-		var project domain.Project
-		if err := rows.Scan(&project.ID, &project.Name, &project.Slug, &project.RootPath); err != nil {
+		project, err := scanProjectRow(rows)
+		if err != nil {
 			return nil, err
 		}
 		if pathWithinRoot(path, project.RootPath) {
@@ -89,9 +112,18 @@ func (s *Store) FindProjectsContainingPath(ctx context.Context, path string) ([]
 	return projects, rows.Err()
 }
 
-func (s *Store) scanProject(row *sql.Row) (domain.Project, error) {
+// projectColumns is the column list scanProjectRow reads.
+const projectColumns = "id, name, slug, root_path, description, sync_scope"
+
+func scanProjectRow(row rowScanner) (domain.Project, error) {
 	var project domain.Project
-	if err := row.Scan(&project.ID, &project.Name, &project.Slug, &project.RootPath, &project.Description); err != nil {
+	err := row.Scan(&project.ID, &project.Name, &project.Slug, &project.RootPath, &project.Description, &project.SyncScope)
+	return project, err
+}
+
+func (s *Store) scanProject(row *sql.Row) (domain.Project, error) {
+	project, err := scanProjectRow(row)
+	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return domain.Project{}, domain.NewError(domain.ErrProjectNotFound, "project not found", nil)
 		}

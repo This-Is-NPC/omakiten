@@ -6,5 +6,5 @@ import (
 )
 
 func projectSummary(project domain.ProjectContext) contract.ProjectSummary {
-	return contract.ProjectSummary{ID: project.ID, Name: project.Name, Slug: project.Slug, RootPath: project.RootPath}
+	return contract.ProjectSummary{ID: project.ID, Name: project.Name, Slug: project.Slug, RootPath: project.RootPath, SyncScope: project.SyncScope}
 }

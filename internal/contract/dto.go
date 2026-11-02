@@ -1,5 +1,7 @@
 package contract
 
+import "omakiten/internal/domain"
+
 type ProjectSelector struct {
 	ProjectID int64  `json:"project_id,omitempty"`
 	Project   string `json:"project,omitempty"`
@@ -7,10 +9,11 @@ type ProjectSelector struct {
 }
 
 type ProjectSummary struct {
-	ID       int64  `json:"id"`
-	Name     string `json:"name"`
-	Slug     string `json:"slug"`
-	RootPath string `json:"root_path"`
+	ID        int64            `json:"id"`
+	Name      string           `json:"name"`
+	Slug      string           `json:"slug"`
+	RootPath  string           `json:"root_path"`
+	SyncScope domain.SyncScope `json:"sync_scope"`
 }
 
 type BucketCount struct {
@@ -68,18 +71,20 @@ type ResumeProjectResponse struct {
 	NextStepPrompt string              `json:"next_step_prompt"`
 }
 
-// EditProjectInput carries the project selector plus the new
-// description.
+// EditProjectInput carries the project selector plus the optional edits;
+// a nil field is left untouched and at least one must be set.
 type EditProjectInput struct {
 	ProjectSelector
-	Description string `json:"description"`
+	Description *string `json:"description,omitempty"`
+	SyncScope   *string `json:"sync_scope,omitempty"`
 }
 
 // EditProjectResponse shapes the EditProject result: the refreshed
 // project DTO plus the next-step prompt, mirroring the other project
 // service responses.
 type EditProjectResponse struct {
-	Project        ProjectSummary `json:"project"`
-	Description    string         `json:"description"`
-	NextStepPrompt string         `json:"next_step_prompt"`
+	Project        ProjectSummary   `json:"project"`
+	Description    string           `json:"description"`
+	SyncScope      domain.SyncScope `json:"sync_scope"`
+	NextStepPrompt string           `json:"next_step_prompt"`
 }
