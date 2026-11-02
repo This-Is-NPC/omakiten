@@ -17,6 +17,15 @@ import (
 // maxSyncInbox caps the changes parked per project; past it the oldest go.
 const maxSyncInbox = 10_000
 
+// maxParentDepth bounds the walk up a task's parent chain when looking for a cycle.
+const maxParentDepth = 10_000
+
+// deleteIsFinal reports whether a delete of a row of table beats every later upsert.
+// Entity rows are final; join rows (the tables with a key) compare stamps like any other change.
+func deleteIsFinal(table string) bool {
+	return syncRules[table].key == nil
+}
+
 // rowKey names a synced row across tables.
 type rowKey struct{ table, uid string }
 
@@ -26,7 +35,13 @@ type pendingChange struct {
 	stamp domain.HLC
 	order int
 	// missing is the reference this change waits for, set while it is held.
+	// The zero rowKey means it waits for the local clock to reach its stamp.
 	missing *missingRefError
+}
+
+// waitsForClock reports whether the change is parked until the local clock catches up.
+func (c pendingChange) waitsForClock() bool {
+	return c.missing != nil && c.missing.rowKey == (rowKey{})
 }
 
 // missingRefError reports a reference to a row the database does not hold yet.
@@ -53,7 +68,8 @@ func reject(format string, args ...any) error {
 // ApplyChanges applies remote rows of the project last-writer-wins, stores the
 // pull cursor and observes the clock in one transaction. Capture is off while
 // it runs, so nothing it writes is queued for push. A change whose reference
-// has not arrived yet waits in sync_inbox for a later batch. A change that is
+// has not arrived yet, or whose stamp runs ahead of this machine's clock by
+// more than domain.MaxHLCDrift, waits in sync_inbox for a later batch. A change that is
 // invalid, names a row of another project or violates a constraint is skipped
 // and counted in the result.
 func (s *Store) ApplyChanges(ctx context.Context, projectID int64, changes []domain.SyncChange, cursor int64) (int, error) {
@@ -94,7 +110,11 @@ func (a *applier) applyWithInbox(ctx context.Context, changes []domain.SyncChang
 	if err != nil {
 		return err
 	}
-	queue := a.prepare(mergeChanges(superseded, changes))
+	clockWaiters, err := a.takeParked(ctx, "missing_tbl", "missing_uid", []rowKey{{}})
+	if err != nil {
+		return err
+	}
+	queue := a.prepare(mergeChanges(append(superseded, clockWaiters...), changes))
 	var held []pendingChange
 	for len(queue) > 0 {
 		if held, err = a.applyAll(ctx, queue); err != nil {
@@ -110,7 +130,7 @@ func (a *applier) applyWithInbox(ctx context.Context, changes []domain.SyncChang
 		}
 		queue = sortPending(append(held, a.prepare(woken)...))
 	}
-	if err := storeInbox(ctx, a.q, a.projectID, held); err != nil {
+	if err := storeInbox(ctx, a.q, a.projectID, append(held, a.future...)); err != nil {
 		return err
 	}
 	dropped, err := capInbox(ctx, a.q, a.projectID)
@@ -199,40 +219,73 @@ func mergeChanges(parked, incoming []domain.SyncChange) []domain.SyncChange {
 }
 
 // prepare validates the changes, counting the invalid ones as rejected, and
-// orders the rest. It raises the greatest stamp seen.
+// orders the rest. A change stamped ahead of the clock is set aside in a.future.
 func (a *applier) prepare(changes []domain.SyncChange) []pendingChange {
 	queue := make([]pendingChange, 0, len(changes))
 	for _, change := range changes {
-		stamp, order, err := a.check(change)
-		if err != nil {
+		pending, err := a.check(change)
+		switch {
+		case err != nil:
 			a.rejected++
-			continue
+		case pending.waitsForClock():
+			a.future = append(a.future, pending)
+		default:
+			queue = append(queue, pending)
 		}
-		if stamp.Compare(a.latest) > 0 {
-			a.latest = stamp
-		}
-		queue = append(queue, pendingChange{SyncChange: change, stamp: stamp, order: order})
 	}
 	return sortPending(queue)
 }
 
-// check validates a change and returns its stamp and apply order.
-func (a *applier) check(change domain.SyncChange) (domain.HLC, int, error) {
-	if err := domain.ValidateSyncChange(change, a.now); err != nil {
-		return domain.HLC{}, 0, err
-	}
+// check validates a change and returns it with its stamp and apply order. A
+// stamp more than domain.MaxHLCDrift ahead of the clock is not an error: the
+// change comes back marked as waiting for the clock.
+func (a *applier) check(change domain.SyncChange) (pendingChange, error) {
 	stamp, err := domain.ParseHLC(change.HLC)
 	if err != nil {
-		return domain.HLC{}, 0, err
+		return pendingChange{}, err
+	}
+	pending := pendingChange{SyncChange: change, stamp: stamp, order: slices.Index(domain.SyncTables, change.Table)}
+	now := a.now
+	if stamp.Wall > a.now.Add(domain.MaxHLCDrift).UnixMilli() {
+		now, pending.missing = time.UnixMilli(stamp.Wall), &missingRefError{}
+	}
+	if err := domain.ValidateSyncChange(change, now); err != nil {
+		return pendingChange{}, err
 	}
 	rule := syncRules[change.Table]
 	switch {
 	case change.Table == "projects" && change.Op == domain.SyncOpDelete:
-		return stamp, 0, reject("a project is never deleted by sync")
-	case rule.key != nil && len(strings.SplitN(change.RowUID, "|", len(rule.key))) != len(rule.key):
-		return stamp, 0, reject("row_uid does not join %s", strings.Join(rule.key, " and "))
+		return pendingChange{}, reject("a project is never deleted by sync")
+	case change.Table != "projects" && hasControlText(change.Data):
+		return pendingChange{}, reject("%s %s holds control characters", change.Table, change.RowUID)
+	case rule.key != nil && !validJoinKey(rule, change):
+		return pendingChange{}, reject("row_uid does not join %s", strings.Join(rule.key, " and "))
 	}
-	return stamp, slices.Index(domain.SyncTables, change.Table), nil
+	return pending, nil
+}
+
+// validJoinKey reports whether the row id of a join change is made of its key parts:
+// exactly the data refs for an upsert, one part per key name for a delete.
+func validJoinKey(rule syncRule, change domain.SyncChange) bool {
+	if change.Op == domain.SyncOpDelete {
+		return len(strings.SplitN(change.RowUID, "|", len(rule.key))) == len(rule.key)
+	}
+	parts := make([]string, len(rule.key))
+	for i, name := range rule.key {
+		parts[i], _ = change.Data[name].(string)
+	}
+	return strings.Join(parts, "|") == change.RowUID
+}
+
+// hasControlText reports whether a string value holds a C0 control character other than tab, newline and carriage return.
+func hasControlText(data map[string]any) bool {
+	for _, value := range data {
+		text, ok := value.(string)
+		if ok && strings.ContainsFunc(text, func(r rune) bool { return r < ' ' && !strings.ContainsRune("\t\n\r", r) }) {
+			return true
+		}
+	}
+	return false
 }
 
 // sortPending sorts the changes by table apply order, then by stamp.
@@ -275,8 +328,10 @@ type applier struct {
 	projectID int64
 	columns   map[string][]string
 	now       time.Time
-	// latest is the greatest stamp of the valid changes seen.
+	// latest is the greatest stamp of the changes applied.
 	latest domain.HLC
+	// future holds the changes stamped ahead of the clock, to be parked.
+	future []pendingChange
 	// rejected counts the changes skipped as invalid, foreign or violating a constraint.
 	rejected int
 	// settled lists the rows applied since the inbox was last woken.
@@ -296,6 +351,9 @@ func (a *applier) applyAll(ctx context.Context, queue []pendingChange) ([]pendin
 			switch {
 			case err == nil:
 				a.settled = append(a.settled, rowKey{change.Table, change.RowUID})
+				if change.stamp.Compare(a.latest) > 0 {
+					a.latest = change.stamp
+				}
 			case errors.As(err, &missing):
 				change.missing = missing
 				held = append(held, change)
@@ -331,7 +389,8 @@ func (a *applier) applyIsolated(ctx context.Context, change pendingChange) error
 }
 
 // superseded reports whether the row's recorded state already beats the change.
-// A delete beats every upsert whatever its stamp and is final, as on the server.
+// A delete of an entity row beats every upsert whatever its stamp and is final, as on the server;
+// join rows compare stamps in both directions.
 func (a *applier) superseded(ctx context.Context, change pendingChange) (bool, error) {
 	var stored string
 	var deleted bool
@@ -342,9 +401,9 @@ func (a *applier) superseded(ctx context.Context, change pendingChange) (bool, e
 		return false, nil
 	case err != nil:
 		return false, err
-	case deleted:
+	case deleted && deleteIsFinal(change.Table):
 		return true, nil
-	case change.Op == domain.SyncOpDelete:
+	case change.Op == domain.SyncOpDelete && deleteIsFinal(change.Table):
 		return false, nil
 	}
 	var current domain.HLC
@@ -405,6 +464,9 @@ func (a *applier) locate(ctx context.Context, table, uid string) (id int64, foun
 
 // updateProject copies the shared fields onto the local project.
 func (a *applier) updateProject(ctx context.Context, change pendingChange) error {
+	if err := a.validateProject(ctx, change); err != nil {
+		return err
+	}
 	result, err := a.q.ExecContext(ctx, `
 UPDATE projects SET name = COALESCE(?, name), description = COALESCE(?, description), updated_at = CURRENT_TIMESTAMP
 WHERE id = ? AND uid = ?`, change.Data["name"], change.Data["description"], a.projectID, change.RowUID)
@@ -416,6 +478,28 @@ WHERE id = ? AND uid = ?`, change.Data["name"], change.Data["description"], a.pr
 			return err
 		}
 		return reject("project %s is not the one being synced", change.RowUID)
+	}
+	return nil
+}
+
+// validateProject runs the domain text checks on the local project as the change would leave it.
+func (a *applier) validateProject(ctx context.Context, change pendingChange) error {
+	var info domain.SyncProjectInfo
+	var uid sql.NullString
+	err := a.q.QueryRowContext(ctx, `SELECT uid, name, slug, description FROM projects WHERE id = ?`, a.projectID).
+		Scan(&uid, &info.Name, &info.Slug, &info.Description)
+	if err != nil {
+		return err
+	}
+	info.UID = domain.UID(uid.String)
+	if name, ok := change.Data["name"].(string); ok {
+		info.Name = name
+	}
+	if description, ok := change.Data["description"].(string); ok {
+		info.Description = description
+	}
+	if err := domain.ValidateSyncProjectInfo(info); err != nil {
+		return reject("%v", err)
 	}
 	return nil
 }
@@ -447,12 +531,7 @@ func (a *applier) upsert(ctx context.Context, change pendingChange) error {
 		}
 	}
 	if found {
-		set := make([]string, len(cols))
-		for i, col := range cols {
-			set[i] = col + " = ?"
-		}
-		_, err = a.q.ExecContext(ctx, fmt.Sprintf("UPDATE %s SET %s WHERE id = ?", change.Table, strings.Join(set, ", ")), append(vals, id)...)
-		return err
+		return a.update(ctx, change.Table, id, cols, vals)
 	}
 	if rule.projectScoped() {
 		cols, vals = append(cols, "project_id"), append(vals, a.projectID)
@@ -466,6 +545,43 @@ func (a *applier) upsert(ctx context.Context, change pendingChange) error {
 	marks := strings.TrimSuffix(strings.Repeat("?, ", len(cols)), ", ")
 	_, err = a.q.ExecContext(ctx, fmt.Sprintf("%s INTO %s(%s) VALUES (%s)", verb, change.Table, strings.Join(cols, ", "), marks), vals...)
 	return err
+}
+
+// update sets the columns of the row with id, unless that would make a task its own ancestor.
+func (a *applier) update(ctx context.Context, table string, id int64, cols []string, vals []any) error {
+	if err := a.checkParentCycle(ctx, table, id, cols, vals); err != nil {
+		return err
+	}
+	set := make([]string, len(cols))
+	for i, col := range cols {
+		set[i] = col + " = ?"
+	}
+	_, err := a.q.ExecContext(ctx, fmt.Sprintf("UPDATE %s SET %s WHERE id = ?", table, strings.Join(set, ", ")), append(vals, id)...)
+	return err
+}
+
+// checkParentCycle rejects a task update whose new parent has the task among its ancestors.
+func (a *applier) checkParentCycle(ctx context.Context, table string, id int64, cols []string, vals []any) error {
+	i := slices.Index(cols, "parent_id")
+	if table != "tasks" || i < 0 || vals[i] == nil {
+		return nil
+	}
+	var cycle bool
+	err := a.q.QueryRowContext(ctx, `
+WITH RECURSIVE ancestors(id, depth) AS (
+  SELECT ?, 0
+  UNION ALL
+  SELECT t.parent_id, a.depth + 1 FROM tasks t JOIN ancestors a ON t.id = a.id
+  WHERE t.parent_id IS NOT NULL AND a.depth < ?
+)
+SELECT EXISTS(SELECT 1 FROM ancestors WHERE id = ?)`, vals[i], maxParentDepth, id).Scan(&cycle)
+	if err != nil {
+		return err
+	}
+	if cycle {
+		return reject("task parent would make a cycle")
+	}
+	return nil
 }
 
 // remove deletes the project's row; a row that is already gone is fine, one of another project is rejected.

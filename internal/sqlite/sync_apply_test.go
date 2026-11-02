@@ -514,11 +514,17 @@ func TestApplyChangesRejectsAndContinues(t *testing.T) {
 	plan := func(slug string) domain.SyncChange {
 		return a.upsert("plans", string(domain.NewUID()), map[string]any{"slug": slug, "name": slug})
 	}
+	projectUID := mustScan[string](t, a.b, `SELECT uid FROM projects WHERE id = ?`, a.bProject.ID)
 	bad := map[string]domain.SyncChange{
 		"table":      {Table: "tags", RowUID: "x", Op: domain.SyncOpUpsert, HLC: a.stamp(), Device: a.deviceA, Data: map[string]any{"a": "b"}},
 		"op":         {Table: "plans", RowUID: "x", Op: "merge", HLC: a.stamp(), Device: a.deviceA},
 		"hlc":        {Table: "plans", RowUID: "x", Op: domain.SyncOpUpsert, HLC: "nope", Device: a.deviceA, Data: map[string]any{"a": "b"}},
-		"drift":      a.upsert("plans", "x", map[string]any{"slug": "d", "name": "d"}),
+		"control":    a.upsert("plans", string(domain.NewUID()), map[string]any{"slug": "ctl", "name": "bad\x01name"}),
+		"join key":   a.upsert("task_tags", a.uids["parent"]+"|other", map[string]any{"task_uid": a.uids["parent"], "tag_name": "urgent"}),
+		"cycle":      a.upsert("tasks", a.uids["parent"], map[string]any{"title": "parent", "bucket_id": 1.0, "priority_id": 2.0, "parent_uid": a.uids["child"]}),
+		"self":       a.upsert("tasks", a.uids["parent"], map[string]any{"title": "parent", "bucket_id": 1.0, "priority_id": 2.0, "parent_uid": a.uids["parent"]}),
+		"empty name": a.upsert("projects", projectUID, map[string]any{"name": ""}),
+		"name ctl":   a.upsert("projects", projectUID, map[string]any{"name": "a\nb"}),
 		"nested":     a.upsert("plans", "x", map[string]any{"slug": []any{"a"}}),
 		"join":       a.remove("task_tags", "no-separator"),
 		"project":    a.remove("projects", string(domain.NewUID())),
@@ -531,9 +537,6 @@ func TestApplyChangesRejectsAndContinues(t *testing.T) {
 		"no tag":     a.upsert("task_tags", a.uids["parent"]+"|", map[string]any{"task_uid": a.uids["parent"]}),
 		"zero stamp": {Table: "plans", RowUID: "x", Op: domain.SyncOpUpsert, HLC: domain.HLC{}.String(), Device: a.deviceA, Data: map[string]any{"a": "b"}},
 	}
-	drift := bad["drift"]
-	drift.HLC = domain.HLC{Wall: time.Now().Add(2 * domain.MaxHLCDrift).UnixMilli(), Device: a.deviceA}.String()
-	bad["drift"] = drift
 	for name, change := range bad {
 		first, second := plan("first-"+name), plan("second-"+name)
 		before := len(dump(t, a.b, `SELECT uid FROM plans`))
@@ -656,5 +659,99 @@ func TestApplyChangesMapsProjectEvents(t *testing.T) {
 	got := mustScan[int64](t, p.b, `SELECT entity_id FROM events WHERE uid = ? AND entity_type = 'project'`, eventUID)
 	if got != p.bProject.ID {
 		t.Fatalf("entity_id = %d, want the clone %d", got, p.bProject.ID)
+	}
+}
+
+func TestApplyChangesJoinRowsReturnAfterDelete(t *testing.T) {
+	t.Parallel()
+	a := newAttackPair(t)
+	rowUID := a.uids["child"] + "|urgent"
+	tagged := func() int {
+		return len(dump(t, a.b, `SELECT task_id FROM task_tags WHERE task_id = (SELECT id FROM tasks WHERE uid = '`+a.uids["child"]+`')`))
+	}
+	at := func(minutes int64, op domain.SyncOp) domain.SyncChange {
+		change := a.change(t, "task_tags", rowUID, soon(minutes), op, nil)
+		if op == domain.SyncOpDelete {
+			change.Data = nil
+		}
+		return change
+	}
+	a.mustApply(t, []domain.SyncChange{at(2, domain.SyncOpDelete)}, 20)
+	if tagged() != 0 {
+		t.Fatal("tag survived delete")
+	}
+	a.mustApply(t, []domain.SyncChange{at(1, domain.SyncOpUpsert)}, 21)
+	if tagged() != 0 {
+		t.Fatal("older upsert beat the tombstone")
+	}
+	a.mustApply(t, []domain.SyncChange{at(3, domain.SyncOpUpsert)}, 22)
+	if tagged() != 1 {
+		t.Fatal("later upsert did not re-add the tag")
+	}
+	a.mustApply(t, []domain.SyncChange{at(4, domain.SyncOpDelete)}, 23)
+	if tagged() != 0 {
+		t.Fatal("later tombstone lost to the older upsert")
+	}
+}
+
+func TestDeleteIsFinalOnlyForEntityRows(t *testing.T) {
+	t.Parallel()
+	for _, table := range domain.SyncTables {
+		join := slices.Contains([]string{"task_dependencies", "task_tags", "error_tags", "event_tags"}, table)
+		if deleteIsFinal(table) == join {
+			t.Fatalf("deleteIsFinal(%s) = %v", table, !join)
+		}
+	}
+}
+
+func TestApplyChangesParksFutureStampsUntilTheClockCatchesUp(t *testing.T) {
+	t.Parallel()
+	a := newAttackPair(t)
+	clockBefore := mustScan[string](t, a.b, `SELECT hlc FROM sync_identity`)
+	future := a.upsert("plans", string(domain.NewUID()), map[string]any{"slug": "later", "name": "later"})
+	future.HLC = domain.HLC{Wall: time.Now().Add(2 * domain.MaxHLCDrift).UnixMilli(), Device: a.deviceA}.String()
+	a.mustApply(t, []domain.SyncChange{future}, 30)
+	if inboxSize(t, a.syncPair) != 1 || len(dump(t, a.b, `SELECT uid FROM plans WHERE uid = '`+future.RowUID+`'`)) != 0 {
+		t.Fatal("future change not parked")
+	}
+	if clock := mustScan[string](t, a.b, `SELECT hlc FROM sync_identity`); clock != clockBefore {
+		t.Fatalf("clock moved by a parked change: %s -> %s", clockBefore, clock)
+	}
+	a.mustApply(t, nil, 31)
+	if inboxSize(t, a.syncPair) != 1 {
+		t.Fatal("future change left the inbox early")
+	}
+	arrived := future
+	arrived.HLC = domain.HLC{Wall: time.Now().UnixMilli(), Device: a.deviceA}.String()
+	raw, err := json.Marshal(arrived)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mustExec(t, a.b, `UPDATE sync_inbox SET hlc = ?, change = ?`, arrived.HLC, string(raw))
+	a.mustApply(t, nil, 32)
+	if inboxSize(t, a.syncPair) != 0 || len(dump(t, a.b, `SELECT uid FROM plans WHERE uid = '`+future.RowUID+`'`)) != 1 {
+		t.Fatal("parked change not applied once the clock caught up")
+	}
+}
+
+func TestApplyChangesClockObservesOnlyAppliedChanges(t *testing.T) {
+	t.Parallel()
+	a := newAttackPair(t)
+	wall := time.Now().Add(10 * time.Hour).UnixMilli()
+	waiting := parkedTask(a, wall, string(domain.NewUID()))
+	a.mustApply(t, []domain.SyncChange{waiting}, 33)
+	invalid := a.upsert("plans", string(domain.NewUID()), map[string]any{"slug": "bad", "name": "bad\x00"})
+	invalid.HLC = domain.HLC{Wall: wall, Device: a.deviceA}.String()
+	if rejected, err := a.apply(t, []domain.SyncChange{invalid}, 34); err != nil || rejected != 1 {
+		t.Fatalf("rejected %d, err %v", rejected, err)
+	}
+	if clock := mustScan[string](t, a.b, `SELECT hlc FROM sync_identity`); clock != "" && mustParseHLC(t, clock).Wall >= wall {
+		t.Fatalf("clock %s observed a change that did not apply", clock)
+	}
+	good := a.upsert("plans", string(domain.NewUID()), map[string]any{"slug": "good", "name": "good"})
+	good.HLC = domain.HLC{Wall: wall, Device: a.deviceA}.String()
+	a.mustApply(t, []domain.SyncChange{good}, 35)
+	if clock := mustParseHLC(t, mustScan[string](t, a.b, `SELECT hlc FROM sync_identity`)); clock.Wall < wall {
+		t.Fatalf("clock %v did not observe the applied change", clock)
 	}
 }

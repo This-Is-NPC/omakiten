@@ -90,8 +90,9 @@ func MapSQLiteError(err error) error {
 	if !errors.As(err, &sqliteErr) {
 		return err
 	}
-	switch sqliteErr.Code() {
-	case sqlite3.SQLITE_CONSTRAINT_UNIQUE:
+	code := sqliteErr.Code()
+	switch code {
+	case sqlite3.SQLITE_CONSTRAINT_UNIQUE, sqlite3.SQLITE_CONSTRAINT_PRIMARYKEY, sqlite3.SQLITE_CONSTRAINT_ROWID:
 		return newConstraintError(ViolationUnique, err, "UNIQUE constraint failed: ")
 	case sqlite3.SQLITE_CONSTRAINT_FOREIGNKEY:
 		return newConstraintError(ViolationForeignKey, err, "")
@@ -99,6 +100,9 @@ func MapSQLiteError(err error) error {
 		return newConstraintError(ViolationCheck, err, "")
 	case sqlite3.SQLITE_CONSTRAINT_NOTNULL:
 		return newConstraintError(ViolationNotNull, err, "NOT NULL constraint failed: ")
+	}
+	if code&0xff == sqlite3.SQLITE_CONSTRAINT {
+		return newConstraintError(ViolationUnknown, err, "")
 	}
 	return err
 }
