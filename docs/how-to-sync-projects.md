@@ -22,7 +22,7 @@ export OKT_SERVER_TOKEN="$(head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n')"
 
 | Flag | Meaning |
 | --- | --- |
-| `--db PATH` | The server's SQLite store. Required; created when missing. |
+| `--db PATH` | The server's SQLite store. Required; created owner-only (0600) when missing. |
 | `--listen ADDR` | Address to listen on. Defaults to `127.0.0.1:8787`, loopback only. |
 | `--token-file PATH` | A file with one bearer token per line (blank lines and `#` comments are skipped). When unset, the server reads `OKT_SERVER_TOKEN`. |
 | `--version` | Print the version and exit. |

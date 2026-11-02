@@ -6,7 +6,9 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"testing"
@@ -284,6 +286,23 @@ func TestReopenKeepsDataAndSeqMonotonic(t *testing.T) {
 	}
 	if r := e.push(change(rowName(3), 10)); r.Accepted != 1 || r.Cursor != 3 {
 		t.Fatalf("push after reopen = %+v", r)
+	}
+}
+
+func TestStoreFilesAreOwnerOnly(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX permission bits")
+	}
+	e := newEnv(t)
+	e.push(change(rowName(1), 10))
+	for _, suffix := range []string{"", "-wal", "-shm"} {
+		info, err := os.Stat(e.path + suffix)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if mode := info.Mode().Perm(); mode&0o077 != 0 {
+			t.Errorf("sync.db%s mode = %o, want no group or other access", suffix, mode)
+		}
 	}
 }
 

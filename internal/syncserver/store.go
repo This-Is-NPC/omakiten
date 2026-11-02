@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"os"
 	"path/filepath"
 	"time"
 
@@ -30,7 +31,8 @@ type Store struct {
 	db *sql.DB
 }
 
-// Open opens or creates the store file and its schema.
+// Open opens or creates the store file and its schema. A new file is created
+// owner-only (0600); SQLite gives its -wal and -shm files the same mode.
 func Open(ctx context.Context, path string) (*Store, error) {
 	query := url.Values{
 		"_pragma": {"journal_mode(WAL)", "busy_timeout(5000)", "foreign_keys(1)"},
@@ -38,6 +40,13 @@ func Open(ctx context.Context, path string) (*Store, error) {
 	abs, err := filepath.Abs(path)
 	if err != nil {
 		return nil, err
+	}
+	file, err := os.OpenFile(abs, os.O_RDWR|os.O_CREATE, 0o600)
+	if err != nil {
+		return nil, fmt.Errorf("open sync store: %w", err)
+	}
+	if err := file.Close(); err != nil {
+		return nil, fmt.Errorf("open sync store: %w", err)
 	}
 	db, err := sql.Open("sqlite", (&url.URL{Scheme: "file", Path: filepath.ToSlash(abs), RawQuery: query.Encode()}).String())
 	if err != nil {
