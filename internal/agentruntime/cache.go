@@ -705,6 +705,7 @@ func buildProjectRuntime(ctx context.Context, store *sqlite.Store, cs *configsto
 	svc.SetSnapshot(snapshot)
 	editor := app.NewBundleEditor(cs, configPath)
 	svc.SetEntityRepos(editor, cs, cs)
+	svc.SetSync(NewSyncRemote, syncKits{store: store, cs: cs, fallback: configPath})
 	// Inject the orphan service with prev=nil — the cache rotation
 	// overrides this with a rebind-capable view (current+previous
 	// snapshots) when the runtime is replacing an earlier entry.

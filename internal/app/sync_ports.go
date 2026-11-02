@@ -33,3 +33,11 @@ type SyncRemote interface {
 	// Pull returns up to limit changes after the cursor and whether more follow.
 	Pull(ctx context.Context, projectUID domain.UID, after int64, limit int) (changes []domain.SyncChange, cursor int64, more bool, err error)
 }
+
+// SyncKits names the workflow kit of a project, which both machines of a synced project must share.
+type SyncKits interface {
+	// KitKeyOf returns the kit key a registered project resolves to.
+	KitKeyOf(ctx context.Context, projectID int64) (string, error)
+	// KitKeyAt returns the kit key a project rooted at root would resolve to.
+	KitKeyAt(ctx context.Context, root string) (string, error)
+}

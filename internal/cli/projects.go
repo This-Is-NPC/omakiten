@@ -38,6 +38,7 @@ func newProjectsCommand(opts *runtimeOptions) *cobra.Command {
 		},
 	})
 	cmd.AddCommand(newProjectsDeleteCommand(opts))
+	cmd.AddCommand(newProjectsCloneCommand(opts))
 	return cmd
 }
 

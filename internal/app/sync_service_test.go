@@ -14,6 +14,7 @@ import (
 type fakeSyncStore struct {
 	projects []domain.SyncProject
 	pending  []domain.SyncChange
+	queued   map[int64][]domain.SyncChange
 	pushed   []string
 	applied  []appliedPage
 	cloned   []domain.SyncProjectInfo
@@ -29,7 +30,12 @@ func (f *fakeSyncStore) SyncedProjects(context.Context) ([]domain.SyncProject, e
 	return f.projects, nil
 }
 
-func (f *fakeSyncStore) PendingChanges(_ context.Context, _ int64, limit int) ([]domain.SyncChange, error) {
+func (f *fakeSyncStore) PendingChanges(_ context.Context, id int64, limit int) ([]domain.SyncChange, error) {
+	if f.queued != nil {
+		pending := f.queued[id]
+		f.queued[id] = nil
+		return pending, nil
+	}
 	return f.pending[:min(limit, len(f.pending))], nil
 }
 
@@ -61,6 +67,17 @@ func (f *fakeSyncStore) SetSyncRemoteURL(_ context.Context, u string) error {
 	return nil
 }
 
+type fakeSyncKits struct {
+	byProject map[int64]string
+	atRoot    string
+}
+
+func (k fakeSyncKits) KitKeyOf(_ context.Context, id int64) (string, error) {
+	return k.byProject[id], nil
+}
+
+func (k fakeSyncKits) KitKeyAt(context.Context, string) (string, error) { return k.atRoot, nil }
+
 type pullPage struct {
 	n      int
 	cursor int64
@@ -71,6 +88,7 @@ type fakeSyncRemote struct {
 	log      *[]string
 	projects []domain.SyncProjectInfo
 	pushes   []int
+	pushed   []domain.SyncProjectInfo
 	pages    []pullPage
 	pullsAt  []int64
 	pullErr  error
@@ -80,7 +98,8 @@ func (r *fakeSyncRemote) ListProjects(context.Context) ([]domain.SyncProjectInfo
 	return r.projects, nil
 }
 
-func (r *fakeSyncRemote) Push(_ context.Context, _ domain.SyncProjectInfo, changes []domain.SyncChange) (int64, error) {
+func (r *fakeSyncRemote) Push(_ context.Context, info domain.SyncProjectInfo, changes []domain.SyncChange) (int64, error) {
+	r.pushed = append(r.pushed, info)
 	*r.log = append(*r.log, "push")
 	r.pushes = append(r.pushes, len(changes))
 	return 1, nil
@@ -112,7 +131,7 @@ func newSyncFixture(projects ...domain.SyncProject) (*SyncService, *fakeSyncStor
 	log := &[]string{}
 	store := &fakeSyncStore{projects: projects}
 	remote := &fakeSyncRemote{log: log}
-	return NewSyncService(store, remote), store, remote, log
+	return NewSyncService(store, remote, fakeSyncKits{byProject: map[int64]string{1: "omakase", 2: "lean"}, atRoot: "omakase"}), store, remote, log
 }
 
 func syncProject(id int64, slug string) domain.SyncProject {
@@ -218,7 +237,7 @@ func TestSyncWrapsErrorWithSlug(t *testing.T) {
 }
 
 func TestSyncNilRemote(t *testing.T) {
-	svc := NewSyncService(&fakeSyncStore{}, nil)
+	svc := NewSyncService(&fakeSyncStore{}, nil, fakeSyncKits{})
 	ctx := context.Background()
 	_, syncErr := svc.Sync(ctx, nil)
 	_, cloneErr := svc.Clone(ctx, domain.NewUID(), "/x")
@@ -236,7 +255,8 @@ func TestCloneCreatesProjectThenPulls(t *testing.T) {
 	info := domain.SyncProjectInfo{UID: domain.NewUID(), Slug: "r"}
 	remote.projects = []domain.SyncProjectInfo{{UID: domain.NewUID()}, info}
 	remote.pages = []pullPage{{n: 3, cursor: 9}}
-	project, err := svc.Clone(context.Background(), info.UID, "/root")
+	root := t.TempDir()
+	project, err := svc.Clone(context.Background(), info.UID, root)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -251,9 +271,31 @@ func TestCloneCreatesProjectThenPulls(t *testing.T) {
 	}
 }
 
+func TestSyncPushLabelsEachProjectWithItsOwnKit(t *testing.T) {
+	svc, store, remote, _ := newSyncFixture(syncProject(1, "a"), syncProject(2, "b"))
+	store.queued = map[int64][]domain.SyncChange{1: hlcChanges(1), 2: hlcChanges(1)}
+	if _, err := svc.Sync(context.Background(), nil); err != nil {
+		t.Fatal(err)
+	}
+	if len(remote.pushed) != 2 || remote.pushed[0].KitKey != "omakase" || remote.pushed[1].KitKey != "lean" {
+		t.Fatalf("pushed = %v, want kits omakase then lean", remote.pushed)
+	}
+}
+
+func TestCloneRefusesDifferentKit(t *testing.T) {
+	svc, store, remote, _ := newSyncFixture()
+	info := domain.SyncProjectInfo{UID: domain.NewUID(), Slug: "r", KitKey: "other"}
+	remote.projects = []domain.SyncProjectInfo{info}
+	_, err := svc.Clone(context.Background(), info.UID, t.TempDir())
+	assertCodedError(t, err, domain.ErrValidation)
+	if !strings.Contains(err.Error(), "share the workflow kit") || len(store.cloned) != 0 {
+		t.Fatalf("err = %v, cloned = %v", err, store.cloned)
+	}
+}
+
 func TestCloneUnknownUID(t *testing.T) {
 	svc, store, _, _ := newSyncFixture()
-	_, err := svc.Clone(context.Background(), domain.NewUID(), "/root")
+	_, err := svc.Clone(context.Background(), domain.NewUID(), t.TempDir())
 	assertCodedError(t, err, domain.ErrProjectNotFound)
 	if len(store.cloned) != 0 {
 		t.Fatalf("cloned = %v", store.cloned)

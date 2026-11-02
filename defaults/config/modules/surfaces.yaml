@@ -49,18 +49,23 @@ plan.wave.remove: { cli: true, tui: true, http: true }
 plan.wave.rename: { cli: true, tui: true, http: true }
 plan.wave.reorder: { cli: true, tui: true, http: true }
 progress.record: { cli: true, tui: true, http: true }
+project.clone: { cli: true, tui: true, http: false, reason: "${{intl:operations.denied.remote_http}}" }
 project.delete: { cli: true, tui: true, http: true }
 project.edit: { cli: true, tui: true, http: true }
 project.relocate: { cli: true, tui: true, http: true }
 project.overview: { cli: true, tui: true, http: true }
 project.list: { cli: true, tui: true, http: true }
 project.resume: { cli: true, tui: true, http: true }
+remote.projects: { cli: true, tui: true, http: false, reason: "${{intl:operations.denied.remote_http}}" }
+remote.set: { cli: true, tui: true, http: false, reason: "${{intl:operations.denied.remote_http}}" }
+remote.show: { cli: true, tui: true, http: false, reason: "${{intl:operations.denied.remote_http}}" }
 search: { cli: true, tui: true, http: true }
 skill.get: { cli: true, tui: true, http: true }
 skill.list: { cli: true, tui: true, http: true }
 solution.add: { cli: true, tui: true, http: true }
 solution.confirm: { cli: true, tui: true, http: true }
 solution.list_top: { cli: true, tui: true, http: true }
+sync: { cli: true, tui: true, http: false, reason: "${{intl:operations.denied.remote_http}}" }
 tag.add: { cli: true, tui: true, http: true }
 tag.list: { cli: true, tui: true, http: true }
 tag.list_all: { cli: true, tui: true, http: true }

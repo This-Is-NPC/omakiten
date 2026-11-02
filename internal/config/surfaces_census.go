@@ -1,18 +1,20 @@
 package config
 
 // SurfaceKind classifies a census slug as product (user-facing),
-// destructive (database-wide recovery work), or wiring (composition
-// injectors/getters). The default table enables product rows, keeps
-// destructive rows off HTTP, and turns wiring rows off everywhere.
+// destructive (database-wide recovery work), remote (talks to an external
+// sync server), or wiring (composition injectors/getters). The default table
+// enables product rows, keeps destructive and remote rows off HTTP, and turns
+// wiring rows off everywhere.
 type SurfaceKind string
 
 const (
 	SurfaceKindProduct     SurfaceKind = "product"
 	SurfaceKindDestructive SurfaceKind = "destructive"
+	SurfaceKindRemote      SurfaceKind = "remote"
 	SurfaceKindWiring      SurfaceKind = "wiring"
 
 	// CanonicalSurfaceCount is the closed size of operation.Service.
-	CanonicalSurfaceCount = 87
+	CanonicalSurfaceCount = 92
 
 	// DeniedWiringReason is the default reason token for wiring rows.
 	// Stored as an intl token; not resolved at load.
@@ -21,6 +23,10 @@ const (
 	// DeniedDestructiveHTTPReason is the default reason token for
 	// destructive rows, which ship disabled on the HTTP surface.
 	DeniedDestructiveHTTPReason = "${{intl:operations.denied.destructive_http}}"
+
+	// DeniedRemoteHTTPReason is the default reason token for remote sync
+	// rows, which ship disabled on the HTTP surface.
+	DeniedRemoteHTTPReason = "${{intl:operations.denied.remote_http}}"
 )
 
 // SurfaceCensusEntry is one row of the canonical census.
@@ -72,18 +78,23 @@ var CanonicalSurfaceCensus = []SurfaceCensusEntry{
 	{Slug: "plan.wave.rename", Kind: SurfaceKindProduct},
 	{Slug: "plan.wave.reorder", Kind: SurfaceKindProduct},
 	{Slug: "progress.record", Kind: SurfaceKindProduct},
+	{Slug: "project.clone", Kind: SurfaceKindRemote},
 	{Slug: "project.delete", Kind: SurfaceKindProduct},
 	{Slug: "project.edit", Kind: SurfaceKindProduct},
 	{Slug: "project.relocate", Kind: SurfaceKindProduct},
 	{Slug: "project.overview", Kind: SurfaceKindProduct},
 	{Slug: "project.list", Kind: SurfaceKindProduct},
 	{Slug: "project.resume", Kind: SurfaceKindProduct},
+	{Slug: "remote.projects", Kind: SurfaceKindRemote},
+	{Slug: "remote.set", Kind: SurfaceKindRemote},
+	{Slug: "remote.show", Kind: SurfaceKindRemote},
 	{Slug: "search", Kind: SurfaceKindProduct},
 	{Slug: "skill.get", Kind: SurfaceKindProduct},
 	{Slug: "skill.list", Kind: SurfaceKindProduct},
 	{Slug: "solution.add", Kind: SurfaceKindProduct},
 	{Slug: "solution.confirm", Kind: SurfaceKindProduct},
 	{Slug: "solution.list_top", Kind: SurfaceKindProduct},
+	{Slug: "sync", Kind: SurfaceKindRemote},
 	{Slug: "tag.add", Kind: SurfaceKindProduct},
 	{Slug: "tag.list", Kind: SurfaceKindProduct},
 	{Slug: "tag.list_all", Kind: SurfaceKindProduct},
@@ -121,10 +132,10 @@ var CanonicalSurfaceCensus = []SurfaceCensusEntry{
 }
 
 // CanonicalSurfaceTable returns the shipped default table: product
-// all-true, destructive off HTTP with DeniedDestructiveHTTPReason, wiring
-// all-false with DeniedWiringReason. Each call
-// allocates a fresh map and fresh bool pointers so tests can mutate a
-// row without aliasing the rest of the table.
+// all-true, destructive off HTTP with DeniedDestructiveHTTPReason, remote
+// off HTTP with DeniedRemoteHTTPReason, wiring all-false with
+// DeniedWiringReason. Each call allocates a fresh map and fresh bool
+// pointers so tests can mutate a row without aliasing the rest of the table.
 func CanonicalSurfaceTable() SurfaceTable {
 	table := make(SurfaceTable, len(CanonicalSurfaceCensus))
 	for _, e := range CanonicalSurfaceCensus {
@@ -142,6 +153,13 @@ func CanonicalSurfaceTable() SurfaceTable {
 				TUI:    surfaceBool(true),
 				HTTP:   surfaceBool(false),
 				Reason: DeniedDestructiveHTTPReason,
+			}
+		case SurfaceKindRemote:
+			table[e.Slug] = SurfacePolicy{
+				CLI:    surfaceBool(true),
+				TUI:    surfaceBool(true),
+				HTTP:   surfaceBool(false),
+				Reason: DeniedRemoteHTTPReason,
 			}
 		default:
 			table[e.Slug] = SurfacePolicy{

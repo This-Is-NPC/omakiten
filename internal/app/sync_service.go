@@ -18,12 +18,15 @@ const (
 type SyncService struct {
 	store  SyncStore
 	remote SyncRemote
+	kits   SyncKits
 }
 
 // NewSyncService wires the sync flows. remote is nil when no server URL is
 // configured; the flows that need it then fail with a validation error.
-func NewSyncService(store SyncStore, remote SyncRemote) *SyncService {
-	return &SyncService{store: store, remote: remote}
+// kits labels each pushed project with its workflow kit and checks the kit of a
+// project being cloned.
+func NewSyncService(store SyncStore, remote SyncRemote, kits SyncKits) *SyncService {
+	return &SyncService{store: store, remote: remote, kits: kits}
 }
 
 func (s *SyncService) requireRemote() error {
@@ -76,6 +79,12 @@ func selectSyncProject(projects []domain.SyncProject, id int64) ([]domain.SyncPr
 
 // push sends pending changes page by page and advances the push watermark.
 func (s *SyncService) push(ctx context.Context, p domain.SyncProject) (int, error) {
+	info := p.Info
+	kit, err := s.kits.KitKeyOf(ctx, p.ID)
+	if err != nil {
+		return 0, err
+	}
+	info.KitKey = kit
 	total := 0
 	for {
 		changes, err := s.store.PendingChanges(ctx, p.ID, syncPushPage)
@@ -85,7 +94,7 @@ func (s *SyncService) push(ctx context.Context, p domain.SyncProject) (int, erro
 		if len(changes) == 0 {
 			return total, nil
 		}
-		if _, err := s.remote.Push(ctx, p.Info, changes); err != nil {
+		if _, err := s.remote.Push(ctx, info, changes); err != nil {
 			return total, err
 		}
 		if err := s.store.MarkPushed(ctx, p.ID, changes[len(changes)-1].HLC); err != nil {
@@ -124,6 +133,10 @@ func (s *SyncService) Clone(ctx context.Context, uid domain.UID, root string) (d
 	if err := s.requireRemote(); err != nil {
 		return domain.Project{}, err
 	}
+	root, err := ValidateProjectRoot(root)
+	if err != nil {
+		return domain.Project{}, err
+	}
 	infos, err := s.remote.ListProjects(ctx)
 	if err != nil {
 		return domain.Project{}, err
@@ -131,6 +144,9 @@ func (s *SyncService) Clone(ctx context.Context, uid domain.UID, root string) (d
 	for _, info := range infos {
 		if info.UID != uid {
 			continue
+		}
+		if err := s.checkKit(ctx, info, root); err != nil {
+			return domain.Project{}, err
 		}
 		project, err := s.store.CreateClonedProject(ctx, info, root)
 		if err != nil {
@@ -143,6 +159,20 @@ func (s *SyncService) Clone(ctx context.Context, uid domain.UID, root string) (d
 	}
 	return domain.Project{}, domain.NewError(domain.ErrProjectNotFound,
 		fmt.Sprintf("remote has no project %s", uid), map[string]any{"uid": string(uid)})
+}
+
+// checkKit refuses a remote project whose workflow kit differs from the kit a project rooted at root would use.
+func (s *SyncService) checkKit(ctx context.Context, info domain.SyncProjectInfo, root string) error {
+	local, err := s.kits.KitKeyAt(ctx, root)
+	if err != nil {
+		return err
+	}
+	if info.KitKey == "" || info.KitKey == local {
+		return nil
+	}
+	return domain.NewError(domain.ErrValidation,
+		fmt.Sprintf("project %s uses workflow kit %q but a project at %s would use %q; both machines must share the workflow kit", info.Slug, info.KitKey, root, local),
+		map[string]any{"remote_kit": info.KitKey, "local_kit": local})
 }
 
 // RemoteProjects lists the projects the remote server holds.

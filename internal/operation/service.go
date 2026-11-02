@@ -82,6 +82,7 @@ type Repository interface {
 	app.PlanRepository
 	app.AgentRepository
 	app.ChangeFeed
+	app.SyncStore
 }
 
 // TaskTemplateLookup returns the active task template scaffold to embed in
@@ -148,6 +149,8 @@ type Service struct {
 	// maintenance performs database-wide recovery work. Nil refuses
 	// backup, reindex, and project deletion.
 	maintenance contract.Maintenance
+	syncRemote  SyncRemoteFactory
+	syncKits    app.SyncKits
 	// Zero means unrestricted. Production composition roots wrap the
 	// cached Service with ForCLI/ForTUI/Foragent so this field is never
 	// mutated on the shared ProjectRuntime pointer.
