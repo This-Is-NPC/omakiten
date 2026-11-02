@@ -21,9 +21,11 @@ import (
 var schema string
 
 // Store keeps one row per (project, table, row_uid) in its own SQLite file.
-// Conflicts resolve per row: a delete replaces a stored upsert whatever its
-// HLC, a stored delete is final and refuses every later change, and an upsert
-// replaces a stored upsert only with a greater HLC.
+// Conflicts resolve per row. Entity rows: a delete replaces a stored upsert
+// whatever its HLC, a stored delete is final and refuses every later change,
+// and an upsert replaces a stored upsert only with a greater HLC. Join rows
+// (see joinTables) follow plain last-writer-wins on the HLC for upserts and
+// deletes alike, so a removed link can be added again.
 type Store struct {
 	db *sql.DB
 }
@@ -70,11 +72,19 @@ func (s *Store) Projects(ctx context.Context) ([]domain.SyncProjectInfo, error) 
 	return infos, rows.Err()
 }
 
+// joinTables are the synced link tables, whose rows carry no identity beyond
+// their key. Clients apply the same rule: a join row's delete is an ordinary
+// stamped version, not a final tombstone.
+var joinTables = map[string]bool{
+	"task_dependencies": true, "task_tags": true, "error_tags": true, "event_tags": true,
+}
+
 // Push upserts the project and stores every change that wins against the
-// stored row, giving each a new seq. It validates the project and the changes
-// against now. It returns the accepted count and the project's latest seq.
+// stored row, giving each a new seq. An invalid project fails the request; a
+// change invalid at now is skipped and counted as rejected. It returns the
+// accepted and rejected counts and the project's latest seq.
 func (s *Store) Push(ctx context.Context, req syncproto.PushRequest, now time.Time) (syncproto.PushResponse, error) {
-	if err := validatePush(req, now); err != nil {
+	if err := domain.ValidateSyncProjectInfo(req.Project); err != nil {
 		return syncproto.PushResponse{}, err
 	}
 	tx, err := s.db.BeginTx(ctx, nil)
@@ -95,8 +105,12 @@ func (s *Store) Push(ctx context.Context, req syncproto.PushRequest, now time.Ti
 	if err := tx.QueryRowContext(ctx, `SELECT COALESCE(MAX(seq), 0) FROM rows`).Scan(&seq); err != nil {
 		return syncproto.PushResponse{}, err
 	}
-	accepted := 0
+	accepted, rejected := 0, 0
 	for _, c := range req.Changes {
+		if err := domain.ValidateSyncChange(c, now); err != nil {
+			rejected++
+			continue
+		}
 		won, err := wins(ctx, tx, info.UID, c)
 		if err != nil {
 			return syncproto.PushResponse{}, err
@@ -117,20 +131,7 @@ func (s *Store) Push(ctx context.Context, req syncproto.PushRequest, now time.Ti
 	if err := tx.Commit(); err != nil {
 		return syncproto.PushResponse{}, err
 	}
-	return syncproto.PushResponse{Accepted: accepted, Cursor: cursor}, nil
-}
-
-// validatePush refuses a request whose project or any change is invalid at now.
-func validatePush(req syncproto.PushRequest, now time.Time) error {
-	if err := domain.ValidateSyncProjectInfo(req.Project); err != nil {
-		return err
-	}
-	for _, c := range req.Changes {
-		if err := domain.ValidateSyncChange(c, now); err != nil {
-			return err
-		}
-	}
-	return nil
+	return syncproto.PushResponse{Accepted: accepted, Rejected: rejected, Cursor: cursor}, nil
 }
 
 // put writes c as the row's current version under seq.
@@ -158,11 +159,13 @@ func wins(ctx context.Context, tx *sql.Tx, project domain.UID, c domain.SyncChan
 	if err != nil {
 		return false, err
 	}
-	switch {
-	case domain.SyncOp(op) == domain.SyncOpDelete:
-		return false, nil
-	case c.Op == domain.SyncOpDelete:
-		return true, nil
+	if !joinTables[c.Table] {
+		switch {
+		case domain.SyncOp(op) == domain.SyncOpDelete:
+			return false, nil
+		case c.Op == domain.SyncOpDelete:
+			return true, nil
+		}
 	}
 	have, err := domain.ParseHLC(stored)
 	if err != nil {

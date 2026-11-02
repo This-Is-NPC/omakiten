@@ -223,8 +223,6 @@ func TestPullPagingAndLimitClamp(t *testing.T) {
 
 func TestErrors(t *testing.T) {
 	e := newEnv(t)
-	bad := change(rowName(1), 10)
-	bad.Table = "sync_identity"
 	mismatch := pushBody(nil)
 	mismatch.Project.UID = device
 	tests := []struct {
@@ -236,7 +234,6 @@ func TestErrors(t *testing.T) {
 		code   string
 	}{
 		{"unknown project pull", http.MethodGet, syncproto.ChangesPath(proj), nil, http.StatusNotFound, string(domain.ErrProjectNotFound)},
-		{"invalid change", http.MethodPost, syncproto.ChangesPath(proj), pushBody([]domain.SyncChange{bad}), http.StatusBadRequest, string(domain.ErrValidation)},
 		{"uid mismatch", http.MethodPost, syncproto.ChangesPath(proj), mismatch, http.StatusBadRequest, string(domain.ErrValidation)},
 		{"bad path uid", http.MethodGet, syncproto.ProjectsPath + "/nope/changes", nil, http.StatusBadRequest, string(domain.ErrValidation)},
 		{"bad body", http.MethodPost, syncproto.ChangesPath(proj), map[string]any{"nope": 1}, http.StatusBadRequest, codeInvalidBody},
@@ -359,11 +356,58 @@ func TestPushValidatesProjectAndRequestTime(t *testing.T) {
 		t.Fatal("rejected project must not be stored")
 	}
 	future := change(rowName(1), time.Now().Add(domain.MaxHLCDrift+time.Hour).UnixMilli())
-	if _, err := e.store.Push(context.Background(), pushBody([]domain.SyncChange{future}), time.Now()); err == nil {
-		t.Fatal("change far ahead of the request time was accepted")
+	got, err := e.store.Push(context.Background(), pushBody([]domain.SyncChange{future}), time.Now())
+	if err != nil || got.Accepted != 0 || got.Rejected != 1 {
+		t.Fatalf("change far ahead of the request time = %+v, %v", got, err)
 	}
-	if _, err := e.store.Push(context.Background(), pushBody([]domain.SyncChange{future}), time.Now().Add(2*domain.MaxHLCDrift)); err != nil {
-		t.Fatalf("the passed time must be the reference: %v", err)
+	got, err = e.store.Push(context.Background(), pushBody([]domain.SyncChange{future}), time.Now().Add(2*domain.MaxHLCDrift))
+	if err != nil || got.Accepted != 1 || got.Rejected != 0 {
+		t.Fatalf("the passed time must be the reference: %+v, %v", got, err)
+	}
+}
+
+func TestInvalidChangeIsSkippedAndCounted(t *testing.T) {
+	e := newEnv(t)
+	bad := change(rowName(2), 10)
+	bad.Table = "sync_identity"
+	r := e.push(change(rowName(1), 10), bad)
+	if r.Accepted != 1 || r.Rejected != 1 || r.Cursor != 1 {
+		t.Fatalf("push = %+v", r)
+	}
+	got := e.pull("after=0")
+	if len(got.Changes) != 1 || got.Changes[0].RowUID != rowName(1) {
+		t.Fatalf("pull = %+v", got)
+	}
+}
+
+func TestJoinRowsCompareStampsForDeletes(t *testing.T) {
+	e := newEnv(t)
+	link := func(op domain.SyncOp, wall int64) domain.SyncChange {
+		c := change("01900000-0000-7000-8000-000000000111|tag", wall)
+		c.Table, c.Op = "task_tags", op
+		if op == domain.SyncOpDelete {
+			c.Data = nil
+		}
+		return c
+	}
+	steps := []struct {
+		c    domain.SyncChange
+		want int
+	}{
+		{link(domain.SyncOpUpsert, 10), 1},
+		{link(domain.SyncOpDelete, 20), 1},
+		{link(domain.SyncOpUpsert, 30), 1},
+		{link(domain.SyncOpDelete, 25), 0},
+		{link(domain.SyncOpUpsert, 5), 0},
+	}
+	for i, s := range steps {
+		if r := e.push(s.c); r.Accepted != s.want {
+			t.Fatalf("step %d accepted %d, want %d", i, r.Accepted, s.want)
+		}
+	}
+	got := e.pull("after=0")
+	if len(got.Changes) != 1 || got.Changes[0].Op != domain.SyncOpUpsert || got.Changes[0].HLC != link(domain.SyncOpUpsert, 30).HLC {
+		t.Fatalf("pull = %+v", got)
 	}
 }
 

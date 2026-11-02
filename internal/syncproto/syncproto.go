@@ -47,6 +47,7 @@ type PushRequest struct {
 // PushResponse answers a push with the accepted count and the server cursor.
 type PushResponse struct {
 	Accepted int   `json:"accepted"`
+	Rejected int   `json:"rejected"`
 	Cursor   int64 `json:"cursor"`
 }
 

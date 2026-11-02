@@ -40,7 +40,7 @@ func TestBodiesRoundTrip(t *testing.T) {
 	}{
 		{ProjectsResponse{Projects: []domain.SyncProjectInfo{info}}, new(ProjectsResponse), `"projects"`},
 		{PushRequest{Project: info, Changes: []domain.SyncChange{validChange()}}, new(PushRequest), `"changes"`},
-		{PushResponse{Accepted: 2, Cursor: 9}, new(PushResponse), `{"accepted":2,"cursor":9}`},
+		{PushResponse{Accepted: 2, Rejected: 1, Cursor: 9}, new(PushResponse), `{"accepted":2,"rejected":1,"cursor":9}`},
 		{PullResponse{Project: info, Changes: []domain.SyncChange{validChange()}, Cursor: 3, More: true}, new(PullResponse), `"more":true`},
 	}
 	for _, b := range bodies {
