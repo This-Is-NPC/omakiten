@@ -1,3 +1,7 @@
+---
+relates_to: [cli:remote, cli:sync, cli:projects.clone]
+---
+
 # How to keep a project in step across machines
 
 **The question:** how do I work on the same project from two machines, and

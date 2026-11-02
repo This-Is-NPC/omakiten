@@ -24,6 +24,10 @@ says how everything works.
   stop.
 - Try configuration and hooks under an isolated `OMAKITEN_HOME`, and report a
   capability as working only after you observe its result.
+- A project may be `synced` with other machines through a server; `okt sync`
+  can then bring in changes made elsewhere. Run `okt sync`, `okt remote set`, or
+  change a project's sync scope only when the user asks: they send board data
+  off the machine.
 
 ## Where to look
 
@@ -44,4 +48,5 @@ Start with these guides when the request touches their subject:
 | Agent teams and seats | `how-to-run-agent-teams` |
 | Hooks and notifications | `how-to-use-hooks` |
 | Workflow and preset configuration | `how-to-customize-a-workflow`, `how-to-manage-presets` |
+| A project on several machines | `how-to-sync-projects` |
 | A refused command | `troubleshooting` |

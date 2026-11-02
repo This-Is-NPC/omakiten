@@ -13,7 +13,9 @@ The next session reads that state before starting work.
 `omakiten` skill teaches agents to use the CLI, so humans and agents read and
 write the same project state.
 
-The database is local SQLite. Workflow repositories supply buckets, guards,
+The database is local SQLite. A project can opt in to sync through a
+self-hosted `okt-server`, so several machines keep the same board while each
+still works offline. Workflow repositories supply buckets, guards,
 permissions, personas, skills, laws, and templates. Installed snapshots work
 without the source checkout. Language preferences belong to the application
 and apply across projects.
@@ -63,6 +65,7 @@ moves to completion.
 - [Importing and exporting work](docs/how-to-import-and-export-work.md) — one file for a task or complete plan.
 - [Using agents](docs/how-to-use-with-agents.md) — the skill, context recovery, and command skills.
 - [Choosing a workflow](docs/how-to-manage-presets.md) — catalog, repositories, and modified snapshots.
+- [Syncing across machines](docs/how-to-sync-projects.md) — `okt-server`, `okt sync`, cloning, and conflict rules.
 - [The terminal](docs/screens.md) — Home, Project, Task Detail, search, and Studio.
 - [When a command refuses](docs/troubleshooting.md) — find the selected scope and the next recovery action.
 
