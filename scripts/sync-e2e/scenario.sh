@@ -176,4 +176,23 @@ expect "T3 on a" "$(ok a /work/p list | jq '[.tasks[] | select(.title == "T3")] 
 same_state
 pass
 
+# --- 9: a removed tag can be added again ------------------------------------------
+step "9 a tag removed and added again reaches the other machine"
+tag_count() {
+  ok "$1" /work/p tag list --entity-type task --entity-id "$(task_id "$1" /work/p T3)" |
+    jq '[.. | objects | select(.name? == "flaky")] | length'
+}
+ok a /work/p tag add --entity-type task --entity-id "$(task_id a /work/p T3)" --name flaky >/dev/null
+sync_both a b
+expect "tag on b after add" "$(tag_count b)" 1
+flaky_id="$(ok a /work/p tag list --entity-type task --entity-id "$(task_id a /work/p T3)" |
+  jq -r '[.. | objects | select(.name? == "flaky") | .id][0]')"
+ok a /work/p tag remove --entity-type task --entity-id "$(task_id a /work/p T3)" --tag-id "$flaky_id" --confirm >/dev/null
+sync_both a b
+expect "tag on b after remove" "$(tag_count b)" 0
+ok a /work/p tag add --entity-type task --entity-id "$(task_id a /work/p T3)" --name flaky >/dev/null
+sync_both a b
+expect "tag on b after re-add" "$(tag_count b)" 1
+pass
+
 printf 'all steps passed\n'
