@@ -1,9 +1,12 @@
 package syncproto
 
 import (
+	"fmt"
+	"math"
 	"net/url"
 	"slices"
 	"strconv"
+	"time"
 
 	"omakiten/internal/domain"
 )
@@ -60,7 +63,9 @@ type PullResponse struct {
 }
 
 // ValidateChange refuses a change the server or a client must not store.
-func ValidateChange(c domain.SyncChange) error {
+// A wall more than domain.MaxHLCDrift ahead of now is refused, and Data may hold
+// only string, finite float64, bool and nil values.
+func ValidateChange(c domain.SyncChange, now time.Time) error {
 	if !slices.Contains(domain.SyncTables, c.Table) {
 		return invalid("table", c.Table, "is not a synced table")
 	}
@@ -77,13 +82,32 @@ func ValidateChange(c domain.SyncChange) error {
 	if hlc == (domain.HLC{}) {
 		return invalid("hlc", c.HLC, "must not be zero")
 	}
+	if hlc.Wall > now.Add(domain.MaxHLCDrift).UnixMilli() {
+		return invalid("hlc", c.HLC, "is too far ahead of the clock")
+	}
 	if _, err := domain.ParseUID(string(c.Device)); err != nil {
 		return err
+	}
+	for key, value := range c.Data {
+		if !isScalar(value) {
+			return invalid("data."+key, fmt.Sprint(value), "must be a string, finite number, bool or null")
+		}
 	}
 	if c.Op == domain.SyncOpUpsert && len(c.Data) == 0 {
 		return invalid("data", "", "an upsert needs data")
 	}
 	return nil
+}
+
+// isScalar reports whether v is a JSON scalar as json.Unmarshal decodes it.
+func isScalar(v any) bool {
+	switch v := v.(type) {
+	case nil, string, bool:
+		return true
+	case float64:
+		return !math.IsNaN(v) && !math.IsInf(v, 0)
+	}
+	return false
 }
 
 func invalid(field, value, reason string) error {

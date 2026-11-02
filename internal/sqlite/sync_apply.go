@@ -207,8 +207,11 @@ func observeClock(ctx context.Context, q queryExecutor, latest domain.HLC) error
 		}
 		prev = parsed
 	}
-	next := domain.ObserveHLC(prev, latest, time.Now().UnixMilli(), domain.UID(device))
-	_, err := q.ExecContext(ctx, `UPDATE sync_identity SET hlc = ? WHERE id = 1`, next.String())
+	next, err := domain.ObserveHLC(prev, latest, time.Now().UnixMilli(), domain.UID(device))
+	if err != nil {
+		return err
+	}
+	_, err = q.ExecContext(ctx, `UPDATE sync_identity SET hlc = ? WHERE id = 1`, next.String())
 	return err
 }
 

@@ -94,7 +94,11 @@ func tickHLC(_ *sqlite.FunctionContext, args []driver.Value) (driver.Value, erro
 		}
 		prev = parsed
 	}
-	return domain.TickHLC(prev, time.Now().UnixMilli(), domain.UID(device)).String(), nil
+	next, err := domain.TickHLC(prev, time.Now().UnixMilli(), domain.UID(device))
+	if err != nil {
+		return nil, err
+	}
+	return next.String(), nil
 }
 
 // The function is registered for every connection opened by this process,

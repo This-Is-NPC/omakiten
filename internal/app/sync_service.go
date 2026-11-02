@@ -190,7 +190,7 @@ func (s *SyncService) Remote(ctx context.Context) (string, error) {
 
 // SetRemote validates and stores the server URL.
 func (s *SyncService) SetRemote(ctx context.Context, rawURL string) error {
-	if err := domain.ValidateSyncRemoteURL(rawURL); err != nil {
+	if err := domain.ValidateSyncRemoteURL(rawURL, true); err != nil {
 		return err
 	}
 	return s.store.SetSyncRemoteURL(ctx, rawURL)

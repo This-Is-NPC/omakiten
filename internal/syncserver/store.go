@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"net/url"
 	"path/filepath"
+	"time"
 
 	_ "modernc.org/sqlite"
 
@@ -71,7 +72,7 @@ func (s *Store) Projects(ctx context.Context) ([]domain.SyncProjectInfo, error) 
 // latest seq.
 func (s *Store) Push(ctx context.Context, req syncproto.PushRequest) (syncproto.PushResponse, error) {
 	for _, c := range req.Changes {
-		if err := syncproto.ValidateChange(c); err != nil {
+		if err := syncproto.ValidateChange(c, time.Now()); err != nil {
 			return syncproto.PushResponse{}, err
 		}
 	}

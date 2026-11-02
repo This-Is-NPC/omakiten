@@ -2,6 +2,7 @@ package domain
 
 import (
 	"encoding/json"
+	"errors"
 	"math"
 	"reflect"
 	"sort"
@@ -46,6 +47,13 @@ func TestParseUIDRefuses(t *testing.T) {
 	}
 }
 
+func requireAfter(t *testing.T, got, prior HLC) {
+	t.Helper()
+	if got.Wall < prior.Wall || (got.Wall == prior.Wall && got.Counter <= prior.Counter) {
+		t.Fatalf("%+v not strictly after %+v", got, prior)
+	}
+}
+
 func TestTickHLC(t *testing.T) {
 	tests := []struct {
 		name string
@@ -61,13 +69,14 @@ func TestTickHLC(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			got := TickHLC(tc.last, tc.wall, devA)
+			got, err := TickHLC(tc.last, tc.wall, devA)
+			if err != nil {
+				t.Fatal(err)
+			}
 			if got != tc.want {
 				t.Fatalf("got %+v, want %+v", got, tc.want)
 			}
-			if got.Wall < tc.last.Wall || (got.Wall == tc.last.Wall && got.Counter <= tc.last.Counter) {
-				t.Fatalf("%+v not strictly after %+v", got, tc.last)
-			}
+			requireAfter(t, got, tc.last)
 		})
 	}
 }
@@ -88,14 +97,15 @@ func TestObserveHLC(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			got := ObserveHLC(tc.last, tc.remote, tc.wall, devA)
+			got, err := ObserveHLC(tc.last, tc.remote, tc.wall, devA)
+			if err != nil {
+				t.Fatal(err)
+			}
 			if got != tc.want {
 				t.Fatalf("got %+v, want %+v", got, tc.want)
 			}
 			for _, prior := range []HLC{tc.last, tc.remote} {
-				if got.Wall < prior.Wall || (got.Wall == prior.Wall && got.Counter <= prior.Counter) {
-					t.Fatalf("%+v not strictly after %+v", got, prior)
-				}
+				requireAfter(t, got, prior)
 			}
 		})
 	}
@@ -219,9 +229,101 @@ func TestSyncTypesJSONRoundTrip(t *testing.T) {
 		t.Fatalf("round trip = %+v, %v", back, err)
 	}
 
-	report := SyncReport{Projects: []SyncProjectReport{{Slug: "s", Pushed: 1, Pulled: 2}}}
+	report := SyncReport{Projects: []SyncProjectReport{{Slug: "s", Pushed: 1, Pulled: 2, Rejected: 3, Error: "e"}}}
 	raw, _ = json.Marshal(report)
-	if string(raw) != `{"projects":[{"slug":"s","pushed":1,"pulled":2}]}` {
+	if string(raw) != `{"projects":[{"slug":"s","pushed":1,"pulled":2,"rejected":3,"error":"e"}]}` {
 		t.Fatalf("report json = %s", raw)
+	}
+}
+
+func TestHLCStepsRefuseBeyondMaxWall(t *testing.T) {
+	full := HLC{MaxHLCWall, math.MaxUint32, devB}
+	tests := []struct {
+		name string
+		run  func() (HLC, error)
+		ok   bool
+	}{
+		{"tick at max wall bumps counter", func() (HLC, error) { return TickHLC(HLC{MaxHLCWall, 1, devB}, 0, devA) }, true},
+		{"tick saturated", func() (HLC, error) { return TickHLC(full, 0, devA) }, false},
+		{"tick wall clock past max", func() (HLC, error) { return TickHLC(HLC{}, MaxHLCWall+1, devA) }, false},
+		{"observe saturated remote", func() (HLC, error) { return ObserveHLC(HLC{}, full, 0, devA) }, false},
+		{"observe saturated local", func() (HLC, error) { return ObserveHLC(full, HLC{}, 0, devA) }, false},
+		{"observe remote wall past max", func() (HLC, error) { return ObserveHLC(HLC{}, HLC{Wall: MaxHLCWall + 1}, 0, devA) }, false},
+		{"observe carry to max wall", func() (HLC, error) {
+			return ObserveHLC(HLC{}, HLC{MaxHLCWall - 1, math.MaxUint32, devB}, 0, devA)
+		}, true},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := tc.run()
+			var ce *CodedError
+			if tc.ok != (err == nil) || (!tc.ok && (!errors.As(err, &ce) || ce.Code != ErrValidation)) {
+				t.Fatalf("got %+v, %v, want ok=%v", got, err, tc.ok)
+			}
+			if tc.ok {
+				if _, perr := ParseHLC(got.String()); perr != nil {
+					t.Fatalf("result does not round-trip: %v", perr)
+				}
+			}
+		})
+	}
+}
+
+func TestValidateSyncRemoteURL(t *testing.T) {
+	tests := []struct {
+		raw      string
+		insecure bool
+		ok       bool
+	}{
+		{"https://sync.example.com", false, true},
+		{"http://localhost:8080", false, true},
+		{"http://127.0.0.1:8080", false, true},
+		{"http://127.9.9.9", false, true},
+		{"http://[::1]:8080", false, true},
+		{"http://example.com", false, false},
+		{"http://10.0.0.1", false, false},
+		{"http://localhost.example.com", false, false},
+		{"http://example.com", true, true},
+		{"ftp://example.com", true, false},
+		{"https://", false, false},
+		{"example.com", true, false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.raw, func(t *testing.T) {
+			err := ValidateSyncRemoteURL(tc.raw, tc.insecure)
+			if (err == nil) != tc.ok {
+				t.Fatalf("insecure=%v: got %v, want ok=%v", tc.insecure, err, tc.ok)
+			}
+		})
+	}
+}
+
+func TestValidateSyncProjectInfo(t *testing.T) {
+	tests := []struct {
+		name   string
+		mutate func(*SyncProjectInfo)
+		ok     bool
+	}{
+		{"valid", func(*SyncProjectInfo) {}, true},
+		{"multiline description", func(i *SyncProjectInfo) { i.Description = "a\n\tb" }, true},
+		{"bad uid", func(i *SyncProjectInfo) { i.UID = "x" }, false},
+		{"empty slug", func(i *SyncProjectInfo) { i.Slug = "" }, false},
+		{"uppercase slug", func(i *SyncProjectInfo) { i.Slug = "My-Proj" }, false},
+		{"slug with newline", func(i *SyncProjectInfo) { i.Slug = "a\nb" }, false},
+		{"slug with path", func(i *SyncProjectInfo) { i.Slug = "../x" }, false},
+		{"empty name", func(i *SyncProjectInfo) { i.Name = "" }, false},
+		{"name with escape", func(i *SyncProjectInfo) { i.Name = "a\x1b[2Jb" }, false},
+		{"name with newline", func(i *SyncProjectInfo) { i.Name = "a\nb" }, false},
+		{"description with escape", func(i *SyncProjectInfo) { i.Description = "a\x1bb" }, false},
+		{"kit key with tab", func(i *SyncProjectInfo) { i.KitKey = "a\tb" }, false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			info := SyncProjectInfo{UID: devA, Name: "Proj", Slug: "proj", Description: "d", KitKey: "kit"}
+			tc.mutate(&info)
+			if err := ValidateSyncProjectInfo(info); (err == nil) != tc.ok {
+				t.Fatalf("got %v, want ok=%v", err, tc.ok)
+			}
+		})
 	}
 }

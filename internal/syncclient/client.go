@@ -49,7 +49,7 @@ type errorEnvelope struct {
 
 // New returns a client for the server at baseURL. A nil hc gets a client with a default timeout.
 func New(baseURL, token string, hc *http.Client) (*Client, error) {
-	if err := domain.ValidateSyncRemoteURL(baseURL); err != nil {
+	if err := domain.ValidateSyncRemoteURL(baseURL, true); err != nil {
 		return nil, err
 	}
 	if hc == nil {

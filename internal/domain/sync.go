@@ -3,9 +3,12 @@ package domain
 import (
 	"fmt"
 	"math"
+	"net/netip"
 	"net/url"
 	"strconv"
 	"strings"
+	"time"
+	"unicode"
 
 	"github.com/google/uuid"
 )
@@ -33,6 +36,9 @@ const (
 
 	// MaxHLCWall is the largest wall time (unix ms) an HLC string can carry.
 	MaxHLCWall int64 = 1e15 - 1
+
+	// MaxHLCDrift is how far a remote stamp may run ahead of the local wall clock.
+	MaxHLCDrift = 24 * time.Hour
 )
 
 // HLC is a hybrid logical clock stamp. The zero value means "no stamp yet".
@@ -97,16 +103,18 @@ func cmpInt(a, b int64) int {
 }
 
 // TickHLC stamps a local event. The caller persists the result as the next last.
-func TickHLC(last HLC, wallMS int64, device UID) HLC {
+// It fails when the clock cannot advance within MaxHLCWall.
+func TickHLC(last HLC, wallMS int64, device UID) (HLC, error) {
 	if wallMS > last.Wall {
-		return HLC{Wall: wallMS, Device: device}
+		return boundHLC(HLC{Wall: wallMS, Device: device})
 	}
 	return bumpHLC(last.Wall, last.Counter, device)
 }
 
 // ObserveHLC stamps the receipt of a remote stamp; the result is strictly
-// greater than both last and remote.
-func ObserveHLC(last, remote HLC, wallMS int64, device UID) HLC {
+// greater than both last and remote. It fails when the clock cannot advance
+// within MaxHLCWall. Remote drift is bounded by syncproto.ValidateChange.
+func ObserveHLC(last, remote HLC, wallMS int64, device UID) (HLC, error) {
 	wall := max(last.Wall, remote.Wall, wallMS)
 	switch {
 	case wall == last.Wall && wall == remote.Wall:
@@ -116,18 +124,27 @@ func ObserveHLC(last, remote HLC, wallMS int64, device UID) HLC {
 	case wall == remote.Wall:
 		return bumpHLC(wall, remote.Counter, device)
 	default:
-		return HLC{Wall: wall, Device: device}
+		return boundHLC(HLC{Wall: wall, Device: device})
 	}
 }
 
 // bumpHLC returns the stamp after (wall, counter). A counter at MaxUint32
-// carries into Wall with Counter reset, so the clock never refuses and stays
-// strictly increasing.
-func bumpHLC(wall int64, counter uint32, device UID) HLC {
+// carries into Wall with Counter reset.
+func bumpHLC(wall int64, counter uint32, device UID) (HLC, error) {
 	if counter == math.MaxUint32 {
-		return HLC{Wall: wall + 1, Device: device}
+		return boundHLC(HLC{Wall: wall + 1, Device: device})
 	}
-	return HLC{Wall: wall, Counter: counter + 1, Device: device}
+	return boundHLC(HLC{Wall: wall, Counter: counter + 1, Device: device})
+}
+
+// boundHLC returns h, or an error when its wall exceeds MaxHLCWall.
+func boundHLC(h HLC) (HLC, error) {
+	if h.Wall > MaxHLCWall {
+		return HLC{}, NewError(ErrValidation,
+			"hlc clock cannot advance: wall time is at its maximum",
+			map[string]any{"field": "hlc", "wall": h.Wall})
+	}
+	return h, nil
 }
 
 // SyncScope says whether a record leaves the device.
@@ -201,9 +218,11 @@ type SyncProject struct {
 
 // SyncProjectReport counts the changes one sync moved for a project.
 type SyncProjectReport struct {
-	Slug   string `json:"slug"`
-	Pushed int    `json:"pushed"`
-	Pulled int    `json:"pulled"`
+	Slug     string `json:"slug"`
+	Pushed   int    `json:"pushed"`
+	Pulled   int    `json:"pulled"`
+	Rejected int    `json:"rejected"`
+	Error    string `json:"error,omitempty"`
 }
 
 // SyncReport is the outcome of one sync run.
@@ -211,11 +230,49 @@ type SyncReport struct {
 	Projects []SyncProjectReport `json:"projects"`
 }
 
-// ValidateSyncRemoteURL accepts an absolute http or https URL with a host.
-func ValidateSyncRemoteURL(raw string) error {
+// ValidateSyncRemoteURL accepts an absolute https URL with a host, or an http
+// URL whose host is loopback unless allowInsecure is set.
+func ValidateSyncRemoteURL(raw string, allowInsecure bool) error {
 	u, err := url.Parse(raw)
-	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
-		return syncInvalid("url", raw, "want http(s)://host[:port]")
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Hostname() == "" {
+		return syncInvalid("url", raw, "want https://host[:port]")
+	}
+	if u.Scheme == "http" && !allowInsecure && !isLoopbackHost(u.Hostname()) {
+		return syncInvalid("url", raw, "http is only allowed for loopback hosts")
+	}
+	return nil
+}
+
+func isLoopbackHost(host string) bool {
+	if host == "localhost" {
+		return true
+	}
+	ip, err := netip.ParseAddr(host)
+	return err == nil && ip.IsLoopback()
+}
+
+// ValidateSyncProjectInfo refuses project info a peer must not be trusted with:
+// a malformed UID or slug, an empty name, or control characters in the text.
+// Only the description may hold newlines and tabs.
+func ValidateSyncProjectInfo(info SyncProjectInfo) error {
+	if _, err := ParseUID(string(info.UID)); err != nil {
+		return err
+	}
+	if info.Slug == "" || Slugify(info.Slug) != info.Slug {
+		return syncInvalid("slug", info.Slug, "must be a lowercase slug")
+	}
+	if info.Name == "" {
+		return syncInvalid("name", "", "must not be empty")
+	}
+	for field, value := range map[string]string{"name": info.Name, "kit_key": info.KitKey} {
+		if strings.ContainsFunc(value, unicode.IsControl) {
+			return syncInvalid(field, value, "must not contain control characters")
+		}
+	}
+	if strings.ContainsFunc(info.Description, func(r rune) bool {
+		return unicode.IsControl(r) && r != '\n' && r != '\t'
+	}) {
+		return syncInvalid("description", info.Description, "must not contain control characters")
 	}
 	return nil
 }
