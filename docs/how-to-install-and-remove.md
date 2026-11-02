@@ -26,6 +26,17 @@ to fetch a workflow repository. The default binary destination is
 `~/.local/bin/okt` on Unix and `%LOCALAPPDATA%\Programs\okt` on Windows.
 `INSTALL_DIR` changes it; `VERSION` selects a particular release.
 
+`OKT_INSTALL_SERVER=1` also installs `okt-server`, the sync server from the
+same verified archive (releases from 0.39.0), beside `okt`:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/This-Is-NPC/omakiten/master/install.sh | OKT_INSTALL_SERVER=1 bash
+```
+
+`okt update` replaces only `okt`; run the installer with
+`OKT_INSTALL_SERVER=1` again to move `okt-server` to the same release.
+Running it is covered in [how to sync projects](how-to-sync-projects.md).
+
 ### Bootstrap trust model
 
 The default verification mode checks the archive against the release's
@@ -123,8 +134,8 @@ workflow.
 okt uninstall --yes
 ```
 
-This removes the installed binary, its shell wrapper, and owned global skill
-entrypoints. Your configuration and database remain. Project-local skills
+This removes the installed binary, an `okt-server` installed beside it, its
+shell wrapper, and owned global skill entrypoints. Your configuration and database remain. Project-local skills
 belong to their projects and remain there too.
 
 `--purge-config` deletes application configuration; `--purge-data` deletes the

@@ -15,13 +15,20 @@ unless its project is marked `synced` and you run `okt sync`.
 ## 1. Run the server
 
 `okt-server` ships beside `okt` in every release archive
-(`okt_<OS>_<arch>.tar.gz`, or `.zip` on Windows); the installers set up
-only `okt`, so copy `okt-server` from the archive to the server host. From a
-checkout, `mise run build` writes it to `.tmp/build/okt-server`.
+(`okt_<OS>_<arch>.tar.gz`, or `.zip` on Windows). On the server host, the
+installer puts it beside `okt` when asked:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/This-Is-NPC/omakiten/master/install.sh | OKT_INSTALL_SERVER=1 bash
+```
+
+`okt update` does not replace `okt-server`; rerun that installer line to
+upgrade it. From a checkout, `mise run build` writes it to
+`.tmp/build/okt-server`.
 
 ```bash
 export OKT_SERVER_TOKEN="$(head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n')"
-./okt-server --db /var/lib/okt-server/sync.db
+okt-server --db /var/lib/okt-server/sync.db
 ```
 
 | Flag | Meaning |

@@ -30,10 +30,12 @@ main() {
     remove_wrapper_from "$rc"
   done
 
-  if [ -x "${INSTALL_DIR}/okt" ]; then
-    rm -f "${INSTALL_DIR}/okt"
-    echo "=> Removed ${INSTALL_DIR}/okt"
-  fi
+  for bin in okt okt-server; do
+    if [ -x "${INSTALL_DIR}/${bin}" ]; then
+      rm -f "${INSTALL_DIR}/${bin}"
+      echo "=> Removed ${INSTALL_DIR}/${bin}"
+    fi
+  done
 
   echo "=> Done. Open a new shell so the wrapper change takes effect."
 }

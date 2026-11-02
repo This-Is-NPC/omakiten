@@ -54,6 +54,13 @@ if ($VerifyMode -ne "checksum" -and $VerifyMode -ne "strict") {
   Stop-Install "OKT_VERIFY_MODE must be 'checksum' or 'strict' (got '$VerifyMode')"
 }
 
+# OKT_INSTALL_SERVER=1 also installs okt-server, the sync server shipped in the
+# same verified archive.
+$InstallServer = if ($env:OKT_INSTALL_SERVER) { $env:OKT_INSTALL_SERVER } else { "0" }
+if ($InstallServer -ne "0" -and $InstallServer -ne "1") {
+  Stop-Install "OKT_INSTALL_SERVER must be '0' or '1' (got '$InstallServer')"
+}
+
 # --- pinned release trust anchors -------------------------------------------
 #
 # These values are the PowerShell twin of the constants compiled into
@@ -560,16 +567,28 @@ if ($VerifyMode -eq "strict") {
 }
 
 Expand-Archive -Path $archivePath -DestinationPath $tmpdir -Force
+if ($InstallServer -eq "1" -and -not (Test-Path (Join-Path $tmpdir "okt-server.exe"))) {
+  Remove-Item -Recurse -Force $tmpdir
+  Stop-Install "okt v$tag does not ship okt-server; it is in releases from 0.39.0"
+}
 
 New-Item -ItemType Directory -Path $InstallDir -Force | Out-Null
 $installedExe = Join-Path $InstallDir "okt.exe"
 Copy-Item -Path (Join-Path $tmpdir "okt.exe") -Destination $installedExe -Force
+$serverExe = Join-Path $InstallDir "okt-server.exe"
+if ($InstallServer -eq "1") {
+  Copy-Item -Path (Join-Path $tmpdir "okt-server.exe") -Destination $serverExe -Force
+}
 Remove-Item -Recurse -Force $tmpdir
 
 Add-ToPath -Dir $InstallDir
 
 $version = & $installedExe --version
 Write-Host "=> Installed $version"
+if ($InstallServer -eq "1") {
+  $serverVersion = & $serverExe --version
+  Write-Host "=> Installed okt-server $serverVersion"
+}
 
 & $installedExe setup
 if ($LASTEXITCODE -ne 0) {

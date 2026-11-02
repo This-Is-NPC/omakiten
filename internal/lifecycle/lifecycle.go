@@ -28,11 +28,17 @@ const InstallDirEnv = "INSTALL_DIR"
 
 // BinaryName returns the basename of the okt binary for the current OS.
 // Windows ships okt.exe; everywhere else ships okt.
-func BinaryName() string {
+func BinaryName() string { return executableName("okt") }
+
+// ServerBinaryName returns the basename of the okt-server binary that
+// OKT_INSTALL_SERVER=1 installs beside okt.
+func ServerBinaryName() string { return executableName("okt-server") }
+
+func executableName(base string) string {
 	if runtime.GOOS == "windows" {
-		return "okt.exe"
+		return base + ".exe"
 	}
-	return "okt"
+	return base
 }
 
 // DefaultInstallDir mirrors the install.sh / install.ps1 default install
@@ -69,6 +75,16 @@ func BinaryPath(home string) string {
 		return ""
 	}
 	return filepath.Join(dir, BinaryName())
+}
+
+// ServerBinaryPath returns where the installers put okt-server: beside the
+// okt binary BinaryPath resolves. It is empty when BinaryPath is.
+func ServerBinaryPath(home string) string {
+	bin := BinaryPath(home)
+	if bin == "" {
+		return ""
+	}
+	return filepath.Join(filepath.Dir(bin), ServerBinaryName())
 }
 
 // RemoveBinary deletes path. A missing file is a no-op (returns false,
