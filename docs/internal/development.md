@@ -72,6 +72,7 @@ flow, rather than as a prerequisite for every code change.
 | `workspace:check` | Reject generated artifacts outside the allowed output and state directories. |
 | `test:installer` | Exercise setup, wrappers, uninstall, and installer assurance. |
 | `test:cross-build` | Compile filesystem safety tests for supported targets. |
+| `test:sync-e2e` | Build `okt` and `okt-server` for Linux and run the two-client sync scenario in Docker containers (needs Docker; outputs under `.tmp/sync-e2e`). It is not part of `check`. |
 | `test:coverage-checker` | Exercise coverage profile validation. |
 | `gallery`, `gallery:dump` | Inspect or dump component presentations. |
 | `test:profile` | Produce a focused benchmark's binary and profiles under `.tmp/profiles/`. |

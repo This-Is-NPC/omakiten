@@ -62,7 +62,10 @@ adapter. The executable composes all three.
 | `internal/daemon` | Server composition, per-project runtime resolution, event-log tailing, lock, token, and discovery file. |
 | `internal/config` | Package schema, loading, validation, identities, and snapshots. |
 | `internal/configstore` | Filesystem adapter for staged package and asset edits. |
-| `internal/sqlite` | Transactions, operational queries, events, sync identity stamping, and live snapshots. |
+| `internal/sqlite` | Transactions, operational queries, events, sync identity, change capture, remote apply, and live snapshots. |
+| `internal/syncproto` | Wire contract of sync: routes, request and response bodies, query encoding. |
+| `internal/syncserver` | The `okt-server` HTTP handler, token authentication, and its SQLite row store. |
+| `internal/syncclient` | HTTP adapter implementing the sync remote port. |
 | `internal/agentruntime` | Bootstrap, per-project runtime cache, reload, and shutdown. |
 | `internal/workfile` | Bounded UTF-8 OKF Markdown codec. |
 | `internal/knowledgefile` | File-backed Markdown, OpenAPI, and CLI knowledge reader. |
@@ -169,26 +172,139 @@ directories before descriptor-relative access. Windows opens synchronous NT
 handles with synchronization access and uses Win32 error codes for missing
 targets and name collisions.
 
-## 8. Sync foundation
+## 8. Sync
 
 The board is local-first: this machine's database stays the source of truth,
-and a future server is a sync peer rather than an owner. Nothing networks yet;
-the schema and write path only carry the identity a peer will need.
+and `okt-server` is a sync peer rather than an owner. A project whose
+`projects.sync_scope` is `synced` replicates by row state. Projects left
+`local` (the default) record nothing and never reach a server. Usage is in
+[the sync how-to](../how-to-sync-projects.md).
+
+### Identity and clock
 
 | Piece | Behavior |
 | --- | --- |
-| Global identity | `projects`, `tasks`, `events`, `errors`, `solutions`, `plans`, and `plan_waves` carry a unique UUIDv7 `uid`. Integer ids stay local. |
+| Global identity | `projects`, `tasks`, `events`, `errors`, `solutions`, `plans`, and `plan_waves` carry a unique UUIDv7 `uid`. Integer ids stay local. Join rows have no uid. |
 | Event envelope | Every `events` row carries `hlc`, `device_id`, and `actor_id`. |
-| Clock text | An HLC renders as `<wall>-<counter>-<device>` with fixed-width decimal wall and counter, so string order is causal order. |
-| Stamping | One helper in `internal/sqlite` ticks the clock and returns the envelope for each event insert, inside the writing transaction. |
-| Clock state | The last HLC lives in `sync_identity`, so CLI one-shots, the TUI, and the daemon share one clock. |
-| Device identity | `sync_identity` is a singleton row holding `device_id`, `actor_id`, and `hlc`. It is seeded on fresh databases and on upgrade. |
-| Actor | `actor_id` is stored apart from `device_id`, so multi-user sync needs no format change. |
-| Schema backfill | A schema upgrade step may carry a Go backfill that runs in the step's transaction. Version 4 uses it to assign uids to existing rows and seed the identity. |
-| Sync scope | `projects.sync_scope` is `local` (default) or `synced`. Set it with `okt project edit --sync-scope` or the HTTP `PATCH`. |
+| Clock text | An HLC renders as `<wall>-<counter>-<device>` with fixed-width decimal wall and counter, so string order is causal order. `domain.TickHLC` and `domain.ObserveHLC` define the clock. |
+| One tick | The SQL function `okt_hlc_tick` wraps `domain.TickHLC`. Event stamping and row capture both advance `sync_identity.hlc` through it, so every writer shares one clock. |
+| Device identity | `sync_identity` is a singleton row holding `device_id`, `actor_id`, `hlc`, `remote_url`, and the `applying` flag. It is seeded on fresh databases and on upgrade. |
+| Schema backfill | An upgrade step may carry a Go backfill that runs in the step's transaction. Version 4 uses it to assign uids and seed the identity. |
 
-Not built yet: replayable operation payloads, uids in DTOs, the sync protocol
-and `okt sync`, a server binary, conflict resolution, and accounts or teams.
+### Capture
+
+Triggers in `schema.sql` record each insert, update, and delete of a synced
+table's row into `sync_rows`, keyed by (`project_id`, `tbl`, `row_uid`). A
+newer entry replaces the older one for the same key, and a stamping trigger
+gives the entry the next clock tick. The view `sync_capture_projects` limits
+capture to synced projects and turns it off while `sync_identity.applying`
+is set, so applied remote rows are never pushed back. Update triggers fire
+only on the replicated columns. Activity-log events (`cli.tool_call`,
+`tui.tool_call`, listed in `sync_activity_event_types`) are never captured.
+Switching a project to `synced` enqueues its existing rows, and deletes that
+happened while it was local are recorded as deletes.
+
+| Table | Role |
+| --- | --- |
+| `sync_rows` | Local changes waiting to be pushed; `local` marks rows that are pending versus rows received. |
+| `sync_projects` | Per project, `pushed_hlc` (last pushed stamp) and `pull_cursor` (last server seq applied). |
+| `sync_inbox` | Remote changes parked until the row they reference arrives. |
+| `sync_identity` | Device, actor, clock, remote URL, and the apply flag. |
+
+### Wire rows
+
+The replicated tables, in apply order, are `projects`, `plans`,
+`plan_waves`, `tasks`, `errors`, `solutions`, `events`, `task_dependencies`,
+`task_tags`, `error_tags`, and `event_tags`. A `domain.SyncChange` carries
+the table, a row uid, the op (`upsert` or `delete`), the stamp, the device,
+and the column values. Local integer ids never travel: each foreign key
+`x_id` is sent as `x_uid`, and tags by `tag_name`. Join rows use the
+`|`-joined uids of their parents as the row id. The project row carries its
+name and description only, never `root_path`. Bucket and priority ids are
+sent as they are, which is why machines must share the workflow kit; a push
+labels the project with its kit key and a clone refuses a different kit.
+Workflow configuration is not replicated. `domain.ValidateSyncChange` bounds
+every change: known table and op, parsed stamp, scalar data values, and a
+wall no more than 24 hours ahead.
+
+### Sync run
+
+`internal/app` `SyncService` drives each synced project through the ports
+`SyncStore` and `SyncRemote`. Projects are isolated: one failure is recorded
+in that project's report and the others continue, and the CLI exits
+non-zero when any report holds an error.
+
+1. Push. Pending changes go up in pages ordered by stamp, and `pushed_hlc`
+   advances after each accepted page. A `body_too_large` answer halves the
+   page; a single change still too large fails the project. A pull halves
+   its page the same way on any HTTP 413.
+2. Pull. The client reads pages after `pull_cursor` and hands each to
+   `ApplyChanges`. A page that reports more without moving the cursor, or a
+   cursor that goes backwards, fails instead of looping.
+
+### Apply
+
+`sqlite.Store.ApplyChanges` runs one batch in one transaction with capture
+off. Project scope comes from the rule table: a uid already held by another
+project, a project delete, or a bad join row id is a rejected change,
+counted in the report and skipped.
+
+- Changes sort by table apply order, then stamp; a row is replaced only by a
+  greater stamp. A recorded delete of an entity row beats any upsert and is
+  final. Join rows (tags, dependencies) compare deletes by stamp, so they
+  can be removed and added again.
+- A change stamped too far ahead of the clock is parked, not rejected.
+- Each change runs under its own savepoint, so a failing change leaves no
+  partial write.
+- A change whose reference is missing waits in `sync_inbox`. The inbox is
+  targeted: a parked change is retried only when the row it is missing is
+  applied. It holds at most 10,000 changes per project, dropping the oldest.
+  A change whose required parent was deleted is dropped with it.
+- The pull cursor is stored and the local clock observes the greatest
+  incoming stamp in the same transaction, so a batch applies completely or
+  not at all.
+
+### Server
+
+`internal/syncserver` serves three routes under `/v1` with Bearer tokens
+(at least 32 bytes) and bounded request bodies: list projects, push changes
+for a project, pull changes after a sequence number. It keeps one row per
+(project, table, row uid) in its own SQLite file and gives every accepted
+change the next sequence number. Invalid changes are skipped and counted in
+the push answer's rejected count. The conflict rule, applied per row:
+
+| Stored | Incoming | Result |
+| --- | --- | --- |
+| Nothing | Any valid change | Stored. |
+| Upsert | Upsert with a greater HLC | Replaces it. |
+| Upsert | Upsert with an equal or smaller HLC | Ignored. |
+| Upsert | Delete | Replaces it, whatever the HLC. |
+| Delete | Anything | Ignored: deletes are final (join rows compare by stamp instead). |
+
+`internal/syncclient` implements `SyncRemote` over HTTP: bounded responses,
+no redirects, `https` unless the host is loopback or `OMAKITEN_SYNC_INSECURE`
+is set. `internal/agentruntime` supplies the token from
+`OMAKITEN_SYNC_TOKEN` or the 0600 `sync.token` in the data directory.
+
+### Why rows, not operations
+
+Replaying operations needs every operation to be deterministic, replayable
+on a different database, and ordered consistently across devices, and it
+makes a missed or reordered operation corrupt state permanently. Row state
+reads the result of each write wherever it came from (CLI, TUI, daemon, or
+import), so a new operation needs no sync code. Convergence follows from a
+per-row total order, a retry is idempotent, and the server needs no domain
+logic.
+
+### Not built
+
+- Per-field merge: rows merge as a whole.
+- Background sync in the daemon; sync runs when asked.
+- Replication of the workflow configuration.
+- Accounts, teams, and permissions; a token is all-or-nothing.
+- TLS termination in `okt-server`; run it behind a reverse proxy.
+- Sync in the TUI.
+- Release archives for `okt-server`.
 
 ## Next
 

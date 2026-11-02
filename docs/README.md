@@ -34,6 +34,7 @@ can add them when the work needs them.
 | [How to run agents for a task](how-to-run-agent-teams.md) | Headless agent sessions, bucket teams and plan seats, harness templates, transcripts, and what an agent inherits. |
 | [How to run an action when work changes](how-to-use-hooks.md) | Events, executable actions, notifications, and where to inspect failures. |
 | [How to change the appearance and language](how-to-change-appearance-and-language.md) | Color themes, persona themes, and application language preferences. |
+| [How to keep a project in step across machines](how-to-sync-projects.md) | Running `okt-server`, `okt remote`, `okt sync`, cloning, conflict rules, and limits. |
 | [How to keep and recover the board](how-to-back-up-and-recover.md) | Database snapshots, restore, search integrity, and recovery before deletion. |
 | [When a command refuses](troubleshooting.md) | Configuration errors, workflow gates, wrong project selection, and import failures. |
 
