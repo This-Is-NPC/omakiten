@@ -62,7 +62,7 @@ adapter. The executable composes all three.
 | `internal/daemon` | Server composition, per-project runtime resolution, event-log tailing, lock, token, and discovery file. |
 | `internal/config` | Package schema, loading, validation, identities, and snapshots. |
 | `internal/configstore` | Filesystem adapter for staged package and asset edits. |
-| `internal/sqlite` | Transactions, operational queries, events, and live snapshots. |
+| `internal/sqlite` | Transactions, operational queries, events, sync identity stamping, and live snapshots. |
 | `internal/agentruntime` | Bootstrap, per-project runtime cache, reload, and shutdown. |
 | `internal/workfile` | Bounded UTF-8 OKF Markdown codec. |
 | `internal/knowledgefile` | File-backed Markdown, OpenAPI, and CLI knowledge reader. |
@@ -168,6 +168,27 @@ aliases `/var`, `/tmp`, and `/etc` resolve to their corresponding `/private/`
 directories before descriptor-relative access. Windows opens synchronous NT
 handles with synchronization access and uses Win32 error codes for missing
 targets and name collisions.
+
+## 8. Sync foundation
+
+The board is local-first: this machine's database stays the source of truth,
+and a future server is a sync peer rather than an owner. Nothing networks yet;
+the schema and write path only carry the identity a peer will need.
+
+| Piece | Behavior |
+| --- | --- |
+| Global identity | `projects`, `tasks`, `events`, `errors`, `solutions`, `plans`, and `plan_waves` carry a unique UUIDv7 `uid`. Integer ids stay local. |
+| Event envelope | Every `events` row carries `hlc`, `device_id`, and `actor_id`. |
+| Clock text | An HLC renders as `<wall>-<counter>-<device>` with fixed-width decimal wall and counter, so string order is causal order. |
+| Stamping | One helper in `internal/sqlite` ticks the clock and returns the envelope for each event insert, inside the writing transaction. |
+| Clock state | The last HLC lives in `sync_identity`, so CLI one-shots, the TUI, and the daemon share one clock. |
+| Device identity | `sync_identity` is a singleton row holding `device_id`, `actor_id`, and `hlc`. It is seeded on fresh databases and on upgrade. |
+| Actor | `actor_id` is stored apart from `device_id`, so multi-user sync needs no format change. |
+| Schema backfill | A schema upgrade step may carry a Go backfill that runs in the step's transaction. Version 4 uses it to assign uids to existing rows and seed the identity. |
+| Sync scope | `projects.sync_scope` is `local` (default) or `synced`. Set it with `okt project edit --sync-scope` or the HTTP `PATCH`. |
+
+Not built yet: replayable operation payloads, uids in DTOs, the sync protocol
+and `okt sync`, a server binary, conflict resolution, and accounts or teams.
 
 ## Next
 
