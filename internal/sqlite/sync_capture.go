@@ -23,8 +23,11 @@ type syncRef struct {
 type syncRule struct {
 	// rowUID is the SQL over alias r that yields the wire row id.
 	rowUID string
-	// scope is the SQL predicate over alias r selecting the rows of the project bound to its single placeholder.
+	// scope is the SQL predicate over alias r selecting the rows of the project bound to its single
+	// placeholder: how the table reaches its project, directly or through a parent. Capture and apply both read it.
 	scope string
+	// deviceOnly is the SQL predicate over alias r selecting the rows that never leave the device; empty when none do.
+	deviceOnly string
 	// omit lists the columns that never leave the device, besides id and uid.
 	omit []string
 	// refs replaces local-id columns with the values that identify them globally.
@@ -57,6 +60,14 @@ func joinRule(scope string, key []string, refs ...syncRef) syncRule {
 	return syncRule{rowUID: strings.Join(exprs, " || '|' || "), scope: scope, omit: omit, refs: refs, key: key}
 }
 
+// captured is the SQL predicate over alias r selecting the rows of the project bound to its single placeholder that sync captures.
+func (r syncRule) captured() string {
+	if r.deviceOnly == "" {
+		return r.scope
+	}
+	return r.scope + " AND NOT (" + r.deviceOnly + ")"
+}
+
 // projectScoped reports whether the table carries a project_id column on the wire side.
 func (r syncRule) projectScoped() bool {
 	return slices.Contains(r.omit, "project_id")
@@ -73,7 +84,7 @@ const (
 
 // entityTables maps the entity_type of an event to the table holding its subject.
 var entityTables = []struct{ kind, table string }{
-	{"task", "tasks"}, {"plan", "plans"}, {"error", "errors"}, {"solution", "solutions"},
+	{"task", "tasks"}, {"plan", "plans"}, {"error", "errors"}, {"solution", "solutions"}, {"project", "projects"},
 }
 
 // entityUIDExpr yields the uid of the subject of an events row.
@@ -103,7 +114,7 @@ var syncRules = map[string]syncRule{
 	"errors": {rowUID: "r.uid", scope: byProjectID, omit: []string{"project_id"}},
 	"solutions": {rowUID: "r.uid", scope: inProject("error_id", "errors"),
 		refs: []syncRef{parentRef("error_id", "error_uid", "errors"), uidRef("task_id", "task_uid", "tasks")}},
-	"events": {rowUID: "r.uid", scope: byProjectID + " AND r.event_type NOT IN (SELECT event_type FROM sync_activity_event_types)", omit: []string{"project_id"},
+	"events": {rowUID: "r.uid", scope: byProjectID, deviceOnly: "r.event_type IN (SELECT event_type FROM sync_activity_event_types)", omit: []string{"project_id"},
 		refs: []syncRef{{col: "entity_id", name: "entity_uid", expr: entityUIDExpr}}},
 	"task_dependencies": joinRule(byProjectID, []string{"task_uid", "depends_on_task_uid"},
 		parentRef("task_id", "task_uid", "tasks"), parentRef("depends_on_task_id", "depends_on_task_uid", "tasks")),
@@ -172,7 +183,7 @@ func (s *Store) enqueueProject(ctx context.Context, projectID int64) error {
 		_, err := s.query(ctx).ExecContext(ctx, fmt.Sprintf(`
 INSERT INTO sync_rows(project_id, tbl, row_uid)
 SELECT ?, '%s', u FROM (SELECT %s AS u FROM %s r WHERE %s) WHERE u IS NOT NULL`,
-			table, rule.rowUID, table, rule.scope), projectID, projectID)
+			table, rule.rowUID, table, rule.captured()), projectID, projectID)
 		if err != nil {
 			return fmt.Errorf("enqueue %s: %w", table, err)
 		}

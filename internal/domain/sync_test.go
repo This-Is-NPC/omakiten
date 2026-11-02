@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 )
@@ -325,5 +326,78 @@ func TestValidateSyncProjectInfo(t *testing.T) {
 				t.Fatalf("got %v, want ok=%v", err, tc.ok)
 			}
 		})
+	}
+}
+
+var validateNow = time.UnixMilli(1700000000000 + 1000)
+
+func validSyncChange() SyncChange {
+	return SyncChange{
+		Table:  "tasks",
+		RowUID: "01900000-0000-7000-8000-0000000000aa",
+		Op:     SyncOpUpsert,
+		HLC:    HLC{Wall: 1700000000000, Device: devA}.String(),
+		Device: devA,
+		Data:   map[string]any{"title": "t"},
+	}
+}
+
+func TestValidateSyncChange(t *testing.T) {
+	tests := []struct {
+		name   string
+		mutate func(*SyncChange)
+		ok     bool
+	}{
+		{"valid upsert", func(*SyncChange) {}, true},
+		{"valid delete", func(c *SyncChange) { c.Op = SyncOpDelete; c.Data = nil }, true},
+		{"unknown table", func(c *SyncChange) { c.Table = "sync_identity" }, false},
+		{"unknown op", func(c *SyncChange) { c.Op = "merge" }, false},
+		{"empty row uid", func(c *SyncChange) { c.RowUID = "" }, false},
+		{"unparsable hlc", func(c *SyncChange) { c.HLC = "nope" }, false},
+		{"zero hlc", func(c *SyncChange) { c.HLC = HLC{}.String() }, false},
+		{"empty device", func(c *SyncChange) { c.Device = "" }, false},
+		{"bad device", func(c *SyncChange) { c.Device = "device" }, false},
+		{"wall within drift", func(c *SyncChange) {
+			c.HLC = HLC{Wall: validateNow.Add(MaxHLCDrift).UnixMilli(), Device: devA}.String()
+		}, true},
+		{"wall beyond drift", func(c *SyncChange) {
+			c.HLC = HLC{Wall: validateNow.Add(MaxHLCDrift).UnixMilli() + 1, Device: devA}.String()
+		}, false},
+		{"scalar data", func(c *SyncChange) {
+			c.Data = map[string]any{"s": "x", "n": 1.5, "b": true, "z": nil}
+		}, true},
+		{"NaN data", func(c *SyncChange) { c.Data = map[string]any{"n": math.NaN()} }, false},
+		{"Inf data", func(c *SyncChange) { c.Data = map[string]any{"n": math.Inf(-1)} }, false},
+		{"nested map", func(c *SyncChange) { c.Data = map[string]any{"m": map[string]any{"a": 1.0}} }, false},
+		{"nested slice", func(c *SyncChange) { c.Data = map[string]any{"l": []any{"a"}} }, false},
+		{"int data", func(c *SyncChange) { c.Data = map[string]any{"i": 3} }, false},
+		{"upsert without data", func(c *SyncChange) { c.Data = nil }, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := validSyncChange()
+			tt.mutate(&c)
+			err := ValidateSyncChange(c, validateNow)
+			if tt.ok {
+				if err != nil {
+					t.Fatalf("want valid, got %v", err)
+				}
+				return
+			}
+			var de *CodedError
+			if !errors.As(err, &de) || de.Code != ErrValidation {
+				t.Fatalf("want validation error, got %v", err)
+			}
+		})
+	}
+}
+
+func TestSyncTablesAreAccepted(t *testing.T) {
+	for _, table := range SyncTables {
+		c := validSyncChange()
+		c.Table = table
+		if err := ValidateSyncChange(c, validateNow); err != nil {
+			t.Errorf("%s: %v", table, err)
+		}
 	}
 }

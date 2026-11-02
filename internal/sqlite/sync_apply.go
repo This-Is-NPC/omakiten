@@ -11,125 +11,174 @@ import (
 	"time"
 
 	"omakiten/internal/domain"
+	"omakiten/internal/sqlite/sqlutil"
 )
+
+// maxSyncInbox caps the changes parked per project; past it the oldest go.
+const maxSyncInbox = 10_000
+
+// rowKey names a synced row across tables.
+type rowKey struct{ table, uid string }
 
 // pendingChange is a validated incoming change with its parsed stamp.
 type pendingChange struct {
 	domain.SyncChange
 	stamp domain.HLC
 	order int
+	// missing is the reference this change waits for, set while it is held.
+	missing *missingRefError
 }
 
 // missingRefError reports a reference to a row the database does not hold yet.
 type missingRefError struct {
-	ref, uid string
+	rowKey
 }
 
 func (e *missingRefError) Error() string {
-	return fmt.Sprintf("missing %s %s", e.ref, e.uid)
+	return fmt.Sprintf("missing %s %s", e.table, e.uid)
 }
 
 // errParentGone says a required parent of the change was deleted, so the row is gone too.
 var errParentGone = errors.New("required parent was deleted")
 
+// rejectedError says a change must not be applied: it is invalid or names a row of another project.
+type rejectedError struct{ reason string }
+
+func (e *rejectedError) Error() string { return "sync change rejected: " + e.reason }
+
+func reject(format string, args ...any) error {
+	return &rejectedError{reason: fmt.Sprintf(format, args...)}
+}
+
 // ApplyChanges applies remote rows of the project last-writer-wins, stores the
 // pull cursor and observes the clock in one transaction. Capture is off while
 // it runs, so nothing it writes is queued for push. A change whose reference
-// has not arrived yet waits in sync_inbox for a later batch.
-func (s *Store) ApplyChanges(ctx context.Context, projectID int64, changes []domain.SyncChange, cursor int64) error {
-	return s.WithinTransaction(ctx, func(ctx context.Context) error {
-		q := s.query(ctx)
-		if _, err := q.ExecContext(ctx, `UPDATE sync_identity SET applying = 1 WHERE id = 1`); err != nil {
+// has not arrived yet waits in sync_inbox for a later batch. A change that is
+// invalid, names a row of another project or violates a constraint is skipped
+// and counted in the result.
+func (s *Store) ApplyChanges(ctx context.Context, projectID int64, changes []domain.SyncChange, cursor int64) (int, error) {
+	rejected := 0
+	err := s.WithinTransaction(ctx, func(ctx context.Context) error {
+		a := &applier{s: s, q: s.query(ctx), projectID: projectID, columns: map[string][]string{}, now: time.Now()}
+		defer func() { rejected = a.rejected }()
+		if _, err := a.q.ExecContext(ctx, `UPDATE sync_identity SET applying = 1 WHERE id = 1`); err != nil {
 			return err
 		}
-		a := &applier{s: s, q: q, projectID: projectID, columns: map[string][]string{}}
-		latest, err := a.applyWithInbox(ctx, changes)
-		if err != nil {
+		if err := a.applyWithInbox(ctx, changes); err != nil {
 			return err
 		}
-		if _, err := q.ExecContext(ctx, `
+		if _, err := a.q.ExecContext(ctx, `
 INSERT INTO sync_projects(project_id, pull_cursor) VALUES (?, ?)
 ON CONFLICT(project_id) DO UPDATE SET pull_cursor = excluded.pull_cursor`, projectID, cursor); err != nil {
 			return err
 		}
-		if latest != nil {
-			if err := observeClock(ctx, q, *latest); err != nil {
+		if a.latest != (domain.HLC{}) {
+			if err := observeClock(ctx, a.q, a.latest); err != nil {
 				return err
 			}
 		}
-		_, err = q.ExecContext(ctx, `UPDATE sync_identity SET applying = 0 WHERE id = 1`)
+		_, err := a.q.ExecContext(ctx, `UPDATE sync_identity SET applying = 0 WHERE id = 1`)
 		return err
 	})
+	return rejected, err
 }
 
-// applyWithInbox applies the changes together with the parked ones and parks
-// what still waits. It returns the greatest stamp seen, nil when there was none.
-func (a *applier) applyWithInbox(ctx context.Context, changes []domain.SyncChange) (*domain.HLC, error) {
-	parked, err := loadInbox(ctx, a.q, a.projectID)
+// applyWithInbox applies the changes, then the parked ones whose missing
+// reference was applied meanwhile, and parks what still waits.
+func (a *applier) applyWithInbox(ctx context.Context, changes []domain.SyncChange) error {
+	keys := make([]rowKey, len(changes))
+	for i, change := range changes {
+		keys[i] = rowKey{change.Table, change.RowUID}
+	}
+	superseded, err := a.takeParked(ctx, "tbl", "row_uid", keys)
 	if err != nil {
-		return nil, err
-	}
-	queue, latest, err := orderChanges(mergeChanges(parked, changes))
-	if err != nil {
-		return nil, err
-	}
-	unresolved, err := a.applyAll(ctx, queue)
-	if err != nil {
-		return nil, err
-	}
-	if err := storeInbox(ctx, a.q, a.projectID, unresolved); err != nil {
-		return nil, err
-	}
-	if len(queue) == 0 {
-		return nil, nil
-	}
-	return &latest, nil
-}
-
-// loadInbox returns the changes parked by earlier batches of the project.
-func loadInbox(ctx context.Context, q queryExecutor, projectID int64) ([]domain.SyncChange, error) {
-	rows, err := q.QueryContext(ctx, `SELECT change FROM sync_inbox WHERE project_id = ?`, projectID)
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = rows.Close() }()
-	var parked []domain.SyncChange
-	for rows.Next() {
-		var raw string
-		if err := rows.Scan(&raw); err != nil {
-			return nil, err
-		}
-		var change domain.SyncChange
-		if err := json.Unmarshal([]byte(raw), &change); err != nil {
-			return nil, err
-		}
-		parked = append(parked, change)
-	}
-	return parked, rows.Err()
-}
-
-// storeInbox replaces the project's inbox with the changes still waiting for a reference.
-func storeInbox(ctx context.Context, q queryExecutor, projectID int64, waiting []pendingChange) error {
-	if _, err := q.ExecContext(ctx, `DELETE FROM sync_inbox WHERE project_id = ?`, projectID); err != nil {
 		return err
 	}
+	queue := a.prepare(mergeChanges(superseded, changes))
+	var held []pendingChange
+	for len(queue) > 0 {
+		if held, err = a.applyAll(ctx, queue); err != nil {
+			return err
+		}
+		woken, err := a.takeParked(ctx, "missing_tbl", "missing_uid", a.settled)
+		if err != nil {
+			return err
+		}
+		a.settled = nil
+		if len(woken) == 0 {
+			break
+		}
+		queue = sortPending(append(held, a.prepare(woken)...))
+	}
+	if err := storeInbox(ctx, a.q, a.projectID, held); err != nil {
+		return err
+	}
+	dropped, err := capInbox(ctx, a.q, a.projectID)
+	a.rejected += dropped
+	return err
+}
+
+// takeParked removes from the inbox and returns the changes of the project
+// whose (tblCol, uidCol) is one of keys.
+func (a *applier) takeParked(ctx context.Context, tblCol, uidCol string, keys []rowKey) ([]domain.SyncChange, error) {
+	var taken []domain.SyncChange
+	query := fmt.Sprintf(`DELETE FROM sync_inbox WHERE project_id = ? AND %s = ? AND %s = ? RETURNING change`, tblCol, uidCol)
+	for _, key := range keys {
+		rows, err := a.q.QueryContext(ctx, query, a.projectID, key.table, key.uid)
+		if err != nil {
+			return nil, err
+		}
+		for rows.Next() {
+			var raw string
+			var change domain.SyncChange
+			if err := rows.Scan(&raw); err != nil {
+				_ = rows.Close()
+				return nil, err
+			}
+			if err := json.Unmarshal([]byte(raw), &change); err != nil {
+				_ = rows.Close()
+				return nil, err
+			}
+			taken = append(taken, change)
+		}
+		if err := errors.Join(rows.Err(), rows.Close()); err != nil {
+			return nil, err
+		}
+	}
+	return taken, nil
+}
+
+// storeInbox parks the changes still waiting for a reference.
+func storeInbox(ctx context.Context, q queryExecutor, projectID int64, waiting []pendingChange) error {
 	for _, change := range waiting {
 		raw, err := json.Marshal(change.SyncChange)
 		if err != nil {
 			return err
 		}
-		if _, err := q.ExecContext(ctx, `INSERT OR REPLACE INTO sync_inbox(project_id, tbl, row_uid, hlc, change) VALUES (?, ?, ?, ?, ?)`,
-			projectID, change.Table, change.RowUID, change.HLC, string(raw)); err != nil {
+		if _, err := q.ExecContext(ctx, `
+INSERT OR REPLACE INTO sync_inbox(project_id, tbl, row_uid, hlc, change, missing_tbl, missing_uid) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+			projectID, change.Table, change.RowUID, change.HLC, string(raw), change.missing.table, change.missing.uid); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
+// capInbox drops the oldest parked changes of the project beyond maxSyncInbox and returns how many.
+func capInbox(ctx context.Context, q queryExecutor, projectID int64) (int, error) {
+	var parked int
+	if err := q.QueryRowContext(ctx, `SELECT count(*) FROM sync_inbox WHERE project_id = ?`, projectID).Scan(&parked); err != nil || parked <= maxSyncInbox {
+		return 0, err
+	}
+	_, err := q.ExecContext(ctx, `
+DELETE FROM sync_inbox WHERE rowid IN (SELECT rowid FROM sync_inbox WHERE project_id = ? ORDER BY hlc LIMIT ?)`,
+		projectID, parked-maxSyncInbox)
+	return parked - maxSyncInbox, err
+}
+
 // mergeChanges joins parked and incoming changes, keeping the greater stamp per row.
 // A malformed stamp is kept as is, so validation reports it.
 func mergeChanges(parked, incoming []domain.SyncChange) []domain.SyncChange {
-	type rowKey struct{ table, uid string }
 	index := map[rowKey]int{}
 	var merged []domain.SyncChange
 	for _, change := range append(slices.Clone(parked), incoming...) {
@@ -149,48 +198,52 @@ func mergeChanges(parked, incoming []domain.SyncChange) []domain.SyncChange {
 	return merged
 }
 
-// orderChanges validates the changes and sorts them by table apply order,
-// then by stamp. It also returns the greatest stamp.
-func orderChanges(changes []domain.SyncChange) ([]pendingChange, domain.HLC, error) {
+// prepare validates the changes, counting the invalid ones as rejected, and
+// orders the rest. It raises the greatest stamp seen.
+func (a *applier) prepare(changes []domain.SyncChange) []pendingChange {
 	queue := make([]pendingChange, 0, len(changes))
-	var latest domain.HLC
 	for _, change := range changes {
-		rule, known := syncRules[change.Table]
-		order := slices.Index(domain.SyncTables, change.Table)
-		switch {
-		case !known || order < 0:
-			return nil, latest, syncChangeInvalid(change, "table is not synced")
-		case change.RowUID == "":
-			return nil, latest, syncChangeInvalid(change, "row_uid is empty")
-		case change.Op != domain.SyncOpUpsert && change.Op != domain.SyncOpDelete:
-			return nil, latest, syncChangeInvalid(change, "unknown op "+string(change.Op))
-		case change.Table == "projects" && change.Op == domain.SyncOpDelete:
-			return nil, latest, syncChangeInvalid(change, "a project is never deleted by sync")
-		case rule.key != nil && len(strings.SplitN(change.RowUID, "|", len(rule.key))) != len(rule.key):
-			return nil, latest, syncChangeInvalid(change, "row_uid does not join "+strings.Join(rule.key, " and "))
-		}
-		stamp, err := domain.ParseHLC(change.HLC)
+		stamp, order, err := a.check(change)
 		if err != nil {
-			return nil, latest, err
+			a.rejected++
+			continue
 		}
-		if stamp.Compare(latest) > 0 {
-			latest = stamp
+		if stamp.Compare(a.latest) > 0 {
+			a.latest = stamp
 		}
 		queue = append(queue, pendingChange{SyncChange: change, stamp: stamp, order: order})
 	}
+	return sortPending(queue)
+}
+
+// check validates a change and returns its stamp and apply order.
+func (a *applier) check(change domain.SyncChange) (domain.HLC, int, error) {
+	if err := domain.ValidateSyncChange(change, a.now); err != nil {
+		return domain.HLC{}, 0, err
+	}
+	stamp, err := domain.ParseHLC(change.HLC)
+	if err != nil {
+		return domain.HLC{}, 0, err
+	}
+	rule := syncRules[change.Table]
+	switch {
+	case change.Table == "projects" && change.Op == domain.SyncOpDelete:
+		return stamp, 0, reject("a project is never deleted by sync")
+	case rule.key != nil && len(strings.SplitN(change.RowUID, "|", len(rule.key))) != len(rule.key):
+		return stamp, 0, reject("row_uid does not join %s", strings.Join(rule.key, " and "))
+	}
+	return stamp, slices.Index(domain.SyncTables, change.Table), nil
+}
+
+// sortPending sorts the changes by table apply order, then by stamp.
+func sortPending(queue []pendingChange) []pendingChange {
 	slices.SortStableFunc(queue, func(a, b pendingChange) int {
 		if a.order != b.order {
 			return a.order - b.order
 		}
 		return a.stamp.Compare(b.stamp)
 	})
-	return queue, latest, nil
-}
-
-func syncChangeInvalid(change domain.SyncChange, reason string) error {
-	return domain.NewError(domain.ErrValidation,
-		fmt.Sprintf("invalid sync change %s %s: %s", change.Table, change.RowUID, reason),
-		map[string]any{"table": change.Table, "row_uid": change.RowUID})
+	return queue
 }
 
 // observeClock moves the stored clock past the greatest incoming stamp.
@@ -221,6 +274,13 @@ type applier struct {
 	q         queryExecutor
 	projectID int64
 	columns   map[string][]string
+	now       time.Time
+	// latest is the greatest stamp of the valid changes seen.
+	latest domain.HLC
+	// rejected counts the changes skipped as invalid, foreign or violating a constraint.
+	rejected int
+	// settled lists the rows applied since the inbox was last woken.
+	settled []rowKey
 }
 
 // applyAll applies the queue, retrying changes whose references are missing
@@ -229,13 +289,19 @@ func (a *applier) applyAll(ctx context.Context, queue []pendingChange) ([]pendin
 	for len(queue) > 0 {
 		var held []pendingChange
 		for _, change := range queue {
-			err := a.apply(ctx, change)
+			err := a.applyIsolated(ctx, change)
 			var missing *missingRefError
-			if errors.As(err, &missing) {
+			var rejection *rejectedError
+			var constraint *sqlutil.ConstraintError
+			switch {
+			case err == nil:
+				a.settled = append(a.settled, rowKey{change.Table, change.RowUID})
+			case errors.As(err, &missing):
+				change.missing = missing
 				held = append(held, change)
-				continue
-			}
-			if err != nil {
+			case errors.As(err, &rejection), errors.As(err, &constraint):
+				a.rejected++
+			default:
 				return nil, err
 			}
 		}
@@ -247,28 +313,54 @@ func (a *applier) applyAll(ctx context.Context, queue []pendingChange) ([]pendin
 	return nil, nil
 }
 
-// apply writes one change when it is newer than what the row last recorded.
-func (a *applier) apply(ctx context.Context, change pendingChange) error {
+// applyIsolated applies one change under a savepoint, so a change that fails
+// leaves no partial write behind.
+func (a *applier) applyIsolated(ctx context.Context, change pendingChange) error {
+	if _, err := a.q.ExecContext(ctx, `SAVEPOINT sync_change`); err != nil {
+		return err
+	}
+	err := sqlutil.MapSQLiteError(a.apply(ctx, change))
+	if err == nil {
+		_, err = a.q.ExecContext(ctx, `RELEASE sync_change`)
+		return err
+	}
+	if _, rollback := a.q.ExecContext(ctx, `ROLLBACK TO sync_change; RELEASE sync_change`); rollback != nil {
+		return errors.Join(err, rollback)
+	}
+	return err
+}
+
+// superseded reports whether the row's recorded state already beats the change.
+// A delete beats every upsert whatever its stamp and is final, as on the server.
+func (a *applier) superseded(ctx context.Context, change pendingChange) (bool, error) {
 	var stored string
 	var deleted bool
 	err := a.q.QueryRowContext(ctx, `SELECT COALESCE(hlc, ''), deleted FROM sync_rows WHERE project_id = ? AND tbl = ? AND row_uid = ?`,
 		a.projectID, change.Table, change.RowUID).Scan(&stored, &deleted)
 	switch {
 	case errors.Is(err, sql.ErrNoRows):
+		return false, nil
 	case err != nil:
+		return false, err
+	case deleted:
+		return true, nil
+	case change.Op == domain.SyncOpDelete:
+		return false, nil
+	}
+	var current domain.HLC
+	if stored != "" {
+		if current, err = domain.ParseHLC(stored); err != nil {
+			return false, err
+		}
+	}
+	return change.stamp.Compare(current) <= 0, nil
+}
+
+// apply writes one change unless the row's recorded state supersedes it.
+func (a *applier) apply(ctx context.Context, change pendingChange) error {
+	stale, err := a.superseded(ctx, change)
+	if err != nil || stale {
 		return err
-	case deleted && change.Op == domain.SyncOpUpsert:
-		return nil
-	default:
-		var current domain.HLC
-		if stored != "" {
-			if current, err = domain.ParseHLC(stored); err != nil {
-				return err
-			}
-		}
-		if change.stamp.Compare(current) <= 0 {
-			return nil
-		}
 	}
 	switch {
 	case change.Table == "projects":
@@ -290,6 +382,27 @@ INSERT INTO sync_rows(project_id, tbl, row_uid, hlc, deleted, local) VALUES (?, 
 	return err
 }
 
+// locate returns the id of the row of table with uid inside the project; found
+// is false when no project holds it. A uid held by another project is a rejected change.
+func (a *applier) locate(ctx context.Context, table, uid string) (id int64, found bool, err error) {
+	err = a.q.QueryRowContext(ctx, fmt.Sprintf("SELECT r.id FROM %s r WHERE r.uid = ? AND %s", table, syncRules[table].scope),
+		uid, a.projectID).Scan(&id)
+	if err == nil {
+		return id, true, nil
+	}
+	if !errors.Is(err, sql.ErrNoRows) {
+		return 0, false, err
+	}
+	var elsewhere bool
+	if err := a.q.QueryRowContext(ctx, fmt.Sprintf("SELECT EXISTS(SELECT 1 FROM %s WHERE uid = ?)", table), uid).Scan(&elsewhere); err != nil {
+		return 0, false, err
+	}
+	if elsewhere {
+		return 0, false, reject("%s %s belongs to another project", table, uid)
+	}
+	return 0, false, nil
+}
+
 // updateProject copies the shared fields onto the local project.
 func (a *applier) updateProject(ctx context.Context, change pendingChange) error {
 	result, err := a.q.ExecContext(ctx, `
@@ -302,12 +415,12 @@ WHERE id = ? AND uid = ?`, change.Data["name"], change.Data["description"], a.pr
 		if err != nil {
 			return err
 		}
-		return syncChangeInvalid(change.SyncChange, "the project is not the one being synced")
+		return reject("project %s is not the one being synced", change.RowUID)
 	}
 	return nil
 }
 
-// upsert inserts the row, or overwrites it when its uid is already local.
+// upsert updates the project's row with the uid, or inserts it. A uid held by another project is rejected.
 func (a *applier) upsert(ctx context.Context, change pendingChange) error {
 	rule := syncRules[change.Table]
 	wire, err := a.wireColumns(ctx, change.Table)
@@ -326,47 +439,50 @@ func (a *applier) upsert(ctx context.Context, change pendingChange) error {
 		return err
 	}
 	cols, vals = append(cols, refCols...), append(vals, refVals...)
+	var id int64
+	found := false
+	if rule.key == nil {
+		if id, found, err = a.locate(ctx, change.Table, change.RowUID); err != nil {
+			return err
+		}
+	}
+	if found {
+		set := make([]string, len(cols))
+		for i, col := range cols {
+			set[i] = col + " = ?"
+		}
+		_, err = a.q.ExecContext(ctx, fmt.Sprintf("UPDATE %s SET %s WHERE id = ?", change.Table, strings.Join(set, ", ")), append(vals, id)...)
+		return err
+	}
 	if rule.projectScoped() {
 		cols, vals = append(cols, "project_id"), append(vals, a.projectID)
 	}
+	verb := "INSERT"
 	if rule.key != nil {
-		return a.exec(ctx, "INSERT OR IGNORE", change.Table, cols, vals, "")
+		verb = "INSERT OR IGNORE"
+	} else {
+		cols, vals = append(cols, "uid"), append(vals, change.RowUID)
 	}
-	update := make([]string, len(cols))
-	for i, col := range cols {
-		update[i] = col + " = excluded." + col
-	}
-	cols, vals = append(cols, "uid"), append(vals, change.RowUID)
-	return a.exec(ctx, "INSERT", change.Table, cols, vals, " ON CONFLICT(uid) DO UPDATE SET "+strings.Join(update, ", "))
-}
-
-func (a *applier) exec(ctx context.Context, verb, table string, cols []string, vals []any, tail string) error {
 	marks := strings.TrimSuffix(strings.Repeat("?, ", len(cols)), ", ")
-	_, err := a.q.ExecContext(ctx,
-		fmt.Sprintf("%s INTO %s(%s) VALUES (%s)%s", verb, table, strings.Join(cols, ", "), marks, tail), vals...)
+	_, err = a.q.ExecContext(ctx, fmt.Sprintf("%s INTO %s(%s) VALUES (%s)", verb, change.Table, strings.Join(cols, ", "), marks), vals...)
 	return err
 }
 
-// remove deletes the local row; a row that is already gone is fine.
+// remove deletes the project's row; a row that is already gone is fine, one of another project is rejected.
 func (a *applier) remove(ctx context.Context, change pendingChange) error {
 	rule := syncRules[change.Table]
-	switch {
-	case rule.key != nil:
+	if rule.key != nil {
 		return a.removeJoinRow(ctx, change, rule)
-	case change.Table == "tasks":
-		var id, projectID int64
-		err := a.q.QueryRowContext(ctx, `SELECT id, project_id FROM tasks WHERE uid = ?`, change.RowUID).Scan(&id, &projectID)
-		if errors.Is(err, sql.ErrNoRows) {
-			return nil
-		}
-		if err != nil {
-			return err
-		}
-		return deleteTaskRows(ctx, a.q, projectID, id)
-	default:
-		_, err := a.q.ExecContext(ctx, fmt.Sprintf("DELETE FROM %s WHERE uid = ?", change.Table), change.RowUID)
+	}
+	id, found, err := a.locate(ctx, change.Table, change.RowUID)
+	if err != nil || !found {
 		return err
 	}
+	if change.Table == "tasks" {
+		return deleteTaskRows(ctx, a.q, a.projectID, id)
+	}
+	_, err = a.q.ExecContext(ctx, fmt.Sprintf("DELETE FROM %s WHERE id = ?", change.Table), id)
+	return err
 }
 
 // removeJoinRow deletes the join row named by the parts of its wire row id.
@@ -435,14 +551,16 @@ func (a *applier) resolveRef(ctx context.Context, ref syncRef, data map[string]a
 		kind, _ := data["entity_type"].(string)
 		i := slices.IndexFunc(entityTables, func(e struct{ kind, table string }) bool { return e.kind == kind })
 		if i < 0 {
-			return nil, domain.NewError(domain.ErrValidation, fmt.Sprintf("unknown entity_type %q", kind), map[string]any{"entity_type": kind})
+			return nil, reject("unknown entity_type %q", kind)
 		}
 		table = entityTables[i].table
 	}
-	var id int64
-	err := a.q.QueryRowContext(ctx, fmt.Sprintf("SELECT id FROM %s WHERE uid = ?", table), uid).Scan(&id)
-	if !errors.Is(err, sql.ErrNoRows) {
-		return id, err
+	id, found, err := a.locate(ctx, table, uid)
+	if err != nil {
+		return nil, err
+	}
+	if found {
+		return id, nil
 	}
 	if create {
 		var deleted bool
@@ -456,13 +574,13 @@ func (a *applier) resolveRef(ctx context.Context, ref syncRef, data map[string]a
 			return nil, err
 		}
 	}
-	return nil, &missingRefError{ref: ref.name, uid: uid}
+	return nil, &missingRefError{rowKey{table, uid}}
 }
 
 func (a *applier) resolveTag(ctx context.Context, data map[string]any, create bool) (any, error) {
 	name, _ := data["tag_name"].(string)
 	if name == "" {
-		return nil, domain.NewError(domain.ErrValidation, "sync change has no tag_name", nil)
+		return nil, reject("change has no tag_name")
 	}
 	if create {
 		label, _ := data["label"].(string)
@@ -475,7 +593,7 @@ func (a *applier) resolveTag(ctx context.Context, data map[string]any, create bo
 	var id int64
 	err := a.q.QueryRowContext(ctx, `SELECT id FROM tags WHERE name = ?`, name).Scan(&id)
 	if errors.Is(err, sql.ErrNoRows) {
-		return nil, &missingRefError{ref: "tag_name", uid: name}
+		return nil, &missingRefError{rowKey{"tags", name}}
 	}
 	return id, err
 }

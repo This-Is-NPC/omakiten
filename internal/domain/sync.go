@@ -5,6 +5,7 @@ import (
 	"math"
 	"net/netip"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -113,7 +114,7 @@ func TickHLC(last HLC, wallMS int64, device UID) (HLC, error) {
 
 // ObserveHLC stamps the receipt of a remote stamp; the result is strictly
 // greater than both last and remote. It fails when the clock cannot advance
-// within MaxHLCWall. Remote drift is bounded by syncproto.ValidateChange.
+// within MaxHLCWall. Remote drift is bounded by ValidateSyncChange.
 func ObserveHLC(last, remote HLC, wallMS int64, device UID) (HLC, error) {
 	wall := max(last.Wall, remote.Wall, wallMS)
 	switch {
@@ -292,4 +293,52 @@ func ValidateSyncProjectInfo(info SyncProjectInfo) error {
 		return syncInvalid("description", info.Description, "must not contain control characters")
 	}
 	return nil
+}
+
+// ValidateSyncChange refuses a change the server or a client must not store.
+// A wall more than MaxHLCDrift ahead of now is refused, and Data may hold
+// only string, finite float64, bool and nil values.
+func ValidateSyncChange(c SyncChange, now time.Time) error {
+	if !slices.Contains(SyncTables, c.Table) {
+		return syncInvalid("table", c.Table, "is not a synced table")
+	}
+	if c.Op != SyncOpUpsert && c.Op != SyncOpDelete {
+		return syncInvalid("op", string(c.Op), "must be upsert or delete")
+	}
+	if c.RowUID == "" {
+		return syncInvalid("row_uid", "", "must not be empty")
+	}
+	hlc, err := ParseHLC(c.HLC)
+	if err != nil {
+		return err
+	}
+	if hlc == (HLC{}) {
+		return syncInvalid("hlc", c.HLC, "must not be zero")
+	}
+	if hlc.Wall > now.Add(MaxHLCDrift).UnixMilli() {
+		return syncInvalid("hlc", c.HLC, "is too far ahead of the clock")
+	}
+	if _, err := ParseUID(string(c.Device)); err != nil {
+		return err
+	}
+	for key, value := range c.Data {
+		if !isScalar(value) {
+			return syncInvalid("data."+key, fmt.Sprint(value), "must be a string, finite number, bool or null")
+		}
+	}
+	if c.Op == SyncOpUpsert && len(c.Data) == 0 {
+		return syncInvalid("data", "", "an upsert needs data")
+	}
+	return nil
+}
+
+// isScalar reports whether v is a JSON scalar as json.Unmarshal decodes it.
+func isScalar(v any) bool {
+	switch v := v.(type) {
+	case nil, string, bool:
+		return true
+	case float64:
+		return !math.IsNaN(v) && !math.IsInf(v, 0)
+	}
+	return false
 }

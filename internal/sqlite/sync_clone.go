@@ -11,7 +11,7 @@ import (
 // CreateClonedProject inserts a synced project that carries the remote uid
 // and the shared fields of info, rooted at root. Nothing is queued for push.
 func (s *Store) CreateClonedProject(ctx context.Context, info domain.SyncProjectInfo, root string) (domain.Project, error) {
-	if _, err := domain.ParseUID(string(info.UID)); err != nil {
+	if err := domain.ValidateSyncProjectInfo(info); err != nil {
 		return domain.Project{}, err
 	}
 	project, err := s.scanProject(s.query(ctx).QueryRowContext(ctx, `
@@ -33,7 +33,7 @@ var _ interface {
 	SyncedProjects(context.Context) ([]domain.SyncProject, error)
 	PendingChanges(context.Context, int64, int) ([]domain.SyncChange, error)
 	MarkPushed(context.Context, int64, string) error
-	ApplyChanges(context.Context, int64, []domain.SyncChange, int64) error
+	ApplyChanges(context.Context, int64, []domain.SyncChange, int64) (int, error)
 	CreateClonedProject(context.Context, domain.SyncProjectInfo, string) (domain.Project, error)
 	SyncRemoteURL(context.Context) (string, error)
 	SetSyncRemoteURL(context.Context, string) error

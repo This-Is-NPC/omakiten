@@ -14,8 +14,10 @@ type SyncStore interface {
 	PendingChanges(ctx context.Context, projectID int64, limit int) ([]domain.SyncChange, error)
 	// MarkPushed records hlc as the project's push watermark.
 	MarkPushed(ctx context.Context, projectID int64, hlc string) error
-	// ApplyChanges applies remote rows last-writer-wins, stores the pull cursor and observes the clock in one transaction.
-	ApplyChanges(ctx context.Context, projectID int64, changes []domain.SyncChange, cursor int64) error
+	// ApplyChanges applies remote rows of the project last-writer-wins, stores the pull cursor and observes the
+	// clock in one transaction. It returns how many changes it rejected: invalid, foreign to the project or
+	// violating a constraint. Only an infrastructure failure is an error.
+	ApplyChanges(ctx context.Context, projectID int64, changes []domain.SyncChange, cursor int64) (rejected int, err error)
 	// CreateClonedProject creates a synced local project from remote info, rooted at root.
 	CreateClonedProject(ctx context.Context, info domain.SyncProjectInfo, root string) (domain.Project, error)
 	// SyncRemoteURL returns the configured server URL.

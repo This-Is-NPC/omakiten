@@ -2,19 +2,14 @@ package syncproto
 
 import (
 	"encoding/json"
-	"errors"
-	"math"
 	"reflect"
 	"strings"
 	"testing"
-	"time"
 
 	"omakiten/internal/domain"
 )
 
 const dev domain.UID = "01900000-0000-7000-8000-00000000000a"
-
-var now = time.UnixMilli(1700000000000 + 1000)
 
 func validChange() domain.SyncChange {
 	return domain.SyncChange{
@@ -24,66 +19,6 @@ func validChange() domain.SyncChange {
 		HLC:    domain.HLC{Wall: 1700000000000, Device: dev}.String(),
 		Device: dev,
 		Data:   map[string]any{"title": "t"},
-	}
-}
-
-func TestValidateChange(t *testing.T) {
-	tests := []struct {
-		name   string
-		mutate func(*domain.SyncChange)
-		ok     bool
-	}{
-		{"valid upsert", func(*domain.SyncChange) {}, true},
-		{"valid delete", func(c *domain.SyncChange) { c.Op = domain.SyncOpDelete; c.Data = nil }, true},
-		{"unknown table", func(c *domain.SyncChange) { c.Table = "sync_identity" }, false},
-		{"unknown op", func(c *domain.SyncChange) { c.Op = "merge" }, false},
-		{"empty row uid", func(c *domain.SyncChange) { c.RowUID = "" }, false},
-		{"unparsable hlc", func(c *domain.SyncChange) { c.HLC = "nope" }, false},
-		{"zero hlc", func(c *domain.SyncChange) { c.HLC = domain.HLC{}.String() }, false},
-		{"empty device", func(c *domain.SyncChange) { c.Device = "" }, false},
-		{"bad device", func(c *domain.SyncChange) { c.Device = "device" }, false},
-		{"wall within drift", func(c *domain.SyncChange) {
-			c.HLC = domain.HLC{Wall: now.Add(domain.MaxHLCDrift).UnixMilli(), Device: dev}.String()
-		}, true},
-		{"wall beyond drift", func(c *domain.SyncChange) {
-			c.HLC = domain.HLC{Wall: now.Add(domain.MaxHLCDrift).UnixMilli() + 1, Device: dev}.String()
-		}, false},
-		{"scalar data", func(c *domain.SyncChange) {
-			c.Data = map[string]any{"s": "x", "n": 1.5, "b": true, "z": nil}
-		}, true},
-		{"NaN data", func(c *domain.SyncChange) { c.Data = map[string]any{"n": math.NaN()} }, false},
-		{"Inf data", func(c *domain.SyncChange) { c.Data = map[string]any{"n": math.Inf(-1)} }, false},
-		{"nested map", func(c *domain.SyncChange) { c.Data = map[string]any{"m": map[string]any{"a": 1.0}} }, false},
-		{"nested slice", func(c *domain.SyncChange) { c.Data = map[string]any{"l": []any{"a"}} }, false},
-		{"int data", func(c *domain.SyncChange) { c.Data = map[string]any{"i": 3} }, false},
-		{"upsert without data", func(c *domain.SyncChange) { c.Data = nil }, false},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			c := validChange()
-			tt.mutate(&c)
-			err := ValidateChange(c, now)
-			if tt.ok {
-				if err != nil {
-					t.Fatalf("want valid, got %v", err)
-				}
-				return
-			}
-			var de *domain.CodedError
-			if !errors.As(err, &de) || de.Code != domain.ErrValidation {
-				t.Fatalf("want validation error, got %v", err)
-			}
-		})
-	}
-}
-
-func TestSyncTablesAreAccepted(t *testing.T) {
-	for _, table := range domain.SyncTables {
-		c := validChange()
-		c.Table = table
-		if err := ValidateChange(c, now); err != nil {
-			t.Errorf("%s: %v", table, err)
-		}
 	}
 }
 

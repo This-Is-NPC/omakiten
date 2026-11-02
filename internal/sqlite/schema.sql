@@ -460,8 +460,12 @@ CREATE TABLE sync_inbox (
   row_uid TEXT NOT NULL,
   hlc TEXT NOT NULL,
   change TEXT NOT NULL,
+  missing_tbl TEXT NOT NULL,
+  missing_uid TEXT NOT NULL,
   PRIMARY KEY (project_id, tbl, row_uid)
 );
+
+CREATE INDEX idx_sync_inbox_missing ON sync_inbox(project_id, missing_tbl, missing_uid);
 
 CREATE VIEW sync_capture_projects AS
 SELECT id FROM projects

@@ -17,6 +17,7 @@ type fakeSyncStore struct {
 	queued   map[int64][]domain.SyncChange
 	pushed   []string
 	applied  []appliedPage
+	rejects  int
 	cloned   []domain.SyncProjectInfo
 	url      string
 }
@@ -50,9 +51,9 @@ func (f *fakeSyncStore) MarkPushed(_ context.Context, _ int64, hlc string) error
 	return nil
 }
 
-func (f *fakeSyncStore) ApplyChanges(_ context.Context, _ int64, changes []domain.SyncChange, cursor int64) error {
+func (f *fakeSyncStore) ApplyChanges(_ context.Context, _ int64, changes []domain.SyncChange, cursor int64) (int, error) {
 	f.applied = append(f.applied, appliedPage{len(changes), cursor})
-	return nil
+	return f.rejects, nil
 }
 
 func (f *fakeSyncStore) CreateClonedProject(_ context.Context, info domain.SyncProjectInfo, _ string) (domain.Project, error) {
@@ -193,6 +194,19 @@ func TestSyncPushPaging(t *testing.T) {
 	}
 	if report.Projects[0].Pushed != syncPushPage+1 {
 		t.Fatalf("pushed = %d", report.Projects[0].Pushed)
+	}
+}
+
+func TestSyncReportsRejectedChanges(t *testing.T) {
+	svc, store, remote, _ := newSyncFixture(domain.SyncProject{ID: 1, Info: domain.SyncProjectInfo{Slug: "a"}})
+	store.rejects = 2
+	remote.pages = []pullPage{{n: 3, cursor: 6, more: true}, {n: 1, cursor: 7}}
+	report, err := svc.Sync(context.Background(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := report.Projects[0]; got.Pulled != 4 || got.Rejected != 4 {
+		t.Fatalf("report = %+v, want 4 pulled and 4 rejected", got)
 	}
 }
 

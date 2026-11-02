@@ -2,12 +2,14 @@ package sqlite
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"omakiten/internal/domain"
 )
@@ -31,10 +33,11 @@ func newSyncPair(t *testing.T) *syncPair {
 	a, project := openSyncStore(t)
 	setScope(t, a, project.ID, domain.SyncScopeSynced)
 	uids := seedRowGraph(t, a, project.ID)
-	changes, err := a.PendingChanges(ctx, project.ID, 1000)
+	pending, err := a.PendingChanges(ctx, project.ID, 1000)
 	if err != nil {
 		t.Fatal(err)
 	}
+	changes := wireRoundTrip(t, pending)
 	b, err := Open(ctx, filepath.Join(t.TempDir(), "state.db"))
 	if err != nil {
 		t.Fatal(err)
@@ -59,6 +62,20 @@ func newSyncPair(t *testing.T) *syncPair {
 	return p
 }
 
+// wireRoundTrip passes changes through JSON, which turns every number into a float64 as on the wire.
+func wireRoundTrip(t *testing.T, changes []domain.SyncChange) []domain.SyncChange {
+	t.Helper()
+	raw, err := json.Marshal(changes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out []domain.SyncChange
+	if err := json.Unmarshal(raw, &out); err != nil {
+		t.Fatal(err)
+	}
+	return out
+}
+
 func mustParseHLC(t *testing.T, s string) domain.HLC {
 	t.Helper()
 	h, err := domain.ParseHLC(s)
@@ -68,15 +85,20 @@ func mustParseHLC(t *testing.T, s string) domain.HLC {
 	return h
 }
 
-func (p *syncPair) apply(t *testing.T, changes []domain.SyncChange, cursor int64) error {
+// soon is a wall clock reading minutes ahead of now, newer than every stamp the source made.
+func soon(minutes int64) int64 {
+	return time.Now().UnixMilli() + minutes*60_000
+}
+
+func (p *syncPair) apply(t *testing.T, changes []domain.SyncChange, cursor int64) (int, error) {
 	t.Helper()
 	return p.b.ApplyChanges(p.ctx, p.bProject.ID, changes, cursor)
 }
 
 func (p *syncPair) mustApply(t *testing.T, changes []domain.SyncChange, cursor int64) {
 	t.Helper()
-	if err := p.apply(t, changes, cursor); err != nil {
-		t.Fatal(err)
+	if rejected, err := p.apply(t, changes, cursor); err != nil || rejected != 0 {
+		t.Fatalf("apply: rejected %d, err %v", rejected, err)
 	}
 }
 
@@ -204,10 +226,10 @@ func TestApplyChangesRoundTrip(t *testing.T) {
 func TestApplyChangesOrdersParentsBeforeChildren(t *testing.T) {
 	t.Parallel()
 	p := newSyncPair(t)
-	parent := p.change(t, "tasks", p.uids["parent"], 9e14, domain.SyncOpUpsert, nil)
-	child := p.change(t, "tasks", p.uids["child"], 1e14, domain.SyncOpUpsert, nil)
-	plan := p.change(t, "plans", p.uids["plan"], 1e14, domain.SyncOpUpsert, nil)
-	wave := p.change(t, "plan_waves", p.uids["wave"], 1e14, domain.SyncOpUpsert, nil)
+	parent := p.change(t, "tasks", p.uids["parent"], soon(1), domain.SyncOpUpsert, nil)
+	child := p.change(t, "tasks", p.uids["child"], 1e12, domain.SyncOpUpsert, nil)
+	plan := p.change(t, "plans", p.uids["plan"], 1e12, domain.SyncOpUpsert, nil)
+	wave := p.change(t, "plan_waves", p.uids["wave"], 1e12, domain.SyncOpUpsert, nil)
 	p.mustApply(t, []domain.SyncChange{child, parent, wave, plan}, 1)
 	got := dump(t, p.b, `SELECT title, (SELECT title FROM tasks WHERE id = t.parent_id) FROM tasks t WHERE parent_id IS NOT NULL`)
 	if !slices.Equal(got, []string{"childparent"}) {
@@ -227,7 +249,7 @@ func TestApplyChangesLastWriterWins(t *testing.T) {
 	if title() != "child" {
 		t.Fatalf("older change applied: %q", title())
 	}
-	p.mustApply(t, []domain.SyncChange{p.change(t, "tasks", p.uids["child"], 9e14, domain.SyncOpUpsert, map[string]any{"title": "fresh"})}, 3)
+	p.mustApply(t, []domain.SyncChange{p.change(t, "tasks", p.uids["child"], soon(1), domain.SyncOpUpsert, map[string]any{"title": "fresh"})}, 3)
 	if title() != "fresh" {
 		t.Fatalf("newer change ignored: %q", title())
 	}
@@ -246,7 +268,7 @@ func TestApplyChangesDeleteWins(t *testing.T) {
 	t.Parallel()
 	p := newSyncPair(t)
 	p.mustApply(t, p.changes, 1)
-	remove := p.change(t, "tasks", p.uids["other"], 9e14, domain.SyncOpDelete, nil)
+	remove := p.change(t, "tasks", p.uids["other"], soon(1), domain.SyncOpDelete, nil)
 	remove.Data = nil
 	p.mustApply(t, []domain.SyncChange{remove}, 2)
 	if got := dump(t, p.b, `SELECT uid FROM tasks WHERE uid = '`+p.uids["other"]+`'`); len(got) != 0 {
@@ -255,7 +277,7 @@ func TestApplyChangesDeleteWins(t *testing.T) {
 	if got := dump(t, p.b, `SELECT task_id FROM task_dependencies`); len(got) != 0 {
 		t.Fatalf("dependency survived delete: %v", got)
 	}
-	revive := p.change(t, "tasks", p.uids["other"], 9.5e14, domain.SyncOpUpsert, nil)
+	revive := p.change(t, "tasks", p.uids["other"], soon(2), domain.SyncOpUpsert, nil)
 	p.mustApply(t, []domain.SyncChange{revive}, 3)
 	if got := dump(t, p.b, `SELECT uid FROM tasks WHERE uid = '`+p.uids["other"]+`'`); len(got) != 0 {
 		t.Fatalf("upsert resurrected a deleted task: %v", got)
@@ -271,7 +293,7 @@ func TestApplyChangesDeletesJoinRows(t *testing.T) {
 	p.mustApply(t, p.changes, 1)
 	rowUID := p.uids["child"] + "|urgent"
 	p.mustApply(t, []domain.SyncChange{{Table: "task_tags", RowUID: rowUID, Op: domain.SyncOpDelete,
-		HLC: domain.HLC{Wall: 9e14, Device: p.deviceA}.String(), Device: p.deviceA}}, 2)
+		HLC: domain.HLC{Wall: soon(1), Device: p.deviceA}.String(), Device: p.deviceA}}, 2)
 	if got := dump(t, p.b, `SELECT task_id FROM task_tags`); len(got) != 0 {
 		t.Fatalf("task tag survived: %v", got)
 	}
@@ -300,8 +322,8 @@ func TestApplyChangesParksChangeWithMissingParent(t *testing.T) {
 	t.Parallel()
 	p := newSyncPair(t)
 	p.mustApply(t, nil, 0)
-	child := p.change(t, "tasks", p.uids["child"], 1e14, domain.SyncOpUpsert, nil)
-	p.mustApply(t, []domain.SyncChange{p.change(t, "plans", p.uids["plan"], 1e14, domain.SyncOpUpsert, nil), child}, 5)
+	child := p.change(t, "tasks", p.uids["child"], 1e12, domain.SyncOpUpsert, nil)
+	p.mustApply(t, []domain.SyncChange{p.change(t, "plans", p.uids["plan"], 1e12, domain.SyncOpUpsert, nil), child}, 5)
 
 	if got := dump(t, p.b, `SELECT uid FROM tasks`); len(got) != 0 {
 		t.Fatalf("parked child was written: %v", got)
@@ -316,8 +338,8 @@ func TestApplyChangesParksChangeWithMissingParent(t *testing.T) {
 		t.Fatal("resolvable change was not applied")
 	}
 
-	parent := p.change(t, "tasks", p.uids["parent"], 1e14, domain.SyncOpUpsert, nil)
-	wave := p.change(t, "plan_waves", p.uids["wave"], 1e14, domain.SyncOpUpsert, nil)
+	parent := p.change(t, "tasks", p.uids["parent"], 1e12, domain.SyncOpUpsert, nil)
+	wave := p.change(t, "plan_waves", p.uids["wave"], 1e12, domain.SyncOpUpsert, nil)
 	p.mustApply(t, []domain.SyncChange{parent, wave}, 6)
 	got := dump(t, p.b, `SELECT title, (SELECT title FROM tasks WHERE id = t.parent_id) FROM tasks t WHERE parent_id IS NOT NULL`)
 	if !slices.Equal(got, []string{"childparent"}) {
@@ -332,12 +354,12 @@ func TestApplyChangesDropsChildOfDeletedParent(t *testing.T) {
 	t.Parallel()
 	p := newSyncPair(t)
 	p.mustApply(t, nil, 0)
-	child := p.change(t, "tasks", p.uids["child"], 1e14, domain.SyncOpUpsert, nil)
+	child := p.change(t, "tasks", p.uids["child"], 1e12, domain.SyncOpUpsert, nil)
 	p.mustApply(t, []domain.SyncChange{child}, 1)
 	if inboxSize(t, p) != 1 {
 		t.Fatal("child not parked")
 	}
-	gone := p.change(t, "tasks", p.uids["parent"], 2e14, domain.SyncOpDelete, nil)
+	gone := p.change(t, "tasks", p.uids["parent"], 1.5e12, domain.SyncOpDelete, nil)
 	gone.Data = nil
 	p.mustApply(t, []domain.SyncChange{gone}, 2)
 	if inboxSize(t, p) != 0 {
@@ -355,13 +377,13 @@ func TestApplyChangesDropsChildOfDeletedParent(t *testing.T) {
 func TestApplyChangesNullsOptionalRefToDeletedRow(t *testing.T) {
 	t.Parallel()
 	p := newSyncPair(t)
-	plan := p.change(t, "plans", p.uids["plan"], 2e14, domain.SyncOpDelete, nil)
+	plan := p.change(t, "plans", p.uids["plan"], 1.5e12, domain.SyncOpDelete, nil)
 	plan.Data = nil
-	wave := p.change(t, "plan_waves", p.uids["wave"], 2e14, domain.SyncOpDelete, nil)
+	wave := p.change(t, "plan_waves", p.uids["wave"], 1.5e12, domain.SyncOpDelete, nil)
 	wave.Data = nil
 	p.mustApply(t, []domain.SyncChange{plan, wave}, 1)
-	parent := p.change(t, "tasks", p.uids["parent"], 1e14, domain.SyncOpUpsert, nil)
-	child := p.change(t, "tasks", p.uids["child"], 1e14, domain.SyncOpUpsert, nil)
+	parent := p.change(t, "tasks", p.uids["parent"], 1e12, domain.SyncOpUpsert, nil)
+	child := p.change(t, "tasks", p.uids["child"], 1e12, domain.SyncOpUpsert, nil)
 	p.mustApply(t, []domain.SyncChange{parent, child}, 2)
 	got := dump(t, p.b, `SELECT title, plan_id IS NULL, wave_id IS NULL, parent_id IS NULL FROM tasks WHERE title = 'child'`)
 	if !slices.Equal(got, []string{"child1 1 0"}) {
@@ -370,31 +392,6 @@ func TestApplyChangesNullsOptionalRefToDeletedRow(t *testing.T) {
 	if inboxSize(t, p) != 0 {
 		t.Fatal("inbox not empty")
 	}
-}
-
-func TestApplyChangesRejectsInvalidChanges(t *testing.T) {
-	t.Parallel()
-	p := newSyncPair(t)
-	good := p.change(t, "plans", p.uids["plan"], 1e14, domain.SyncOpUpsert, nil)
-	for name, bad := range map[string]domain.SyncChange{
-		"table": {Table: "tags", RowUID: "x", Op: domain.SyncOpUpsert, HLC: good.HLC},
-		"op":    {Table: "plans", RowUID: "x", Op: "merge", HLC: good.HLC},
-		"hlc":   {Table: "plans", RowUID: "x", Op: domain.SyncOpUpsert, HLC: "nope"},
-		"join":  {Table: "task_tags", RowUID: "no-separator", Op: domain.SyncOpDelete, HLC: good.HLC},
-	} {
-		assertCoded(t, p.apply(t, []domain.SyncChange{good, bad}, 1), domain.ErrValidation)
-		if n := len(dump(t, p.b, `SELECT uid FROM plans`)); n != 0 {
-			t.Fatalf("%s: invalid batch wrote %d plans", name, n)
-		}
-	}
-}
-
-func TestApplyChangesRefusesAnotherProjectsRow(t *testing.T) {
-	t.Parallel()
-	p := newSyncPair(t)
-	other := domain.SyncChange{Table: "projects", RowUID: string(domain.NewUID()), Op: domain.SyncOpUpsert,
-		HLC: domain.HLC{Wall: 1e14, Device: p.deviceA}.String(), Data: map[string]any{"name": "x"}}
-	assertCoded(t, p.apply(t, []domain.SyncChange{other}, 1), domain.ErrValidation)
 }
 
 func TestCreateClonedProject(t *testing.T) {
@@ -418,7 +415,246 @@ func TestCreateClonedProject(t *testing.T) {
 	info.UID = "not-a-uid"
 	_, err = p.b.CreateClonedProject(p.ctx, info, t.TempDir())
 	assertCoded(t, err, domain.ErrValidation)
+	info.UID, info.Slug = domain.NewUID(), "Not A Slug"
+	_, err = p.b.CreateClonedProject(p.ctx, info, t.TempDir())
+	assertCoded(t, err, domain.ErrValidation)
 	if strings.Contains(fmt.Sprint(dump(t, p.b, `SELECT slug FROM projects`)), "other") {
 		t.Fatal("rejected clone left a row")
+	}
+}
+
+// attackPair is a pair whose clone also holds a local project with its own rows.
+type attackPair struct {
+	*syncPair
+	local domain.Project
+	l     map[string]string
+}
+
+func newAttackPair(t *testing.T) *attackPair {
+	t.Helper()
+	p := newSyncPair(t)
+	local, err := p.b.UpsertProject(p.ctx, "Local", "local", t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	a := &attackPair{syncPair: p, local: local, l: seedRowGraph(t, p.b, local.ID)}
+	p.mustApply(t, p.changes, 1)
+	return a
+}
+
+func (a *attackPair) stamp() string {
+	return domain.HLC{Wall: soon(1), Device: a.deviceA}.String()
+}
+
+func (a *attackPair) upsert(table, rowUID string, data map[string]any) domain.SyncChange {
+	return domain.SyncChange{Table: table, RowUID: rowUID, Op: domain.SyncOpUpsert, HLC: a.stamp(), Device: a.deviceA, Data: data}
+}
+
+func (a *attackPair) remove(table, rowUID string) domain.SyncChange {
+	return domain.SyncChange{Table: table, RowUID: rowUID, Op: domain.SyncOpDelete, HLC: a.stamp(), Device: a.deviceA}
+}
+
+func TestApplyChangesNeverTouchesAnotherProject(t *testing.T) {
+	t.Parallel()
+	a := newAttackPair(t)
+	var localProjectUID = mustScan[string](t, a.b, `SELECT uid FROM projects WHERE id = ?`, a.local.ID)
+	task := func(title string) map[string]any {
+		return map[string]any{"title": title, "bucket_id": 1.0, "priority_id": 2.0}
+	}
+	attacks := map[string]domain.SyncChange{
+		"upsert task":        a.upsert("tasks", a.l["parent"], task("pwned")),
+		"upsert plan":        a.upsert("plans", a.l["plan"], map[string]any{"slug": "p", "name": "pwned"}),
+		"upsert error":       a.upsert("errors", a.l["error"], map[string]any{"description": "pwned"}),
+		"upsert project":     a.upsert("projects", localProjectUID, map[string]any{"name": "pwned"}),
+		"delete task":        a.remove("tasks", a.l["parent"]),
+		"delete error":       a.remove("errors", a.l["error"]),
+		"delete plan":        a.remove("plans", a.l["plan"]),
+		"delete wave":        a.remove("plan_waves", a.l["wave"]),
+		"delete solution":    a.remove("solutions", a.l["solution"]),
+		"delete event":       a.remove("events", a.l["event"]),
+		"delete task tag":    a.remove("task_tags", a.l["child"]+"|urgent"),
+		"delete error tag":   a.remove("error_tags", a.l["error"]+"|urgent"),
+		"delete event tag":   a.remove("event_tags", a.l["event"]+"|urgent"),
+		"delete dependency":  a.remove("task_dependencies", a.l["child"]+"|"+a.l["other"]),
+		"parent of a task":   a.upsert("tasks", string(domain.NewUID()), map[string]any{"title": "t", "bucket_id": 1.0, "priority_id": 2.0, "parent_uid": a.l["parent"]}),
+		"plan of a task":     a.upsert("tasks", string(domain.NewUID()), map[string]any{"title": "t", "bucket_id": 1.0, "priority_id": 2.0, "plan_uid": a.l["plan"]}),
+		"task of a solution": a.upsert("solutions", string(domain.NewUID()), map[string]any{"description": "s", "error_uid": a.uids["error"], "task_uid": a.l["parent"]}),
+		"error of solution":  a.upsert("solutions", string(domain.NewUID()), map[string]any{"description": "s", "error_uid": a.l["error"]}),
+		"entity of an event": a.upsert("events", string(domain.NewUID()), map[string]any{"entity_type": "task", "entity_uid": a.l["parent"], "event_type": "comment", "body": "b"}),
+		"project of event":   a.upsert("events", string(domain.NewUID()), map[string]any{"entity_type": "project", "entity_uid": localProjectUID, "event_type": "comment", "body": "b"}),
+		"plan of a wave":     a.upsert("plan_waves", string(domain.NewUID()), map[string]any{"name": "w", "position": 1.0, "plan_uid": a.l["plan"]}),
+		"dependency":         a.upsert("task_dependencies", a.uids["parent"]+"|"+a.l["parent"], map[string]any{"task_uid": a.uids["parent"], "depends_on_task_uid": a.l["parent"]}),
+		"task tag":           a.upsert("task_tags", a.l["parent"]+"|urgent", map[string]any{"task_uid": a.l["parent"], "tag_name": "urgent", "label": "Urgent"}),
+		"event tag":          a.upsert("event_tags", a.l["event"]+"|urgent", map[string]any{"event_uid": a.l["event"], "tag_name": "urgent", "label": "Urgent"}),
+	}
+	for name, attack := range attacks {
+		before := snapshot(t, a.b)
+		rejected, err := a.apply(t, []domain.SyncChange{attack}, 2)
+		if err != nil || rejected != 1 {
+			t.Fatalf("%s: rejected %d, err %v", name, rejected, err)
+		}
+		after := snapshot(t, a.b)
+		for i := range before {
+			if !slices.Equal(before[i], after[i]) {
+				t.Fatalf("%s changed the store\nbefore: %v\nafter: %v", name, before[i], after[i])
+			}
+		}
+	}
+	if title := mustScan[string](t, a.b, `SELECT title FROM tasks WHERE uid = ?`, a.l["parent"]); title != "parent" {
+		t.Fatalf("local task renamed to %q", title)
+	}
+	if project := mustScan[int64](t, a.b, `SELECT project_id FROM tasks WHERE uid = ?`, a.l["parent"]); project != a.local.ID {
+		t.Fatalf("local task moved to project %d", project)
+	}
+}
+
+func TestApplyChangesRejectsAndContinues(t *testing.T) {
+	t.Parallel()
+	a := newAttackPair(t)
+	plan := func(slug string) domain.SyncChange {
+		return a.upsert("plans", string(domain.NewUID()), map[string]any{"slug": slug, "name": slug})
+	}
+	bad := map[string]domain.SyncChange{
+		"table":      {Table: "tags", RowUID: "x", Op: domain.SyncOpUpsert, HLC: a.stamp(), Device: a.deviceA, Data: map[string]any{"a": "b"}},
+		"op":         {Table: "plans", RowUID: "x", Op: "merge", HLC: a.stamp(), Device: a.deviceA},
+		"hlc":        {Table: "plans", RowUID: "x", Op: domain.SyncOpUpsert, HLC: "nope", Device: a.deviceA, Data: map[string]any{"a": "b"}},
+		"drift":      a.upsert("plans", "x", map[string]any{"slug": "d", "name": "d"}),
+		"nested":     a.upsert("plans", "x", map[string]any{"slug": []any{"a"}}),
+		"join":       a.remove("task_tags", "no-separator"),
+		"project":    a.remove("projects", string(domain.NewUID())),
+		"foreign":    a.upsert("projects", string(domain.NewUID()), map[string]any{"name": "x"}),
+		"state":      a.upsert("tasks", string(domain.NewUID()), map[string]any{"title": "t", "bucket_id": 1.0, "priority_id": 2.0, "state": "bogus"}),
+		"not null":   a.upsert("tasks", string(domain.NewUID()), map[string]any{"title": nil, "bucket_id": 1.0, "priority_id": 2.0}),
+		"check":      a.upsert("plans", string(domain.NewUID()), map[string]any{"slug": "c", "name": "c", "status": "bogus"}),
+		"unique":     a.upsert("plans", string(domain.NewUID()), map[string]any{"slug": "p", "name": "dup"}),
+		"entity":     a.upsert("events", string(domain.NewUID()), map[string]any{"entity_type": "nothing", "entity_uid": "x", "event_type": "comment", "body": "b"}),
+		"no tag":     a.upsert("task_tags", a.uids["parent"]+"|", map[string]any{"task_uid": a.uids["parent"]}),
+		"zero stamp": {Table: "plans", RowUID: "x", Op: domain.SyncOpUpsert, HLC: domain.HLC{}.String(), Device: a.deviceA, Data: map[string]any{"a": "b"}},
+	}
+	drift := bad["drift"]
+	drift.HLC = domain.HLC{Wall: time.Now().Add(2 * domain.MaxHLCDrift).UnixMilli(), Device: a.deviceA}.String()
+	bad["drift"] = drift
+	for name, change := range bad {
+		first, second := plan("first-"+name), plan("second-"+name)
+		before := len(dump(t, a.b, `SELECT uid FROM plans`))
+		rejected, err := a.apply(t, []domain.SyncChange{first, change, second}, 40)
+		if err != nil || rejected != 1 {
+			t.Fatalf("%s: rejected %d, err %v", name, rejected, err)
+		}
+		if after := len(dump(t, a.b, `SELECT uid FROM plans`)); after != before+2 {
+			t.Fatalf("%s: plans %d -> %d, the rest of the batch must apply", name, before, after)
+		}
+		if cursor := mustScan[int64](t, a.b, `SELECT pull_cursor FROM sync_projects WHERE project_id = ?`, a.bProject.ID); cursor != 40 {
+			t.Fatalf("%s: cursor = %d", name, cursor)
+		}
+		if applying := mustScan[int](t, a.b, `SELECT applying FROM sync_identity`); applying != 0 {
+			t.Fatalf("%s: applying flag left on", name)
+		}
+	}
+}
+
+func parkedTask(a *attackPair, wall int64, parent string) domain.SyncChange {
+	change := a.upsert("tasks", string(domain.NewUID()), map[string]any{"title": "t", "bucket_id": 1.0, "priority_id": 2.0, "parent_uid": parent})
+	change.HLC = domain.HLC{Wall: wall, Device: a.deviceA}.String()
+	return change
+}
+
+func TestApplyChangesCapsTheInbox(t *testing.T) {
+	t.Parallel()
+	a := newAttackPair(t)
+	missing := string(domain.NewUID())
+	const extra = 5
+	changes := make([]domain.SyncChange, maxSyncInbox+extra)
+	for i := range changes {
+		changes[i] = parkedTask(a, 1e12+int64(i), missing)
+	}
+	rejected, err := a.apply(t, changes, 9)
+	if err != nil || rejected != extra {
+		t.Fatalf("rejected %d, err %v", rejected, err)
+	}
+	if n := mustScan[int](t, a.b, `SELECT count(*) FROM sync_inbox WHERE project_id = ?`, a.bProject.ID); n != maxSyncInbox {
+		t.Fatalf("inbox = %d, want %d", n, maxSyncInbox)
+	}
+	oldest := mustScan[string](t, a.b, `SELECT min(hlc) FROM sync_inbox`)
+	if want := changes[extra].HLC; oldest != want {
+		t.Fatalf("oldest parked = %s, want %s: the oldest rows must be dropped", oldest, want)
+	}
+}
+
+func TestApplyChangesRetriesOnlyWhatArrived(t *testing.T) {
+	t.Parallel()
+	a := newAttackPair(t)
+	parent := string(domain.NewUID())
+	child := parkedTask(a, 1e12, parent)
+	a.mustApply(t, []domain.SyncChange{child}, 10)
+	if inboxSize(t, a.syncPair) != 1 {
+		t.Fatal("child not parked")
+	}
+	raw := mustScan[string](t, a.b, `SELECT change FROM sync_inbox`)
+	// An unreadable parked row proves the next batch never touches it.
+	mustExec(t, a.b, `UPDATE sync_inbox SET change = 'unreadable'`)
+	a.mustApply(t, []domain.SyncChange{a.upsert("plans", string(domain.NewUID()), map[string]any{"slug": "unrelated", "name": "u"})}, 11)
+	if inboxSize(t, a.syncPair) != 1 {
+		t.Fatal("unrelated batch disturbed the inbox")
+	}
+	mustExec(t, a.b, `UPDATE sync_inbox SET change = ?`, raw)
+	a.mustApply(t, []domain.SyncChange{a.upsert("tasks", parent, map[string]any{"title": "parent", "bucket_id": 1.0, "priority_id": 2.0})}, 12)
+	if got := dump(t, a.b, `SELECT title FROM tasks WHERE uid = '`+child.RowUID+`'`); len(got) != 1 || inboxSize(t, a.syncPair) != 0 {
+		t.Fatalf("child = %v, inbox = %d", got, inboxSize(t, a.syncPair))
+	}
+}
+
+func TestApplyChangesWakesChainsOfParkedChanges(t *testing.T) {
+	t.Parallel()
+	a := newAttackPair(t)
+	root := string(domain.NewUID())
+	middle := parkedTask(a, 1e12, root)
+	leaf := parkedTask(a, 1.1e12, middle.RowUID)
+	a.mustApply(t, []domain.SyncChange{leaf, middle}, 10)
+	if inboxSize(t, a.syncPair) != 2 {
+		t.Fatalf("inbox = %d, want 2", inboxSize(t, a.syncPair))
+	}
+	a.mustApply(t, []domain.SyncChange{a.upsert("tasks", root, map[string]any{"title": "root", "bucket_id": 1.0, "priority_id": 2.0})}, 11)
+	if got := dump(t, a.b, `SELECT uid FROM tasks WHERE uid IN ('`+middle.RowUID+`', '`+leaf.RowUID+`')`); len(got) != 2 || inboxSize(t, a.syncPair) != 0 {
+		t.Fatalf("chain = %v, inbox = %d", got, inboxSize(t, a.syncPair))
+	}
+}
+
+func TestApplyChangesDeleteBeatsNewerLocalEdit(t *testing.T) {
+	t.Parallel()
+	a := newAttackPair(t)
+	mustExec(t, a.b, `UPDATE tasks SET title = 'edited' WHERE uid = ?`, a.uids["other"])
+	remove := a.remove("tasks", a.uids["other"])
+	remove.HLC = domain.HLC{Wall: 1.5e12, Device: a.deviceA}.String()
+	a.mustApply(t, []domain.SyncChange{remove}, 3)
+	if got := dump(t, a.b, `SELECT uid FROM tasks WHERE uid = '`+a.uids["other"]+`'`); len(got) != 0 {
+		t.Fatalf("an older delete lost to a local edit: %v", got)
+	}
+}
+
+func TestApplyChangesMapsProjectEvents(t *testing.T) {
+	t.Parallel()
+	p := newSyncPair(t)
+	projectUID := mustScan[string](t, p.a, `SELECT uid FROM projects WHERE id = ?`, p.aProject.ID)
+	eventUID := string(domain.NewUID())
+	mustExec(t, p.a, `INSERT INTO events(entity_type, entity_id, project_id, event_type, body, uid) VALUES ('project', ?, ?, 'comment', 'about the project', ?)`,
+		p.aProject.ID, p.aProject.ID, eventUID)
+	pending, err := p.a.PendingChanges(p.ctx, p.aProject.ID, 1000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var pushed *domain.SyncChange
+	for i, c := range pending {
+		if c.Table == "events" && c.RowUID == eventUID {
+			pushed = &pending[i]
+		}
+	}
+	if pushed == nil || pushed.Data["entity_uid"] != projectUID {
+		t.Fatalf("pushed event = %+v, want entity_uid %s", pushed, projectUID)
+	}
+	p.mustApply(t, wireRoundTrip(t, []domain.SyncChange{*pushed}), 1)
+	got := mustScan[int64](t, p.b, `SELECT entity_id FROM events WHERE uid = ? AND entity_type = 'project'`, eventUID)
+	if got != p.bProject.ID {
+		t.Fatalf("entity_id = %d, want the clone %d", got, p.bProject.ID)
 	}
 }

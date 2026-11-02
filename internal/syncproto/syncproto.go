@@ -1,12 +1,8 @@
 package syncproto
 
 import (
-	"fmt"
-	"math"
 	"net/url"
-	"slices"
 	"strconv"
-	"time"
 
 	"omakiten/internal/domain"
 )
@@ -60,58 +56,4 @@ type PullResponse struct {
 	Changes []domain.SyncChange    `json:"changes"`
 	Cursor  int64                  `json:"cursor"`
 	More    bool                   `json:"more"`
-}
-
-// ValidateChange refuses a change the server or a client must not store.
-// A wall more than domain.MaxHLCDrift ahead of now is refused, and Data may hold
-// only string, finite float64, bool and nil values.
-func ValidateChange(c domain.SyncChange, now time.Time) error {
-	if !slices.Contains(domain.SyncTables, c.Table) {
-		return invalid("table", c.Table, "is not a synced table")
-	}
-	if c.Op != domain.SyncOpUpsert && c.Op != domain.SyncOpDelete {
-		return invalid("op", string(c.Op), "must be upsert or delete")
-	}
-	if c.RowUID == "" {
-		return invalid("row_uid", "", "must not be empty")
-	}
-	hlc, err := domain.ParseHLC(c.HLC)
-	if err != nil {
-		return err
-	}
-	if hlc == (domain.HLC{}) {
-		return invalid("hlc", c.HLC, "must not be zero")
-	}
-	if hlc.Wall > now.Add(domain.MaxHLCDrift).UnixMilli() {
-		return invalid("hlc", c.HLC, "is too far ahead of the clock")
-	}
-	if _, err := domain.ParseUID(string(c.Device)); err != nil {
-		return err
-	}
-	for key, value := range c.Data {
-		if !isScalar(value) {
-			return invalid("data."+key, fmt.Sprint(value), "must be a string, finite number, bool or null")
-		}
-	}
-	if c.Op == domain.SyncOpUpsert && len(c.Data) == 0 {
-		return invalid("data", "", "an upsert needs data")
-	}
-	return nil
-}
-
-// isScalar reports whether v is a JSON scalar as json.Unmarshal decodes it.
-func isScalar(v any) bool {
-	switch v := v.(type) {
-	case nil, string, bool:
-		return true
-	case float64:
-		return !math.IsNaN(v) && !math.IsInf(v, 0)
-	}
-	return false
-}
-
-func invalid(field, value, reason string) error {
-	return domain.NewError(domain.ErrValidation,
-		"invalid change "+field+" "+strconv.Quote(value)+": "+reason,
-		map[string]any{"field": field, "value": value})
 }

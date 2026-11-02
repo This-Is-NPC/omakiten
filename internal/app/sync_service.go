@@ -87,7 +87,7 @@ func (s *SyncService) syncProject(ctx context.Context, p domain.SyncProject) dom
 		out.Error = fmt.Sprintf("push: %v", err)
 		return out
 	}
-	if out.Pulled, err = s.pull(ctx, p.ID, p.Info.UID, p.PullCursor); err != nil {
+	if out.Pulled, out.Rejected, err = s.pull(ctx, p.ID, p.Info.UID, p.PullCursor); err != nil {
 		out.Error = fmt.Sprintf("pull: %v", err)
 	}
 	return out
@@ -144,30 +144,32 @@ func shrinkPushPage(page int, first domain.SyncChange, err error) (int, error) {
 	return page / 2, nil
 }
 
-// pull applies remote changes page by page from cursor until none follow. A
-// page that signals more without progress, or a cursor that goes backwards,
-// fails instead of looping.
-func (s *SyncService) pull(ctx context.Context, projectID int64, uid domain.UID, cursor int64) (int, error) {
-	total := 0
+// pull applies remote changes page by page from cursor until none follow and
+// returns how many it pulled and how many the store rejected. A page that
+// signals more without progress, or a cursor that goes backwards, fails
+// instead of looping.
+func (s *SyncService) pull(ctx context.Context, projectID int64, uid domain.UID, cursor int64) (total, rejected int, err error) {
 	for {
 		changes, next, more, err := s.remote.Pull(ctx, uid, cursor, syncPullPage)
 		if err != nil {
-			return total, err
+			return total, rejected, err
 		}
 		if next < cursor || (more && len(changes) == 0 && next == cursor) {
-			return total, domain.NewError(domain.ErrValidation,
+			return total, rejected, domain.NewError(domain.ErrValidation,
 				fmt.Sprintf("sync server made no pull progress (cursor %d, answered %d, more=%t)", cursor, next, more),
 				map[string]any{"cursor": cursor, "next": next})
 		}
 		if len(changes) > 0 || next != cursor {
-			if err := s.store.ApplyChanges(ctx, projectID, changes, next); err != nil {
-				return total, err
+			n, err := s.store.ApplyChanges(ctx, projectID, changes, next)
+			if err != nil {
+				return total, rejected, err
 			}
+			rejected += n
 		}
 		total += len(changes)
 		cursor = next
 		if !more {
-			return total, nil
+			return total, rejected, nil
 		}
 	}
 }
@@ -199,7 +201,7 @@ func (s *SyncService) Clone(ctx context.Context, uid domain.UID, root string) (d
 		if err != nil {
 			return domain.Project{}, err
 		}
-		if _, err := s.pull(ctx, project.ID, uid, 0); err != nil {
+		if _, _, err := s.pull(ctx, project.ID, uid, 0); err != nil {
 			return project, fmt.Errorf("clone %s: pull: %w; the project exists locally, run `okt sync --project %s` to finish", info.Slug, err, project.Slug)
 		}
 		return project, nil

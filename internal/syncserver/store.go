@@ -126,7 +126,7 @@ func validatePush(req syncproto.PushRequest, now time.Time) error {
 		return err
 	}
 	for _, c := range req.Changes {
-		if err := syncproto.ValidateChange(c, now); err != nil {
+		if err := domain.ValidateSyncChange(c, now); err != nil {
 			return err
 		}
 	}

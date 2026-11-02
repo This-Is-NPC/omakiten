@@ -606,7 +606,7 @@ func TestSyncRowsAreScopedByProject(t *testing.T) {
 	}
 	for _, id := range []int64{project.ID, other.ID} {
 		mustExec(t, store, `INSERT INTO sync_rows(project_id, tbl, row_uid) VALUES (?, 'tasks', 'shared')`, id)
-		mustExec(t, store, `INSERT INTO sync_inbox(project_id, tbl, row_uid, hlc, change) VALUES (?, 'tasks', 'shared', 'h', '{}')`, id)
+		mustExec(t, store, `INSERT INTO sync_inbox(project_id, tbl, row_uid, hlc, change, missing_tbl, missing_uid) VALUES (?, 'tasks', 'shared', 'h', '{}', 'tasks', 'x')`, id)
 	}
 	mustExec(t, store, `INSERT INTO sync_rows(project_id, tbl, row_uid, deleted) VALUES (?, 'tasks', 'shared', 1)`, project.ID)
 	if n := mustScan[int](t, store, `SELECT COUNT(*) FROM sync_rows WHERE row_uid = 'shared'`); n != 2 {
