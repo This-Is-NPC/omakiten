@@ -21,6 +21,9 @@ var version = "dev"
 
 const tokenEnv = "OKT_SERVER_TOKEN"
 
+// minTokenBytes is the shortest bearer token the server accepts.
+const minTokenBytes = 32
+
 func main() {
 	if err := run(os.Args[1:]); err != nil {
 		fmt.Fprintln(os.Stderr, "okt-server:", err)
@@ -85,7 +88,8 @@ func run(args []string) error {
 	return server.Shutdown(shutdown)
 }
 
-// loadTokens reads tokens from path, or from fallback when path is empty.
+// loadTokens reads tokens from path, or from fallback when path is empty, and
+// rejects any shorter than minTokenBytes.
 func loadTokens(path, fallback string) ([]string, error) {
 	var tokens []string
 	if path == "" {
@@ -111,6 +115,11 @@ func loadTokens(path, fallback string) ([]string, error) {
 	}
 	if len(tokens) == 0 {
 		return nil, errors.New("no token: set --token-file or " + tokenEnv)
+	}
+	for i, t := range tokens {
+		if len(t) < minTokenBytes {
+			return nil, fmt.Errorf("token %d is shorter than the %d-byte minimum", i+1, minTokenBytes)
+		}
 	}
 	return tokens, nil
 }

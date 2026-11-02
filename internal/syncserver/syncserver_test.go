@@ -8,7 +8,9 @@ import (
 	"net/http/httptest"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"testing"
+	"time"
 
 	"omakiten/internal/domain"
 	"omakiten/internal/syncproto"
@@ -285,5 +287,96 @@ func TestReopenKeepsDataAndSeqMonotonic(t *testing.T) {
 	}
 	if r := e.push(change(rowName(3), 10)); r.Accepted != 1 || r.Cursor != 3 {
 		t.Fatalf("push after reopen = %+v", r)
+	}
+}
+
+func TestTombstoneIsFinalAndDeleteWins(t *testing.T) {
+	e := newEnv(t)
+	e.push(change(rowName(1), 10))
+	del := change(rowName(1), 5)
+	del.Op, del.Data = domain.SyncOpDelete, nil
+	if r := e.push(del); r.Accepted != 1 || r.Cursor != 2 {
+		t.Fatalf("delete over a newer upsert = %+v", r)
+	}
+	if r := e.push(change(rowName(1), 99)); r.Accepted != 0 || r.Cursor != 2 {
+		t.Fatalf("upsert over a tombstone = %+v", r)
+	}
+	later := change(rowName(1), 100)
+	later.Op, later.Data = domain.SyncOpDelete, nil
+	if r := e.push(later); r.Accepted != 0 || r.Cursor != 2 {
+		t.Fatalf("delete over a tombstone = %+v", r)
+	}
+	got := e.pull("after=0")
+	if len(got.Changes) != 1 || got.Changes[0].Op != domain.SyncOpDelete || got.Changes[0].HLC != del.HLC {
+		t.Fatalf("pull = %+v", got)
+	}
+}
+
+func TestPullAndCursorQueriesUseProjectSeqIndex(t *testing.T) {
+	e := newEnv(t)
+	queries := map[string]string{
+		"pull":   `SELECT tbl, row_uid, op, hlc, device, data, seq FROM rows WHERE project_uid = ? AND seq > ? ORDER BY seq LIMIT ?`,
+		"cursor": `SELECT COALESCE(MAX(seq), 0) FROM rows WHERE project_uid = ?`,
+	}
+	args := map[string][]any{"pull": {proj, 0, 10}, "cursor": {proj}}
+	for name, query := range queries {
+		t.Run(name, func(t *testing.T) {
+			rows, err := e.store.db.Query("EXPLAIN QUERY PLAN "+query, args[name]...)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer rows.Close()
+			var plan []string
+			for rows.Next() {
+				var id, parent, unused int
+				var detail string
+				if err := rows.Scan(&id, &parent, &unused, &detail); err != nil {
+					t.Fatal(err)
+				}
+				plan = append(plan, detail)
+			}
+			joined := strings.Join(plan, "\n")
+			if !strings.Contains(joined, "rows_project_seq") || strings.Contains(joined, "TEMP B-TREE") {
+				t.Fatalf("plan:\n%s", joined)
+			}
+		})
+	}
+}
+
+func TestPushValidatesProjectAndRequestTime(t *testing.T) {
+	e := newEnv(t)
+	badProject := pushBody(nil)
+	badProject.Project.Slug = "Not A Slug"
+	status, raw := e.do(http.MethodPost, syncproto.ChangesPath(proj), badProject, "Bearer "+token)
+	var body errorBody
+	if err := json.Unmarshal(raw, &body); err != nil {
+		t.Fatal(err)
+	}
+	if status != http.StatusBadRequest || body.Code != string(domain.ErrValidation) {
+		t.Fatalf("status %d body %s", status, raw)
+	}
+	if e.pull0() != http.StatusNotFound {
+		t.Fatal("rejected project must not be stored")
+	}
+	future := change(rowName(1), time.Now().Add(domain.MaxHLCDrift+time.Hour).UnixMilli())
+	if _, err := e.store.Push(context.Background(), pushBody([]domain.SyncChange{future}), time.Now()); err == nil {
+		t.Fatal("change far ahead of the request time was accepted")
+	}
+	if _, err := e.store.Push(context.Background(), pushBody([]domain.SyncChange{future}), time.Now().Add(2*domain.MaxHLCDrift)); err != nil {
+		t.Fatalf("the passed time must be the reference: %v", err)
+	}
+}
+
+func TestPushBodyOverCapIs413(t *testing.T) {
+	e := newEnv(t)
+	oversize := change(rowName(1), 10)
+	oversize.Data = map[string]any{"title": strings.Repeat("x", maxBodyBytes)}
+	status, raw := e.do(http.MethodPost, syncproto.ChangesPath(proj), pushBody([]domain.SyncChange{oversize}), "Bearer "+token)
+	var body errorBody
+	if err := json.Unmarshal(raw, &body); err != nil {
+		t.Fatal(err)
+	}
+	if status != http.StatusRequestEntityTooLarge || body.Code != codeBodyTooLarge {
+		t.Fatalf("status %d body %s", status, raw)
 	}
 }

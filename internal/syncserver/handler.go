@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"omakiten/internal/domain"
 	"omakiten/internal/syncproto"
@@ -21,6 +22,7 @@ const maxBodyBytes = 16 << 20
 const (
 	codeUnauthorized     = "unauthorized"
 	codeInvalidBody      = "invalid_body"
+	codeBodyTooLarge     = "body_too_large"
 	codeInvalidParameter = "invalid_parameter"
 	codeInternal         = "internal_error"
 )
@@ -89,11 +91,11 @@ func (h *handler) push(w http.ResponseWriter, r *http.Request) {
 	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxBodyBytes))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, codeInvalidBody, "invalid request body", map[string]any{"error": err.Error()})
+		writeBodyError(w, err)
 		return
 	}
 	if _, err := decoder.Token(); !errors.Is(err, io.EOF) {
-		writeError(w, http.StatusBadRequest, codeInvalidBody, "body must contain one JSON value", nil)
+		writeBodyError(w, err)
 		return
 	}
 	if req.Project.UID != uid {
@@ -101,7 +103,7 @@ func (h *handler) push(w http.ResponseWriter, r *http.Request) {
 			map[string]any{"path": string(uid), "body": string(req.Project.UID)})
 		return
 	}
-	resp, err := h.store.Push(r.Context(), req)
+	resp, err := h.store.Push(r.Context(), req, time.Now())
 	if err != nil {
 		fail(w, err)
 		return
@@ -129,6 +131,20 @@ func (h *handler) pull(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, resp)
+}
+
+// writeBodyError answers a push body that failed to read: 413 when it exceeded the cap, 400 otherwise.
+func writeBodyError(w http.ResponseWriter, err error) {
+	var tooLarge *http.MaxBytesError
+	switch {
+	case errors.As(err, &tooLarge):
+		writeError(w, http.StatusRequestEntityTooLarge, codeBodyTooLarge, "request body exceeds the size limit",
+			map[string]any{"limit": tooLarge.Limit})
+	case err == nil:
+		writeError(w, http.StatusBadRequest, codeInvalidBody, "body must contain one JSON value", nil)
+	default:
+		writeError(w, http.StatusBadRequest, codeInvalidBody, "invalid request body", map[string]any{"error": err.Error()})
+	}
 }
 
 func pathUID(w http.ResponseWriter, r *http.Request) (domain.UID, bool) {

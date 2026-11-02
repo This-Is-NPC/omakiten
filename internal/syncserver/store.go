@@ -21,6 +21,9 @@ import (
 var schema string
 
 // Store keeps one row per (project, table, row_uid) in its own SQLite file.
+// Conflicts resolve per row: a delete replaces a stored upsert whatever its
+// HLC, a stored delete is final and refuses every later change, and an upsert
+// replaces a stored upsert only with a greater HLC.
 type Store struct {
 	db *sql.DB
 }
@@ -67,14 +70,12 @@ func (s *Store) Projects(ctx context.Context) ([]domain.SyncProjectInfo, error) 
 	return infos, rows.Err()
 }
 
-// Push upserts the project and stores every change whose HLC beats the stored
-// row, giving each a new seq. It returns the accepted count and the project's
-// latest seq.
-func (s *Store) Push(ctx context.Context, req syncproto.PushRequest) (syncproto.PushResponse, error) {
-	for _, c := range req.Changes {
-		if err := syncproto.ValidateChange(c, time.Now()); err != nil {
-			return syncproto.PushResponse{}, err
-		}
+// Push upserts the project and stores every change that wins against the
+// stored row, giving each a new seq. It validates the project and the changes
+// against now. It returns the accepted count and the project's latest seq.
+func (s *Store) Push(ctx context.Context, req syncproto.PushRequest, now time.Time) (syncproto.PushResponse, error) {
+	if err := validatePush(req, now); err != nil {
+		return syncproto.PushResponse{}, err
 	}
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -96,11 +97,11 @@ func (s *Store) Push(ctx context.Context, req syncproto.PushRequest) (syncproto.
 	}
 	accepted := 0
 	for _, c := range req.Changes {
-		stored, err := newer(ctx, tx, info.UID, c)
+		won, err := wins(ctx, tx, info.UID, c)
 		if err != nil {
 			return syncproto.PushResponse{}, err
 		}
-		if !stored {
+		if !won {
 			continue
 		}
 		seq++
@@ -119,6 +120,19 @@ func (s *Store) Push(ctx context.Context, req syncproto.PushRequest) (syncproto.
 	return syncproto.PushResponse{Accepted: accepted, Cursor: cursor}, nil
 }
 
+// validatePush refuses a request whose project or any change is invalid at now.
+func validatePush(req syncproto.PushRequest, now time.Time) error {
+	if err := domain.ValidateSyncProjectInfo(req.Project); err != nil {
+		return err
+	}
+	for _, c := range req.Changes {
+		if err := syncproto.ValidateChange(c, now); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // put writes c as the row's current version under seq.
 func put(ctx context.Context, tx *sql.Tx, project domain.UID, c domain.SyncChange, seq int64) error {
 	data, err := json.Marshal(c.Data)
@@ -133,16 +147,22 @@ func put(ctx context.Context, tx *sql.Tx, project domain.UID, c domain.SyncChang
 	return err
 }
 
-// newer reports whether c has a greater HLC than the stored row, or no row exists.
-func newer(ctx context.Context, tx *sql.Tx, project domain.UID, c domain.SyncChange) (bool, error) {
-	var stored string
-	err := tx.QueryRowContext(ctx, `SELECT hlc FROM rows WHERE project_uid = ? AND tbl = ? AND row_uid = ?`,
-		project, c.Table, c.RowUID).Scan(&stored)
+// wins reports whether c replaces the stored row under the Store conflict rule.
+func wins(ctx context.Context, tx *sql.Tx, project domain.UID, c domain.SyncChange) (bool, error) {
+	var op, stored string
+	err := tx.QueryRowContext(ctx, `SELECT op, hlc FROM rows WHERE project_uid = ? AND tbl = ? AND row_uid = ?`,
+		project, c.Table, c.RowUID).Scan(&op, &stored)
 	if errors.Is(err, sql.ErrNoRows) {
 		return true, nil
 	}
 	if err != nil {
 		return false, err
+	}
+	switch {
+	case domain.SyncOp(op) == domain.SyncOpDelete:
+		return false, nil
+	case c.Op == domain.SyncOpDelete:
+		return true, nil
 	}
 	have, err := domain.ParseHLC(stored)
 	if err != nil {

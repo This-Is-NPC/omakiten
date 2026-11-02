@@ -16,3 +16,4 @@ CREATE TABLE IF NOT EXISTS rows (
 	seq         INTEGER NOT NULL UNIQUE,
 	PRIMARY KEY (project_uid, tbl, row_uid)
 );
+CREATE INDEX IF NOT EXISTS rows_project_seq ON rows(project_uid, seq);
