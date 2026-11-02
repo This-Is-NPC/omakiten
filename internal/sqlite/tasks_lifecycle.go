@@ -31,13 +31,7 @@ func (s *Store) HardDeleteTask(ctx context.Context, projectID, taskID int64, buc
 		return domain.Event{}, err
 	}
 
-	if _, err := tx.ExecContext(ctx, `DELETE FROM events WHERE entity_type = 'task' AND project_id = ? AND entity_id = ?`, projectID, taskID); err != nil {
-		return domain.Event{}, err
-	}
-	if _, err := tx.ExecContext(ctx, `DELETE FROM task_dependencies WHERE project_id = ? AND (task_id = ? OR depends_on_task_id = ?)`, projectID, taskID, taskID); err != nil {
-		return domain.Event{}, err
-	}
-	if _, err := tx.ExecContext(ctx, `DELETE FROM tasks WHERE project_id = ? AND id = ?`, projectID, taskID); err != nil {
+	if err := deleteTaskRows(ctx, tx, projectID, taskID); err != nil {
 		return domain.Event{}, err
 	}
 
@@ -79,6 +73,19 @@ RETURNING id, entity_type, COALESCE(entity_id, 0), project_id, event_type, body,
 	}
 	s.publishEvent(ctx, event)
 	return event, nil
+}
+
+// deleteTaskRows removes the task row with its events and dependencies in
+// both directions; tags and child tasks follow by foreign-key cascade.
+func deleteTaskRows(ctx context.Context, q queryExecutor, projectID, taskID int64) error {
+	if _, err := q.ExecContext(ctx, `DELETE FROM events WHERE entity_type = 'task' AND project_id = ? AND entity_id = ?`, projectID, taskID); err != nil {
+		return err
+	}
+	if _, err := q.ExecContext(ctx, `DELETE FROM task_dependencies WHERE project_id = ? AND (task_id = ? OR depends_on_task_id = ?)`, projectID, taskID, taskID); err != nil {
+		return err
+	}
+	_, err := q.ExecContext(ctx, `DELETE FROM tasks WHERE project_id = ? AND id = ?`, projectID, taskID)
+	return err
 }
 
 // BackfillTaskCompletedAt sets tasks.completed_at = updated_at for every

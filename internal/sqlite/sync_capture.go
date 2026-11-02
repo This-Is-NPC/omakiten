@@ -3,6 +3,7 @@ package sqlite
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 
 	"omakiten/internal/domain"
@@ -12,6 +13,10 @@ import (
 // the row alias r) under the key name.
 type syncRef struct {
 	col, name, expr string
+	// table is the table whose uid the value names; empty for tags and entities.
+	table string
+	// required marks a parent the row cannot exist without; an optional ref to a deleted row becomes NULL.
+	required bool
 }
 
 // syncRule says how one synced table maps to wire rows.
@@ -24,18 +29,37 @@ type syncRule struct {
 	omit []string
 	// refs replaces local-id columns with the values that identify them globally.
 	refs []syncRef
+	// key lists, for join tables, the ref names whose values make up the wire row id, in order.
+	key []string
 }
 
 func uidRef(col, name, table string) syncRef {
-	return syncRef{col, name, fmt.Sprintf("(SELECT uid FROM %s WHERE id = r.%s)", table, col)}
+	return syncRef{col: col, name: name, expr: fmt.Sprintf("(SELECT uid FROM %s WHERE id = r.%s)", table, col), table: table}
 }
 
-func joinRowUID(parts ...string) string {
-	return strings.Join(parts, " || '|' || ")
+// parentRef is a uidRef to a row the referencing row cannot exist without.
+func parentRef(col, name, table string) syncRef {
+	ref := uidRef(col, name, table)
+	ref.required = true
+	return ref
 }
 
-func parentUID(col, table string) string {
-	return uidRef(col, "", table).expr
+// joinRule builds the rule of a join table, whose wire row id joins the key refs.
+func joinRule(scope string, key []string, refs ...syncRef) syncRule {
+	exprs := make([]string, len(key))
+	for i, name := range key {
+		exprs[i] = refs[slices.IndexFunc(refs, func(ref syncRef) bool { return ref.name == name })].expr
+	}
+	omit := []string(nil)
+	if scope == byProjectID {
+		omit = []string{"project_id"}
+	}
+	return syncRule{rowUID: strings.Join(exprs, " || '|' || "), scope: scope, omit: omit, refs: refs, key: key}
+}
+
+// projectScoped reports whether the table carries a project_id column on the wire side.
+func (r syncRule) projectScoped() bool {
+	return slices.Contains(r.omit, "project_id")
 }
 
 func inProject(col, table string) string {
@@ -43,19 +67,29 @@ func inProject(col, table string) string {
 }
 
 const (
-	tagNameExpr   = "(SELECT name FROM tags WHERE id = r.tag_id)"
-	byProjectID   = "r.project_id = ?"
-	entityUIDExpr = `CASE r.entity_type
-  WHEN 'task' THEN (SELECT uid FROM tasks WHERE id = r.entity_id)
-  WHEN 'plan' THEN (SELECT uid FROM plans WHERE id = r.entity_id)
-  WHEN 'error' THEN (SELECT uid FROM errors WHERE id = r.entity_id)
-  WHEN 'solution' THEN (SELECT uid FROM solutions WHERE id = r.entity_id)
-END`
+	tagNameExpr = "(SELECT name FROM tags WHERE id = r.tag_id)"
+	byProjectID = "r.project_id = ?"
 )
 
+// entityTables maps the entity_type of an event to the table holding its subject.
+var entityTables = []struct{ kind, table string }{
+	{"task", "tasks"}, {"plan", "plans"}, {"error", "errors"}, {"solution", "solutions"},
+}
+
+// entityUIDExpr yields the uid of the subject of an events row.
+var entityUIDExpr = func() string {
+	var b strings.Builder
+	b.WriteString("CASE r.entity_type\n")
+	for _, e := range entityTables {
+		fmt.Fprintf(&b, "  WHEN '%s' THEN (SELECT uid FROM %s WHERE id = r.entity_id)\n", e.kind, e.table)
+	}
+	b.WriteString("END")
+	return b.String()
+}()
+
 var tagRefs = []syncRef{
-	{"tag_id", "tag_name", tagNameExpr},
-	{"tag_id", "label", "(SELECT label FROM tags WHERE id = r.tag_id)"},
+	{col: "tag_id", name: "tag_name", expr: tagNameExpr},
+	{col: "tag_id", name: "label", expr: "(SELECT label FROM tags WHERE id = r.tag_id)"},
 }
 
 // syncRules holds the rule of every table in domain.SyncTables.
@@ -63,35 +97,27 @@ var syncRules = map[string]syncRule{
 	"projects": {rowUID: "r.uid", scope: "r.id = ?", omit: []string{"root_path", "sync_scope", "archived_at"}},
 	"plans":    {rowUID: "r.uid", scope: byProjectID, omit: []string{"project_id"}},
 	"plan_waves": {rowUID: "r.uid", scope: inProject("plan_id", "plans"),
-		refs: []syncRef{uidRef("plan_id", "plan_uid", "plans")}},
+		refs: []syncRef{parentRef("plan_id", "plan_uid", "plans")}},
 	"tasks": {rowUID: "r.uid", scope: byProjectID, omit: []string{"project_id"},
-		refs: []syncRef{uidRef("parent_id", "parent_uid", "tasks"), uidRef("plan_id", "plan_uid", "plans"), uidRef("wave_id", "wave_uid", "plan_waves")}},
+		refs: []syncRef{parentRef("parent_id", "parent_uid", "tasks"), uidRef("plan_id", "plan_uid", "plans"), uidRef("wave_id", "wave_uid", "plan_waves")}},
 	"errors": {rowUID: "r.uid", scope: byProjectID, omit: []string{"project_id"}},
 	"solutions": {rowUID: "r.uid", scope: inProject("error_id", "errors"),
-		refs: []syncRef{uidRef("error_id", "error_uid", "errors"), uidRef("task_id", "task_uid", "tasks")}},
+		refs: []syncRef{parentRef("error_id", "error_uid", "errors"), uidRef("task_id", "task_uid", "tasks")}},
 	"events": {rowUID: "r.uid", scope: byProjectID, omit: []string{"project_id"},
-		refs: []syncRef{{"entity_id", "entity_uid", entityUIDExpr}}},
-	"task_dependencies": {
-		rowUID: joinRowUID(parentUID("task_id", "tasks"), parentUID("depends_on_task_id", "tasks")),
-		scope:  byProjectID, omit: []string{"project_id"},
-		refs: []syncRef{uidRef("task_id", "task_uid", "tasks"), uidRef("depends_on_task_id", "depends_on_task_uid", "tasks")}},
-	"task_tags": {
-		rowUID: joinRowUID(parentUID("task_id", "tasks"), tagNameExpr),
-		scope:  byProjectID, omit: []string{"project_id"},
-		refs: append([]syncRef{uidRef("task_id", "task_uid", "tasks")}, tagRefs...)},
-	"error_tags": {
-		rowUID: joinRowUID(parentUID("error_id", "errors"), tagNameExpr),
-		scope:  inProject("error_id", "errors"),
-		refs:   append([]syncRef{uidRef("error_id", "error_uid", "errors")}, tagRefs...)},
-	"event_tags": {
-		rowUID: joinRowUID(parentUID("event_id", "events"), tagNameExpr),
-		scope:  inProject("event_id", "events"),
-		refs:   append([]syncRef{uidRef("event_id", "event_uid", "events")}, tagRefs...)},
+		refs: []syncRef{{col: "entity_id", name: "entity_uid", expr: entityUIDExpr}}},
+	"task_dependencies": joinRule(byProjectID, []string{"task_uid", "depends_on_task_uid"},
+		parentRef("task_id", "task_uid", "tasks"), parentRef("depends_on_task_id", "depends_on_task_uid", "tasks")),
+	"task_tags": joinRule(byProjectID, []string{"task_uid", "tag_name"},
+		append([]syncRef{parentRef("task_id", "task_uid", "tasks")}, tagRefs...)...),
+	"error_tags": joinRule(inProject("error_id", "errors"), []string{"error_uid", "tag_name"},
+		append([]syncRef{parentRef("error_id", "error_uid", "errors")}, tagRefs...)...),
+	"event_tags": joinRule(inProject("event_id", "events"), []string{"event_uid", "tag_name"},
+		append([]syncRef{parentRef("event_id", "event_uid", "events")}, tagRefs...)...),
 }
 
-// selectList returns the SELECT list of the wire columns of table: its own
-// columns minus id, uid, omitted and replaced ones, then the references.
-func (r syncRule) selectList(ctx context.Context, q queryExecutor, table string) (string, error) {
+// columns lists the wire columns of table: its own columns minus id, uid,
+// omitted and replaced ones.
+func (r syncRule) columns(ctx context.Context, q queryExecutor, table string) ([]string, error) {
 	skip := map[string]bool{"id": true, "uid": true}
 	for _, col := range r.omit {
 		skip[col] = true
@@ -101,21 +127,31 @@ func (r syncRule) selectList(ctx context.Context, q queryExecutor, table string)
 	}
 	rows, err := q.QueryContext(ctx, `SELECT name FROM pragma_table_info(?) ORDER BY cid`, table)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	defer func() { _ = rows.Close() }()
 	var list []string
 	for rows.Next() {
 		var name string
 		if err := rows.Scan(&name); err != nil {
-			return "", err
+			return nil, err
 		}
 		if !skip[name] {
-			list = append(list, "r."+name)
+			list = append(list, name)
 		}
 	}
-	if err := rows.Err(); err != nil {
+	return list, rows.Err()
+}
+
+// selectList returns the SELECT list of the wire columns of table, then the references.
+func (r syncRule) selectList(ctx context.Context, q queryExecutor, table string) (string, error) {
+	columns, err := r.columns(ctx, q, table)
+	if err != nil {
 		return "", err
+	}
+	list := make([]string, 0, len(columns)+len(r.refs))
+	for _, name := range columns {
+		list = append(list, "r."+name)
 	}
 	for _, ref := range r.refs {
 		list = append(list, ref.expr+" AS "+ref.name)
@@ -276,11 +312,3 @@ func (s *Store) SetSyncRemoteURL(ctx context.Context, url string) error {
 	_, err := s.query(ctx).ExecContext(ctx, `UPDATE sync_identity SET remote_url = ? WHERE id = 1`, url)
 	return err
 }
-
-var _ interface {
-	SyncedProjects(context.Context) ([]domain.SyncProject, error)
-	PendingChanges(context.Context, int64, int) ([]domain.SyncChange, error)
-	MarkPushed(context.Context, int64, string) error
-	SyncRemoteURL(context.Context) (string, error)
-	SetSyncRemoteURL(context.Context, string) error
-} = (*Store)(nil)

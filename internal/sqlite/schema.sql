@@ -454,6 +454,15 @@ CREATE TABLE sync_projects (
   pull_cursor INTEGER NOT NULL DEFAULT 0
 );
 
+CREATE TABLE sync_inbox (
+  project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  tbl TEXT NOT NULL,
+  row_uid TEXT NOT NULL,
+  hlc TEXT NOT NULL,
+  change TEXT NOT NULL,
+  PRIMARY KEY (tbl, row_uid)
+);
+
 CREATE VIEW sync_capture_projects AS
 SELECT id FROM projects
 WHERE sync_scope = 'synced' AND (SELECT applying FROM sync_identity WHERE id = 1) = 0;
