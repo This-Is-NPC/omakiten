@@ -409,7 +409,9 @@ CREATE TABLE sync_identity (
   id INTEGER PRIMARY KEY CHECK (id = 1),
   device_id TEXT NOT NULL,
   actor_id TEXT NOT NULL,
-  hlc TEXT NOT NULL DEFAULT ''
+  hlc TEXT NOT NULL DEFAULT '',
+  remote_url TEXT NOT NULL DEFAULT '',
+  applying INTEGER NOT NULL DEFAULT 0
 );
 
 ALTER TABLE projects ADD COLUMN uid TEXT;
@@ -433,3 +435,229 @@ ALTER TABLE events ADD COLUMN device_id TEXT;
 ALTER TABLE events ADD COLUMN actor_id TEXT;
 
 ALTER TABLE projects ADD COLUMN sync_scope TEXT NOT NULL DEFAULT 'local' CHECK (sync_scope IN ('local', 'synced'));
+
+CREATE TABLE sync_rows (
+  project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  tbl TEXT NOT NULL,
+  row_uid TEXT NOT NULL,
+  hlc TEXT,
+  deleted INTEGER NOT NULL DEFAULT 0,
+  local INTEGER NOT NULL DEFAULT 1,
+  PRIMARY KEY (tbl, row_uid)
+);
+
+CREATE INDEX idx_sync_rows_pending ON sync_rows(project_id, local, hlc);
+
+CREATE TABLE sync_projects (
+  project_id INTEGER PRIMARY KEY REFERENCES projects(id) ON DELETE CASCADE,
+  pushed_hlc TEXT NOT NULL DEFAULT '',
+  pull_cursor INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE VIEW sync_capture_projects AS
+SELECT id FROM projects
+WHERE sync_scope = 'synced' AND (SELECT applying FROM sync_identity WHERE id = 1) = 0;
+
+-- An insert replaces the row of the same (tbl, row_uid). A conflict clause here would be
+-- overridden by the statement that fired the trigger, so the replace is a trigger.
+CREATE TRIGGER sync_rows_replace BEFORE INSERT ON sync_rows
+BEGIN
+  DELETE FROM sync_rows WHERE tbl = NEW.tbl AND row_uid = NEW.row_uid;
+END;
+
+CREATE TRIGGER sync_rows_stamp AFTER INSERT ON sync_rows WHEN NEW.local = 1
+BEGIN
+  UPDATE sync_identity SET hlc = okt_hlc_tick(hlc, device_id) WHERE id = 1;
+  UPDATE sync_rows SET hlc = (SELECT hlc FROM sync_identity WHERE id = 1)
+  WHERE tbl = NEW.tbl AND row_uid = NEW.row_uid;
+END;
+
+CREATE TRIGGER sync_capture_project_update AFTER UPDATE OF name, description ON projects
+WHEN NEW.name IS NOT OLD.name OR NEW.description IS NOT OLD.description
+BEGIN
+  INSERT INTO sync_rows(project_id, tbl, row_uid, deleted)
+  SELECT p, 'projects', u, 0 FROM (SELECT NEW.id AS p, NEW.uid AS u)
+  WHERE u IS NOT NULL AND p IN (SELECT id FROM sync_capture_projects);
+END;
+
+CREATE TRIGGER sync_capture_plans_insert AFTER INSERT ON plans
+BEGIN
+  INSERT INTO sync_rows(project_id, tbl, row_uid, deleted)
+  SELECT p, 'plans', u, 0 FROM (SELECT NEW.project_id AS p, NEW.uid AS u)
+  WHERE u IS NOT NULL AND p IN (SELECT id FROM sync_capture_projects);
+END;
+
+CREATE TRIGGER sync_capture_plans_update AFTER UPDATE ON plans
+BEGIN
+  INSERT INTO sync_rows(project_id, tbl, row_uid, deleted)
+  SELECT p, 'plans', u, 0 FROM (SELECT NEW.project_id AS p, NEW.uid AS u)
+  WHERE u IS NOT NULL AND p IN (SELECT id FROM sync_capture_projects);
+END;
+
+CREATE TRIGGER sync_capture_plans_delete AFTER DELETE ON plans
+BEGIN
+  INSERT INTO sync_rows(project_id, tbl, row_uid, deleted)
+  SELECT p, 'plans', u, 1 FROM (SELECT OLD.project_id AS p, OLD.uid AS u)
+  WHERE u IS NOT NULL AND p IN (SELECT id FROM sync_capture_projects);
+END;
+
+CREATE TRIGGER sync_capture_plan_waves_insert AFTER INSERT ON plan_waves
+BEGIN
+  INSERT INTO sync_rows(project_id, tbl, row_uid, deleted)
+  SELECT p, 'plan_waves', u, 0 FROM (SELECT (SELECT project_id FROM plans WHERE id = NEW.plan_id) AS p, NEW.uid AS u)
+  WHERE u IS NOT NULL AND p IN (SELECT id FROM sync_capture_projects);
+END;
+
+CREATE TRIGGER sync_capture_plan_waves_update AFTER UPDATE ON plan_waves
+BEGIN
+  INSERT INTO sync_rows(project_id, tbl, row_uid, deleted)
+  SELECT p, 'plan_waves', u, 0 FROM (SELECT (SELECT project_id FROM plans WHERE id = NEW.plan_id) AS p, NEW.uid AS u)
+  WHERE u IS NOT NULL AND p IN (SELECT id FROM sync_capture_projects);
+END;
+
+CREATE TRIGGER sync_capture_plan_waves_delete AFTER DELETE ON plan_waves
+BEGIN
+  INSERT INTO sync_rows(project_id, tbl, row_uid, deleted)
+  SELECT p, 'plan_waves', u, 1 FROM (SELECT (SELECT project_id FROM plans WHERE id = OLD.plan_id) AS p, OLD.uid AS u)
+  WHERE u IS NOT NULL AND p IN (SELECT id FROM sync_capture_projects);
+END;
+
+CREATE TRIGGER sync_capture_tasks_insert AFTER INSERT ON tasks
+BEGIN
+  INSERT INTO sync_rows(project_id, tbl, row_uid, deleted)
+  SELECT p, 'tasks', u, 0 FROM (SELECT NEW.project_id AS p, NEW.uid AS u)
+  WHERE u IS NOT NULL AND p IN (SELECT id FROM sync_capture_projects);
+END;
+
+CREATE TRIGGER sync_capture_tasks_update AFTER UPDATE ON tasks
+BEGIN
+  INSERT INTO sync_rows(project_id, tbl, row_uid, deleted)
+  SELECT p, 'tasks', u, 0 FROM (SELECT NEW.project_id AS p, NEW.uid AS u)
+  WHERE u IS NOT NULL AND p IN (SELECT id FROM sync_capture_projects);
+END;
+
+CREATE TRIGGER sync_capture_tasks_delete AFTER DELETE ON tasks
+BEGIN
+  INSERT INTO sync_rows(project_id, tbl, row_uid, deleted)
+  SELECT p, 'tasks', u, 1 FROM (SELECT OLD.project_id AS p, OLD.uid AS u)
+  WHERE u IS NOT NULL AND p IN (SELECT id FROM sync_capture_projects);
+END;
+
+CREATE TRIGGER sync_capture_errors_insert AFTER INSERT ON errors
+BEGIN
+  INSERT INTO sync_rows(project_id, tbl, row_uid, deleted)
+  SELECT p, 'errors', u, 0 FROM (SELECT NEW.project_id AS p, NEW.uid AS u)
+  WHERE u IS NOT NULL AND p IN (SELECT id FROM sync_capture_projects);
+END;
+
+CREATE TRIGGER sync_capture_errors_update AFTER UPDATE ON errors
+BEGIN
+  INSERT INTO sync_rows(project_id, tbl, row_uid, deleted)
+  SELECT p, 'errors', u, 0 FROM (SELECT NEW.project_id AS p, NEW.uid AS u)
+  WHERE u IS NOT NULL AND p IN (SELECT id FROM sync_capture_projects);
+END;
+
+CREATE TRIGGER sync_capture_errors_delete AFTER DELETE ON errors
+BEGIN
+  INSERT INTO sync_rows(project_id, tbl, row_uid, deleted)
+  SELECT p, 'errors', u, 1 FROM (SELECT OLD.project_id AS p, OLD.uid AS u)
+  WHERE u IS NOT NULL AND p IN (SELECT id FROM sync_capture_projects);
+END;
+
+CREATE TRIGGER sync_capture_solutions_insert AFTER INSERT ON solutions
+BEGIN
+  INSERT INTO sync_rows(project_id, tbl, row_uid, deleted)
+  SELECT p, 'solutions', u, 0 FROM (SELECT (SELECT project_id FROM errors WHERE id = NEW.error_id) AS p, NEW.uid AS u)
+  WHERE u IS NOT NULL AND p IN (SELECT id FROM sync_capture_projects);
+END;
+
+CREATE TRIGGER sync_capture_solutions_update AFTER UPDATE ON solutions
+BEGIN
+  INSERT INTO sync_rows(project_id, tbl, row_uid, deleted)
+  SELECT p, 'solutions', u, 0 FROM (SELECT (SELECT project_id FROM errors WHERE id = NEW.error_id) AS p, NEW.uid AS u)
+  WHERE u IS NOT NULL AND p IN (SELECT id FROM sync_capture_projects);
+END;
+
+CREATE TRIGGER sync_capture_solutions_delete AFTER DELETE ON solutions
+BEGIN
+  INSERT INTO sync_rows(project_id, tbl, row_uid, deleted)
+  SELECT p, 'solutions', u, 1 FROM (SELECT (SELECT project_id FROM errors WHERE id = OLD.error_id) AS p, OLD.uid AS u)
+  WHERE u IS NOT NULL AND p IN (SELECT id FROM sync_capture_projects);
+END;
+
+CREATE TRIGGER sync_capture_events_insert AFTER INSERT ON events
+BEGIN
+  INSERT INTO sync_rows(project_id, tbl, row_uid, deleted)
+  SELECT p, 'events', u, 0 FROM (SELECT NEW.project_id AS p, NEW.uid AS u)
+  WHERE u IS NOT NULL AND p IN (SELECT id FROM sync_capture_projects);
+END;
+
+CREATE TRIGGER sync_capture_events_update AFTER UPDATE ON events
+BEGIN
+  INSERT INTO sync_rows(project_id, tbl, row_uid, deleted)
+  SELECT p, 'events', u, 0 FROM (SELECT NEW.project_id AS p, NEW.uid AS u)
+  WHERE u IS NOT NULL AND p IN (SELECT id FROM sync_capture_projects);
+END;
+
+CREATE TRIGGER sync_capture_events_delete AFTER DELETE ON events
+BEGIN
+  INSERT INTO sync_rows(project_id, tbl, row_uid, deleted)
+  SELECT p, 'events', u, 1 FROM (SELECT OLD.project_id AS p, OLD.uid AS u)
+  WHERE u IS NOT NULL AND p IN (SELECT id FROM sync_capture_projects);
+END;
+
+CREATE TRIGGER sync_capture_task_dependencies_insert AFTER INSERT ON task_dependencies
+BEGIN
+  INSERT INTO sync_rows(project_id, tbl, row_uid, deleted)
+  SELECT p, 'task_dependencies', u, 0 FROM (SELECT NEW.project_id AS p, (SELECT uid FROM tasks WHERE id = NEW.task_id) || '|' || (SELECT uid FROM tasks WHERE id = NEW.depends_on_task_id) AS u)
+  WHERE u IS NOT NULL AND p IN (SELECT id FROM sync_capture_projects);
+END;
+
+CREATE TRIGGER sync_capture_task_dependencies_delete AFTER DELETE ON task_dependencies
+BEGIN
+  INSERT INTO sync_rows(project_id, tbl, row_uid, deleted)
+  SELECT p, 'task_dependencies', u, 1 FROM (SELECT OLD.project_id AS p, (SELECT uid FROM tasks WHERE id = OLD.task_id) || '|' || (SELECT uid FROM tasks WHERE id = OLD.depends_on_task_id) AS u)
+  WHERE u IS NOT NULL AND p IN (SELECT id FROM sync_capture_projects);
+END;
+
+CREATE TRIGGER sync_capture_task_tags_insert AFTER INSERT ON task_tags
+BEGIN
+  INSERT INTO sync_rows(project_id, tbl, row_uid, deleted)
+  SELECT p, 'task_tags', u, 0 FROM (SELECT NEW.project_id AS p, (SELECT uid FROM tasks WHERE id = NEW.task_id) || '|' || (SELECT name FROM tags WHERE id = NEW.tag_id) AS u)
+  WHERE u IS NOT NULL AND p IN (SELECT id FROM sync_capture_projects);
+END;
+
+CREATE TRIGGER sync_capture_task_tags_delete AFTER DELETE ON task_tags
+BEGIN
+  INSERT INTO sync_rows(project_id, tbl, row_uid, deleted)
+  SELECT p, 'task_tags', u, 1 FROM (SELECT OLD.project_id AS p, (SELECT uid FROM tasks WHERE id = OLD.task_id) || '|' || (SELECT name FROM tags WHERE id = OLD.tag_id) AS u)
+  WHERE u IS NOT NULL AND p IN (SELECT id FROM sync_capture_projects);
+END;
+
+CREATE TRIGGER sync_capture_error_tags_insert AFTER INSERT ON error_tags
+BEGIN
+  INSERT INTO sync_rows(project_id, tbl, row_uid, deleted)
+  SELECT p, 'error_tags', u, 0 FROM (SELECT (SELECT project_id FROM errors WHERE id = NEW.error_id) AS p, (SELECT uid FROM errors WHERE id = NEW.error_id) || '|' || (SELECT name FROM tags WHERE id = NEW.tag_id) AS u)
+  WHERE u IS NOT NULL AND p IN (SELECT id FROM sync_capture_projects);
+END;
+
+CREATE TRIGGER sync_capture_error_tags_delete AFTER DELETE ON error_tags
+BEGIN
+  INSERT INTO sync_rows(project_id, tbl, row_uid, deleted)
+  SELECT p, 'error_tags', u, 1 FROM (SELECT (SELECT project_id FROM errors WHERE id = OLD.error_id) AS p, (SELECT uid FROM errors WHERE id = OLD.error_id) || '|' || (SELECT name FROM tags WHERE id = OLD.tag_id) AS u)
+  WHERE u IS NOT NULL AND p IN (SELECT id FROM sync_capture_projects);
+END;
+
+CREATE TRIGGER sync_capture_event_tags_insert AFTER INSERT ON event_tags
+BEGIN
+  INSERT INTO sync_rows(project_id, tbl, row_uid, deleted)
+  SELECT p, 'event_tags', u, 0 FROM (SELECT (SELECT project_id FROM events WHERE id = NEW.event_id) AS p, (SELECT uid FROM events WHERE id = NEW.event_id) || '|' || (SELECT name FROM tags WHERE id = NEW.tag_id) AS u)
+  WHERE u IS NOT NULL AND p IN (SELECT id FROM sync_capture_projects);
+END;
+
+CREATE TRIGGER sync_capture_event_tags_delete AFTER DELETE ON event_tags
+BEGIN
+  INSERT INTO sync_rows(project_id, tbl, row_uid, deleted)
+  SELECT p, 'event_tags', u, 1 FROM (SELECT (SELECT project_id FROM events WHERE id = OLD.event_id) AS p, (SELECT uid FROM events WHERE id = OLD.event_id) || '|' || (SELECT name FROM tags WHERE id = OLD.tag_id) AS u)
+  WHERE u IS NOT NULL AND p IN (SELECT id FROM sync_capture_projects);
+END;

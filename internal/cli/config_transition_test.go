@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"database/sql"
+	"errors"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -140,6 +141,35 @@ func TestConfigValidateMigrateSubprocessChild(t *testing.T) {
 	os.Exit(0)
 }
 
+// dropSyncCapture removes the sync capture triggers, view and tables, which
+// name the columns the v0.30 shape lacks.
+func dropSyncCapture(t *testing.T, db *sql.DB) {
+	t.Helper()
+	rows, err := db.Query(`SELECT name FROM sqlite_master WHERE type = 'trigger' AND name LIKE 'sync\_capture\_%' ESCAPE '\'`)
+	if err != nil {
+		t.Fatalf("list sync triggers: %v", err)
+	}
+	var triggers []string
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			t.Fatalf("scan sync trigger: %v", err)
+		}
+		triggers = append(triggers, name)
+	}
+	if err := errors.Join(rows.Err(), rows.Close()); err != nil {
+		t.Fatalf("list sync triggers: %v", err)
+	}
+	for _, name := range triggers {
+		if _, err := db.Exec("DROP TRIGGER " + name); err != nil {
+			t.Fatalf("drop %s: %v", name, err)
+		}
+	}
+	if _, err := db.Exec(`DROP VIEW sync_capture_projects; DROP TABLE sync_rows; DROP TABLE sync_projects`); err != nil {
+		t.Fatalf("drop sync tables: %v", err)
+	}
+}
+
 func seedExactV030DatabaseForCLI(t *testing.T, path string) {
 	t.Helper()
 	store, err := sqlite.Open(context.Background(), path)
@@ -154,6 +184,7 @@ func seedExactV030DatabaseForCLI(t *testing.T, path string) {
 		t.Fatalf("sql.Open(): %v", err)
 	}
 	defer func() { _ = db.Close() }()
+	dropSyncCapture(t, db)
 	if _, err := db.Exec(`DROP TABLE sync_identity;
 DROP INDEX idx_projects_uid; DROP INDEX idx_tasks_uid; DROP INDEX idx_events_uid; DROP INDEX idx_errors_uid;
 DROP INDEX idx_solutions_uid; DROP INDEX idx_plans_uid; DROP INDEX idx_plan_waves_uid;

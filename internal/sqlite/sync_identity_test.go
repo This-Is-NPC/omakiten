@@ -58,7 +58,7 @@ func seedVersion3Database(t *testing.T, ctx context.Context, path string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.db.ExecContext(ctx, dropSyncIdentitySQL+"PRAGMA user_version = 3"); err != nil {
+	if _, err := store.db.ExecContext(ctx, dropSyncIdentitySQL(t, store.db)+"PRAGMA user_version = 3"); err != nil {
 		t.Fatal(err)
 	}
 	var projectID int64

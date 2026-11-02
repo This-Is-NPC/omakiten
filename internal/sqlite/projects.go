@@ -25,15 +25,45 @@ RETURNING `+projectColumns, domain.NewUID(), name, slug, rootPath))
 // UpdateProject applies the non-nil patch fields to a live (non-archived)
 // project and returns the refreshed row. An unknown or archived id matches
 // no row, surfacing ErrProjectNotFound via scanProject's sql.ErrNoRows
-// branch.
-func (s *Store) UpdateProject(ctx context.Context, id int64, patch domain.ProjectPatch) (domain.Project, error) {
-	return s.scanProject(s.query(ctx).QueryRowContext(ctx, `
+// branch. Switching the scope from local to synced records every existing row
+// of the project for the next push.
+func (s *Store) UpdateProject(ctx context.Context, id int64, patch domain.ProjectPatch) (project domain.Project, err error) {
+	err = s.WithinTransaction(ctx, func(ctx context.Context) error {
+		var before domain.SyncScope
+		if patch.SyncScope != nil {
+			// A write returns the scope the update replaces and takes the write lock first.
+			before, err = s.currentScope(ctx, id)
+			if err != nil {
+				return err
+			}
+		}
+		project, err = s.scanProject(s.query(ctx).QueryRowContext(ctx, `
 UPDATE projects SET
   description = COALESCE(?, description),
   sync_scope = COALESCE(?, sync_scope),
   updated_at = CURRENT_TIMESTAMP
 WHERE id = ? AND archived_at IS NULL
 RETURNING `+projectColumns, patch.Description, patch.SyncScope, id))
+		if err != nil {
+			return err
+		}
+		if before == domain.SyncScopeLocal && project.SyncScope == domain.SyncScopeSynced {
+			return s.enqueueProject(ctx, id)
+		}
+		return nil
+	})
+	return project, err
+}
+
+// currentScope returns the sync scope of a live project through a no-op write.
+func (s *Store) currentScope(ctx context.Context, id int64) (domain.SyncScope, error) {
+	var scope domain.SyncScope
+	err := s.query(ctx).QueryRowContext(ctx,
+		`UPDATE projects SET sync_scope = sync_scope WHERE id = ? AND archived_at IS NULL RETURNING sync_scope`, id).Scan(&scope)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", domain.NewError(domain.ErrProjectNotFound, "project not found", nil)
+	}
+	return scope, err
 }
 
 func (s *Store) FindProjectByID(ctx context.Context, id int64) (domain.Project, error) {

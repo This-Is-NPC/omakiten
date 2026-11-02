@@ -2,8 +2,11 @@ package sqlite
 
 import (
 	"context"
+	"database/sql/driver"
 	"fmt"
 	"time"
+
+	"modernc.org/sqlite"
 
 	"omakiten/internal/domain"
 )
@@ -67,30 +70,35 @@ type eventStamp struct {
 	Actor  string
 }
 
-// stampEvent ticks the stored hybrid logical clock, persists the new stamp in
-// the caller's transaction and returns the envelope for one events row. The
-// first statement is a write so the transaction takes the write lock before
-// reading the clock.
+// stampEvent ticks the stored hybrid logical clock and returns the envelope
+// for one events row. The tick is a write, so the transaction takes the write
+// lock before it reads the clock.
 func stampEvent(ctx context.Context, exec dbExecutor) (eventStamp, error) {
-	var last, device, actor string
-	// A no-op write first takes the write lock under the busy timeout; a read
-	// before the write would fail with SQLITE_BUSY if another process commits.
-	if err := exec.QueryRowContext(ctx, `UPDATE sync_identity SET hlc = hlc WHERE id = 1 RETURNING hlc, device_id, actor_id`).Scan(&last, &device, &actor); err != nil {
-		return eventStamp{}, err
-	}
+	var stamp eventStamp
+	err := exec.QueryRowContext(ctx,
+		`UPDATE sync_identity SET hlc = okt_hlc_tick(hlc, device_id) WHERE id = 1 RETURNING hlc, device_id, actor_id`).
+		Scan(&stamp.HLC, &stamp.Device, &stamp.Actor)
+	stamp.UID = string(domain.NewUID())
+	return stamp, err
+}
+
+// tickHLC is the okt_hlc_tick SQL function: the next stamp after last for device.
+func tickHLC(_ *sqlite.FunctionContext, args []driver.Value) (driver.Value, error) {
+	last, _ := args[0].(string)
+	device, _ := args[1].(string)
 	prev := domain.HLC{}
 	if last != "" {
 		parsed, err := domain.ParseHLC(last)
 		if err != nil {
-			return eventStamp{}, err
+			return nil, err
 		}
 		prev = parsed
 	}
-	next := domain.TickHLC(prev, time.Now().UnixMilli(), domain.UID(device)).String()
-	// dbExecutor has no Exec; RETURNING lets the write run through QueryRowContext.
-	var stored string
-	if err := exec.QueryRowContext(ctx, `UPDATE sync_identity SET hlc = ? WHERE id = 1 RETURNING hlc`, next).Scan(&stored); err != nil {
-		return eventStamp{}, err
-	}
-	return eventStamp{UID: string(domain.NewUID()), HLC: next, Device: device, Actor: actor}, nil
+	return domain.TickHLC(prev, time.Now().UnixMilli(), domain.UID(device)).String(), nil
+}
+
+// The function is registered for every connection opened by this process,
+// before any schema that names it in a trigger is used.
+func init() {
+	sqlite.MustRegisterScalarFunction("okt_hlc_tick", 2, tickHLC)
 }
