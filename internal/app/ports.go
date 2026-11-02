@@ -15,6 +15,8 @@ type DocumentRepository interface {
 	DependencyRepository
 	TagRepository
 	WithinTransaction(context.Context, func(context.Context) error) error
+	// WithinReadTransaction runs pure reads in one read-only snapshot.
+	WithinReadTransaction(context.Context, func(context.Context) error) error
 	ReadWorkRecord(context.Context, int64, string, int64, domain.BucketResolver) (domain.WorkRecord, error)
 	SaveWorkMetadata(context.Context, string, int64, []byte) error
 }

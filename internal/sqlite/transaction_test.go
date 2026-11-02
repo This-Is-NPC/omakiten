@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"omakiten/internal/domain"
 )
@@ -49,5 +50,33 @@ func TestWorkTransactionPublishesOnlyDurableEvents(t *testing.T) {
 	got := sink.snapshot()
 	if len(got) != before+1 || got[len(got)-1].EventType != domain.EventTypePlanCreated {
 		t.Fatalf("committed events: %v", got)
+	}
+}
+
+func TestReadTransactionDoesNotBlockWriter(t *testing.T) {
+	t.Parallel()
+	store := newTestStore(t)
+	ctx := context.Background()
+	project, err := store.UpsertProject(ctx, "Example", "example", t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = store.WithinReadTransaction(ctx, func(ctx context.Context) error {
+		var n int
+		if err := store.query(ctx).QueryRowContext(ctx, `SELECT count(*) FROM projects`).Scan(&n); err != nil {
+			return err
+		}
+		writeCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		if _, err := store.db.ExecContext(writeCtx, `UPDATE projects SET description = 'written' WHERE id = ?`, project.ID); err != nil {
+			t.Errorf("writer blocked by read transaction: %v", err)
+		}
+		if _, err := store.query(ctx).ExecContext(ctx, `UPDATE projects SET description = 'x' WHERE id = ?`, project.ID); err == nil {
+			t.Error("read transaction accepted a write")
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
 	}
 }

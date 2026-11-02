@@ -674,6 +674,7 @@ BEGIN
 END;
 
 CREATE TRIGGER sync_capture_event_tags_insert AFTER INSERT ON event_tags
+WHEN (SELECT event_type FROM events WHERE id = NEW.event_id) NOT IN (SELECT event_type FROM sync_activity_event_types)
 BEGIN
   INSERT INTO sync_rows(project_id, tbl, row_uid, deleted)
   SELECT p, 'event_tags', u, 0 FROM (SELECT (SELECT project_id FROM events WHERE id = NEW.event_id) AS p, (SELECT uid FROM events WHERE id = NEW.event_id) || '|' || (SELECT name FROM tags WHERE id = NEW.tag_id) AS u)
@@ -681,6 +682,7 @@ BEGIN
 END;
 
 CREATE TRIGGER sync_capture_event_tags_delete AFTER DELETE ON event_tags
+WHEN (SELECT event_type FROM events WHERE id = OLD.event_id) NOT IN (SELECT event_type FROM sync_activity_event_types)
 BEGIN
   INSERT INTO sync_rows(project_id, tbl, row_uid, deleted)
   SELECT p, 'event_tags', u, 1 FROM (SELECT (SELECT project_id FROM events WHERE id = OLD.event_id) AS p, (SELECT uid FROM events WHERE id = OLD.event_id) || '|' || (SELECT name FROM tags WHERE id = OLD.tag_id) AS u)

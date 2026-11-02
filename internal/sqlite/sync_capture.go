@@ -2,6 +2,8 @@ package sqlite
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -17,6 +19,15 @@ type syncRef struct {
 	table string
 	// required marks a parent the row cannot exist without; an optional ref to a deleted row becomes NULL.
 	required bool
+}
+
+// lookup names the table and column that resolve a key ref value to a row id: the uid of the parent
+// table, or the tag name. Only the refs listed in a rule's key are looked up.
+func (ref syncRef) lookup() (table, col string) {
+	if ref.table == "" {
+		return "tags", "name"
+	}
+	return ref.table, "uid"
 }
 
 // syncRule says how one synced table maps to wire rows.
@@ -47,17 +58,26 @@ func parentRef(col, name, table string) syncRef {
 	return ref
 }
 
+func refNamed(refs []syncRef, name string) syncRef {
+	return refs[slices.IndexFunc(refs, func(ref syncRef) bool { return ref.name == name })]
+}
+
 // joinRule builds the rule of a join table, whose wire row id joins the key refs.
 func joinRule(scope string, key []string, refs ...syncRef) syncRule {
 	exprs := make([]string, len(key))
 	for i, name := range key {
-		exprs[i] = refs[slices.IndexFunc(refs, func(ref syncRef) bool { return ref.name == name })].expr
+		exprs[i] = refNamed(refs, name).expr
 	}
 	omit := []string(nil)
 	if scope == byProjectID {
 		omit = []string{"project_id"}
 	}
 	return syncRule{rowUID: strings.Join(exprs, " || '|' || "), scope: scope, omit: omit, refs: refs, key: key}
+}
+
+func withDeviceOnly(rule syncRule, deviceOnly string) syncRule {
+	rule.deviceOnly = deviceOnly
+	return rule
 }
 
 // captured is the SQL predicate over alias r selecting the rows of the project bound to its single placeholder that sync captures.
@@ -78,8 +98,10 @@ func inProject(col, table string) string {
 }
 
 const (
-	tagNameExpr = "(SELECT name FROM tags WHERE id = r.tag_id)"
-	byProjectID = "r.project_id = ?"
+	// activityEvent selects the events, by alias, whose type is an activity log.
+	activityEvent = "IN (SELECT event_type FROM sync_activity_event_types)"
+	tagNameExpr   = "(SELECT name FROM tags WHERE id = r.tag_id)"
+	byProjectID   = "r.project_id = ?"
 )
 
 // entityTables maps the entity_type of an event to the table holding its subject.
@@ -114,7 +136,7 @@ var syncRules = map[string]syncRule{
 	"errors": {rowUID: "r.uid", scope: byProjectID, omit: []string{"project_id"}},
 	"solutions": {rowUID: "r.uid", scope: inProject("error_id", "errors"),
 		refs: []syncRef{parentRef("error_id", "error_uid", "errors"), uidRef("task_id", "task_uid", "tasks")}},
-	"events": {rowUID: "r.uid", scope: byProjectID, deviceOnly: "r.event_type IN (SELECT event_type FROM sync_activity_event_types)", omit: []string{"project_id"},
+	"events": {rowUID: "r.uid", scope: byProjectID, deviceOnly: "r.event_type " + activityEvent, omit: []string{"project_id"},
 		refs: []syncRef{{col: "entity_id", name: "entity_uid", expr: entityUIDExpr}}},
 	"task_dependencies": joinRule(byProjectID, []string{"task_uid", "depends_on_task_uid"},
 		parentRef("task_id", "task_uid", "tasks"), parentRef("depends_on_task_id", "depends_on_task_uid", "tasks")),
@@ -122,8 +144,9 @@ var syncRules = map[string]syncRule{
 		append([]syncRef{parentRef("task_id", "task_uid", "tasks")}, tagRefs...)...),
 	"error_tags": joinRule(inProject("error_id", "errors"), []string{"error_uid", "tag_name"},
 		append([]syncRef{parentRef("error_id", "error_uid", "errors")}, tagRefs...)...),
-	"event_tags": joinRule(inProject("event_id", "events"), []string{"event_uid", "tag_name"},
+	"event_tags": withDeviceOnly(joinRule(inProject("event_id", "events"), []string{"event_uid", "tag_name"},
 		append([]syncRef{parentRef("event_id", "event_uid", "events")}, tagRefs...)...),
+		"(SELECT event_type FROM events WHERE id = r.event_id) "+activityEvent),
 }
 
 // columns lists the wire columns of table: its own columns minus id, uid,
@@ -291,8 +314,11 @@ func (s *Store) rowData(ctx context.Context, lists map[string]string, table, row
 		}
 		lists[table] = list
 	}
-	rows, err := s.query(ctx).QueryContext(ctx,
-		fmt.Sprintf("SELECT %s FROM %s r WHERE %s = ?", list, table, rule.rowUID), rowUID)
+	where, args, found, err := s.rowFilter(ctx, rule, rowUID)
+	if err != nil || !found {
+		return nil, err
+	}
+	rows, err := s.query(ctx).QueryContext(ctx, fmt.Sprintf("SELECT %s FROM %s r WHERE %s", list, table, where), args...)
 	if err != nil {
 		return nil, err
 	}
@@ -317,6 +343,34 @@ func (s *Store) rowData(ctx context.Context, lists map[string]string, table, row
 		data[name] = values[i]
 	}
 	return data, rows.Err()
+}
+
+// rowFilter returns the predicate selecting one row by an indexed lookup. A join table row id is split into
+// its key parts, each resolved to an id through the unique index of its table; found is false when a part
+// names no row. The tag name, which comes last, may itself contain the separator.
+func (s *Store) rowFilter(ctx context.Context, rule syncRule, rowUID string) (where string, args []any, found bool, err error) {
+	if rule.key == nil {
+		return rule.rowUID + " = ?", []any{rowUID}, true, nil
+	}
+	parts := strings.SplitN(rowUID, "|", len(rule.key))
+	if len(parts) != len(rule.key) {
+		return "", nil, false, nil
+	}
+	conds := make([]string, len(parts))
+	args = make([]any, len(parts))
+	for i, name := range rule.key {
+		ref := refNamed(rule.refs, name)
+		table, col := ref.lookup()
+		err := s.query(ctx).QueryRowContext(ctx, fmt.Sprintf("SELECT id FROM %s WHERE %s = ?", table, col), parts[i]).Scan(&args[i])
+		if errors.Is(err, sql.ErrNoRows) {
+			return "", nil, false, nil
+		}
+		if err != nil {
+			return "", nil, false, err
+		}
+		conds[i] = "r." + ref.col + " = ?"
+	}
+	return strings.Join(conds, " AND "), args, true, nil
 }
 
 // MarkPushed raises the project's push watermark to hlc.

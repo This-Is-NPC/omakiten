@@ -36,10 +36,19 @@ func (s *Store) query(ctx context.Context) queryExecutor {
 }
 
 func (s *Store) beginTransaction(ctx context.Context) (*sql.Tx, error) {
+	return s.begin(ctx, nil)
+}
+
+// beginReadTransaction is beginTransaction for operations that only read.
+func (s *Store) beginReadTransaction(ctx context.Context) (*sql.Tx, error) {
+	return s.begin(ctx, &sql.TxOptions{ReadOnly: true})
+}
+
+func (s *Store) begin(ctx context.Context, opts *sql.TxOptions) (*sql.Tx, error) {
 	if scope := s.transaction(ctx); scope != nil {
 		return scope.tx, nil
 	}
-	return s.db.BeginTx(ctx, nil)
+	return s.db.BeginTx(ctx, opts)
 }
 
 func (s *Store) commitTransaction(ctx context.Context, tx *sql.Tx) error {
@@ -59,10 +68,21 @@ func (s *Store) rollbackTransaction(ctx context.Context, tx *sql.Tx) error {
 // WithinTransaction binds existing repository operations to one atomic unit.
 // Event publication happens after its outer commit and is discarded on rollback.
 func (s *Store) WithinTransaction(ctx context.Context, work func(context.Context) error) error {
+	return s.within(ctx, nil, work)
+}
+
+// WithinReadTransaction binds pure reads to one consistent snapshot. The
+// transaction is read-only, so it stays deferred and never blocks a writer;
+// an outer transaction is reused as is.
+func (s *Store) WithinReadTransaction(ctx context.Context, work func(context.Context) error) error {
+	return s.within(ctx, &sql.TxOptions{ReadOnly: true}, work)
+}
+
+func (s *Store) within(ctx context.Context, opts *sql.TxOptions, work func(context.Context) error) error {
 	if s.transaction(ctx) != nil {
 		return work(ctx)
 	}
-	tx, err := s.db.BeginTx(ctx, nil)
+	tx, err := s.db.BeginTx(ctx, opts)
 	if err != nil {
 		return err
 	}

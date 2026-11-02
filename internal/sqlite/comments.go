@@ -585,7 +585,7 @@ DELETE FROM events WHERE id = ? AND event_type = 'comment'
 // project filter only constrains task/project-scoped rows because universal
 // comments carry a NULL project_id.
 func (s *Store) CommentByID(ctx context.Context, projectID, commentID int64) (domain.Comment, error) {
-	tx, err := s.beginTransaction(ctx)
+	tx, err := s.beginReadTransaction(ctx)
 	if err != nil {
 		return domain.Comment{}, err
 	}

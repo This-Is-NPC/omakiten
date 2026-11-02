@@ -9,7 +9,7 @@ import (
 
 func (s *WorkDocumentService) Export(ctx context.Context, project domain.ProjectContext, slug string, taskID int64) (domain.WorkDocument, error) {
 	var doc domain.WorkDocument
-	err := s.repo.WithinTransaction(ctx, func(txCtx context.Context) error {
+	err := s.repo.WithinReadTransaction(ctx, func(txCtx context.Context) error {
 		record, err := s.repo.ReadWorkRecord(txCtx, project.ID, slug, taskID, s.snap)
 		if err != nil {
 			return err

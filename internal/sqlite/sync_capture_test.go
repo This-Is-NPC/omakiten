@@ -635,3 +635,103 @@ func TestRowDataReusesTheCachedSelectList(t *testing.T) {
 		t.Fatalf("cached rowData = %v, %v", data, err)
 	}
 }
+
+func TestRowDataOfJoinTablesNeverScansTheJoinTable(t *testing.T) {
+	t.Parallel()
+	store, project := openSyncStore(t)
+	uids := seedRowGraph(t, store, project.ID)
+	tag := "urgent"
+	rowUIDs := map[string]string{
+		"task_dependencies": uids["child"] + "|" + uids["other"],
+		"task_tags":         uids["child"] + "|" + tag,
+		"error_tags":        uids["error"] + "|" + tag,
+		"event_tags":        uids["event"] + "|" + tag,
+	}
+	ctx := context.Background()
+	lists := map[string]string{}
+	for table, rowUID := range rowUIDs {
+		data, err := store.rowData(ctx, lists, table, rowUID)
+		if err != nil || data == nil {
+			t.Fatalf("%s rowData = %v, %v", table, data, err)
+		}
+		rule := syncRules[table]
+		where, args, found, err := store.rowFilter(ctx, rule, rowUID)
+		if err != nil || !found {
+			t.Fatalf("%s rowFilter: %v, %v", table, found, err)
+		}
+		for _, detail := range queryPlan(t, store, "SELECT "+lists[table]+" FROM "+table+" r WHERE "+where, args...) {
+			if strings.HasPrefix(detail, "SCAN "+table) {
+				t.Errorf("%s plan scans the join table: %s", table, detail)
+			}
+			t.Logf("%s: %s", table, detail)
+		}
+		if missing, err := store.rowData(ctx, lists, table, "missing|"+tag); err != nil || missing != nil {
+			t.Fatalf("%s missing rowData = %v, %v", table, missing, err)
+		}
+	}
+}
+
+func queryPlan(t *testing.T, store *Store, query string, args ...any) []string {
+	t.Helper()
+	rows, err := store.db.QueryContext(context.Background(), "EXPLAIN QUERY PLAN "+query, args...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = rows.Close() }()
+	var details []string
+	for rows.Next() {
+		var id, parent, unused int
+		var detail string
+		if err := rows.Scan(&id, &parent, &unused, &detail); err != nil {
+			t.Fatal(err)
+		}
+		details = append(details, detail)
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatal(err)
+	}
+	return details
+}
+
+func TestRowDataKeepsSeparatorInsideTagName(t *testing.T) {
+	t.Parallel()
+	store, project := openSyncStore(t)
+	uids := seedRowGraph(t, store, project.ID)
+	mustExec(t, store, `INSERT INTO tags(name, label) VALUES ('a|b', 'AB')`)
+	mustExec(t, store, `INSERT INTO task_tags(project_id, task_id, tag_id) SELECT ?, t.id, g.id FROM tasks t, tags g WHERE t.uid = ? AND g.name = 'a|b'`, project.ID, uids["child"])
+	data, err := store.rowData(context.Background(), map[string]string{}, "task_tags", uids["child"]+"|a|b")
+	if err != nil || data["tag_name"] != "a|b" {
+		t.Fatalf("rowData = %v, %v", data, err)
+	}
+}
+
+func TestActivityLogEventTagsAreNeverCaptured(t *testing.T) {
+	t.Parallel()
+	store, project := openSyncStore(t)
+	tag := func(eventType string) (string, int64) {
+		uid := string(domain.NewUID())
+		mustExec(t, store, `INSERT INTO events(entity_type, project_id, event_type, uid) VALUES ('system', ?, ?, ?)`, project.ID, eventType, uid)
+		id := mustScan[int64](t, store, `SELECT id FROM events WHERE uid = ?`, uid)
+		mustExec(t, store, `INSERT OR IGNORE INTO tags(name, label) VALUES ('urgent', 'Urgent')`)
+		mustExec(t, store, `INSERT INTO event_tags(event_id, tag_id) SELECT ?, id FROM tags WHERE name = 'urgent'`, id)
+		return "event_tags/" + uid + "|urgent", id
+	}
+	localLog, _ := tag("cli.tool_call")
+	setScope(t, store, project.ID, domain.SyncScopeSynced)
+	if got := capturedRows(t, store); slices.Contains(capturedTables(got), "event_tags") {
+		t.Fatalf("enqueued %v", got)
+	}
+	log, logID := tag("tui.tool_call")
+	comment, commentID := tag("comment")
+	mustExec(t, store, `DELETE FROM event_tags WHERE event_id = ?`, logID)
+	mustExec(t, store, `DELETE FROM event_tags WHERE event_id = ?`, commentID)
+	got := capturedRows(t, store)
+	for _, key := range []string{localLog, log} {
+		if _, ok := got[key]; ok {
+			t.Fatalf("activity log tag %s captured: %v", key, got)
+		}
+	}
+	if deleted, ok := got[comment]; !ok || deleted != 1 {
+		t.Fatalf("captured %v, want delete of %s", got, comment)
+	}
+}

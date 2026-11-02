@@ -1318,7 +1318,7 @@ func (s *Store) AssignTask(ctx context.Context, projectID, taskID int64, assigne
 }
 
 func (s *Store) probeTaskAssignment(ctx context.Context, projectID, taskID int64, assignee string, buckets domain.BucketResolver) (domain.Task, string, bool, error) {
-	tx, err := s.beginTransaction(ctx)
+	tx, err := s.beginReadTransaction(ctx)
 	if err != nil {
 		return domain.Task{}, "", false, err
 	}
