@@ -103,7 +103,7 @@ var syncRules = map[string]syncRule{
 	"errors": {rowUID: "r.uid", scope: byProjectID, omit: []string{"project_id"}},
 	"solutions": {rowUID: "r.uid", scope: inProject("error_id", "errors"),
 		refs: []syncRef{parentRef("error_id", "error_uid", "errors"), uidRef("task_id", "task_uid", "tasks")}},
-	"events": {rowUID: "r.uid", scope: byProjectID, omit: []string{"project_id"},
+	"events": {rowUID: "r.uid", scope: byProjectID + " AND r.event_type NOT IN (SELECT event_type FROM sync_activity_event_types)", omit: []string{"project_id"},
 		refs: []syncRef{{col: "entity_id", name: "entity_uid", expr: entityUIDExpr}}},
 	"task_dependencies": joinRule(byProjectID, []string{"task_uid", "depends_on_task_uid"},
 		parentRef("task_id", "task_uid", "tasks"), parentRef("depends_on_task_id", "depends_on_task_uid", "tasks")),
@@ -160,8 +160,13 @@ func (r syncRule) selectList(ctx context.Context, q queryExecutor, table string)
 }
 
 // enqueueProject records every existing row of the project in every synced
-// table as a local change.
+// table as a local change, then re-records the entries no live row replaced,
+// so rows deleted while the project was local go out as deletes.
 func (s *Store) enqueueProject(ctx context.Context, projectID int64) error {
+	var before string
+	if err := s.query(ctx).QueryRowContext(ctx, `SELECT hlc FROM sync_identity WHERE id = 1`).Scan(&before); err != nil {
+		return err
+	}
 	for _, table := range domain.SyncTables {
 		rule := syncRules[table]
 		_, err := s.query(ctx).ExecContext(ctx, fmt.Sprintf(`
@@ -171,6 +176,12 @@ SELECT ?, '%s', u FROM (SELECT %s AS u FROM %s r WHERE %s) WHERE u IS NOT NULL`,
 		if err != nil {
 			return fmt.Errorf("enqueue %s: %w", table, err)
 		}
+	}
+	_, err := s.query(ctx).ExecContext(ctx, `
+INSERT INTO sync_rows(project_id, tbl, row_uid, deleted)
+SELECT project_id, tbl, row_uid, deleted FROM sync_rows WHERE project_id = ? AND COALESCE(hlc, '') <= ?`, projectID, before)
+	if err != nil {
+		return fmt.Errorf("re-enqueue stale sync rows: %w", err)
 	}
 	return nil
 }
@@ -215,11 +226,12 @@ func (s *Store) PendingChanges(ctx context.Context, projectID int64, limit int) 
 	if err != nil {
 		return nil, err
 	}
+	lists := map[string]string{}
 	changes := make([]domain.SyncChange, 0, len(pending))
 	for _, p := range pending {
 		change := domain.SyncChange{Table: p.table, RowUID: p.uid, Op: domain.SyncOpDelete, HLC: p.hlc, Device: device}
 		if !p.deleted {
-			data, err := s.rowData(ctx, p.table, p.uid)
+			data, err := s.rowData(ctx, lists, p.table, p.uid)
 			if err != nil {
 				return nil, err
 			}
@@ -254,14 +266,19 @@ ORDER BY hlc LIMIT ?`, projectID, limit)
 }
 
 // rowData reads the wire columns of one row; nil means the row no longer exists.
-func (s *Store) rowData(ctx context.Context, table, rowUID string) (map[string]any, error) {
+// lists caches the select list of each table across calls.
+func (s *Store) rowData(ctx context.Context, lists map[string]string, table, rowUID string) (map[string]any, error) {
 	rule, ok := syncRules[table]
 	if !ok {
 		return nil, fmt.Errorf("sync table %q has no rule", table)
 	}
-	list, err := rule.selectList(ctx, s.query(ctx), table)
-	if err != nil {
-		return nil, err
+	list, cached := lists[table]
+	if !cached {
+		var err error
+		if list, err = rule.selectList(ctx, s.query(ctx), table); err != nil {
+			return nil, err
+		}
+		lists[table] = list
 	}
 	rows, err := s.query(ctx).QueryContext(ctx,
 		fmt.Sprintf("SELECT %s FROM %s r WHERE %s = ?", list, table, rule.rowUID), rowUID)

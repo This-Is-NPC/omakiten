@@ -443,7 +443,7 @@ CREATE TABLE sync_rows (
   hlc TEXT,
   deleted INTEGER NOT NULL DEFAULT 0,
   local INTEGER NOT NULL DEFAULT 1,
-  PRIMARY KEY (tbl, row_uid)
+  PRIMARY KEY (project_id, tbl, row_uid)
 );
 
 CREATE INDEX idx_sync_rows_pending ON sync_rows(project_id, local, hlc);
@@ -460,25 +460,29 @@ CREATE TABLE sync_inbox (
   row_uid TEXT NOT NULL,
   hlc TEXT NOT NULL,
   change TEXT NOT NULL,
-  PRIMARY KEY (tbl, row_uid)
+  PRIMARY KEY (project_id, tbl, row_uid)
 );
 
 CREATE VIEW sync_capture_projects AS
 SELECT id FROM projects
 WHERE sync_scope = 'synced' AND (SELECT applying FROM sync_identity WHERE id = 1) = 0;
 
--- An insert replaces the row of the same (tbl, row_uid). A conflict clause here would be
+-- The activity-log event types: device-local records that are never captured nor pushed.
+CREATE VIEW sync_activity_event_types AS
+SELECT 'cli.tool_call' AS event_type UNION ALL SELECT 'tui.tool_call';
+
+-- An insert replaces the row of the same (project_id, tbl, row_uid). A conflict clause here would be
 -- overridden by the statement that fired the trigger, so the replace is a trigger.
 CREATE TRIGGER sync_rows_replace BEFORE INSERT ON sync_rows
 BEGIN
-  DELETE FROM sync_rows WHERE tbl = NEW.tbl AND row_uid = NEW.row_uid;
+  DELETE FROM sync_rows WHERE project_id = NEW.project_id AND tbl = NEW.tbl AND row_uid = NEW.row_uid;
 END;
 
 CREATE TRIGGER sync_rows_stamp AFTER INSERT ON sync_rows WHEN NEW.local = 1
 BEGIN
   UPDATE sync_identity SET hlc = okt_hlc_tick(hlc, device_id) WHERE id = 1;
   UPDATE sync_rows SET hlc = (SELECT hlc FROM sync_identity WHERE id = 1)
-  WHERE tbl = NEW.tbl AND row_uid = NEW.row_uid;
+  WHERE project_id = NEW.project_id AND tbl = NEW.tbl AND row_uid = NEW.row_uid;
 END;
 
 CREATE TRIGGER sync_capture_project_update AFTER UPDATE OF name, description ON projects
@@ -496,7 +500,8 @@ BEGIN
   WHERE u IS NOT NULL AND p IN (SELECT id FROM sync_capture_projects);
 END;
 
-CREATE TRIGGER sync_capture_plans_update AFTER UPDATE ON plans
+CREATE TRIGGER sync_capture_plans_update AFTER UPDATE OF slug, name, goal_body, status, created_at, updated_at, completed_at ON plans
+WHEN NEW.slug IS NOT OLD.slug OR NEW.name IS NOT OLD.name OR NEW.goal_body IS NOT OLD.goal_body OR NEW.status IS NOT OLD.status OR NEW.created_at IS NOT OLD.created_at OR NEW.updated_at IS NOT OLD.updated_at OR NEW.completed_at IS NOT OLD.completed_at
 BEGIN
   INSERT INTO sync_rows(project_id, tbl, row_uid, deleted)
   SELECT p, 'plans', u, 0 FROM (SELECT NEW.project_id AS p, NEW.uid AS u)
@@ -517,7 +522,8 @@ BEGIN
   WHERE u IS NOT NULL AND p IN (SELECT id FROM sync_capture_projects);
 END;
 
-CREATE TRIGGER sync_capture_plan_waves_update AFTER UPDATE ON plan_waves
+CREATE TRIGGER sync_capture_plan_waves_update AFTER UPDATE OF plan_id, name, position ON plan_waves
+WHEN NEW.plan_id IS NOT OLD.plan_id OR NEW.name IS NOT OLD.name OR NEW.position IS NOT OLD.position
 BEGIN
   INSERT INTO sync_rows(project_id, tbl, row_uid, deleted)
   SELECT p, 'plan_waves', u, 0 FROM (SELECT (SELECT project_id FROM plans WHERE id = NEW.plan_id) AS p, NEW.uid AS u)
@@ -538,7 +544,8 @@ BEGIN
   WHERE u IS NOT NULL AND p IN (SELECT id FROM sync_capture_projects);
 END;
 
-CREATE TRIGGER sync_capture_tasks_update AFTER UPDATE ON tasks
+CREATE TRIGGER sync_capture_tasks_update AFTER UPDATE OF bucket_id, title, description, priority_id, state, created_at, updated_at, completed_at, plan_id, wave_id, assigned_to, parent_id, depth ON tasks
+WHEN NEW.bucket_id IS NOT OLD.bucket_id OR NEW.title IS NOT OLD.title OR NEW.description IS NOT OLD.description OR NEW.priority_id IS NOT OLD.priority_id OR NEW.state IS NOT OLD.state OR NEW.created_at IS NOT OLD.created_at OR NEW.updated_at IS NOT OLD.updated_at OR NEW.completed_at IS NOT OLD.completed_at OR NEW.plan_id IS NOT OLD.plan_id OR NEW.wave_id IS NOT OLD.wave_id OR NEW.assigned_to IS NOT OLD.assigned_to OR NEW.parent_id IS NOT OLD.parent_id OR NEW.depth IS NOT OLD.depth
 BEGIN
   INSERT INTO sync_rows(project_id, tbl, row_uid, deleted)
   SELECT p, 'tasks', u, 0 FROM (SELECT NEW.project_id AS p, NEW.uid AS u)
@@ -559,7 +566,8 @@ BEGIN
   WHERE u IS NOT NULL AND p IN (SELECT id FROM sync_capture_projects);
 END;
 
-CREATE TRIGGER sync_capture_errors_update AFTER UPDATE ON errors
+CREATE TRIGGER sync_capture_errors_update AFTER UPDATE OF description, context, created_at, source, entrypoint, agent_model, agent_session_id ON errors
+WHEN NEW.description IS NOT OLD.description OR NEW.context IS NOT OLD.context OR NEW.created_at IS NOT OLD.created_at OR NEW.source IS NOT OLD.source OR NEW.entrypoint IS NOT OLD.entrypoint OR NEW.agent_model IS NOT OLD.agent_model OR NEW.agent_session_id IS NOT OLD.agent_session_id
 BEGIN
   INSERT INTO sync_rows(project_id, tbl, row_uid, deleted)
   SELECT p, 'errors', u, 0 FROM (SELECT NEW.project_id AS p, NEW.uid AS u)
@@ -580,7 +588,8 @@ BEGIN
   WHERE u IS NOT NULL AND p IN (SELECT id FROM sync_capture_projects);
 END;
 
-CREATE TRIGGER sync_capture_solutions_update AFTER UPDATE ON solutions
+CREATE TRIGGER sync_capture_solutions_update AFTER UPDATE OF error_id, description, steps, success, task_id, tried_at, created_at, likes, source, entrypoint, agent_model, agent_session_id ON solutions
+WHEN NEW.error_id IS NOT OLD.error_id OR NEW.description IS NOT OLD.description OR NEW.steps IS NOT OLD.steps OR NEW.success IS NOT OLD.success OR NEW.task_id IS NOT OLD.task_id OR NEW.tried_at IS NOT OLD.tried_at OR NEW.created_at IS NOT OLD.created_at OR NEW.likes IS NOT OLD.likes OR NEW.source IS NOT OLD.source OR NEW.entrypoint IS NOT OLD.entrypoint OR NEW.agent_model IS NOT OLD.agent_model OR NEW.agent_session_id IS NOT OLD.agent_session_id
 BEGIN
   INSERT INTO sync_rows(project_id, tbl, row_uid, deleted)
   SELECT p, 'solutions', u, 0 FROM (SELECT (SELECT project_id FROM errors WHERE id = NEW.error_id) AS p, NEW.uid AS u)
@@ -595,13 +604,15 @@ BEGIN
 END;
 
 CREATE TRIGGER sync_capture_events_insert AFTER INSERT ON events
+WHEN NEW.event_type NOT IN (SELECT event_type FROM sync_activity_event_types)
 BEGIN
   INSERT INTO sync_rows(project_id, tbl, row_uid, deleted)
   SELECT p, 'events', u, 0 FROM (SELECT NEW.project_id AS p, NEW.uid AS u)
   WHERE u IS NOT NULL AND p IN (SELECT id FROM sync_capture_projects);
 END;
 
-CREATE TRIGGER sync_capture_events_update AFTER UPDATE ON events
+CREATE TRIGGER sync_capture_events_update AFTER UPDATE OF entity_type, entity_id, project_slug, event_type, body, payload, author_type, source, entrypoint, operation, status, duration_ms, error_message, created_at, finished_at, agent_model, agent_session_id, kind, title, pinned, updated_at, hlc, device_id, actor_id ON events
+WHEN NEW.event_type NOT IN (SELECT event_type FROM sync_activity_event_types) AND (NEW.entity_type IS NOT OLD.entity_type OR NEW.entity_id IS NOT OLD.entity_id OR NEW.project_slug IS NOT OLD.project_slug OR NEW.event_type IS NOT OLD.event_type OR NEW.body IS NOT OLD.body OR NEW.payload IS NOT OLD.payload OR NEW.author_type IS NOT OLD.author_type OR NEW.source IS NOT OLD.source OR NEW.entrypoint IS NOT OLD.entrypoint OR NEW.operation IS NOT OLD.operation OR NEW.status IS NOT OLD.status OR NEW.duration_ms IS NOT OLD.duration_ms OR NEW.error_message IS NOT OLD.error_message OR NEW.created_at IS NOT OLD.created_at OR NEW.finished_at IS NOT OLD.finished_at OR NEW.agent_model IS NOT OLD.agent_model OR NEW.agent_session_id IS NOT OLD.agent_session_id OR NEW.kind IS NOT OLD.kind OR NEW.title IS NOT OLD.title OR NEW.pinned IS NOT OLD.pinned OR NEW.updated_at IS NOT OLD.updated_at OR NEW.hlc IS NOT OLD.hlc OR NEW.device_id IS NOT OLD.device_id OR NEW.actor_id IS NOT OLD.actor_id)
 BEGIN
   INSERT INTO sync_rows(project_id, tbl, row_uid, deleted)
   SELECT p, 'events', u, 0 FROM (SELECT NEW.project_id AS p, NEW.uid AS u)
@@ -609,6 +620,7 @@ BEGIN
 END;
 
 CREATE TRIGGER sync_capture_events_delete AFTER DELETE ON events
+WHEN OLD.event_type NOT IN (SELECT event_type FROM sync_activity_event_types)
 BEGIN
   INSERT INTO sync_rows(project_id, tbl, row_uid, deleted)
   SELECT p, 'events', u, 1 FROM (SELECT OLD.project_id AS p, OLD.uid AS u)

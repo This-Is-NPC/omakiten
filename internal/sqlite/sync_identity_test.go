@@ -24,6 +24,12 @@ func TestSchemaV4UpgradeBackfillsSyncIdentity(t *testing.T) {
 	for _, table := range syncUIDTables {
 		assertBackfilledUIDs(t, ctx, store, table, seen)
 	}
+	if n := mustScan[int](t, store, `SELECT COUNT(*) FROM sync_rows`); n != 0 {
+		t.Fatalf("backfill captured %d rows", n)
+	}
+	if _, err := domain.ParseUID(mustScan[string](t, store, `SELECT okt_uuid7()`)); err != nil {
+		t.Fatalf("okt_uuid7(): %v", err)
+	}
 	device, actor, err := store.SyncIdentity(ctx)
 	if err != nil {
 		t.Fatal(err)

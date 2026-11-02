@@ -251,8 +251,8 @@ func (a *applier) applyAll(ctx context.Context, queue []pendingChange) ([]pendin
 func (a *applier) apply(ctx context.Context, change pendingChange) error {
 	var stored string
 	var deleted bool
-	err := a.q.QueryRowContext(ctx, `SELECT COALESCE(hlc, ''), deleted FROM sync_rows WHERE tbl = ? AND row_uid = ?`,
-		change.Table, change.RowUID).Scan(&stored, &deleted)
+	err := a.q.QueryRowContext(ctx, `SELECT COALESCE(hlc, ''), deleted FROM sync_rows WHERE project_id = ? AND tbl = ? AND row_uid = ?`,
+		a.projectID, change.Table, change.RowUID).Scan(&stored, &deleted)
 	switch {
 	case errors.Is(err, sql.ErrNoRows):
 	case err != nil:
@@ -446,7 +446,7 @@ func (a *applier) resolveRef(ctx context.Context, ref syncRef, data map[string]a
 	}
 	if create {
 		var deleted bool
-		err := a.q.QueryRowContext(ctx, `SELECT deleted FROM sync_rows WHERE tbl = ? AND row_uid = ?`, table, uid).Scan(&deleted)
+		err := a.q.QueryRowContext(ctx, `SELECT deleted FROM sync_rows WHERE project_id = ? AND tbl = ? AND row_uid = ?`, a.projectID, table, uid).Scan(&deleted)
 		switch {
 		case err == nil && deleted && ref.required:
 			return nil, errParentGone

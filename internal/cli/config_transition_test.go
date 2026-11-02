@@ -165,7 +165,7 @@ func dropSyncCapture(t *testing.T, db *sql.DB) {
 			t.Fatalf("drop %s: %v", name, err)
 		}
 	}
-	if _, err := db.Exec(`DROP VIEW sync_capture_projects; DROP TABLE sync_rows; DROP TABLE sync_projects; DROP TABLE sync_inbox`); err != nil {
+	if _, err := db.Exec(`DROP VIEW sync_capture_projects; DROP VIEW sync_activity_event_types; DROP TABLE sync_rows; DROP TABLE sync_projects; DROP TABLE sync_inbox`); err != nil {
 		t.Fatalf("drop sync tables: %v", err)
 	}
 }

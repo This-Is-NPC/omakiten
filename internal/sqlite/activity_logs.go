@@ -11,12 +11,10 @@ import (
 	"omakiten/internal/sqlite/sqlutil"
 )
 
-// toolCallEventTypeList is the SQL-friendly form of the canonical
-// tool-call event_type vocabulary. Readers filter via `event_type IN
-// (...)` so legacy rows that the migration left under 'operation' (a
-// those are stale fixtures, not real activity, and would distort the
-// logs view.
-const toolCallEventTypeList = "'cli.tool_call', 'tui.tool_call'"
+// toolCallEventTypeList selects the tool-call event types from the view the
+// sync capture triggers share, so readers and capture agree on what an
+// activity log is. Readers filter via `event_type IN (...)`.
+const toolCallEventTypeList = "SELECT event_type FROM sync_activity_event_types"
 
 // toolCallPayload builds the canonical payload JSON written alongside
 // every BeginActivityLog row. Keys mirror the discrete columns so hooks

@@ -47,7 +47,7 @@ func dropSyncIdentitySQL(t *testing.T, db *sql.DB) string {
 	return drops.String() + dropSyncObjectsSQL
 }
 
-const dropSyncObjectsSQL = `DROP VIEW sync_capture_projects; DROP TABLE sync_rows; DROP TABLE sync_projects; DROP TABLE sync_inbox; DROP TABLE sync_identity;
+const dropSyncObjectsSQL = `DROP VIEW sync_capture_projects; DROP VIEW sync_activity_event_types; DROP TABLE sync_rows; DROP TABLE sync_projects; DROP TABLE sync_inbox; DROP TABLE sync_identity;
 DROP INDEX idx_projects_uid; DROP INDEX idx_tasks_uid; DROP INDEX idx_events_uid; DROP INDEX idx_errors_uid;
 DROP INDEX idx_solutions_uid; DROP INDEX idx_plans_uid; DROP INDEX idx_plan_waves_uid;
 ALTER TABLE projects DROP COLUMN uid; ALTER TABLE tasks DROP COLUMN uid; ALTER TABLE events DROP COLUMN uid;

@@ -499,3 +499,139 @@ func TestSyncRemoteURLRoundTrips(t *testing.T) {
 		t.Fatalf("url = %q, %v", url, err)
 	}
 }
+
+func TestActivityLogsAreNeverCaptured(t *testing.T) {
+	t.Parallel()
+	store, project := openSyncStore(t)
+	insert := func(eventType string) string {
+		uid := string(domain.NewUID())
+		mustExec(t, store, `INSERT INTO events(entity_type, project_id, event_type, uid) VALUES ('system', ?, ?, ?)`, project.ID, eventType, uid)
+		return "events/" + uid
+	}
+	localCall := insert("cli.tool_call")
+	setScope(t, store, project.ID, domain.SyncScopeSynced)
+	if got := capturedRows(t, store); slices.Contains(capturedTables(got), "events") {
+		t.Fatalf("enqueued %v", got)
+	}
+	cli, tui, comment := insert("cli.tool_call"), insert("tui.tool_call"), insert("comment")
+	mustExec(t, store, `UPDATE events SET status = 'ok', finished_at = CURRENT_TIMESTAMP WHERE event_type LIKE '%.tool_call'`)
+	mustExec(t, store, `DELETE FROM events WHERE event_type LIKE '%.tool_call'`)
+	got := capturedRows(t, store)
+	if _, ok := got[comment]; !ok {
+		t.Fatalf("captured %v, want %s", got, comment)
+	}
+	for _, key := range []string{localCall, cli, tui} {
+		if _, ok := got[key]; ok {
+			t.Fatalf("activity log %s captured", key)
+		}
+	}
+}
+
+func TestUpdateTriggersFireOnlyOnWireColumnChange(t *testing.T) {
+	t.Parallel()
+	store, project := openSyncStore(t)
+	setScope(t, store, project.ID, domain.SyncScopeSynced)
+	uids := seedRowGraph(t, store, project.ID)
+	for table, key := range map[string]string{"plans": "plan", "plan_waves": "wave", "tasks": "child", "errors": "error", "solutions": "solution", "events": "event"} {
+		before := mustScan[string](t, store, `SELECT hlc FROM sync_rows WHERE tbl = ? AND row_uid = ?`, table, uids[key])
+		mustExec(t, store, `UPDATE `+table+` SET uid = uid WHERE uid = ?`, uids[key])
+		if after := mustScan[string](t, store, `SELECT hlc FROM sync_rows WHERE tbl = ? AND row_uid = ?`, table, uids[key]); after != before {
+			t.Fatalf("%s: unchanged update restamped %q to %q", table, before, after)
+		}
+	}
+	latest := mustScan[string](t, store, `SELECT MAX(hlc) FROM sync_rows`)
+	mustExec(t, store, `UPDATE tasks SET project_id = project_id, title = title, state = state`)
+	if after := mustScan[string](t, store, `SELECT MAX(hlc) FROM sync_rows`); after != latest {
+		t.Fatalf("no-op update restamped rows: %q -> %q", latest, after)
+	}
+}
+
+func TestUpdateTriggersGuardExactlyTheWireColumns(t *testing.T) {
+	t.Parallel()
+	store, _ := openSyncStore(t)
+	ctx := context.Background()
+	for _, table := range []string{"plans", "plan_waves", "tasks", "errors", "solutions", "events"} {
+		rule := syncRules[table]
+		wire, err := rule.columns(ctx, store.db, table)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, ref := range rule.refs {
+			wire = append(wire, ref.col)
+		}
+		var def string
+		name := "sync_capture_" + table + "_update"
+		if err := store.db.QueryRowContext(ctx, `SELECT sql FROM sqlite_master WHERE type = 'trigger' AND name = ?`, name).Scan(&def); err != nil {
+			t.Fatal(err)
+		}
+		for _, col := range wire {
+			if !strings.Contains(def, "NEW."+col+" IS NOT OLD."+col) {
+				t.Errorf("%s does not guard wire column %s", name, col)
+			}
+		}
+		if got, want := strings.Count(def, " IS NOT OLD."), len(wire); got != want {
+			t.Errorf("%s guards %d columns, want the %d wire columns", name, got, want)
+		}
+	}
+}
+
+func TestReenablingSyncRecordsRowsDeletedWhileLocal(t *testing.T) {
+	t.Parallel()
+	store, project := openSyncStore(t)
+	setScope(t, store, project.ID, domain.SyncScopeSynced)
+	uids := seedRowGraph(t, store, project.ID)
+	setScope(t, store, project.ID, domain.SyncScopeLocal)
+	mustExec(t, store, `DELETE FROM tasks WHERE uid = ?`, uids["other"])
+	mustExec(t, store, `DELETE FROM sync_rows WHERE row_uid = ?`, uids["child"])
+	if _, err := store.db.ExecContext(context.Background(), `UPDATE sync_rows SET local = 0`); err != nil {
+		t.Fatal(err)
+	}
+	old := mustScan[string](t, store, `SELECT MAX(hlc) FROM sync_rows`)
+	setScope(t, store, project.ID, domain.SyncScopeSynced)
+
+	if got := pending(t, store, project.ID)["tasks/"+uids["other"]]; got.Op != domain.SyncOpDelete || got.HLC <= old {
+		t.Fatalf("task deleted while local = %+v, want a fresh delete", got)
+	}
+	if n := mustScan[int](t, store, `SELECT COUNT(*) FROM sync_rows WHERE local != 1 OR hlc <= ?`, old); n != 0 {
+		t.Fatalf("%d sync_rows not re-stamped", n)
+	}
+}
+
+func TestSyncRowsAreScopedByProject(t *testing.T) {
+	t.Parallel()
+	store, project := openSyncStore(t)
+	other, err := store.UpsertProject(context.Background(), "Other", "other", t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []int64{project.ID, other.ID} {
+		mustExec(t, store, `INSERT INTO sync_rows(project_id, tbl, row_uid) VALUES (?, 'tasks', 'shared')`, id)
+		mustExec(t, store, `INSERT INTO sync_inbox(project_id, tbl, row_uid, hlc, change) VALUES (?, 'tasks', 'shared', 'h', '{}')`, id)
+	}
+	mustExec(t, store, `INSERT INTO sync_rows(project_id, tbl, row_uid, deleted) VALUES (?, 'tasks', 'shared', 1)`, project.ID)
+	if n := mustScan[int](t, store, `SELECT COUNT(*) FROM sync_rows WHERE row_uid = 'shared'`); n != 2 {
+		t.Fatalf("%d sync_rows, want one per project", n)
+	}
+	if n := mustScan[int](t, store, `SELECT deleted FROM sync_rows WHERE project_id = ?`, other.ID); n != 0 {
+		t.Fatalf("a replace in one project changed the other: deleted = %d", n)
+	}
+	if n := mustScan[int](t, store, `SELECT COUNT(*) FROM sync_inbox WHERE row_uid = 'shared'`); n != 2 {
+		t.Fatalf("%d sync_inbox rows, want one per project", n)
+	}
+}
+
+func TestRowDataReusesTheCachedSelectList(t *testing.T) {
+	t.Parallel()
+	store, project := openSyncStore(t)
+	uids := seedRowGraph(t, store, project.ID)
+	lists := map[string]string{}
+	full, err := store.rowData(context.Background(), lists, "tasks", uids["child"])
+	if err != nil || len(full) < 5 || lists["tasks"] == "" {
+		t.Fatalf("rowData = %v, %v, cache = %v", full, err, lists)
+	}
+	lists["tasks"] = "r.title"
+	data, err := store.rowData(context.Background(), lists, "tasks", uids["child"])
+	if err != nil || len(data) != 1 || data["title"] != "child" {
+		t.Fatalf("cached rowData = %v, %v", data, err)
+	}
+}
