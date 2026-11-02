@@ -1,0 +1,205 @@
+package syncserver
+
+import (
+	"context"
+	"database/sql"
+	_ "embed"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"net/url"
+	"path/filepath"
+
+	_ "modernc.org/sqlite"
+
+	"omakiten/internal/domain"
+	"omakiten/internal/syncproto"
+)
+
+//go:embed schema.sql
+var schema string
+
+// Store keeps one row per (project, table, row_uid) in its own SQLite file.
+type Store struct {
+	db *sql.DB
+}
+
+// Open opens or creates the store file and its schema.
+func Open(ctx context.Context, path string) (*Store, error) {
+	query := url.Values{
+		"_pragma": {"journal_mode(WAL)", "busy_timeout(5000)", "foreign_keys(1)"},
+	}
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return nil, err
+	}
+	db, err := sql.Open("sqlite", (&url.URL{Scheme: "file", Path: filepath.ToSlash(abs), RawQuery: query.Encode()}).String())
+	if err != nil {
+		return nil, fmt.Errorf("open sync store: %w", err)
+	}
+	db.SetMaxOpenConns(1)
+	if _, err := db.ExecContext(ctx, schema); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("create sync store schema: %w", err)
+	}
+	return &Store{db: db}, nil
+}
+
+// Close releases the database.
+func (s *Store) Close() error { return s.db.Close() }
+
+// Projects lists the projects held, ordered by slug.
+func (s *Store) Projects(ctx context.Context) ([]domain.SyncProjectInfo, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT uid, name, slug, description, kit_key FROM projects ORDER BY slug, uid`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	infos := []domain.SyncProjectInfo{}
+	for rows.Next() {
+		var info domain.SyncProjectInfo
+		if err := rows.Scan(&info.UID, &info.Name, &info.Slug, &info.Description, &info.KitKey); err != nil {
+			return nil, err
+		}
+		infos = append(infos, info)
+	}
+	return infos, rows.Err()
+}
+
+// Push upserts the project and stores every change whose HLC beats the stored
+// row, giving each a new seq. It returns the accepted count and the project's
+// latest seq.
+func (s *Store) Push(ctx context.Context, req syncproto.PushRequest) (syncproto.PushResponse, error) {
+	for _, c := range req.Changes {
+		if err := syncproto.ValidateChange(c); err != nil {
+			return syncproto.PushResponse{}, err
+		}
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return syncproto.PushResponse{}, err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	info := req.Project
+	if _, err := tx.ExecContext(ctx, `
+		INSERT INTO projects (uid, name, slug, description, kit_key) VALUES (?, ?, ?, ?, ?)
+		ON CONFLICT(uid) DO UPDATE SET name = excluded.name, slug = excluded.slug,
+			description = excluded.description, kit_key = excluded.kit_key`,
+		info.UID, info.Name, info.Slug, info.Description, info.KitKey); err != nil {
+		return syncproto.PushResponse{}, err
+	}
+	var seq int64
+	if err := tx.QueryRowContext(ctx, `SELECT COALESCE(MAX(seq), 0) FROM rows`).Scan(&seq); err != nil {
+		return syncproto.PushResponse{}, err
+	}
+	accepted := 0
+	for _, c := range req.Changes {
+		stored, err := newer(ctx, tx, info.UID, c)
+		if err != nil {
+			return syncproto.PushResponse{}, err
+		}
+		if !stored {
+			continue
+		}
+		seq++
+		if err := put(ctx, tx, info.UID, c, seq); err != nil {
+			return syncproto.PushResponse{}, err
+		}
+		accepted++
+	}
+	var cursor int64
+	if err := tx.QueryRowContext(ctx, `SELECT COALESCE(MAX(seq), 0) FROM rows WHERE project_uid = ?`, info.UID).Scan(&cursor); err != nil {
+		return syncproto.PushResponse{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return syncproto.PushResponse{}, err
+	}
+	return syncproto.PushResponse{Accepted: accepted, Cursor: cursor}, nil
+}
+
+// put writes c as the row's current version under seq.
+func put(ctx context.Context, tx *sql.Tx, project domain.UID, c domain.SyncChange, seq int64) error {
+	data, err := json.Marshal(c.Data)
+	if err != nil {
+		return err
+	}
+	_, err = tx.ExecContext(ctx, `
+		INSERT INTO rows (project_uid, tbl, row_uid, op, hlc, device, data, seq) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(project_uid, tbl, row_uid) DO UPDATE SET op = excluded.op, hlc = excluded.hlc,
+			device = excluded.device, data = excluded.data, seq = excluded.seq`,
+		project, c.Table, c.RowUID, c.Op, c.HLC, c.Device, string(data), seq)
+	return err
+}
+
+// newer reports whether c has a greater HLC than the stored row, or no row exists.
+func newer(ctx context.Context, tx *sql.Tx, project domain.UID, c domain.SyncChange) (bool, error) {
+	var stored string
+	err := tx.QueryRowContext(ctx, `SELECT hlc FROM rows WHERE project_uid = ? AND tbl = ? AND row_uid = ?`,
+		project, c.Table, c.RowUID).Scan(&stored)
+	if errors.Is(err, sql.ErrNoRows) {
+		return true, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	have, err := domain.ParseHLC(stored)
+	if err != nil {
+		return false, err
+	}
+	incoming, err := domain.ParseHLC(c.HLC)
+	if err != nil {
+		return false, err
+	}
+	return incoming.Compare(have) > 0, nil
+}
+
+// Pull returns up to limit changes of the project with seq above after, in seq order.
+func (s *Store) Pull(ctx context.Context, project domain.UID, after int64, limit int) (syncproto.PullResponse, error) {
+	if limit <= 0 {
+		limit = syncproto.DefaultPullLimit
+	}
+	limit = min(limit, syncproto.MaxPullLimit)
+	resp := syncproto.PullResponse{Changes: []domain.SyncChange{}, Cursor: after}
+	err := s.db.QueryRowContext(ctx, `SELECT uid, name, slug, description, kit_key FROM projects WHERE uid = ?`, project).
+		Scan(&resp.Project.UID, &resp.Project.Name, &resp.Project.Slug, &resp.Project.Description, &resp.Project.KitKey)
+	if errors.Is(err, sql.ErrNoRows) {
+		return resp, domain.NewError(domain.ErrProjectNotFound, "project "+string(project)+" is not on this server",
+			map[string]any{"uid": string(project)})
+	}
+	if err != nil {
+		return resp, err
+	}
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT tbl, row_uid, op, hlc, device, data, seq FROM rows
+		WHERE project_uid = ? AND seq > ? ORDER BY seq LIMIT ?`, project, after, limit+1)
+	if err != nil {
+		return resp, err
+	}
+	defer rows.Close()
+	var last int64
+	for rows.Next() {
+		var c domain.SyncChange
+		var data string
+		var seq int64
+		if err := rows.Scan(&c.Table, &c.RowUID, &c.Op, &c.HLC, &c.Device, &data, &seq); err != nil {
+			return resp, err
+		}
+		if len(resp.Changes) == limit {
+			resp.More = true
+			break
+		}
+		if err := json.Unmarshal([]byte(data), &c.Data); err != nil {
+			return resp, err
+		}
+		resp.Changes = append(resp.Changes, c)
+		last = seq
+	}
+	if err := rows.Err(); err != nil {
+		return resp, err
+	}
+	if len(resp.Changes) > 0 {
+		resp.Cursor = last
+	}
+	return resp, nil
+}
