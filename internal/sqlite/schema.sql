@@ -1,4 +1,4 @@
-PRAGMA user_version = 3;
+PRAGMA user_version = 4;
 
 CREATE TABLE projects (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -404,3 +404,32 @@ CREATE TABLE agent_sessions (
 CREATE UNIQUE INDEX idx_agent_sessions_seat ON agent_sessions(team_id, member) WHERE status != 'replaced';
 
 CREATE INDEX idx_events_agent_session ON events(agent_session_id, id) WHERE agent_session_id IS NOT NULL;
+
+CREATE TABLE sync_identity (
+  id INTEGER PRIMARY KEY CHECK (id = 1),
+  device_id TEXT NOT NULL,
+  actor_id TEXT NOT NULL,
+  hlc TEXT NOT NULL DEFAULT ''
+);
+
+ALTER TABLE projects ADD COLUMN uid TEXT;
+ALTER TABLE tasks ADD COLUMN uid TEXT;
+ALTER TABLE events ADD COLUMN uid TEXT;
+ALTER TABLE errors ADD COLUMN uid TEXT;
+ALTER TABLE solutions ADD COLUMN uid TEXT;
+ALTER TABLE plans ADD COLUMN uid TEXT;
+ALTER TABLE plan_waves ADD COLUMN uid TEXT;
+
+CREATE UNIQUE INDEX idx_projects_uid ON projects(uid);
+CREATE UNIQUE INDEX idx_tasks_uid ON tasks(uid);
+CREATE UNIQUE INDEX idx_events_uid ON events(uid);
+CREATE UNIQUE INDEX idx_errors_uid ON errors(uid);
+CREATE UNIQUE INDEX idx_solutions_uid ON solutions(uid);
+CREATE UNIQUE INDEX idx_plans_uid ON plans(uid);
+CREATE UNIQUE INDEX idx_plan_waves_uid ON plan_waves(uid);
+
+ALTER TABLE events ADD COLUMN hlc TEXT;
+ALTER TABLE events ADD COLUMN device_id TEXT;
+ALTER TABLE events ADD COLUMN actor_id TEXT;
+
+ALTER TABLE projects ADD COLUMN sync_scope TEXT NOT NULL DEFAULT 'local' CHECK (sync_scope IN ('local', 'synced'));

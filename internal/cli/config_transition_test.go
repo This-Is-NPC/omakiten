@@ -154,7 +154,15 @@ func seedExactV030DatabaseForCLI(t *testing.T, path string) {
 		t.Fatalf("sql.Open(): %v", err)
 	}
 	defer func() { _ = db.Close() }()
-	if _, err := db.Exec(`DROP TABLE agent_sessions; DROP TABLE agent_teams; DROP INDEX idx_events_agent_session; DROP TABLE document_metadata; PRAGMA user_version = 0`); err != nil {
+	if _, err := db.Exec(`DROP TABLE sync_identity;
+DROP INDEX idx_projects_uid; DROP INDEX idx_tasks_uid; DROP INDEX idx_events_uid; DROP INDEX idx_errors_uid;
+DROP INDEX idx_solutions_uid; DROP INDEX idx_plans_uid; DROP INDEX idx_plan_waves_uid;
+ALTER TABLE projects DROP COLUMN uid; ALTER TABLE tasks DROP COLUMN uid; ALTER TABLE events DROP COLUMN uid;
+ALTER TABLE errors DROP COLUMN uid; ALTER TABLE solutions DROP COLUMN uid; ALTER TABLE plans DROP COLUMN uid;
+ALTER TABLE plan_waves DROP COLUMN uid;
+ALTER TABLE events DROP COLUMN hlc; ALTER TABLE events DROP COLUMN device_id; ALTER TABLE events DROP COLUMN actor_id;
+ALTER TABLE projects DROP COLUMN sync_scope;
+DROP TABLE agent_sessions; DROP TABLE agent_teams; DROP INDEX idx_events_agent_session; DROP TABLE document_metadata; PRAGMA user_version = 0`); err != nil {
 		t.Fatalf("user_version: %v", err)
 	}
 	if _, err := db.Exec(`CREATE TABLE schema_migrations (

@@ -73,6 +73,10 @@ func applyCurrentSchema(ctx context.Context, db *sql.DB) error {
 		_ = tx.Rollback()
 		return fmt.Errorf("initialize current schema: %w", err)
 	}
+	if err := seedSyncIdentity(ctx, tx); err != nil {
+		_ = tx.Rollback()
+		return fmt.Errorf("seed sync identity: %w", err)
+	}
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("commit current schema: %w", err)
 	}
