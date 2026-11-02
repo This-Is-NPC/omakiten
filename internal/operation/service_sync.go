@@ -2,6 +2,7 @@ package operation
 
 import (
 	"context"
+	"os"
 	"strings"
 
 	"omakiten/internal/app"
@@ -9,9 +10,16 @@ import (
 	"omakiten/internal/domain"
 )
 
-// SyncRemoteFactory connects to the sync server at url. The composition root
-// supplies it, so the operation layer reaches no transport adapter.
-type SyncRemoteFactory func(url string) (app.SyncRemote, error)
+// SyncInsecureEnv names the environment variable that, set to 1, allows plain
+// http to a non-loopback sync server.
+const SyncInsecureEnv = "OMAKITEN_SYNC_INSECURE"
+
+func syncInsecure() bool { return os.Getenv(SyncInsecureEnv) == "1" }
+
+// SyncRemoteFactory connects to the sync server at url; insecure allows plain
+// http to a non-loopback host. The composition root supplies it, so the
+// operation layer reaches no transport adapter.
+type SyncRemoteFactory func(url string, insecure bool) (app.SyncRemote, error)
 
 // SetSync injects the sync server connector and the per-project
 // kit resolver. A Service without them refuses every operation that talks to
@@ -34,7 +42,7 @@ func (s *Service) syncService(ctx context.Context, withRemote bool) (*app.SyncSe
 			if s.syncRemote == nil || s.syncKits == nil {
 				return nil, domain.NewError(domain.ErrValidation, "sync is not available in this runtime", nil)
 			}
-			if remote, err = s.syncRemote(url); err != nil {
+			if remote, err = s.syncRemote(url, syncInsecure()); err != nil {
 				return nil, err
 			}
 		}
@@ -52,7 +60,7 @@ func (s *Service) SetSyncRemote(ctx context.Context, input contract.SetSyncRemot
 		return contract.SyncRemoteResponse{}, err
 	}
 	url := strings.TrimSpace(input.URL)
-	if err := sync.SetRemote(ctx, url); err != nil {
+	if err := sync.SetRemote(ctx, url, syncInsecure()); err != nil {
 		return contract.SyncRemoteResponse{}, err
 	}
 	return contract.SyncRemoteResponse{URL: url}, nil
@@ -102,7 +110,11 @@ func (s *Service) Sync(ctx context.Context, input contract.SyncInput) (domain.Sy
 		}
 		projectID = &project.ID
 	}
-	return sync.Sync(ctx, projectID)
+	report, err := sync.Sync(ctx, projectID)
+	if err != nil {
+		return report, err
+	}
+	return report, report.Failure()
 }
 
 // CloneProject creates a synced local project from a remote project and pulls its rows.

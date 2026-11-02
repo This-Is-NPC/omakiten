@@ -169,7 +169,7 @@ keys:
   cli.remote.show.short: "Mostrar a URL do servidor de sync"
   cli.remote.projects.short: "Listar os projetos que o servidor de sync guarda"
   cli.sync.short: "Enviar e receber mudanças dos projetos sincronizados"
-  cli.sync.long: "Envia as mudanças locais e depois recebe as remotas de cada projeto com sync scope synced, ou só do projeto escolhido com --project. O token vem de OMAKITEN_SYNC_TOKEN ou do arquivo sync.token no diretório de dados."
+  cli.sync.long: "Envia as mudanças locais e depois recebe as remotas de cada projeto com sync scope synced, ou só do projeto escolhido com --project. Um projeto que falha não interrompe os outros: o erro fica em details.projects e o comando sai com código diferente de zero se algum projeto falhou. O token vem de OMAKITEN_SYNC_TOKEN ou do arquivo sync.token no diretório de dados. http puro para um servidor fora do loopback exige OMAKITEN_SYNC_INSECURE=1."
   cli.projects.clone.short: "Criar um projeto local sincronizado a partir de um projeto remoto"
   cli.projects.clone.flag.root: "caminho absoluto do diretório existente onde enraizar o projeto"
   cli.project.edit.short: "Atualiza a description ou o sync scope do projeto ativo"

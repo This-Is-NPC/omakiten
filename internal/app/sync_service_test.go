@@ -70,9 +70,16 @@ func (f *fakeSyncStore) SetSyncRemoteURL(_ context.Context, u string) error {
 type fakeSyncKits struct {
 	byProject map[int64]string
 	atRoot    string
+	// calls counts KitKeyOf lookups per project; failing lists projects whose lookup errors.
+	calls   map[int64]int
+	failing map[int64]bool
 }
 
 func (k fakeSyncKits) KitKeyOf(_ context.Context, id int64) (string, error) {
+	k.calls[id]++
+	if k.failing[id] {
+		return "", errors.New("kit lookup failed")
+	}
 	return k.byProject[id], nil
 }
 
@@ -92,6 +99,10 @@ type fakeSyncRemote struct {
 	pages    []pullPage
 	pullsAt  []int64
 	pullErr  error
+	// pullErrs fails pulls for the listed project uids only.
+	pullErrs map[domain.UID]error
+	// pushErr, when set, decides whether a push of n changes fails.
+	pushErr func(n int) error
 }
 
 func (r *fakeSyncRemote) ListProjects(context.Context) ([]domain.SyncProjectInfo, error) {
@@ -102,14 +113,22 @@ func (r *fakeSyncRemote) Push(_ context.Context, info domain.SyncProjectInfo, ch
 	r.pushed = append(r.pushed, info)
 	*r.log = append(*r.log, "push")
 	r.pushes = append(r.pushes, len(changes))
+	if r.pushErr != nil {
+		if err := r.pushErr(len(changes)); err != nil {
+			return 0, err
+		}
+	}
 	return 1, nil
 }
 
-func (r *fakeSyncRemote) Pull(_ context.Context, _ domain.UID, after int64, _ int) ([]domain.SyncChange, int64, bool, error) {
+func (r *fakeSyncRemote) Pull(_ context.Context, uid domain.UID, after int64, _ int) ([]domain.SyncChange, int64, bool, error) {
 	*r.log = append(*r.log, "pull")
 	r.pullsAt = append(r.pullsAt, after)
 	if r.pullErr != nil {
 		return nil, 0, false, r.pullErr
+	}
+	if err := r.pullErrs[uid]; err != nil {
+		return nil, 0, false, err
 	}
 	if len(r.pages) == 0 {
 		return nil, after, false, nil
@@ -131,7 +150,8 @@ func newSyncFixture(projects ...domain.SyncProject) (*SyncService, *fakeSyncStor
 	log := &[]string{}
 	store := &fakeSyncStore{projects: projects}
 	remote := &fakeSyncRemote{log: log}
-	return NewSyncService(store, remote, fakeSyncKits{byProject: map[int64]string{1: "omakase", 2: "lean"}, atRoot: "omakase"}), store, remote, log
+	kits := fakeSyncKits{byProject: map[int64]string{1: "omakase", 2: "lean"}, atRoot: "omakase", calls: map[int64]int{}, failing: map[int64]bool{}}
+	return NewSyncService(store, remote, kits), store, remote, log
 }
 
 func syncProject(id int64, slug string) domain.SyncProject {
@@ -227,15 +247,6 @@ func TestSyncUnknownProject(t *testing.T) {
 	assertCodedError(t, err, domain.ErrProjectNotFound)
 }
 
-func TestSyncWrapsErrorWithSlug(t *testing.T) {
-	svc, _, remote, _ := newSyncFixture(syncProject(1, "alpha"))
-	remote.pullErr = errors.New("boom")
-	_, err := svc.Sync(context.Background(), nil)
-	if err == nil || !strings.Contains(err.Error(), "alpha") || !errors.Is(err, remote.pullErr) {
-		t.Fatalf("err = %v", err)
-	}
-}
-
 func TestSyncNilRemote(t *testing.T) {
 	svc := NewSyncService(&fakeSyncStore{}, nil, fakeSyncKits{})
 	ctx := context.Background()
@@ -318,7 +329,7 @@ func TestSetRemoteValidation(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.url, func(t *testing.T) {
 			svc, store, _, _ := newSyncFixture()
-			err := svc.SetRemote(context.Background(), tc.url)
+			err := svc.SetRemote(context.Background(), tc.url, false)
 			if tc.ok {
 				if err != nil || store.url != tc.url {
 					t.Fatalf("err = %v, stored = %q", err, store.url)
@@ -330,5 +341,134 @@ func TestSetRemoteValidation(t *testing.T) {
 				t.Fatalf("stored %q despite error", store.url)
 			}
 		})
+	}
+}
+
+func tooLarge() error { return domain.NewError(domain.ErrPayloadTooLarge, "body too large", nil) }
+
+func TestSyncProjectFailureDoesNotStopOthers(t *testing.T) {
+	a, b := syncProject(1, "a"), syncProject(2, "b")
+	svc, _, remote, _ := newSyncFixture(a, b)
+	remote.pullErrs = map[domain.UID]error{a.Info.UID: errors.New("boom")}
+	report, err := svc.Sync(context.Background(), nil)
+	if err != nil {
+		t.Fatalf("partial failure returned %v", err)
+	}
+	if len(report.Projects) != 2 || !strings.Contains(report.Projects[0].Error, "boom") || report.Projects[1].Error != "" {
+		t.Fatalf("report = %+v", report.Projects)
+	}
+	assertCodedError(t, report.Failure(), domain.ErrSyncFailed)
+}
+
+func TestSyncKitFailureIsRecordedPerProject(t *testing.T) {
+	svc, _, _, _ := newSyncFixture(syncProject(1, "a"), syncProject(2, "b"))
+	svc.kits.(fakeSyncKits).failing[1] = true
+	report, err := svc.Sync(context.Background(), nil)
+	if err != nil || !strings.Contains(report.Projects[0].Error, "kit") || report.Projects[1].Error != "" {
+		t.Fatalf("report = %+v, err = %v", report.Projects, err)
+	}
+}
+
+func TestSyncFailsWhenEveryProjectFailed(t *testing.T) {
+	svc, _, remote, _ := newSyncFixture(syncProject(1, "a"), syncProject(2, "b"))
+	remote.pullErr = errors.New("boom")
+	report, err := svc.Sync(context.Background(), nil)
+	assertCodedError(t, err, domain.ErrSyncFailed)
+	if len(report.Projects) != 2 {
+		t.Fatalf("report = %+v", report.Projects)
+	}
+}
+
+func TestSyncResolvesKitOncePerProject(t *testing.T) {
+	svc, store, _, _ := newSyncFixture(syncProject(1, "a"), syncProject(2, "b"))
+	store.queued = map[int64][]domain.SyncChange{1: hlcChanges(syncPushPage + 1)}
+	if _, err := svc.Sync(context.Background(), nil); err != nil {
+		t.Fatal(err)
+	}
+	if calls := svc.kits.(fakeSyncKits).calls; calls[1] != 1 || calls[2] != 1 {
+		t.Fatalf("kit lookups = %v", calls)
+	}
+}
+
+func TestSyncPullRefusesStalledAndBackwardCursor(t *testing.T) {
+	cases := map[string][]pullPage{
+		"more without progress": {{n: 0, cursor: 4, more: true}},
+		"cursor goes backwards": {{n: 1, cursor: 3}},
+	}
+	for name, pages := range cases {
+		t.Run(name, func(t *testing.T) {
+			svc, store, remote, _ := newSyncFixture(domain.SyncProject{ID: 1, PullCursor: 4, Info: domain.SyncProjectInfo{Slug: "a"}})
+			remote.pages = pages
+			report, err := svc.Sync(context.Background(), nil)
+			assertCodedError(t, err, domain.ErrSyncFailed)
+			if !strings.Contains(report.Projects[0].Error, "no pull progress") || len(store.applied) != 0 {
+				t.Fatalf("report = %+v, applied = %v", report.Projects, store.applied)
+			}
+		})
+	}
+}
+
+func TestSyncPushHalvesPageOnBodyTooLarge(t *testing.T) {
+	svc, store, remote, _ := newSyncFixture(syncProject(1, "a"))
+	store.pending = hlcChanges(10)
+	remote.pushErr = func(n int) error {
+		if n > 3 {
+			return tooLarge()
+		}
+		return nil
+	}
+	report, err := svc.Sync(context.Background(), nil)
+	if err != nil || report.Projects[0].Error != "" || report.Projects[0].Pushed != 10 {
+		t.Fatalf("report = %+v, err = %v", report.Projects, err)
+	}
+	if want := []string{"h0002", "h0005", "h0008", "h0009"}; !reflect.DeepEqual(store.pushed, want) {
+		t.Fatalf("marked = %v, want %v", store.pushed, want)
+	}
+}
+
+func TestSyncPushReportsSingleOversizedChange(t *testing.T) {
+	svc, store, remote, _ := newSyncFixture(syncProject(1, "a"))
+	store.pending = []domain.SyncChange{{Table: "tasks", RowUID: "row-1", HLC: "h1"}}
+	remote.pushErr = func(int) error { return tooLarge() }
+	report, err := svc.Sync(context.Background(), nil)
+	assertCodedError(t, err, domain.ErrSyncFailed)
+	if !strings.Contains(report.Projects[0].Error, "tasks row-1") || len(remote.pushes) != 9 {
+		t.Fatalf("report = %+v, pushes = %d, want 9 (500 halved to 1)", report.Projects, len(remote.pushes))
+	}
+}
+
+func TestCloneTwiceRefusedWithSyncHint(t *testing.T) {
+	info := domain.SyncProjectInfo{UID: domain.NewUID(), Slug: "r"}
+	svc, store, remote, _ := newSyncFixture(domain.SyncProject{ID: 5, Info: info})
+	remote.projects = []domain.SyncProjectInfo{info}
+	_, err := svc.Clone(context.Background(), info.UID, t.TempDir())
+	assertCodedError(t, err, domain.ErrValidation)
+	if !strings.Contains(err.Error(), "okt sync --project r") || len(store.cloned) != 0 {
+		t.Fatalf("err = %v, cloned = %v", err, store.cloned)
+	}
+}
+
+func TestClonePullFailureTellsToSync(t *testing.T) {
+	svc, _, remote, _ := newSyncFixture()
+	info := domain.SyncProjectInfo{UID: domain.NewUID(), Slug: "r"}
+	remote.projects = []domain.SyncProjectInfo{info}
+	remote.pullErr = errors.New("boom")
+	_, err := svc.Clone(context.Background(), info.UID, t.TempDir())
+	if err == nil || !strings.Contains(err.Error(), "okt sync --project r") || !errors.Is(err, remote.pullErr) {
+		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestSetRemoteInsecure(t *testing.T) {
+	svc, store, _, _ := newSyncFixture()
+	err := svc.SetRemote(context.Background(), "http://server:8787", false)
+	assertCodedError(t, err, domain.ErrValidation)
+	for _, want := range []string{"https", "OMAKITEN_SYNC_INSECURE"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("err = %v, want mention of %s", err, want)
+		}
+	}
+	if err := svc.SetRemote(context.Background(), "http://server:8787", true); err != nil || store.url == "" {
+		t.Fatalf("err = %v, stored = %q", err, store.url)
 	}
 }

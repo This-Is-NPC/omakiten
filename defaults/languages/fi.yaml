@@ -170,7 +170,7 @@ keys:
   cli.remote.show.short: "Show the sync server URL"
   cli.remote.projects.short: "List the projects the sync server holds"
   cli.sync.short: "Push and pull changes of synced projects"
-  cli.sync.long: "Pushes local changes then pulls remote changes for every project whose sync scope is synced, or only for the project chosen with --project. The token comes from OMAKITEN_SYNC_TOKEN or the sync.token file in the data directory."
+  cli.sync.long: "Pushes local changes then pulls remote changes for every project whose sync scope is synced, or only for the project chosen with --project. A project that fails does not stop the others: its error is recorded in details.projects and the command exits non-zero when any project failed. The token comes from OMAKITEN_SYNC_TOKEN or the sync.token file in the data directory. Plain http to a non-loopback server needs OMAKITEN_SYNC_INSECURE=1."
   cli.projects.clone.short: "Create a synced local project from a remote project"
   cli.projects.clone.flag.root: "absolute path of the existing directory to root the project in"
   cli.project.edit.short: "Update the active project description or sync scope"

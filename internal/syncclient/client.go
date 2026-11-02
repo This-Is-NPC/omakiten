@@ -48,15 +48,23 @@ type errorEnvelope struct {
 }
 
 // New returns a client for the server at baseURL. A nil hc gets a client with a default timeout.
-func New(baseURL, token string, hc *http.Client) (*Client, error) {
-	if err := domain.ValidateSyncRemoteURL(baseURL, true); err != nil {
+// insecure allows plain http to a non-loopback host. The client never follows
+// redirects, so the token reaches only baseURL.
+func New(baseURL, token string, insecure bool, hc *http.Client) (*Client, error) {
+	if err := domain.ValidateSyncRemoteURL(baseURL, insecure); err != nil {
 		return nil, err
 	}
 	if hc == nil {
 		hc = &http.Client{Timeout: defaultTimeout}
 	}
+	noRedirects := *hc
+	noRedirects.CheckRedirect = refuseRedirect
+	hc = &noRedirects
 	return &Client{baseURL: strings.TrimRight(baseURL, "/"), token: token, hc: hc}, nil
 }
+
+// refuseRedirect stops the client at the first redirect; do reports it as an error.
+func refuseRedirect(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
 
 // ListProjects returns the projects the server holds.
 func (c *Client) ListProjects(ctx context.Context) ([]domain.SyncProjectInfo, error) {
@@ -114,9 +122,15 @@ func (c *Client) do(ctx context.Context, method, path string, body, out any) err
 		return fmt.Errorf("sync server %s: %w", c.baseURL, err)
 	}
 	defer func() { _ = resp.Body.Close() }()
-	raw, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes))
+	if resp.StatusCode >= 300 && resp.StatusCode < 400 {
+		return c.redirectError(resp)
+	}
+	raw, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes+1))
 	if err != nil {
 		return fmt.Errorf("sync server %s: read response: %w", c.baseURL, err)
+	}
+	if len(raw) > maxResponseBytes {
+		return fmt.Errorf("sync server %s: response too large (over %d bytes)", c.baseURL, maxResponseBytes)
 	}
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
 		return c.statusError(resp.StatusCode, raw)
@@ -125,6 +139,15 @@ func (c *Client) do(ctx context.Context, method, path string, body, out any) err
 		return fmt.Errorf("sync server %s: decode response (status %d): %w", c.baseURL, resp.StatusCode, err)
 	}
 	return nil
+}
+
+// redirectError reports a redirect by its target host; the request is not repeated there.
+func (c *Client) redirectError(resp *http.Response) error {
+	target := resp.Header.Get("Location")
+	if u, err := url.Parse(target); err == nil && u.Host != "" {
+		target = u.Host
+	}
+	return fmt.Errorf("sync server %s: refused redirect (status %d) to %q; check the remote URL", c.baseURL, resp.StatusCode, target)
 }
 
 // statusError maps a non-2xx response to a domain coded error, or to a status-bearing error when the body is no envelope.
@@ -138,6 +161,8 @@ func (c *Client) statusError(status int, raw []byte) error {
 		return domain.NewError(domain.ErrOperationDenied, env.Message, env.Details)
 	case string(domain.ErrProjectNotFound):
 		return domain.NewError(domain.ErrProjectNotFound, env.Message, env.Details)
+	case string(domain.ErrPayloadTooLarge):
+		return domain.NewError(domain.ErrPayloadTooLarge, env.Message, env.Details)
 	case string(domain.ErrValidation), codeInvalidBody, codeInvalidParameter:
 		return domain.NewError(domain.ErrValidation, env.Message, env.Details)
 	}

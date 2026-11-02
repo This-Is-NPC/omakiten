@@ -40,6 +40,8 @@ const (
 	ErrConfirmationRequired      ErrorCode = "confirmation_required"
 	ErrAgentSpawnFailed          ErrorCode = "agent_spawn_failed"
 	ErrAgentUnconfigured         ErrorCode = "agent_unconfigured"
+	ErrSyncFailed                ErrorCode = "sync_failed"
+	ErrPayloadTooLarge           ErrorCode = "body_too_large"
 )
 
 type CodedError struct {

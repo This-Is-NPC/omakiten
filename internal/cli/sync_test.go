@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"omakiten/internal/agentruntime"
+	"omakiten/internal/operation"
 	"omakiten/internal/paths"
 	"omakiten/internal/syncserver"
 )
@@ -176,5 +177,37 @@ func TestCLISyncFailures(t *testing.T) {
 	}
 	if got := a.run(t, "remote", "projects")["projects"]; got == nil {
 		t.Fatalf("remote projects with token file = %v", got)
+	}
+}
+
+func TestCLIRemoteSetRequiresInsecureOptIn(t *testing.T) {
+	t.Setenv(paths.HomeEnv, filepath.Join(t.TempDir(), "home"))
+	t.Setenv(operation.SyncInsecureEnv, "")
+	a := newSyncMachine(t, "a")
+	t.Chdir(a.root)
+	a.run(t, "init", "--name", "Shared", "--slug", "shared")
+	refused := runCLIExpectError(t, a.db, "", "validation_error", "remote", "set", "http://server:8787")
+	msg := refused["msg"].(string)
+	if !strings.Contains(msg, "https") || !strings.Contains(msg, operation.SyncInsecureEnv) {
+		t.Fatalf("refusal = %v", refused)
+	}
+	t.Setenv(operation.SyncInsecureEnv, "1")
+	if got := a.run(t, "remote", "set", "http://server:8787")["url"]; got != "http://server:8787" {
+		t.Fatalf("url = %v", got)
+	}
+}
+
+func TestCLISyncPartialFailureExitsNonZeroWithReport(t *testing.T) {
+	t.Setenv(paths.HomeEnv, filepath.Join(t.TempDir(), "home"))
+	t.Setenv(agentruntime.SyncTokenEnv, syncTestToken)
+	a := newSyncMachine(t, "a")
+	t.Chdir(a.root)
+	a.run(t, "init", "--name", "Shared", "--slug", "shared")
+	a.run(t, "project", "edit", "--sync-scope", "synced")
+	a.run(t, "remote", "set", "http://127.0.0.1:1")
+	failure := runCLIExpectError(t, a.db, "", "sync_failed", "sync")
+	projects := failure["details"].(map[string]any)["projects"].([]any)
+	if len(projects) != 1 || projects[0].(map[string]any)["error"] == "" {
+		t.Fatalf("details = %v", failure["details"])
 	}
 }

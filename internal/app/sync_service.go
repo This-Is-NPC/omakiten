@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"omakiten/internal/domain"
@@ -54,17 +55,42 @@ func (s *SyncService) Sync(ctx context.Context, projectID *int64) (domain.SyncRe
 	}
 	report := domain.SyncReport{Projects: make([]domain.SyncProjectReport, 0, len(projects))}
 	for _, p := range projects {
-		pushed, err := s.push(ctx, p)
-		if err != nil {
-			return report, fmt.Errorf("sync %s: push: %w", p.Info.Slug, err)
-		}
-		pulled, err := s.pull(ctx, p.ID, p.Info.UID, p.PullCursor)
-		if err != nil {
-			return report, fmt.Errorf("sync %s: pull: %w", p.Info.Slug, err)
-		}
-		report.Projects = append(report.Projects, domain.SyncProjectReport{Slug: p.Info.Slug, Pushed: pushed, Pulled: pulled})
+		report.Projects = append(report.Projects, s.syncProject(ctx, p))
+	}
+	if failure := report.Failure(); failure != nil && allFailed(report) {
+		return report, failure
 	}
 	return report, nil
+}
+
+func allFailed(report domain.SyncReport) bool {
+	for _, p := range report.Projects {
+		if p.Error == "" {
+			return false
+		}
+	}
+	return true
+}
+
+// syncProject pushes then pulls one project; a failure lands in the returned
+// report so the other projects still sync.
+func (s *SyncService) syncProject(ctx context.Context, p domain.SyncProject) domain.SyncProjectReport {
+	out := domain.SyncProjectReport{Slug: p.Info.Slug}
+	kit, err := s.kits.KitKeyOf(ctx, p.ID)
+	if err != nil {
+		out.Error = fmt.Sprintf("kit: %v", err)
+		return out
+	}
+	info := p.Info
+	info.KitKey = kit
+	if out.Pushed, err = s.push(ctx, p.ID, info); err != nil {
+		out.Error = fmt.Sprintf("push: %v", err)
+		return out
+	}
+	if out.Pulled, err = s.pull(ctx, p.ID, p.Info.UID, p.PullCursor); err != nil {
+		out.Error = fmt.Sprintf("pull: %v", err)
+	}
+	return out
 }
 
 func selectSyncProject(projects []domain.SyncProject, id int64) ([]domain.SyncProject, error) {
@@ -78,16 +104,11 @@ func selectSyncProject(projects []domain.SyncProject, id int64) ([]domain.SyncPr
 }
 
 // push sends pending changes page by page and advances the push watermark.
-func (s *SyncService) push(ctx context.Context, p domain.SyncProject) (int, error) {
-	info := p.Info
-	kit, err := s.kits.KitKeyOf(ctx, p.ID)
-	if err != nil {
-		return 0, err
-	}
-	info.KitKey = kit
-	total := 0
+// A page the server refuses as too large is halved down to one change.
+func (s *SyncService) push(ctx context.Context, projectID int64, info domain.SyncProjectInfo) (int, error) {
+	total, page := 0, syncPushPage
 	for {
-		changes, err := s.store.PendingChanges(ctx, p.ID, syncPushPage)
+		changes, err := s.store.PendingChanges(ctx, projectID, page)
 		if err != nil {
 			return total, err
 		}
@@ -95,25 +116,48 @@ func (s *SyncService) push(ctx context.Context, p domain.SyncProject) (int, erro
 			return total, nil
 		}
 		if _, err := s.remote.Push(ctx, info, changes); err != nil {
-			return total, err
+			if page, err = shrinkPushPage(page, changes[0], err); err != nil {
+				return total, err
+			}
+			continue
 		}
-		if err := s.store.MarkPushed(ctx, p.ID, changes[len(changes)-1].HLC); err != nil {
+		if err := s.store.MarkPushed(ctx, projectID, changes[len(changes)-1].HLC); err != nil {
 			return total, err
 		}
 		total += len(changes)
-		if len(changes) < syncPushPage {
+		if len(changes) < page {
 			return total, nil
 		}
 	}
 }
 
-// pull applies remote changes page by page from cursor until none follow.
+// shrinkPushPage halves page after the server refused a push as too large. Any
+// other error, or a single change that is still too large, is returned.
+func shrinkPushPage(page int, first domain.SyncChange, err error) (int, error) {
+	var coded *domain.CodedError
+	if !errors.As(err, &coded) || coded.Code != domain.ErrPayloadTooLarge {
+		return page, err
+	}
+	if page == 1 {
+		return page, fmt.Errorf("change %s %s is too large for the server: %w", first.Table, first.RowUID, err)
+	}
+	return page / 2, nil
+}
+
+// pull applies remote changes page by page from cursor until none follow. A
+// page that signals more without progress, or a cursor that goes backwards,
+// fails instead of looping.
 func (s *SyncService) pull(ctx context.Context, projectID int64, uid domain.UID, cursor int64) (int, error) {
 	total := 0
 	for {
 		changes, next, more, err := s.remote.Pull(ctx, uid, cursor, syncPullPage)
 		if err != nil {
 			return total, err
+		}
+		if next < cursor || (more && len(changes) == 0 && next == cursor) {
+			return total, domain.NewError(domain.ErrValidation,
+				fmt.Sprintf("sync server made no pull progress (cursor %d, answered %d, more=%t)", cursor, next, more),
+				map[string]any{"cursor": cursor, "next": next})
 		}
 		if len(changes) > 0 || next != cursor {
 			if err := s.store.ApplyChanges(ctx, projectID, changes, next); err != nil {
@@ -148,17 +192,36 @@ func (s *SyncService) Clone(ctx context.Context, uid domain.UID, root string) (d
 		if err := s.checkKit(ctx, info, root); err != nil {
 			return domain.Project{}, err
 		}
+		if err := s.refuseClonedTwice(ctx, info); err != nil {
+			return domain.Project{}, err
+		}
 		project, err := s.store.CreateClonedProject(ctx, info, root)
 		if err != nil {
 			return domain.Project{}, err
 		}
 		if _, err := s.pull(ctx, project.ID, uid, 0); err != nil {
-			return project, fmt.Errorf("clone %s: pull: %w", info.Slug, err)
+			return project, fmt.Errorf("clone %s: pull: %w; the project exists locally, run `okt sync --project %s` to finish", info.Slug, err, project.Slug)
 		}
 		return project, nil
 	}
 	return domain.Project{}, domain.NewError(domain.ErrProjectNotFound,
 		fmt.Sprintf("remote has no project %s", uid), map[string]any{"uid": string(uid)})
+}
+
+// refuseClonedTwice points a repeated clone at okt sync instead of creating a second project.
+func (s *SyncService) refuseClonedTwice(ctx context.Context, info domain.SyncProjectInfo) error {
+	projects, err := s.store.SyncedProjects(ctx)
+	if err != nil {
+		return err
+	}
+	for _, p := range projects {
+		if p.Info.UID == info.UID {
+			return domain.NewError(domain.ErrValidation,
+				fmt.Sprintf("project %s is already cloned as %q; run `okt sync --project %s` to update it", info.UID, p.Info.Slug, p.Info.Slug),
+				map[string]any{"uid": string(info.UID), "slug": p.Info.Slug})
+		}
+	}
+	return nil
 }
 
 // checkKit refuses a remote project whose workflow kit differs from the kit a project rooted at root would use.
@@ -188,9 +251,9 @@ func (s *SyncService) Remote(ctx context.Context) (string, error) {
 	return s.store.SyncRemoteURL(ctx)
 }
 
-// SetRemote validates and stores the server URL.
-func (s *SyncService) SetRemote(ctx context.Context, rawURL string) error {
-	if err := domain.ValidateSyncRemoteURL(rawURL, true); err != nil {
+// SetRemote validates and stores the server URL; insecure allows plain http to a non-loopback host.
+func (s *SyncService) SetRemote(ctx context.Context, rawURL string, insecure bool) error {
+	if err := domain.ValidateSyncRemoteURL(rawURL, insecure); err != nil {
 		return err
 	}
 	return s.store.SetSyncRemoteURL(ctx, rawURL)

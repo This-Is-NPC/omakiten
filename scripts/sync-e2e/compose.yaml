@@ -35,6 +35,7 @@ services:
       HOME: /home/a
       OMAKITEN_HOME: /home/a/omakiten
       OMAKITEN_SYNC_TOKEN: ${OKT_E2E_TOKEN:?set by scripts/sync-e2e.sh}
+      OMAKITEN_SYNC_INSECURE: "1"
 
   b:
     <<: *client

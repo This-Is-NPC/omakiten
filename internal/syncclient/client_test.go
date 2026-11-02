@@ -37,7 +37,7 @@ func realServer(t *testing.T) string {
 
 func newClient(t *testing.T, url, tok string) *syncclient.Client {
 	t.Helper()
-	c, err := syncclient.New(url, tok, nil)
+	c, err := syncclient.New(url, tok, false, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -112,7 +112,7 @@ func TestServerValidationError(t *testing.T) {
 
 func TestNewRefusesBadURL(t *testing.T) {
 	for _, u := range []string{"", "://x", "ftp://host", "localhost:8080", "http://", "/relative"} {
-		_, err := syncclient.New(u, token, nil)
+		_, err := syncclient.New(u, token, false, nil)
 		wantCode(t, err, domain.ErrValidation)
 	}
 }
@@ -156,5 +156,56 @@ func TestCancelledContext(t *testing.T) {
 	_, err := newClient(t, realServer(t), token).ListProjects(ctx)
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestRedirectIsRefusedWithoutForwardingToken(t *testing.T) {
+	var leaked bool
+	target := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { leaked = true }))
+	t.Cleanup(target.Close)
+	srv := httptest.NewServer(http.RedirectHandler(target.URL, http.StatusTemporaryRedirect))
+	t.Cleanup(srv.Close)
+	_, err := newClient(t, srv.URL, token).ListProjects(context.Background())
+	host := strings.TrimPrefix(target.URL, "http://")
+	if err == nil || !strings.Contains(err.Error(), "redirect") || !strings.Contains(err.Error(), host) || leaked {
+		t.Fatalf("err = %v, leaked = %v", err, leaked)
+	}
+}
+
+func TestOversizedResponseIsReportedAsTooLarge(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		chunk := make([]byte, 1<<20)
+		for range 65 {
+			if _, err := w.Write(chunk); err != nil {
+				return
+			}
+		}
+	}))
+	t.Cleanup(srv.Close)
+	_, err := newClient(t, srv.URL, token).ListProjects(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "response too large") {
+		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestBodyTooLargeMapsToCodedError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusRequestEntityTooLarge)
+		_, _ = w.Write([]byte(`{"ok":false,"code":"body_too_large","msg":"too big"}`))
+	}))
+	t.Cleanup(srv.Close)
+	_, err := newClient(t, srv.URL, token).Push(context.Background(),
+		domain.SyncProjectInfo{UID: proj, Name: "P", Slug: "p"}, []domain.SyncChange{change(1)})
+	wantCode(t, err, domain.ErrPayloadTooLarge)
+}
+
+func TestNewInsecureOptIn(t *testing.T) {
+	_, err := syncclient.New("http://server:8787", token, false, nil)
+	wantCode(t, err, domain.ErrValidation)
+	if !strings.Contains(err.Error(), "https") || !strings.Contains(err.Error(), "OMAKITEN_SYNC_INSECURE") {
+		t.Fatalf("err = %v", err)
+	}
+	if _, err := syncclient.New("http://server:8787", token, true, nil); err != nil {
+		t.Fatal(err)
 	}
 }

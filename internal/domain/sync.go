@@ -230,6 +230,23 @@ type SyncReport struct {
 	Projects []SyncProjectReport `json:"projects"`
 }
 
+// Failure returns a sync_failed error carrying the report when any project
+// recorded an error, and nil when every project synced.
+func (r SyncReport) Failure() error {
+	failed := 0
+	for _, p := range r.Projects {
+		if p.Error != "" {
+			failed++
+		}
+	}
+	if failed == 0 {
+		return nil
+	}
+	return NewError(ErrSyncFailed,
+		fmt.Sprintf("%d of %d projects failed to sync; details.projects holds each project's error", failed, len(r.Projects)),
+		map[string]any{"projects": r.Projects})
+}
+
 // ValidateSyncRemoteURL accepts an absolute https URL with a host, or an http
 // URL whose host is loopback unless allowInsecure is set.
 func ValidateSyncRemoteURL(raw string, allowInsecure bool) error {
@@ -238,7 +255,7 @@ func ValidateSyncRemoteURL(raw string, allowInsecure bool) error {
 		return syncInvalid("url", raw, "want https://host[:port]")
 	}
 	if u.Scheme == "http" && !allowInsecure && !isLoopbackHost(u.Hostname()) {
-		return syncInvalid("url", raw, "http is only allowed for loopback hosts")
+		return syncInvalid("url", raw, "http is only allowed for loopback hosts; use https, or set OMAKITEN_SYNC_INSECURE=1 to allow plain http")
 	}
 	return nil
 }

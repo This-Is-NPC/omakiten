@@ -27,13 +27,13 @@ const (
 
 // NewSyncRemote connects to the sync server at url with the token from
 // OMAKITEN_SYNC_TOKEN or, when that is unset, from the data directory file
-// sync.token.
-func NewSyncRemote(url string) (app.SyncRemote, error) {
+// sync.token. insecure allows plain http to a non-loopback host.
+func NewSyncRemote(url string, insecure bool) (app.SyncRemote, error) {
 	token, err := syncToken()
 	if err != nil {
 		return nil, err
 	}
-	return syncclient.New(url, token, nil)
+	return syncclient.New(url, token, insecure, nil)
 }
 
 func syncToken() (string, error) {
