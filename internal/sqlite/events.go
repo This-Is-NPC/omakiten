@@ -26,8 +26,11 @@ func (s *Store) RecordTaskEvent(ctx context.Context, projectID, taskID int64, ev
 	}
 	var ev domain.Event
 	if s.shouldLogEvent(projectID, eventType) {
-		var err error
-		ev, err = insertTaskEvent(ctx, s.query(ctx), projectID, taskID, eventType, body, payload)
+		err := s.WithinTransaction(ctx, func(ctx context.Context) error {
+			var err error
+			ev, err = insertTaskEvent(ctx, s.query(ctx), projectID, taskID, eventType, body, payload)
+			return err
+		})
 		if err != nil {
 			return domain.Event{}, err
 		}
@@ -127,10 +130,19 @@ func (s *Store) RecordEntityEvent(ctx context.Context, entityType string, entity
 		if projectID > 0 {
 			projectIDArg = projectID
 		}
-		if _, err := s.query(ctx).ExecContext(ctx, `
-INSERT INTO events(entity_type, entity_id, project_id, event_type, payload, source, entrypoint, agent_model, agent_session_id)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-`, entityType, entityIDArg, projectIDArg, eventType, payload, source, entrypoint, agentModel, agentSessionID); err != nil {
+		err := s.WithinTransaction(ctx, func(ctx context.Context) error {
+			exec := s.query(ctx)
+			stamp, err := stampEvent(ctx, exec)
+			if err != nil {
+				return err
+			}
+			_, err = exec.ExecContext(ctx, `
+INSERT INTO events(entity_type, entity_id, project_id, event_type, payload, source, entrypoint, agent_model, agent_session_id, uid, hlc, device_id, actor_id)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+`, entityType, entityIDArg, projectIDArg, eventType, payload, source, entrypoint, agentModel, agentSessionID, stamp.UID, stamp.HLC, stamp.Device, stamp.Actor)
+			return err
+		})
+		if err != nil {
 			return err
 		}
 	}
@@ -154,12 +166,16 @@ func insertTaskEvent(ctx context.Context, exec dbExecutor, projectID, taskID int
 		payload = "{}"
 	}
 	source, entrypoint, agentModel, agentSessionID := agentAttribution(ctx)
+	stamp, err := stampEvent(ctx, exec)
+	if err != nil {
+		return domain.Event{}, fmt.Errorf("record task event: %w", err)
+	}
 	var event domain.Event
 	if err := exec.QueryRowContext(ctx, `
-INSERT INTO events(entity_type, entity_id, project_id, event_type, body, payload, source, entrypoint, agent_model, agent_session_id)
-VALUES ('task', ?, ?, ?, ?, ?, ?, ?, ?, ?)
+INSERT INTO events(entity_type, entity_id, project_id, event_type, body, payload, source, entrypoint, agent_model, agent_session_id, uid, hlc, device_id, actor_id)
+VALUES ('task', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 RETURNING id, entity_type, entity_id, project_id, event_type, body, payload, created_at
-`, taskID, projectID, eventType, body, payload, source, entrypoint, agentModel, agentSessionID).Scan(
+`, taskID, projectID, eventType, body, payload, source, entrypoint, agentModel, agentSessionID, stamp.UID, stamp.HLC, stamp.Device, stamp.Actor).Scan(
 		&event.ID, &event.EntityType, &event.EntityID, &event.ProjectID,
 		&event.EventType, &event.Body, &event.Payload, &event.CreatedAt,
 	); err != nil {

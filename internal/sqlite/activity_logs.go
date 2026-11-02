@@ -88,14 +88,20 @@ func (s *Store) BeginActivityLog(ctx context.Context, log any) (int64, error) {
 	if err != nil {
 		return 0, fmt.Errorf("encode activity log payload: %w", err)
 	}
-	row := s.query(ctx).QueryRowContext(ctx, `
-INSERT INTO events(entity_type, project_id, project_slug, event_type, payload, source, entrypoint, operation, status, agent_model, agent_session_id, created_at)
-VALUES ('system', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-RETURNING id
-`, projectID, projectSlug, eventType, payload, string(activityLog.Source), activityLog.Entrypoint, activityLog.Operation, activityLog.Status, activityLog.AgentModel, sessionID)
-
 	var id int64
-	if err := row.Scan(&id); err != nil {
+	err = s.WithinTransaction(ctx, func(ctx context.Context) error {
+		exec := s.query(ctx)
+		stamp, err := stampEvent(ctx, exec)
+		if err != nil {
+			return err
+		}
+		return exec.QueryRowContext(ctx, `
+INSERT INTO events(entity_type, project_id, project_slug, event_type, payload, source, entrypoint, operation, status, agent_model, agent_session_id, created_at, uid, hlc, device_id, actor_id)
+VALUES ('system', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, ?, ?, ?, ?)
+RETURNING id
+`, projectID, projectSlug, eventType, payload, string(activityLog.Source), activityLog.Entrypoint, activityLog.Operation, activityLog.Status, activityLog.AgentModel, sessionID, stamp.UID, stamp.HLC, stamp.Device, stamp.Actor).Scan(&id)
+	})
+	if err != nil {
 		return 0, fmt.Errorf("begin activity log: %w", err)
 	}
 	// Prune synchronously after insert; cleanup is fast on local SQLite.

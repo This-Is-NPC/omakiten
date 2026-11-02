@@ -61,8 +61,8 @@ func seedVersion3Database(t *testing.T, ctx context.Context, path string) {
 	if _, err := store.db.ExecContext(ctx, dropSyncIdentitySQL+"PRAGMA user_version = 3"); err != nil {
 		t.Fatal(err)
 	}
-	project, err := store.UpsertProject(ctx, "Example", "example", t.TempDir())
-	if err != nil {
+	var projectID int64
+	if err := store.db.QueryRowContext(ctx, `INSERT INTO projects(name, slug, root_path) VALUES ('Example', 'example', ?) RETURNING id`, t.TempDir()).Scan(&projectID); err != nil {
 		t.Fatal(err)
 	}
 	for _, statement := range []string{
@@ -73,7 +73,7 @@ func seedVersion3Database(t *testing.T, ctx context.Context, path string) {
 		`INSERT INTO plans(id, project_id, slug, name) VALUES (1, ?1, 'p', 'P')`,
 		`INSERT INTO plan_waves(plan_id, name, position) VALUES (1, 'w1', 1)`,
 	} {
-		if _, err := store.db.ExecContext(ctx, statement, project.ID); err != nil {
+		if _, err := store.db.ExecContext(ctx, statement, projectID); err != nil {
 			t.Fatalf("%s: %v", statement, err)
 		}
 	}
@@ -140,7 +140,7 @@ func TestSyncIdentityIsStableAcrossReopen(t *testing.T) {
 	}
 }
 
-func TestNextEventHLCIncreasesAcrossTransactions(t *testing.T) {
+func TestStampEventIncreasesAcrossTransactions(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	store, err := Open(ctx, filepath.Join(t.TempDir(), "state.db"))
@@ -154,14 +154,18 @@ func TestNextEventHLCIncreasesAcrossTransactions(t *testing.T) {
 	}
 	var last domain.HLC
 	for i := range 5 {
-		stamp := commitNextEventHLC(t, ctx, store)
-		if stamp.Device != device {
+		stamp := commitStampEvent(t, ctx, store)
+		if stamp.Device != string(device) {
 			t.Fatalf("stamp device = %q, want %q", stamp.Device, device)
 		}
-		if i > 0 && stamp.Compare(last) <= 0 {
-			t.Fatalf("stamp %s does not follow %s", stamp, last)
+		parsed, err := domain.ParseHLC(stamp.HLC)
+		if err != nil {
+			t.Fatal(err)
 		}
-		last = stamp
+		if i > 0 && parsed.Compare(last) <= 0 {
+			t.Fatalf("stamp %s does not follow %s", parsed, last)
+		}
+		last = parsed
 	}
 	var stored string
 	if err := store.db.QueryRowContext(ctx, `SELECT hlc FROM sync_identity`).Scan(&stored); err != nil || stored != last.String() {
@@ -169,13 +173,13 @@ func TestNextEventHLCIncreasesAcrossTransactions(t *testing.T) {
 	}
 }
 
-func commitNextEventHLC(t *testing.T, ctx context.Context, store *Store) domain.HLC {
+func commitStampEvent(t *testing.T, ctx context.Context, store *Store) eventStamp {
 	t.Helper()
 	tx, err := store.db.BeginTx(ctx, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	stamp, err := nextEventHLC(ctx, tx)
+	stamp, err := stampEvent(ctx, tx)
 	if err != nil {
 		_ = tx.Rollback()
 		t.Fatal(err)
