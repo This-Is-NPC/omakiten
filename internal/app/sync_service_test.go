@@ -104,26 +104,37 @@ type fakeSyncRemote struct {
 	pullErrs map[domain.UID]error
 	// pushErr, when set, decides whether a push of n changes fails.
 	pushErr func(n int) error
+	// pushRejected is how many changes each push reports as rejected.
+	pushRejected int
+	// pullLimits records the limit of every pull; pullErr fn, when set, decides whether a pull of that limit fails.
+	pullLimits  []int
+	pullLimitFn func(limit int) error
 }
 
 func (r *fakeSyncRemote) ListProjects(context.Context) ([]domain.SyncProjectInfo, error) {
 	return r.projects, nil
 }
 
-func (r *fakeSyncRemote) Push(_ context.Context, info domain.SyncProjectInfo, changes []domain.SyncChange) (int64, error) {
+func (r *fakeSyncRemote) Push(_ context.Context, info domain.SyncProjectInfo, changes []domain.SyncChange) (int64, int, error) {
 	r.pushed = append(r.pushed, info)
 	*r.log = append(*r.log, "push")
 	r.pushes = append(r.pushes, len(changes))
 	if r.pushErr != nil {
 		if err := r.pushErr(len(changes)); err != nil {
-			return 0, err
+			return 0, 0, err
 		}
 	}
-	return 1, nil
+	return 1, r.pushRejected, nil
 }
 
-func (r *fakeSyncRemote) Pull(_ context.Context, uid domain.UID, after int64, _ int) ([]domain.SyncChange, int64, bool, error) {
+func (r *fakeSyncRemote) Pull(_ context.Context, uid domain.UID, after int64, limit int) ([]domain.SyncChange, int64, bool, error) {
 	*r.log = append(*r.log, "pull")
+	r.pullLimits = append(r.pullLimits, limit)
+	if r.pullLimitFn != nil {
+		if err := r.pullLimitFn(limit); err != nil {
+			return nil, 0, false, err
+		}
+	}
 	r.pullsAt = append(r.pullsAt, after)
 	if r.pullErr != nil {
 		return nil, 0, false, r.pullErr
@@ -406,8 +417,9 @@ func TestSyncResolvesKitOncePerProject(t *testing.T) {
 
 func TestSyncPullRefusesStalledAndBackwardCursor(t *testing.T) {
 	cases := map[string][]pullPage{
-		"more without progress": {{n: 0, cursor: 4, more: true}},
-		"cursor goes backwards": {{n: 1, cursor: 3}},
+		"more without progress":                {{n: 0, cursor: 4, more: true}},
+		"more with rows but no cursor advance": {{n: 2, cursor: 4, more: true}},
+		"cursor goes backwards":                {{n: 1, cursor: 3}},
 	}
 	for name, pages := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -419,6 +431,61 @@ func TestSyncPullRefusesStalledAndBackwardCursor(t *testing.T) {
 				t.Fatalf("report = %+v, applied = %v", report.Projects, store.applied)
 			}
 		})
+	}
+}
+
+func TestSyncReportsServerRejectedPushes(t *testing.T) {
+	svc, store, remote, _ := newSyncFixture(syncProject(1, "a"))
+	store.pending = hlcChanges(3)
+	store.rejects = 1
+	remote.pushRejected = 2
+	remote.pages = []pullPage{{n: 1, cursor: 2}}
+	report, err := svc.Sync(context.Background(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := report.Projects[0]; got.Pushed != 3 || got.Rejected != 3 {
+		t.Fatalf("report = %+v, want 3 rejected (2 by server, 1 by store)", got)
+	}
+}
+
+func TestSyncPullHalvesPageOnResponseTooLarge(t *testing.T) {
+	svc, _, remote, _ := newSyncFixture(syncProject(1, "a"))
+	remote.pullLimitFn = func(limit int) error {
+		if limit > 100 {
+			return tooLarge()
+		}
+		return nil
+	}
+	remote.pages = []pullPage{{n: 1, cursor: 2}}
+	report, err := svc.Sync(context.Background(), nil)
+	if err != nil || report.Projects[0].Error != "" || report.Projects[0].Pulled != 1 {
+		t.Fatalf("report = %+v, err = %v", report.Projects, err)
+	}
+	if want := []int{500, 250, 125, 62}; !reflect.DeepEqual(remote.pullLimits, want) {
+		t.Fatalf("limits = %v, want %v", remote.pullLimits, want)
+	}
+}
+
+func TestSyncPullReportsSingleOversizedRow(t *testing.T) {
+	svc, _, remote, _ := newSyncFixture(domain.SyncProject{ID: 1, PullCursor: 7, Info: domain.SyncProjectInfo{Slug: "a"}})
+	remote.pullLimitFn = func(int) error { return tooLarge() }
+	report, err := svc.Sync(context.Background(), nil)
+	assertCodedError(t, err, domain.ErrSyncFailed)
+	if !strings.Contains(report.Projects[0].Error, "cursor 7") || len(remote.pullLimits) != 9 {
+		t.Fatalf("report = %+v, limits = %v, want 9 pulls (500 halved to 1)", report.Projects, remote.pullLimits)
+	}
+}
+
+func TestSyncPullStopsAtPageCap(t *testing.T) {
+	svc, _, remote, _ := newSyncFixture(syncProject(1, "a"))
+	for i := range syncMaxPullPages + 1 {
+		remote.pages = append(remote.pages, pullPage{n: 1, cursor: int64(i + 1), more: true})
+	}
+	report, err := svc.Sync(context.Background(), nil)
+	assertCodedError(t, err, domain.ErrSyncFailed)
+	if !strings.Contains(report.Projects[0].Error, "pull pages") || len(remote.pullsAt) != syncMaxPullPages {
+		t.Fatalf("error = %q, pulls = %d", report.Projects[0].Error, len(remote.pullsAt))
 	}
 }
 

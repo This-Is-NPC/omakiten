@@ -75,14 +75,15 @@ func (c *Client) ListProjects(ctx context.Context) ([]domain.SyncProjectInfo, er
 	return resp.Projects, nil
 }
 
-// Push sends changes for a project and returns the server cursor.
-func (c *Client) Push(ctx context.Context, info domain.SyncProjectInfo, changes []domain.SyncChange) (int64, error) {
+// Push sends changes for a project and returns the server cursor and how many
+// changes the server rejected.
+func (c *Client) Push(ctx context.Context, info domain.SyncProjectInfo, changes []domain.SyncChange) (int64, int, error) {
 	var resp syncproto.PushResponse
 	req := syncproto.PushRequest{Project: info, Changes: changes}
 	if err := c.do(ctx, http.MethodPost, syncproto.ChangesPath(info.UID), req, &resp); err != nil {
-		return 0, err
+		return 0, 0, err
 	}
-	return resp.Cursor, nil
+	return resp.Cursor, resp.Rejected, nil
 }
 
 // Pull returns up to limit changes after the cursor and whether more follow.
@@ -130,7 +131,9 @@ func (c *Client) do(ctx context.Context, method, path string, body, out any) err
 		return fmt.Errorf("sync server %s: read response: %w", c.baseURL, err)
 	}
 	if len(raw) > maxResponseBytes {
-		return fmt.Errorf("sync server %s: response too large (over %d bytes)", c.baseURL, maxResponseBytes)
+		return domain.NewError(domain.ErrPayloadTooLarge,
+			fmt.Sprintf("sync server %s: response too large (over %d bytes)", c.baseURL, maxResponseBytes),
+			map[string]any{"max_bytes": maxResponseBytes})
 	}
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
 		return c.statusError(resp.StatusCode, raw)
@@ -150,8 +153,12 @@ func (c *Client) redirectError(resp *http.Response) error {
 	return fmt.Errorf("sync server %s: refused redirect (status %d) to %q; check the remote URL", c.baseURL, resp.StatusCode, target)
 }
 
-// statusError maps a non-2xx response to a domain coded error, or to a status-bearing error when the body is no envelope.
+// statusError maps a non-2xx response to a domain coded error (any 413 is payload-too-large, whatever its body), or to a status-bearing error when the body is no envelope.
 func (c *Client) statusError(status int, raw []byte) error {
+	if status == http.StatusRequestEntityTooLarge {
+		return domain.NewError(domain.ErrPayloadTooLarge,
+			fmt.Sprintf("sync server %s: request body too large (status 413)", c.baseURL), nil)
+	}
 	var env errorEnvelope
 	if err := json.Unmarshal(raw, &env); err != nil || env.Code == "" {
 		return fmt.Errorf("sync server %s: unexpected response, status %d", c.baseURL, status)

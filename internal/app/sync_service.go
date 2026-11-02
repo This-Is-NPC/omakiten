@@ -13,6 +13,8 @@ const (
 	syncPushPage = 500
 	// syncPullPage is the most changes requested in one pull request.
 	syncPullPage = 500
+	// syncMaxPullPages bounds the pages one pull may follow, a backstop against a server that never stops.
+	syncMaxPullPages = 100_000
 )
 
 // SyncService exchanges changes of synced projects with the remote server.
@@ -83,11 +85,13 @@ func (s *SyncService) syncProject(ctx context.Context, p domain.SyncProject) dom
 	}
 	info := p.Info
 	info.KitKey = kit
-	if out.Pushed, err = s.push(ctx, p.ID, info); err != nil {
+	if out.Pushed, out.Rejected, err = s.push(ctx, p.ID, info); err != nil {
 		out.Error = fmt.Sprintf("push: %v", err)
 		return out
 	}
-	if out.Pulled, out.Rejected, err = s.pull(ctx, p.ID, p.Info.UID, p.PullCursor); err != nil {
+	pulled, rejected, err := s.pull(ctx, p.ID, p.Info.UID, p.PullCursor)
+	out.Pulled, out.Rejected = pulled, out.Rejected+rejected
+	if err != nil {
 		out.Error = fmt.Sprintf("pull: %v", err)
 	}
 	return out
@@ -103,75 +107,102 @@ func selectSyncProject(projects []domain.SyncProject, id int64) ([]domain.SyncPr
 		fmt.Sprintf("project %d is not a synced project", id), map[string]any{"project_id": id})
 }
 
-// push sends pending changes page by page and advances the push watermark.
+// push sends pending changes page by page, advances the push watermark and
+// returns how many changes it sent and how many the server rejected.
 // A page the server refuses as too large is halved down to one change.
-func (s *SyncService) push(ctx context.Context, projectID int64, info domain.SyncProjectInfo) (int, error) {
-	total, page := 0, syncPushPage
+func (s *SyncService) push(ctx context.Context, projectID int64, info domain.SyncProjectInfo) (total, rejected int, err error) {
+	page := syncPushPage
 	for {
 		changes, err := s.store.PendingChanges(ctx, projectID, page)
 		if err != nil {
-			return total, err
+			return total, rejected, err
 		}
 		if len(changes) == 0 {
-			return total, nil
+			return total, rejected, nil
 		}
-		if _, err := s.remote.Push(ctx, info, changes); err != nil {
-			if page, err = shrinkPushPage(page, changes[0], err); err != nil {
-				return total, err
+		_, n, err := s.remote.Push(ctx, info, changes)
+		if err != nil {
+			if page, err = shrinkPage(page, fmt.Sprintf("change %s %s", changes[0].Table, changes[0].RowUID), err); err != nil {
+				return total, rejected, err
 			}
 			continue
 		}
 		if err := s.store.MarkPushed(ctx, projectID, changes[len(changes)-1].HLC); err != nil {
-			return total, err
+			return total, rejected, err
 		}
 		total += len(changes)
+		rejected += n
 		if len(changes) < page {
-			return total, nil
+			return total, rejected, nil
 		}
 	}
 }
 
-// shrinkPushPage halves page after the server refused a push as too large. Any
-// other error, or a single change that is still too large, is returned.
-func shrinkPushPage(page int, first domain.SyncChange, err error) (int, error) {
+// shrinkPage halves page after the server or the response limit refused it as
+// too large. Any other error, or a single item that is still too large, is
+// returned; what names the item in that message.
+func shrinkPage(page int, what string, err error) (int, error) {
 	var coded *domain.CodedError
 	if !errors.As(err, &coded) || coded.Code != domain.ErrPayloadTooLarge {
 		return page, err
 	}
 	if page == 1 {
-		return page, fmt.Errorf("change %s %s is too large for the server: %w", first.Table, first.RowUID, err)
+		return page, fmt.Errorf("%s is too large for the sync transfer: %w", what, err)
 	}
 	return page / 2, nil
 }
 
 // pull applies remote changes page by page from cursor until none follow and
 // returns how many it pulled and how many the store rejected. A page that
-// signals more without progress, or a cursor that goes backwards, fails
-// instead of looping.
+// signals more without rows or without a forward cursor, a cursor that goes
+// backwards, or more than syncMaxPullPages pages fails instead of looping. A
+// response too large to read halves the page down to one row.
 func (s *SyncService) pull(ctx context.Context, projectID int64, uid domain.UID, cursor int64) (total, rejected int, err error) {
-	for {
-		changes, next, more, err := s.remote.Pull(ctx, uid, cursor, syncPullPage)
+	page := syncPullPage
+	for range syncMaxPullPages {
+		changes, next, more, err := s.remote.Pull(ctx, uid, cursor, page)
+		if err != nil {
+			if page, err = shrinkPage(page, fmt.Sprintf("the pull row after cursor %d", cursor), err); err != nil {
+				return total, rejected, err
+			}
+			continue
+		}
+		if err := checkPullProgress(cursor, next, len(changes), more); err != nil {
+			return total, rejected, err
+		}
+		n, err := s.applyPulled(ctx, projectID, changes, cursor, next)
 		if err != nil {
 			return total, rejected, err
 		}
-		if next < cursor || (more && len(changes) == 0 && next == cursor) {
-			return total, rejected, domain.NewError(domain.ErrValidation,
-				fmt.Sprintf("sync server made no pull progress (cursor %d, answered %d, more=%t)", cursor, next, more),
-				map[string]any{"cursor": cursor, "next": next})
-		}
-		if len(changes) > 0 || next != cursor {
-			n, err := s.store.ApplyChanges(ctx, projectID, changes, next)
-			if err != nil {
-				return total, rejected, err
-			}
-			rejected += n
-		}
+		rejected += n
 		total += len(changes)
 		cursor = next
 		if !more {
 			return total, rejected, nil
 		}
 	}
+	return total, rejected, domain.NewError(domain.ErrValidation,
+		fmt.Sprintf("sync server still has more changes after %d pull pages", syncMaxPullPages),
+		map[string]any{"cursor": cursor})
+}
+
+// applyPulled stores one pulled page unless nothing moved, and returns how many changes the store rejected.
+func (s *SyncService) applyPulled(ctx context.Context, projectID int64, changes []domain.SyncChange, cursor, next int64) (int, error) {
+	if len(changes) == 0 && next == cursor {
+		return 0, nil
+	}
+	return s.store.ApplyChanges(ctx, projectID, changes, next)
+}
+
+// checkPullProgress refuses a page whose cursor goes backwards, or that signals
+// more without rows or without moving the cursor forward.
+func checkPullProgress(cursor, next int64, rows int, more bool) error {
+	if next >= cursor && (!more || (rows > 0 && next > cursor)) {
+		return nil
+	}
+	return domain.NewError(domain.ErrValidation,
+		fmt.Sprintf("sync server made no pull progress (cursor %d, answered %d, %d changes, more=%t)", cursor, next, rows, more),
+		map[string]any{"cursor": cursor, "next": next})
 }
 
 // Clone creates a synced local project for a remote project and pulls its rows.

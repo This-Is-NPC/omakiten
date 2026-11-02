@@ -30,9 +30,10 @@ type SyncStore interface {
 type SyncRemote interface {
 	// ListProjects returns the projects the server holds.
 	ListProjects(ctx context.Context) ([]domain.SyncProjectInfo, error)
-	// Push sends changes for a project and returns the server cursor.
-	Push(ctx context.Context, info domain.SyncProjectInfo, changes []domain.SyncChange) (cursor int64, err error)
-	// Pull returns up to limit changes after the cursor and whether more follow.
+	// Push sends changes for a project and returns the server cursor and how many changes the server rejected.
+	Push(ctx context.Context, info domain.SyncProjectInfo, changes []domain.SyncChange) (cursor int64, rejected int, err error)
+	// Pull returns up to limit changes after the cursor and whether more follow. A response too large to read
+	// is a coded ErrPayloadTooLarge so the caller can ask for fewer changes.
 	Pull(ctx context.Context, projectUID domain.UID, after int64, limit int) (changes []domain.SyncChange, cursor int64, more bool, err error)
 }
 

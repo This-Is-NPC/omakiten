@@ -70,9 +70,9 @@ func TestListPushAndPagedPull(t *testing.T) {
 	info := domain.SyncProjectInfo{UID: proj, Name: "P", Slug: "p", KitKey: "k"}
 	changes := []domain.SyncChange{change(1), change(2), change(3)}
 
-	cursor, err := c.Push(ctx, info, changes)
-	if err != nil || cursor != 3 {
-		t.Fatalf("push = %d, %v", cursor, err)
+	cursor, rejected, err := c.Push(ctx, info, changes)
+	if err != nil || cursor != 3 || rejected != 0 {
+		t.Fatalf("push = %d, %d, %v", cursor, rejected, err)
 	}
 	projects, err := c.ListProjects(ctx)
 	if err != nil || len(projects) != 1 || projects[0].UID != proj {
@@ -102,12 +102,14 @@ func TestUnknownProject(t *testing.T) {
 	wantCode(t, err, domain.ErrProjectNotFound)
 }
 
-func TestServerValidationError(t *testing.T) {
+func TestServerRejectsInvalidChangeAndCountsIt(t *testing.T) {
 	bad := change(1)
 	bad.Table = "sync_identity"
-	_, err := newClient(t, realServer(t), token).Push(context.Background(),
+	_, rejected, err := newClient(t, realServer(t), token).Push(context.Background(),
 		domain.SyncProjectInfo{UID: proj, Name: "P", Slug: "p", KitKey: "k"}, []domain.SyncChange{bad})
-	wantCode(t, err, domain.ErrValidation)
+	if err != nil || rejected != 1 {
+		t.Fatalf("push = rejected %d, %v, want 1 rejected", rejected, err)
+	}
 }
 
 func TestNewRefusesBadURL(t *testing.T) {
@@ -183,7 +185,8 @@ func TestOversizedResponseIsReportedAsTooLarge(t *testing.T) {
 	}))
 	t.Cleanup(srv.Close)
 	_, err := newClient(t, srv.URL, token).ListProjects(context.Background())
-	if err == nil || !strings.Contains(err.Error(), "response too large") {
+	wantCode(t, err, domain.ErrPayloadTooLarge)
+	if !strings.Contains(err.Error(), "response too large") {
 		t.Fatalf("err = %v", err)
 	}
 }
@@ -194,9 +197,32 @@ func TestBodyTooLargeMapsToCodedError(t *testing.T) {
 		_, _ = w.Write([]byte(`{"ok":false,"code":"body_too_large","msg":"too big"}`))
 	}))
 	t.Cleanup(srv.Close)
-	_, err := newClient(t, srv.URL, token).Push(context.Background(),
+	_, _, err := newClient(t, srv.URL, token).Push(context.Background(),
 		domain.SyncProjectInfo{UID: proj, Name: "P", Slug: "p"}, []domain.SyncChange{change(1)})
 	wantCode(t, err, domain.ErrPayloadTooLarge)
+}
+
+func TestAnyRequestEntityTooLargeMapsToCodedError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusRequestEntityTooLarge)
+		_, _ = w.Write([]byte("<html>413 Request Entity Too Large</html>"))
+	}))
+	t.Cleanup(srv.Close)
+	_, _, err := newClient(t, srv.URL, token).Push(context.Background(),
+		domain.SyncProjectInfo{UID: proj, Name: "P", Slug: "p"}, []domain.SyncChange{change(1)})
+	wantCode(t, err, domain.ErrPayloadTooLarge)
+}
+
+func TestPushReturnsServerRejectedCount(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"cursor":5,"rejected":2}`))
+	}))
+	t.Cleanup(srv.Close)
+	cursor, rejected, err := newClient(t, srv.URL, token).Push(context.Background(),
+		domain.SyncProjectInfo{UID: proj, Name: "P", Slug: "p"}, []domain.SyncChange{change(1)})
+	if err != nil || cursor != 5 || rejected != 2 {
+		t.Fatalf("push = %d, %d, %v", cursor, rejected, err)
+	}
 }
 
 func TestNewInsecureOptIn(t *testing.T) {
