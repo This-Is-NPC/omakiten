@@ -24,7 +24,7 @@ var schema string
 // Conflicts resolve per row. Entity rows: a delete replaces a stored upsert
 // whatever its HLC, a stored delete is final and refuses every later change,
 // and an upsert replaces a stored upsert only with a greater HLC. Join rows
-// (see joinTables) follow plain last-writer-wins on the HLC for upserts and
+// (domain.SyncDeleteIsFinal is false) follow plain last-writer-wins on the HLC for upserts and
 // deletes alike, so a removed link can be added again.
 type Store struct {
 	db *sql.DB
@@ -70,13 +70,6 @@ func (s *Store) Projects(ctx context.Context) ([]domain.SyncProjectInfo, error) 
 		infos = append(infos, info)
 	}
 	return infos, rows.Err()
-}
-
-// joinTables are the synced link tables, whose rows carry no identity beyond
-// their key. Clients apply the same rule: a join row's delete is an ordinary
-// stamped version, not a final tombstone.
-var joinTables = map[string]bool{
-	"task_dependencies": true, "task_tags": true, "error_tags": true, "event_tags": true,
 }
 
 // Push upserts the project and stores every change that wins against the
@@ -159,7 +152,7 @@ func wins(ctx context.Context, tx *sql.Tx, project domain.UID, c domain.SyncChan
 	if err != nil {
 		return false, err
 	}
-	if !joinTables[c.Table] {
+	if domain.SyncDeleteIsFinal(c.Table) {
 		switch {
 		case domain.SyncOp(op) == domain.SyncOpDelete:
 			return false, nil

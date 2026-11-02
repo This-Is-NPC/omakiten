@@ -342,3 +342,16 @@ func isScalar(v any) bool {
 	}
 	return false
 }
+
+// syncJoinTables are the synced link tables, whose rows have no identity
+// beyond the key of the rows they link.
+var syncJoinTables = map[string]bool{
+	"task_dependencies": true, "task_tags": true, "error_tags": true, "event_tags": true,
+}
+
+// SyncDeleteIsFinal reports whether a delete of a row of table beats every
+// later change. Entity rows are final; a join row's delete is an ordinary
+// stamped version, so a removed link can be added again.
+func SyncDeleteIsFinal(table string) bool {
+	return !syncJoinTables[table]
+}

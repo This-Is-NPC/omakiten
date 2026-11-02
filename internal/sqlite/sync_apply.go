@@ -20,12 +20,6 @@ const maxSyncInbox = 10_000
 // maxParentDepth bounds the walk up a task's parent chain when looking for a cycle.
 const maxParentDepth = 10_000
 
-// deleteIsFinal reports whether a delete of a row of table beats every later upsert.
-// Entity rows are final; join rows (the tables with a key) compare stamps like any other change.
-func deleteIsFinal(table string) bool {
-	return syncRules[table].key == nil
-}
-
 // rowKey names a synced row across tables.
 type rowKey struct{ table, uid string }
 
@@ -401,9 +395,9 @@ func (a *applier) superseded(ctx context.Context, change pendingChange) (bool, e
 		return false, nil
 	case err != nil:
 		return false, err
-	case deleted && deleteIsFinal(change.Table):
+	case deleted && domain.SyncDeleteIsFinal(change.Table):
 		return true, nil
-	case change.Op == domain.SyncOpDelete && deleteIsFinal(change.Table):
+	case change.Op == domain.SyncOpDelete && domain.SyncDeleteIsFinal(change.Table):
 		return false, nil
 	}
 	var current domain.HLC

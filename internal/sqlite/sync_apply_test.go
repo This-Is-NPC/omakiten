@@ -694,12 +694,13 @@ func TestApplyChangesJoinRowsReturnAfterDelete(t *testing.T) {
 	}
 }
 
-func TestDeleteIsFinalOnlyForEntityRows(t *testing.T) {
+// TestSyncDeleteIsFinalMatchesTheRuleKeys pins the domain rule to the rule
+// table: exactly the tables whose rows are identified by a key are join rows.
+func TestSyncDeleteIsFinalMatchesTheRuleKeys(t *testing.T) {
 	t.Parallel()
 	for _, table := range domain.SyncTables {
-		join := slices.Contains([]string{"task_dependencies", "task_tags", "error_tags", "event_tags"}, table)
-		if deleteIsFinal(table) == join {
-			t.Fatalf("deleteIsFinal(%s) = %v", table, !join)
+		if domain.SyncDeleteIsFinal(table) != (syncRules[table].key == nil) {
+			t.Fatalf("SyncDeleteIsFinal(%s) disagrees with the rule table", table)
 		}
 	}
 }
