@@ -165,8 +165,9 @@ keys:
   cli.project.resume.short: "Show distribution, likely next work, blocked work, and dependencies"
   cli.project.relocate.short: "Repair the registered project directory"
   cli.project.relocate.flag.root: "absolute path of the existing project directory"
-  cli.project.edit.short: "Update the active project description"
+  cli.project.edit.short: "Update the active project description or sync scope"
   cli.project.edit.flag.description: "new project description"
+  cli.project.edit.flag.sync_scope: "sync scope of the project: local or synced"
   cli.projects.short: "Prosjekt livssyklus-verktøy"
   cli.projects.delete.short: "Hard-delete et registrert prosjekt og hver avhengig rad (irreversibelt)"
   cli.projects.delete.long: |-

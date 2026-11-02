@@ -65,7 +65,7 @@ The API serves every operation the CLI runs on a project's work:
 
 | Resource | Routes under `/api/v1/projects/{project}` |
 |---|---|
-| Project | the project itself (`GET`, `PATCH`, `DELETE`), `relocate` (`POST`), `resume`, `workflow`, `workflow/orphans` |
+| Project | the project itself (`GET`, `PATCH` with `description` and/or `sync_scope`, `DELETE`), `relocate` (`POST`), `resume`, `workflow`, `workflow/orphans` |
 | Tasks | `tasks`, `tasks/{task}` and its `transitions`, `assignee`, `archive`, `unarchive`, `checkpoint`, `activity`, `progress`, `dependencies`, `comments`, `agents` (`POST`, spawn), `wait` |
 | Agents | `agents` (list, `?task=&status=`), `agents/{session}`, `teams/{team}`, `teams/{team}/close` (`POST`), `teams/{team}/members/{member}` (`POST`, run a seat again) |
 | Comments | `comments/{comment}` |

@@ -37,7 +37,7 @@ func (s *Store) updateProjectRootPath(ctx context.Context, tx *sql.Tx, id int64,
 	project, err := s.scanProject(tx.QueryRowContext(ctx, `
 UPDATE projects SET root_path = ?, updated_at = CURRENT_TIMESTAMP
 WHERE id = ? AND root_path = ? AND archived_at IS NULL
-RETURNING id, name, slug, root_path, description`, root, id, previousRoot))
+RETURNING `+projectColumns, root, id, previousRoot))
 	var constraint *sqlutil.ConstraintError
 	if errors.As(sqlutil.MapSQLiteError(err), &constraint) && constraint.Violation == sqlutil.ViolationUnique {
 		return domain.Project{}, domain.NewError(domain.ErrProjectPathConflict, "root_path is already registered to a project", map[string]any{"root_path": root})

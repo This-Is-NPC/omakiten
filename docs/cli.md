@@ -41,7 +41,7 @@ agents working in parallel worktrees reach the same project without
 | --- | --- |
 | `setup`, `update`, `uninstall` | Install choices, executable updates, and removal. |
 | `init`, `projects list`, `projects delete` | Register, discover, and remove projects. |
-| `project overview`, `project resume`, `project edit` | Read project state, recover context, and edit its description. |
+| `project overview`, `project resume`, `project edit` | Read project state, recover context, and edit its description or sync scope (`project edit --description <text>`, `--sync-scope local|synced`; either flag alone is enough, `local` is the default). |
 | `project relocate --root PATH` | Repair a moved project's registered root; requires `--project` or `--project-id`. See [project configuration](how-to-configure-a-project.md#repair-a-moved-project). |
 | `task create`, `task import`, `task export` | Create work and move structured work documents. |
 | `task show`, `task continue`, `task activity` | Read a task with every comment, recover it for an agent, and read its activity. |

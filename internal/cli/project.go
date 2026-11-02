@@ -63,7 +63,7 @@ func newProjectResumeCommand(opts *runtimeOptions) *cobra.Command {
 }
 
 func newProjectEditCommand(opts *runtimeOptions) *cobra.Command {
-	var description string
+	var description, syncScope string
 	cmd := &cobra.Command{
 		Use:   "edit",
 		Short: opts.t("cli.project.edit.short"),
@@ -74,14 +74,18 @@ func newProjectEditCommand(opts *runtimeOptions) *cobra.Command {
 					return nil, err
 				}
 				defer rt.close()
-				return rt.operationService().EditProject(ctx, contract.EditProjectInput{
-					ProjectSelector: opts.projectSelector(),
-					Description:     description,
-				})
+				input := contract.EditProjectInput{ProjectSelector: opts.projectSelector()}
+				if cmd.Flags().Changed("description") {
+					input.Description = &description
+				}
+				if cmd.Flags().Changed("sync-scope") {
+					input.SyncScope = &syncScope
+				}
+				return rt.operationService().EditProject(ctx, input)
 			})
 		},
 	}
 	cmd.Flags().StringVar(&description, "description", "", opts.t("cli.project.edit.flag.description"))
-	_ = cmd.MarkFlagRequired("description")
+	cmd.Flags().StringVar(&syncScope, "sync-scope", "", opts.t("cli.project.edit.flag.sync_scope"))
 	return cmd
 }
