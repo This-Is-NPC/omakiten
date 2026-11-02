@@ -534,6 +534,10 @@ func dsnWithPragmas(path string, busyTimeoutMs, cacheSizeKB, mmapSizeBytes int) 
 	params := []string{
 		"_pragma=foreign_keys(1)",
 		"_pragma=synchronous(1)", // 1 == NORMAL; WAL-safe, full-fsync overkill for a local CLI.
+		// Write transactions take the write lock at BEGIN, so they wait under
+		// busy_timeout instead of failing when a read cannot upgrade after
+		// another connection committed. Read-only transactions stay deferred.
+		"_txlock=immediate",
 	}
 	if busyTimeoutMs > 0 {
 		params = append(params, fmt.Sprintf("_pragma=busy_timeout(%d)", busyTimeoutMs))
