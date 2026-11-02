@@ -3,6 +3,7 @@ package domain
 import (
 	"fmt"
 	"math"
+	"net/url"
 	"strconv"
 	"strings"
 
@@ -208,4 +209,13 @@ type SyncProjectReport struct {
 // SyncReport is the outcome of one sync run.
 type SyncReport struct {
 	Projects []SyncProjectReport `json:"projects"`
+}
+
+// ValidateSyncRemoteURL accepts an absolute http or https URL with a host.
+func ValidateSyncRemoteURL(raw string) error {
+	u, err := url.Parse(raw)
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+		return syncInvalid("url", raw, "want http(s)://host[:port]")
+	}
+	return nil
 }

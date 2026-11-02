@@ -3,7 +3,6 @@ package app
 import (
 	"context"
 	"fmt"
-	"net/url"
 
 	"omakiten/internal/domain"
 )
@@ -161,11 +160,8 @@ func (s *SyncService) Remote(ctx context.Context) (string, error) {
 
 // SetRemote validates and stores the server URL.
 func (s *SyncService) SetRemote(ctx context.Context, rawURL string) error {
-	u, err := url.Parse(rawURL)
-	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
-		return domain.NewError(domain.ErrValidation,
-			fmt.Sprintf("invalid remote url %q: want http(s)://host[:port]", rawURL),
-			map[string]any{"field": "url", "value": rawURL})
+	if err := domain.ValidateSyncRemoteURL(rawURL); err != nil {
+		return err
 	}
 	return s.store.SetSyncRemoteURL(ctx, rawURL)
 }
