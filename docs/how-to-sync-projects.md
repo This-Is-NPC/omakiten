@@ -10,11 +10,12 @@ unless its project is marked `synced` and you run `okt sync`.
 
 ## 1. Run the server
 
-`okt-server` is built from this repository; it is not yet in the release
-archives:
+`okt-server` ships beside `okt` in every release archive
+(`okt_<OS>_<arch>.tar.gz`, or `.zip` on Windows); the installers set up
+only `okt`, so copy `okt-server` from the archive to the server host. From a
+checkout, `mise run build` writes it to `.tmp/build/okt-server`.
 
 ```bash
-mise exec -- go build -o okt-server ./cmd/okt-server
 export OKT_SERVER_TOKEN="$(head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n')"
 ./okt-server --db /var/lib/okt-server/sync.db
 ```

@@ -26,7 +26,7 @@ env = { OKT_REQUIRE_PWSH = "1", OKT_REQUIRE_REAL_COSIGN = "1" }
 run = "scripts/test.sh"
 
 [tasks.build]
-description = "Build okt into .tmp/build/ with the current git version"
+description = "Build okt and okt-server into .tmp/build/ with the current git version"
 run = "scripts/build.sh"
 
 [tasks."knowledge:inventory"]
